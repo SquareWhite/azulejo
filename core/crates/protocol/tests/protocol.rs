@@ -10,6 +10,7 @@ fn sample_commands() -> Vec<Command> {
     let herdr = HerdrRef {
         pane_id: "w1:p1".into(),
         terminal_id: "term_abc".into(),
+        tab_id: "w1:t1".into(),
     };
     vec![
         Command::Ping,
@@ -142,7 +143,9 @@ fn sample_events() -> Vec<Event> {
         herdr: Some(HerdrRef {
             pane_id: "w1:p2".into(),
             terminal_id: "term_x".into(),
+            tab_id: "w1:t2".into(),
         }),
+        ended: false,
     });
     let info = WorkspaceInfo {
         id: workspace,

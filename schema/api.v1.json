@@ -1228,9 +1228,12 @@
       "type": "object"
     },
     "HerdrRef": {
-      "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes.",
+      "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes. The tab ID matters because closing a herdr\ntab reports only the tab, and herdr keeps pane and tab IDs (but not the\nprocess) across a server restart.",
       "properties": {
         "pane_id": {
+          "type": "string"
+        },
+        "tab_id": {
           "type": "string"
         },
         "terminal_id": {
@@ -1239,7 +1242,8 @@
       },
       "required": [
         "pane_id",
-        "terminal_id"
+        "terminal_id",
+        "tab_id"
       ],
       "type": "object"
     },
@@ -1957,6 +1961,10 @@
                 "null"
               ]
             },
+            "ended": {
+              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "type": "boolean"
+            },
             "herdr": {
               "anyOf": [
                 {
@@ -2091,6 +2099,10 @@
                 "null"
               ]
             },
+            "ended": {
+              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "type": "boolean"
+            },
             "herdr": {
               "anyOf": [
                 {
@@ -2193,6 +2205,10 @@
                 "string",
                 "null"
               ]
+            },
+            "ended": {
+              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "type": "boolean"
             },
             "herdr": {
               "anyOf": [

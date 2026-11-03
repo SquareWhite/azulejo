@@ -1,0 +1,284 @@
+//! The running core: one thread owns the [`Engine`]; everything else talks to
+//! it through messages.
+//!
+//! - Commands from shells and the API arrive through [`Core::execute`].
+//! - herdr work runs on a small tokio runtime ([`crate::link`]); results come
+//!   back as internal commands, so state only ever changes on the engine's
+//!   thread.
+//! - Every change is saved, debounced ([`crate::persist`]), and broadcast to
+//!   [`Core::subscribe`] listeners.
+
+use std::path::PathBuf;
+use std::sync::{Arc, mpsc};
+use std::thread;
+
+use azulejo_herdr::StreamItem;
+use azulejo_protocol::{Command, Error, ErrorCode, Event, Reply, Session};
+use tokio::sync::mpsc as tmpsc;
+
+use crate::link::{self, Effect, HerdrPort, Internal};
+use crate::persist::{self, Loaded, Saver};
+use crate::{Engine, Outcome};
+
+/// Called with a log line. Defaults to stderr.
+pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
+
+pub struct CoreOptions {
+    /// Where to load and save the session; `None` keeps it in memory only.
+    pub state_path: Option<PathBuf>,
+    /// The API socket, passed to terminals as `AZULEJO_SOCKET`.
+    pub api_socket: String,
+    pub log: LogFn,
+}
+
+impl Default for CoreOptions {
+    fn default() -> Self {
+        Self {
+            state_path: Some(persist::default_state_path()),
+            api_socket: String::new(),
+            log: Arc::new(|line| eprintln!("azulejo: {line}")),
+        }
+    }
+}
+
+enum Msg {
+    Command(Command, mpsc::Sender<Result<Outcome, Error>>),
+    Internal(Internal),
+    Herdr(StreamItem),
+    Subscribe(mpsc::Sender<Event>),
+    Shutdown(mpsc::Sender<()>),
+}
+
+/// Handle on the running core. Dropping it saves pending state and stops the
+/// core; herdr panes keep running.
+pub struct Core {
+    tx: mpsc::Sender<Msg>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Core {
+    /// A core without herdr: terminal tiles stay unbound.
+    pub fn start(opts: CoreOptions) -> Core {
+        Self::spawn::<azulejo_herdr::Client>(opts, None)
+    }
+
+    /// A core that keeps terminal tiles bound to herdr panes through `port`.
+    pub fn start_with_herdr<P: HerdrPort>(opts: CoreOptions, port: P) -> Core {
+        Self::spawn(opts, Some(port))
+    }
+
+    fn spawn<P: HerdrPort>(opts: CoreOptions, port: Option<P>) -> Core {
+        let (tx, rx) = mpsc::channel();
+        let self_tx = tx.clone();
+        let thread = thread::Builder::new()
+            .name("azulejo-core".into())
+            .spawn(move || run(opts, port, &rx, self_tx))
+            .expect("spawn core thread");
+        Core {
+            tx,
+            thread: Some(thread),
+        }
+    }
+
+    /// Runs a command on the core's thread and waits for the result.
+    pub fn execute(&self, command: Command) -> Result<Outcome, Error> {
+        let (reply, wait) = mpsc::channel();
+        self.tx
+            .send(Msg::Command(command, reply))
+            .map_err(|_| stopped())?;
+        wait.recv().map_err(|_| stopped())?
+    }
+
+    /// A snapshot of the whole session.
+    pub fn session(&self) -> Result<Session, Error> {
+        match self.execute(Command::SessionGet)?.reply {
+            Reply::Session { session } => Ok(session),
+            other => Err(Error::new(
+                ErrorCode::Internal,
+                format!("unexpected reply {other:?}"),
+            )),
+        }
+    }
+
+    /// Every event from now on, including those caused by herdr.
+    pub fn subscribe(&self) -> mpsc::Receiver<Event> {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.tx.send(Msg::Subscribe(tx));
+        rx
+    }
+
+    /// Saves pending state and stops the core.
+    pub fn shutdown(mut self) {
+        self.stop();
+    }
+
+    fn stop(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            let (done, wait) = mpsc::channel();
+            if self.tx.send(Msg::Shutdown(done)).is_ok() {
+                let _ = wait.recv();
+            }
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn stopped() -> Error {
+    Error::new(ErrorCode::Internal, "the core has stopped")
+}
+
+fn load_engine(opts: &CoreOptions) -> Engine {
+    let Some(path) = &opts.state_path else {
+        return Engine::new();
+    };
+    match persist::load(path) {
+        Ok(Loaded::Session(session)) if !session.windows.is_empty() => {
+            Engine::with_session(session)
+        }
+        Ok(Loaded::Session(_) | Loaded::Missing) => Engine::new(),
+        Ok(Loaded::Corrupt { error, backup }) => {
+            (opts.log)(format!(
+                "state file was unusable ({error}); kept it as {} and started fresh",
+                backup.display()
+            ));
+            Engine::new()
+        }
+        Err(e) => {
+            (opts.log)(format!(
+                "couldn't read {} ({e}); starting fresh",
+                path.display()
+            ));
+            Engine::new()
+        }
+    }
+}
+
+fn run<P: HerdrPort>(
+    opts: CoreOptions,
+    port: Option<P>,
+    rx: &mpsc::Receiver<Msg>,
+    self_tx: mpsc::Sender<Msg>,
+) {
+    let mut engine = load_engine(&opts);
+    let saver = opts.state_path.clone().map(|path| {
+        let log = opts.log.clone();
+        Saver::new(path.clone(), move |e| {
+            log(format!("saving {} failed: {e}", path.display()));
+        })
+    });
+    if let Some(saver) = &saver {
+        saver.schedule(engine.session().clone());
+    }
+
+    // herdr: a worker for effects and a forwarder for herdr's events.
+    let mut herdr = port.map(|port| {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("azulejo-herdr")
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let port = Arc::new(port);
+        let (effects_tx, effects_rx) = tmpsc::unbounded_channel::<Effect>();
+        {
+            let out = self_tx.clone();
+            let log = opts.log.clone();
+            let port = port.clone();
+            let socket = opts.api_socket.clone();
+            runtime.spawn(link::run_worker(
+                port,
+                effects_rx,
+                socket,
+                move |internal| {
+                    let _ = out.send(Msg::Internal(internal));
+                },
+                move |line| log(line),
+            ));
+        }
+        {
+            let out = self_tx.clone();
+            let mut events = runtime.block_on(async { port.events() });
+            runtime.spawn(async move {
+                while let Some(item) = events.recv().await {
+                    if out.send(Msg::Herdr(item)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        for effect in link::restore_effects(engine.session()) {
+            let _ = effects_tx.send(effect);
+        }
+        (runtime, effects_tx)
+    });
+    drop(self_tx);
+
+    let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
+    let publish = |engine: &Engine,
+                   events: &[Event],
+                   herdr: &Option<(tokio::runtime::Runtime, tmpsc::UnboundedSender<Effect>)>,
+                   listeners: &mut Vec<mpsc::Sender<Event>>| {
+        if events.is_empty() {
+            return;
+        }
+        if let Some(saver) = &saver {
+            saver.schedule(engine.session().clone());
+        }
+        listeners.retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
+        if let Some((_, effects_tx)) = herdr {
+            for effect in link::effects(events, engine.session()) {
+                let _ = effects_tx.send(effect);
+            }
+        }
+    };
+
+    while let Ok(msg) = rx.recv() {
+        match msg {
+            Msg::Command(command, reply) => {
+                let result = engine.execute(command);
+                if let Ok(outcome) = &result {
+                    publish(&engine, &outcome.events, &herdr, &mut listeners);
+                }
+                let _ = reply.send(result);
+            }
+            Msg::Internal(internal) => {
+                let events = engine.apply_internal(internal);
+                publish(&engine, &events, &herdr, &mut listeners);
+            }
+            Msg::Herdr(item) => {
+                let reaction = link::reconcile(&item, engine.session());
+                for internal in reaction.internals {
+                    let events = engine.apply_internal(internal);
+                    publish(&engine, &events, &herdr, &mut listeners);
+                }
+                if let Some((_, effects_tx)) = &herdr {
+                    for effect in reaction.effects {
+                        let _ = effects_tx.send(effect);
+                    }
+                }
+            }
+            Msg::Subscribe(listener) => listeners.push(listener),
+            Msg::Shutdown(done) => {
+                if let Some(saver) = &saver {
+                    saver.flush();
+                }
+                let _ = done.send(());
+                break;
+            }
+        }
+    }
+    // Stop herdr work before the saver goes; panes keep running in herdr.
+    if let Some((runtime, _)) = herdr.take() {
+        runtime.shutdown_background();
+    }
+}
+
+#[cfg(test)]
+#[path = "driver_tests.rs"]
+mod tests;

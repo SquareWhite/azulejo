@@ -107,6 +107,7 @@ fn closing_a_bound_terminal_carries_its_pane_and_kill_flag() {
     let herdr = HerdrRef {
         pane_id: "w1:p1".into(),
         terminal_id: "term_1".into(),
+        tab_id: "w1:t1".into(),
     };
     let bound = engine
         .execute(Command::TerminalBind(TerminalBind {
@@ -163,6 +164,7 @@ fn bind_rejects_non_terminals() {
             herdr: HerdrRef {
                 pane_id: "p".into(),
                 terminal_id: "t".into(),
+                tab_id: "t1".into(),
             },
         }))
         .unwrap_err();
