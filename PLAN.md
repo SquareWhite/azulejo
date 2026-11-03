@@ -213,34 +213,43 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 
 ## M2 — macOS daily driver, all P1 (6 to 10 weeks)
 
-- [ ] **2.1 Animations** (F4). Production version of the 0.5 spike for open, close, move and resize: IOSurface snapshots, one PTY resize at motion **start** ([ADR 0004](docs/adr/0004-animation-resize-timing.md)), reveal on the first frame after motion; `animation.enabled` and `animation.duration_ms` in config.
+- [x] **2.1 Animations** (F4). Production version of the 0.5 spike for open, close, move and resize: IOSurface snapshots, one PTY resize at motion **start** ([ADR 0004](docs/adr/0004-animation-resize-timing.md)), reveal on the first frame after motion; `animation.enabled` and `animation.duration_ms` in config.
   **Done when** the 0.5 criteria hold in the real app, and turning animations off makes changes instant.
+  **Result:** done in `4ec0859` + `dfb3adc` (crop style, merged `a2f88b4`). Split, close, move/swap, resize, zoom and tall ops animate; focus ring morphs; tab switches fade. `[animation] style = crop | scale | outline`, default crop (content stays 1:1, no stretching). Stress at 120 Hz: 60 animations, 0 dropped frames, exact PTY resize counts; `enabled = false` is instant. Visible-window pacing and Instruments are under Deferred checks.
 
-- [ ] **2.2 Command palette** (F5). Lists every command from the schema with its keybinding; fuzzy search.
+- [x] **2.2 Command palette** (F5). Lists every command from the schema with its keybinding; fuzzy search.
   **Done when** every action in the schema is reachable from the palette.
+  **Result:** done. Core catalogue `commands.list` in `b78a68b` (a test fails if a user-facing method is missing); shell palette (⌘⇧P, fuzzy, inline prompts, recents) and picker (⌘P) in `cc6f717`.
 
-- [ ] **2.3 Config** (F25b). TOML for keybindings, theme and animation; hot reload via `notify` (startup overrides already land in M1, F25a); errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
+- [x] **2.3 Config** (F25b). TOML for keybindings, theme and animation; hot reload via `notify` (startup overrides already land in M1, F25a); errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
   **Done when** saving the file changes a binding without a restart, and a bad file never crashes the app.
+  **Result:** done. Core reload on save in `1f93778` (bad config keeps the last good one, `config.reloaded` with located diagnostics); non-blocking banner in `8915cb5`.
 
-- [ ] **2.4 Layout files** (F6). `.azulejo.toml` in a project describes tabs, splits and tiles (terminal command and cwd, browser URL, preview path); `azj layout apply [path]`; palette entry.
+- [x] **2.4 Layout files** (F6). `.azulejo.toml` in a project describes tabs, splits and tiles (terminal command and cwd, browser URL, preview path); `azj layout apply [path]`; palette entry.
   **Done when** one command opens editor, test watcher, dev server and browser.
+  **Result:** done in `aa76f87`. `azj layout apply/export`; tall/columns/rows/explicit trees; tile commands run in real panes with `cwd` and `env` (live test). Example in `docs/examples/azulejo.toml`.
 
-- [ ] **2.5 File browser tile** (F10). File tree in the core (gitignore-aware, `notify`); NSOutlineView; keyboard navigation; open in preview or in a new terminal at that path.
+- [x] **2.5 File browser tile** (F10). File tree in the core (gitignore-aware, `notify`); NSOutlineView; keyboard navigation; open in preview or in a new terminal at that path.
   **Done when** a 50k-file repo opens in under 300 ms and external changes show up live.
+  **Result:** done in `c7121ce`. 50k-file repo to first rows in 15 ms; create/rename/delete show up in about 70 ms; git badges; keyboard navigation and Quick Look.
 
-- [ ] **2.6 Attention and agent state** (F11, F16). Map herdr `pane.agent_status_changed` to tile badges and sidebar dots: `blocked` → attention, `done` → soft badge. herdr has no notification event for OSC 9/777/99 ([ADR 0005](docs/adr/0005-scrollback-and-passthrough.md)); add it if upstream ships one.
+- [x] **2.6 Attention and agent state** (F11, F16). Map herdr `pane.agent_status_changed` to tile badges and sidebar dots: `blocked` → attention, `done` → soft badge. herdr has no notification event for OSC 9/777/99 ([ADR 0005](docs/adr/0005-scrollback-and-passthrough.md)); add it if upstream ships one.
   **Done when** a blocked Claude Code tile lights up within 1 s.
+  **Result:** done. Core agent state and attention in `05a8c53` (blocked → attention in about 100 ms, live test); badges, sidebar/tab counts, Dock badge and `tile.seen` in `5cf85f5`. Green "done" badges rely on herdr's own detection (not covered by tests).
 
-- [ ] **2.7 External changes** (F15). Panes created or closed via phone, CLI or agent appear or disappear as tiles within 1 s, placed by a simple rule (split the focused tile).
+- [x] **2.7 External changes** (F15). Panes created or closed via phone, CLI or agent appear or disappear as tiles within 1 s, placed by a simple rule (split the focused tile).
   **Done when** `herdr pane split` from another terminal adds a tile in the app within 1 s.
+  **Result:** done in `05a8c53`. herdr split → new tile in about 100 ms, close → tile removed in about 100 ms ([ADR 0009](docs/adr/0009-changes-made-in-herdr.md)). Note: `45b39f7` adds `[terminal] on_exit = "close" | "keep"` (default close): a shell that exits (ctrl+d, `exit`) closes its tile; "Session ended" only shows for panes lost without an exit.
 
-- [ ] **2.8 Event stream** (F22). `events.subscribe` on our socket with filters; `azj events --follow`.
+- [x] **2.8 Event stream** (F22). `events.subscribe` on our socket with filters; `azj events --follow`.
   **Done when** tile, focus and agent-state events stream with stable JSON.
+  **Result:** done in `73f0800` (+ `b9357e4`). `events.subscribe`/`unsubscribe`, bounded buffers with `events.lagged`, name/workspace/tile filters; `azj events --follow`.
 
 - [ ] ~~**2.9 Browser automation** (F21)~~ **Dropped, Nov 3, 2026.** the maintainer decided agents don't need to drive browser tiles; they use their own browser tooling. `browser.open` (F18) stays.
 
-- [ ] **2.10 Python client** (F23). Generated from `schema/api.v1.json` by `scripts/codegen-python`; `azulejo.Client` and `azulejo.AsyncClient`; tests run against a headless core.
+- [x] **2.10 Python client** (F23). Generated from `schema/api.v1.json` by `scripts/codegen-python`; `azulejo.Client` and `azulejo.AsyncClient`; tests run against a headless core.
   **Done when** the package installs with `uv`, and examples for every use case in the PRD run.
+  **Result:** done in `bf68d6e`. `azulejo` package (sync + asyncio), generated from the schema with a freshness check; three examples run in `just python-test`. Tested on Python 3.13 only.
 
 - [ ] **2.11 Key and focus test suite.** XCUITest scenarios: shortcuts with a webview focused, IME composition in a terminal, focus after close and after zoom, palette over a browser.
   **Done when** 30+ scenarios pass in CI.
