@@ -1,0 +1,599 @@
+//! Async client for herdr's socket API.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use serde::Serialize;
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixStream;
+
+use crate::MIN_PROTOCOL;
+use crate::error::{Error, Result};
+use crate::event::Subscription;
+use crate::stream::EventStream;
+use crate::types::{
+    EnsuredWorkspace, PaneId, PaneInfo, ReadResult, ReadSource, Resolved, ServerInfo, Snapshot,
+    TabId, TerminalId, TerminalRef, TerminalSpec, WorkspaceId, WorkspaceInfo, WorkspaceSpec,
+};
+use crate::wire::{self, method};
+
+/// Exponential backoff for (re)connecting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Backoff {
+    pub initial: Duration,
+    pub max: Duration,
+    /// Stop retrying after this long. Zero means try once.
+    pub give_up_after: Duration,
+}
+
+impl Default for Backoff {
+    fn default() -> Self {
+        Self {
+            initial: Duration::from_millis(50),
+            max: Duration::from_secs(1),
+            give_up_after: Duration::from_secs(3),
+        }
+    }
+}
+
+impl Backoff {
+    pub(crate) fn next(&self, current: Duration) -> Duration {
+        (current * 2).min(self.max)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientOptions {
+    /// How long to wait for a reply once the request is sent.
+    pub request_timeout: Duration,
+    /// Retry policy while the socket refuses connections (herdr restarting).
+    pub connect: Backoff,
+}
+
+impl Default for ClientOptions {
+    fn default() -> Self {
+        Self {
+            request_timeout: Duration::from_secs(5),
+            connect: Backoff::default(),
+        }
+    }
+}
+
+/// A handle on one herdr server. Cheap to clone.
+///
+/// herdr serves one request per connection, so every call opens a fresh
+/// connection. Connecting retries with backoff, which rides out a herdr
+/// restart. A request that was already sent is never retried, because most
+/// herdr methods aren't idempotent.
+#[derive(Debug, Clone)]
+pub struct Client {
+    inner: Arc<Inner>,
+}
+
+#[derive(Debug)]
+struct Inner {
+    socket: PathBuf,
+    opts: ClientOptions,
+    next_id: AtomicU64,
+}
+
+impl Client {
+    pub fn new(socket: impl Into<PathBuf>, opts: ClientOptions) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                socket: socket.into(),
+                opts,
+                next_id: AtomicU64::new(1),
+            }),
+        }
+    }
+
+    /// Connect, ping and check the protocol version.
+    pub async fn connect(
+        socket: impl Into<PathBuf>,
+        opts: ClientOptions,
+    ) -> Result<(Self, ServerInfo)> {
+        let client = Self::new(socket, opts);
+        let info = client.ping().await?;
+        Ok((client, info))
+    }
+
+    pub fn socket_path(&self) -> &Path {
+        &self.inner.socket
+    }
+
+    pub fn options(&self) -> ClientOptions {
+        self.inner.opts
+    }
+
+    /// Ping and fail with [`Error::Version`] if herdr is too old.
+    pub async fn ping(&self) -> Result<ServerInfo> {
+        let result = self.call(method::PING, json!({})).await?;
+        let info: ServerInfo = serde_json::from_value(result.clone())
+            .map_err(|e| Error::Protocol(format!("ping: {e}: {}", wire::short(&result))))?;
+        if info.protocol < MIN_PROTOCOL {
+            return Err(Error::Version {
+                found: info.protocol,
+                min: MIN_PROTOCOL,
+                version: info.version,
+            });
+        }
+        Ok(info)
+    }
+
+    /// Ask the server to shut down. Panes die with it.
+    pub async fn stop_server(&self) -> Result<()> {
+        self.call(method::SERVER_STOP, json!({})).await.map(drop)
+    }
+
+    pub async fn snapshot(&self) -> Result<Snapshot> {
+        let r = self.call(method::SESSION_SNAPSHOT, json!({})).await?;
+        wire::field(&r, "snapshot")
+    }
+
+    // ---- workspaces ------------------------------------------------------
+
+    pub async fn workspaces(&self) -> Result<Vec<WorkspaceInfo>> {
+        let r = self.call(method::WORKSPACE_LIST, json!({})).await?;
+        wire::field(&r, "workspaces")
+    }
+
+    /// `None` if the workspace doesn't exist (any more).
+    pub async fn workspace(&self, id: &WorkspaceId) -> Result<Option<WorkspaceInfo>> {
+        match self
+            .call(method::WORKSPACE_GET, json!({ "workspace_id": id }))
+            .await
+        {
+            Ok(r) => wire::field(&r, "workspace").map(Some),
+            Err(e) if e.is_not_found() => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Create a herdr workspace. herdr always creates a first tab with one
+    /// terminal; it's returned so the caller can use it as the first
+    /// terminal tile or kill it.
+    pub async fn create_workspace(
+        &self,
+        spec: &WorkspaceSpec,
+    ) -> Result<(WorkspaceInfo, TerminalRef)> {
+        let r = self
+            .call(
+                method::WORKSPACE_CREATE,
+                json!({
+                    "label": spec.label,
+                    "cwd": spec.cwd,
+                    "env": env_map(&spec.env),
+                    "focus": false,
+                }),
+            )
+            .await?;
+        let workspace: WorkspaceInfo = wire::field(&r, "workspace")?;
+        let pane: PaneInfo = wire::field(&r, "root_pane")?;
+        Ok((workspace, pane.terminal_ref()))
+    }
+
+    /// The app ↔ herdr workspace mapping is 1:1. Reuse `existing` if herdr
+    /// still has it, otherwise create a new one. herdr deletes a workspace
+    /// when its last tab closes, so callers must not cache the ID blindly.
+    /// After a server restart herdr restores workspaces (same IDs) with
+    /// fresh processes; use [`Client::reresolve`] for the terminals in it.
+    pub async fn ensure_workspace(
+        &self,
+        existing: Option<&WorkspaceId>,
+        spec: &WorkspaceSpec,
+    ) -> Result<EnsuredWorkspace> {
+        if let Some(id) = existing
+            && let Some(workspace) = self.workspace(id).await?
+        {
+            return Ok(EnsuredWorkspace {
+                workspace,
+                created_terminal: None,
+            });
+        }
+        let (workspace, terminal) = self.create_workspace(spec).await?;
+        Ok(EnsuredWorkspace {
+            workspace,
+            created_terminal: Some(terminal),
+        })
+    }
+
+    /// Close a herdr workspace and kill every process in it.
+    pub async fn close_workspace(&self, id: &WorkspaceId) -> Result<()> {
+        self.call(method::WORKSPACE_CLOSE, json!({ "workspace_id": id }))
+            .await
+            .map(drop)
+    }
+
+    // ---- terminals ---------------------------------------------------------
+
+    /// Create the herdr tab behind a new terminal tile: one tab per tile,
+    /// labelled, with the tile's env vars.
+    pub async fn create_terminal(&self, spec: &TerminalSpec) -> Result<TerminalRef> {
+        let r = self
+            .call(
+                method::TAB_CREATE,
+                json!({
+                    "workspace_id": spec.workspace_id,
+                    "label": spec.label,
+                    "cwd": spec.cwd,
+                    "env": env_map(&spec.env),
+                    "focus": false,
+                }),
+            )
+            .await?;
+        let pane: PaneInfo = wire::field(&r, "root_pane")?;
+        Ok(pane.terminal_ref())
+    }
+
+    /// Kill a terminal's process (explicit user choice, F14). Detaching
+    /// needs no herdr call: the tile just ends its attach process.
+    ///
+    /// Closes the pane rather than the tab, so panes someone split off in the
+    /// same tab (e.g. from a phone) survive. herdr closes the tab when its
+    /// last pane goes, and the workspace when its last tab goes.
+    pub async fn kill_terminal(&self, pane: &PaneId) -> Result<()> {
+        self.call(method::PANE_CLOSE, json!({ "pane_id": pane }))
+            .await
+            .map(drop)
+    }
+
+    pub async fn rename_tab(&self, tab: &TabId, label: &str) -> Result<()> {
+        self.call(method::TAB_RENAME, json!({ "tab_id": tab, "label": label }))
+            .await
+            .map(drop)
+    }
+
+    /// `None` if the pane doesn't exist.
+    pub async fn pane(&self, pane: &PaneId) -> Result<Option<PaneInfo>> {
+        match self
+            .call(method::PANE_GET, json!({ "pane_id": pane }))
+            .await
+        {
+            Ok(r) => wire::field(&r, "pane").map(Some),
+            Err(e) if e.is_not_found() => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn panes(&self) -> Result<Vec<PaneInfo>> {
+        let r = self.call(method::PANE_LIST, json!({})).await?;
+        wire::field(&r, "panes")
+    }
+
+    /// Find the pane currently showing `terminal`. Pane IDs change when a
+    /// pane moves between workspaces; terminal IDs don't.
+    pub async fn resolve_terminal(&self, terminal: &TerminalId) -> Result<Option<PaneInfo>> {
+        Ok(self
+            .panes()
+            .await?
+            .into_iter()
+            .find(|p| &p.terminal_id == terminal))
+    }
+
+    /// Work out what happened to a stored terminal, e.g. on relaunch or after
+    /// a reconnect. Matches by terminal ID first, then by pane and tab ID:
+    /// herdr restores workspaces, tabs and pane IDs when its server restarts,
+    /// but with fresh processes, new terminal IDs and without the tab's
+    /// `--env` vars.
+    pub async fn reresolve(&self, stored: &TerminalRef) -> Result<Resolved> {
+        let panes = self.panes().await?;
+        if let Some(p) = panes.iter().find(|p| p.terminal_id == stored.terminal_id) {
+            return Ok(
+                if p.pane_id == stored.pane_id && p.tab_id == stored.tab_id {
+                    Resolved::Same(p.clone())
+                } else {
+                    Resolved::Moved(p.clone())
+                },
+            );
+        }
+        if let Some(p) = panes
+            .iter()
+            .find(|p| p.pane_id == stored.pane_id && p.tab_id == stored.tab_id)
+        {
+            return Ok(Resolved::Respawned(p.clone()));
+        }
+        Ok(Resolved::Gone)
+    }
+
+    // ---- terminal operations (F20) -----------------------------------------
+
+    /// Type literal text into a pane (no key translation; `\n` is a newline).
+    pub async fn send_text(&self, pane: &PaneId, text: &str) -> Result<()> {
+        self.call(
+            method::PANE_SEND_TEXT,
+            json!({ "pane_id": pane, "text": text }),
+        )
+        .await
+        .map(drop)
+    }
+
+    /// Press keys in a pane. Key names use herdr's syntax (`Enter`, `Up`,
+    /// `C-c`); the engine translates Azulejo key names before calling this.
+    pub async fn send_keys<S: AsRef<str>>(&self, pane: &PaneId, keys: &[S]) -> Result<()> {
+        let keys: Vec<&str> = keys.iter().map(AsRef::as_ref).collect();
+        self.call(
+            method::PANE_SEND_KEYS,
+            json!({ "pane_id": pane, "keys": keys }),
+        )
+        .await
+        .map(drop)
+    }
+
+    /// Read a pane as plain text. This is also how scrollback is read:
+    /// terminal tiles have no local scrollback (herdr owns it).
+    pub async fn read(
+        &self,
+        pane: &PaneId,
+        source: ReadSource,
+        lines: Option<u32>,
+    ) -> Result<ReadResult> {
+        let r = self
+            .call(
+                method::PANE_READ,
+                json!({ "pane_id": pane, "source": source, "lines": lines, "format": "text" }),
+            )
+            .await?;
+        wire::field(&r, "read")
+    }
+
+    /// Scroll a pane's view; 0 is the live bottom.
+    pub async fn scroll(&self, pane: &PaneId, offset_from_bottom: u64) -> Result<PaneInfo> {
+        let r = self
+            .call(
+                method::PANE_SCROLL,
+                json!({ "pane_id": pane, "offset_from_bottom": offset_from_bottom }),
+            )
+            .await?;
+        wire::field(&r, "pane")
+    }
+
+    // ---- events ------------------------------------------------------------
+
+    /// Open an event stream. It reconnects by itself; see [`EventStream`].
+    pub fn subscribe(&self, subscriptions: Vec<Subscription>) -> EventStream {
+        EventStream::spawn(self.clone(), subscriptions)
+    }
+
+    // ---- transport -----------------------------------------------------------
+
+    fn next_id(&self) -> String {
+        format!("azj-{}", self.inner.next_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Send one request and return its `result` object.
+    pub(crate) async fn call<P: Serialize>(&self, method: &str, params: P) -> Result<Value> {
+        let id = self.next_id();
+        let line = wire::encode(&id, method, params)?;
+        let stream = self.connect_with_backoff(self.inner.opts.connect).await?;
+        let timeout = self.inner.opts.request_timeout;
+        let reply = tokio::time::timeout(timeout, round_trip(stream, &line))
+            .await
+            .map_err(|_| Error::Timeout {
+                method: method.to_owned(),
+                timeout,
+            })??;
+        match reply {
+            Some(reply) => wire::decode_reply(&reply, &id),
+            None => Err(Error::Closed {
+                method: method.to_owned(),
+            }),
+        }
+    }
+
+    pub(crate) async fn connect_with_backoff(&self, backoff: Backoff) -> Result<UnixStream> {
+        let start = Instant::now();
+        let mut delay = backoff.initial;
+        loop {
+            match UnixStream::connect(&self.inner.socket).await {
+                Ok(s) => return Ok(s),
+                Err(e) if retryable(&e) && start.elapsed() + delay <= backoff.give_up_after => {
+                    tokio::time::sleep(delay).await;
+                    delay = backoff.next(delay);
+                }
+                Err(source) => {
+                    return Err(Error::Connect {
+                        path: self.inner.socket.clone(),
+                        source,
+                    });
+                }
+            }
+        }
+    }
+}
+
+async fn round_trip(stream: UnixStream, line: &str) -> Result<Option<String>> {
+    let (read, mut write) = stream.into_split();
+    write.write_all(line.as_bytes()).await?;
+    write.flush().await?;
+    let mut reader = BufReader::new(read);
+    let mut reply = String::new();
+    let n = reader.read_line(&mut reply).await?;
+    Ok((n > 0).then_some(reply))
+}
+
+fn retryable(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind::*;
+    matches!(
+        e.kind(),
+        NotFound | ConnectionRefused | ConnectionReset | ConnectionAborted
+    )
+}
+
+fn env_map(env: &[(String, String)]) -> serde_json::Map<String, Value> {
+    env.iter()
+        .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::UnixListener;
+
+    fn temp_socket(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("azj-h-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("s.sock")
+    }
+
+    /// A fake herdr that answers `n` requests with `reply(request_line)`.
+    fn fake_server(
+        path: PathBuf,
+        n: usize,
+        reply: impl Fn(&Value) -> String + Send + 'static,
+    ) -> tokio::task::JoinHandle<Vec<Value>> {
+        let listener = UnixListener::bind(&path).unwrap();
+        tokio::spawn(async move {
+            let mut seen = Vec::new();
+            for _ in 0..n {
+                let (stream, _) = listener.accept().await.unwrap();
+                let (r, mut w) = stream.into_split();
+                let mut line = String::new();
+                BufReader::new(r).read_line(&mut line).await.unwrap();
+                let req: Value = serde_json::from_str(&line).unwrap();
+                w.write_all(reply(&req).as_bytes()).await.unwrap();
+                seen.push(req);
+            }
+            seen
+        })
+    }
+
+    fn opts() -> ClientOptions {
+        ClientOptions {
+            request_timeout: Duration::from_millis(500),
+            connect: Backoff {
+                initial: Duration::from_millis(10),
+                max: Duration::from_millis(50),
+                give_up_after: Duration::from_secs(2),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn ping_checks_protocol_version() {
+        let path = temp_socket("old");
+        let server = fake_server(path.clone(), 1, |req| {
+            format!(
+                "{{\"id\":{},\"result\":{{\"type\":\"pong\",\"version\":\"0.1.0\",\"protocol\":3}}}}\n",
+                req["id"]
+            )
+        });
+        let err = Client::connect(&path, opts()).await.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::Version {
+                    found: 3,
+                    min: 22,
+                    ..
+                }
+            ),
+            "{err}"
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn correlates_ids_and_types_results() {
+        let path = temp_socket("ok");
+        let server = fake_server(path.clone(), 2, |req| {
+            match req["method"].as_str().unwrap() {
+                "ping" => format!(
+                    "{{\"id\":{},\"result\":{{\"type\":\"pong\",\"version\":\"0.9.1\",\"protocol\":22}}}}\n",
+                    req["id"]
+                ),
+                _ => format!(
+                    "{{\"id\":{},\"result\":{{\"type\":\"tab_created\",\"tab\":{{}},\"root_pane\":{{\"pane_id\":\"w1:p2\",\"terminal_id\":\"term_x\",\"workspace_id\":\"w1\",\"tab_id\":\"w1:t2\"}}}}}}\n",
+                    req["id"]
+                ),
+            }
+        });
+        let (client, info) = Client::connect(&path, opts()).await.unwrap();
+        assert_eq!(info.protocol, 22);
+        let t = client
+            .create_terminal(&TerminalSpec {
+                workspace_id: "w1".into(),
+                label: Some("tile".into()),
+                cwd: None,
+                env: vec![("AZULEJO_TILE_ID".into(), "t1".into())],
+            })
+            .await
+            .unwrap();
+        assert_eq!(t.terminal_id.as_str(), "term_x");
+        let seen = server.await.unwrap();
+        assert_eq!(seen[1]["method"], "tab.create");
+        assert_eq!(seen[1]["params"]["env"]["AZULEJO_TILE_ID"], "t1");
+        assert_eq!(seen[1]["params"]["label"], "tile");
+        assert_ne!(seen[0]["id"], seen[1]["id"]);
+    }
+
+    #[tokio::test]
+    async fn not_found_becomes_none() {
+        let path = temp_socket("nf");
+        let server = fake_server(path.clone(), 1, |req| {
+            format!(
+                "{{\"id\":{},\"error\":{{\"code\":\"pane_not_found\",\"message\":\"gone\"}}}}\n",
+                req["id"]
+            )
+        });
+        let client = Client::new(&path, opts());
+        assert_eq!(client.pane(&"w9:p9".into()).await.unwrap(), None);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn waits_for_a_server_that_comes_up_late() {
+        let path = temp_socket("late");
+        let p2 = path.clone();
+        let server = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            fake_server(p2, 1, |req| {
+                format!(
+                    "{{\"id\":{},\"result\":{{\"type\":\"pong\",\"version\":\"0.9.1\",\"protocol\":22}}}}\n",
+                    req["id"]
+                )
+            })
+            .await
+            .unwrap()
+        });
+        let client = Client::new(&path, opts());
+        assert_eq!(client.ping().await.unwrap().protocol, 22);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn gives_up_when_nobody_listens() {
+        let path = temp_socket("none");
+        let client = Client::new(
+            &path,
+            ClientOptions {
+                connect: Backoff {
+                    give_up_after: Duration::from_millis(100),
+                    ..opts().connect
+                },
+                ..opts()
+            },
+        );
+        let err = client.ping().await.unwrap_err();
+        assert!(err.is_unreachable(), "{err}");
+    }
+
+    #[tokio::test]
+    async fn times_out_on_a_silent_server() {
+        let path = temp_socket("silent");
+        let listener = UnixListener::bind(&path).unwrap();
+        let hold = tokio::spawn(async move {
+            let (s, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            drop(s);
+        });
+        let err = Client::new(&path, opts()).ping().await.unwrap_err();
+        assert!(matches!(err, Error::Timeout { .. }), "{err}");
+        hold.abort();
+    }
+}

@@ -1,34 +1,34 @@
 //! herdr adapter. No other crate may use herdr method names or JSON shapes.
+//!
+//! Mapping (see `docs/herdr-notes.md`):
+//! - one app workspace ↔ one herdr workspace;
+//! - one terminal tile ↔ one herdr tab, created with `--label` and the
+//!   tile's env vars; the tile stores a [`TerminalRef`];
+//! - closing a tile detaches (the shell ends its attach process); killing
+//!   is the explicit [`Client::kill_terminal`];
+//! - `layout.apply` is never used: it replaces live panes.
+//!
+//! Terminal tiles run [`Herdr::attach`] as their PTY child; everything else
+//! goes through [`Client`].
 
-use std::path::PathBuf;
+mod attach;
+mod client;
+mod env;
+mod error;
+mod event;
+mod server;
+mod stream;
+mod types;
+mod wire;
 
-/// Minimum herdr socket protocol version Azulejo supports.
+pub use attach::{AttachCommand, AttachExit};
+pub use client::{Backoff, Client, ClientOptions};
+pub use env::{clean_env, clean_process_env};
+pub use error::{Error, Result};
+pub use event::{HerdrEvent, Subscription};
+pub use server::{Herdr, Session};
+pub use stream::{EventStream, StreamItem};
+pub use types::*;
+
+/// Minimum herdr socket protocol version Azulejo supports (herdr 0.9.x).
 pub const MIN_PROTOCOL: u32 = 22;
-
-/// Default herdr socket path, honouring `HERDR_SOCKET_PATH`.
-pub fn default_socket_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("HERDR_SOCKET_PATH") {
-        return Some(PathBuf::from(path));
-    }
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config/herdr/herdr.sock"))
-}
-
-/// Arguments for the child process a terminal tile runs to view a herdr terminal.
-pub fn attach_argv(terminal_id: &str) -> Vec<String> {
-    vec![
-        "herdr".into(),
-        "terminal".into(),
-        "attach".into(),
-        terminal_id.into(),
-    ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn attach_argv_targets_the_terminal() {
-        assert_eq!(attach_argv("term_1").last().unwrap(), "term_1");
-    }
-}

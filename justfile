@@ -15,6 +15,10 @@ lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
 
+# herdr adapter integration tests against a real herdr in a throwaway session
+test-herdr:
+    cargo test -p azulejo-herdr --test live -- --ignored --test-threads=1
+
 # Build the macOS app into target/macos/Azulejo.app
 mac:
     apps/macos/bundle.sh
