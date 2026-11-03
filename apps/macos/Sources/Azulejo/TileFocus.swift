@@ -22,8 +22,10 @@ enum TileFocus {
     }
 
     /// A visible text field (or its field editor) outside every tile container
-    /// has the keyboard. Fields inside tiles — the browser's address bar, the
-    /// files filter — don't count: the focused tile manages those itself.
+    /// has the keyboard, or a view inside something that keeps the keyboard
+    /// (the sidebar's Files tree). Fields inside tiles — the browser's
+    /// address bar, the files filter — don't count: the focused tile manages
+    /// those itself.
     static func typingOutsideTiles(in window: NSWindow) -> Bool {
         guard let responder = window.firstResponder as? NSView else { return false }
         var view = responder
@@ -31,14 +33,20 @@ enum TileFocus {
         if let editor = responder as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
             view = field
         }
-        guard view is NSTextView || view is NSTextField else { return false }
         // A closing menu is hidden before it hands the keyboard back.
         if view.isHiddenOrHasHiddenAncestor { return false }
+        var holds = view is NSTextView || view is NSTextField
         var current: NSView? = view
         while let v = current {
             if v is TileContainerView { return false }
+            if v is KeepsKeyboard { holds = true }
             current = v.superview
         }
-        return true
+        return holds
     }
 }
+
+/// A view outside the tiles whose descendants keep the keyboard until the
+/// user moves on (the sidebar): tiles don't take it back on a refresh.
+@MainActor
+protocol KeepsKeyboard: NSView {}

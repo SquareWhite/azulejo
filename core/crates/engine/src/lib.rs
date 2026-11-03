@@ -430,7 +430,9 @@ impl Engine {
             | Command::FilesExpand(_)
             | Command::FilesCollapse(_)
             | Command::FilesReveal(_)
-            | Command::FilesToggleHidden(_) => {
+            | Command::FilesToggleHidden(_)
+            | Command::FilesPanel(_)
+            | Command::FilesPanelClose(_) => {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
                     "file tiles need a running core",
@@ -654,16 +656,22 @@ impl Engine {
 
 /// `files.open`: shows a path from a files tile in the tab's first preview
 /// tile (or a new one to its right, keeping focus in the files tile), or in a
-/// new terminal below it.
+/// new terminal below it. With an absolute path any tile can be the anchor:
+/// a files panel's paths open beside the focused tile (the driver sends them
+/// here without `tile`).
 fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created, Error> {
     use azulejo_model::Direction;
     use azulejo_protocol::FilesOpenTarget;
     let id = s.target(p.tile)?;
+    let path = files::expand_home(&p.path);
     let root = match &s.tile(id)?.content {
         TileContent::Files { root } => files::configured_root(root.as_deref()),
+        _ if path.is_absolute() => path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default(),
         other => return Err(wrong_kind(id, other, "files")),
     };
-    let path = files::expand_home(&p.path);
     let path = if path.is_absolute() {
         path
     } else {

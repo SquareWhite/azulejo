@@ -24,6 +24,10 @@ final class FilesTileView: NSView, TileView {
     private let scroll = NSScrollView()
     private let outline = FilesOutlineView()
     private var filterHeight: NSLayoutConstraint!
+    /// Shown as the sidebar's Files view (`files.panel`) rather than a tile:
+    /// no card of its own, and Esc hands the keyboard back to the tiles.
+    private(set) var isPanel = false
+    var onEscape: (() -> Void)?
 
     /// The root's node; its children are the outline's top level.
     private var root = FileNode(path: "", name: "", dir: true)
@@ -145,8 +149,44 @@ final class FilesTileView: NSView, TileView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// A files panel: the same tree for `panel`, a `files.panel` the core
+    /// shows outside the layout.
+    convenience init(panel: String, root: String) {
+        self.init(TileModel(id: panel, kind: .files, root: root))
+        isPanel = true
+        layer?.cornerRadius = 0
+        layer?.backgroundColor = nil
+    }
+
+    /// Opens (or re-roots) a files panel; its id, or nil when the core
+    /// can't show `root`.
+    static func openPanel(root: String, reuse panel: String?) -> String? {
+        var params: [String: Any] = ["root": root]
+        if let panel { params["panel"] = panel }
+        switch core?.execute(["method": "files.panel", "params": params]) {
+        case .success(let reply): return reply["tile"] as? String
+        case .failure(let error):
+            log("files: panel on \(root) failed: \(error.message)")
+            return nil
+        case nil: return nil
+        }
+    }
+
+    static func closePanel(_ panel: String) {
+        _ = core?.execute(["method": "files.panel_close", "params": ["panel": panel]])
+    }
+
+    /// Takes the keyboard (the sidebar's Files view was clicked or chosen).
+    func focusTree() {
+        window?.makeFirstResponder(outline)
+        if outline.selectedRow < 0, outline.numberOfRows > 0 {
+            outline.selectRowIndexes([0], byExtendingSelection: false)
+        }
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        guard !isPanel else { return }
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = Design.Color.tile.cgColor
         }
@@ -649,6 +689,9 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
             return
         case (49, []):  // Space
             toggleQuickLook()
+            return
+        case (53, []) where owner.isPanel:  // Esc: back to the tiles
+            owner.onEscape?()
             return
         default:
             break
