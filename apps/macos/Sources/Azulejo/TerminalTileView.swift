@@ -1,5 +1,6 @@
 import AppKit
 import AzulejoCore
+import GhosttyKit
 
 /// A terminal tile: a libghostty surface viewing one herdr pane (ADR 0001).
 ///
@@ -36,6 +37,8 @@ final class TerminalTileView: NSView, TileView {
     private var surface: TerminalSurfaceView?
     /// The terminal the running surface views (so a rebind restarts it).
     private var surfaceTerminal: String?
+    /// The terminal the last surface viewed, kept after it ends.
+    private var lastTerminal: String?
     private var focused = false
     private var closed = false
     private var retryWork: DispatchWorkItem?
@@ -43,11 +46,23 @@ final class TerminalTileView: NSView, TileView {
     private var observedSize: (cols: Int, rows: Int)?
     /// Recent detaches (ctrl+b q); a burst means something keeps detaching us.
     private var detaches: [Date] = []
+    /// Recent unexplained attach failures; the first reattaches at once.
+    private var failures: [Date] = []
+    /// When our own attach (not observe) last ended, and to which terminal:
+    /// herdr can still count that client for a moment, so an "already
+    /// attached" right after it is usually ourselves.
+    private var ownAttachEnded: (terminal: String, at: Date)?
+    private var ghostRetries: [Date] = []
     private let overlay = TerminalOverlay()
     private let runDir: URL
 
     private static var core: Core?
     private static var log: (String) -> Void = { _ in }
+    /// Every open terminal tile, for herdr.status and wake health checks.
+    private static let live = NSHashTable<TerminalTileView>.weakObjects()
+    /// When the current wait for an attach began (launch, wake, herdr back),
+    /// and why; logged with the time it took (PLAN 1.12: ≤ 2 s).
+    private var attachClock: (start: Date, reason: String)?
 
     /// Registers the tile kind. Called once at launch. Without libghostty the
     /// placeholder stays.
@@ -73,6 +88,10 @@ final class TerminalTileView: NSView, TileView {
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         overlay.onButton = { [weak self] action in self?.overlayAction(action) }
         addSubview(overlay)
+        Self.live.add(self)
+        // Tiles restored at launch time from process start; later ones from now.
+        attachClock = Date().timeIntervalSince(Self.processStart) < 20
+            ? (Self.processStart, "launch") : (Date(), "new tile")
         settle()
     }
 
@@ -98,6 +117,7 @@ final class TerminalTileView: NSView, TileView {
 
     func tileWillClose() {
         closed = true
+        Self.live.remove(self)
         retryWork?.cancel()
         resizeWork?.cancel()
         stopSurface()
@@ -142,16 +162,27 @@ final class TerminalTileView: NSView, TileView {
                 : .waiting("no herdr: this terminal has no session")
             return render()
         }
-        if phase == .ended { phase = .waiting("reattaching…") }
+        if phase == .ended {
+            phase = .waiting("reattaching…")
+            if attachClock == nil { attachClock = (Date(), "rebind") }
+        }
         if surface != nil, surfaceTerminal != herdr.terminalId {
             // Rebound (the pane moved, or herdr restarted): view the new one.
             stopSurface()
             phase = .waiting("reattaching…")
+            if attachClock == nil { attachClock = (Date(), "rebind") }
         }
         if surface == nil {
             switch phase {
             case .observing(let takenOver): startObserve(takenOver: takenOver)
-            case .retrying: break // the timer restarts it
+            case .retrying where lastTerminal == herdr.terminalId:
+                break // the timer restarts it
+            case .retrying:
+                // Rebound while backing off (herdr respawned the pane): no
+                // reason to wait for the timer.
+                retryWork?.cancel()
+                if attachClock == nil { attachClock = (Date(), "rebind") }
+                startAttach(takeover: false)
             default: startAttach(takeover: false)
             }
         }
@@ -162,7 +193,15 @@ final class TerminalTileView: NSView, TileView {
         guard let herdr = model.herdr else { return }
         let started = startSurface(
             mode: takeover ? "takeover" : "attach", herdr: herdr, readOnly: false)
-        if started { phase = .attached }
+        if started {
+            phase = .attached
+            if let clock = attachClock {
+                attachClock = nil
+                let ms = Int(Date().timeIntervalSince(clock.start) * 1000)
+                let at = String(format: "%.3f", Date().timeIntervalSince1970)
+                Self.log("terminal \(Short.id(tileID)): attached \(ms) ms after \(clock.reason) at \(at)")
+            }
+        }
         render()
     }
 
@@ -222,6 +261,7 @@ final class TerminalTileView: NSView, TileView {
         addSubview(view, positioned: .below, relativeTo: overlay)
         surface = view
         surfaceTerminal = herdr.terminalId
+        lastTerminal = herdr.terminalId
         Self.log("terminal \(Short.id(tileID)): \(mode) \(herdr.terminalId)")
         if focused { window?.makeFirstResponder(view) }
         return true
@@ -229,6 +269,9 @@ final class TerminalTileView: NSView, TileView {
 
     private func stopSurface() {
         guard let view = surface else { return }
+        if !view.readOnly, let terminal = surfaceTerminal {
+            ownAttachEnded = (terminal, Date())
+        }
         surface = nil
         surfaceTerminal = nil
         let hadFocus = window?.firstResponder === view
@@ -246,6 +289,8 @@ final class TerminalTileView: NSView, TileView {
         var request: [String: Any] = ["terminal_id": herdr.terminalId]
         request["status"] = status.map { Int($0) } ?? NSNull()
         request["stderr"] = stderr.map { String($0.suffix(2000)) } ?? NSNull()
+        if attachClock == nil { attachClock = (Date(), "attach ended") }
+        if !readOnly { ownAttachEnded = (herdr.terminalId, Date()) }
         let exit = Self.core?.attachExit(request) ?? [:]
         let kind = exit["exit"] as? String ?? "failed"
         Self.log("terminal \(Short.id(tileID)): \(readOnly ? "observe" : "attach") ended: \(kind) \(exit["message"] as? String ?? "")")
@@ -258,17 +303,54 @@ final class TerminalTileView: NSView, TileView {
             if detaches.count >= 3 { retry(attempt: 1) } else { startAttach(takeover: false) }
         case "taken_over":
             startObserve(takenOver: true)
+        case "already_attached" where isOwnGhost(herdr.terminalId):
+            // Our previous attach to this terminal just ended; herdr hasn't
+            // let go of it yet. Try again shortly rather than going read-only.
+            phase = .waiting("reattaching…")
+            render()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self, !self.closed, self.surface == nil,
+                      self.model.herdr?.terminalId == herdr.terminalId else { return }
+                self.startAttach(takeover: false)
+            }
         case "already_attached":
             startObserve(takenOver: false)
-        case "terminal_gone":
+        case "terminal_gone" where model.ended == true:
+            attachClock = nil
             phase = .ended
             render()
+        case "terminal_gone":
+            // herdr doesn't have it right now, but the core hasn't said the
+            // pane ended: herdr may be restarting (it respawns panes under new
+            // terminals, and the core rebinds). Keep trying; the core's
+            // `ended` or a rebind settles it.
+            retry(attempt: { if case .retrying(let n) = phase { n + 1 } else { 1 } }())
         case "detached":
             // An observer ended cleanly (terminal.closed): try for the pane again.
             startAttach(takeover: false)
         default:
-            retry(attempt: { if case .retrying(let n) = phase { n + 1 } else { 1 } }())
+            // Killed or dropped while running (sleep, a signal): reattach at
+            // once; only repeated failures back off.
+            let now = Date()
+            failures = failures.filter { now.timeIntervalSince($0) < 10 } + [now]
+            if failures.count == 1, kind == "failed" {
+                startAttach(takeover: false)
+            } else {
+                retry(attempt: { if case .retrying(let n) = phase { n + 1 } else { 1 } }())
+            }
         }
+    }
+
+    /// Whether an "already attached" is probably our own ended attach: it ended
+    /// under 2 s ago, and we haven't retried for it more than 4 times in 3 s.
+    private func isOwnGhost(_ terminal: String) -> Bool {
+        guard let own = ownAttachEnded, own.terminal == terminal,
+              Date().timeIntervalSince(own.at) < 2 else { return false }
+        let now = Date()
+        ghostRetries = ghostRetries.filter { now.timeIntervalSince($0) < 3 }
+        guard ghostRetries.count < 4 else { return false }
+        ghostRetries.append(now)
+        return true
     }
 
     /// herdr unreachable or the attach failed: try again after 1, 2, 4… 30 s.
@@ -327,24 +409,77 @@ final class TerminalTileView: NSView, TileView {
         }
     }
 
-    /// A fresh pane in this tile's place: split the ended tile, then close it,
-    /// so the new terminal takes exactly its slot. (A core `terminal.respawn`
-    /// that keeps the tile ID would be neater; this needs none.)
+    /// A fresh pane for this tile, in place: the core's `terminal.respawn`
+    /// unbinds the ended pane and creates a new one (own herdr tab, the tile's
+    /// cwd); the rebind arrives as a model update and `settle` attaches.
     private func respawn() {
         guard let core = Self.core else { return }
-        var content: [String: Any] = ["kind": "terminal"]
-        if let cwd = model.cwd { content["cwd"] = cwd }
-        if let command = model.command { content["command"] = command }
-        let split = core.execute([
-            "method": "layout.split",
-            "params": ["tile": tileID, "direction": "right", "content": content],
-        ])
-        if case .failure(let error) = split {
+        attachClock = (Date(), "respawn")
+        let result = core.execute(["method": "terminal.respawn", "params": ["tile": tileID]])
+        if case .failure(let error) = result {
             Self.log("terminal \(Short.id(tileID)): respawn failed: \(error)")
+        }
+    }
+
+    // MARK: Reattach (herdr back, wake)
+
+    /// The core's link to herdr came back (`herdr.status`): tiles that were
+    /// waiting or backing off try now instead of at their next retry.
+    private func herdrBack(reason: String) {
+        guard !closed, surface == nil, model.herdr != nil, model.ended != true else { return }
+        switch phase {
+        case .retrying, .waiting:
+            retryWork?.cancel()
+            if attachClock == nil { attachClock = (Date(), reason) }
+            Self.log("terminal \(Short.id(tileID)): reattaching (\(reason))")
+            startAttach(takeover: false)
+        default: break
+        }
+    }
+
+    /// After sleep: a child that died while we weren't looking is handled as
+    /// an exit now; tiles that were waiting reattach at once.
+    private func healthCheck(reason: String) {
+        guard !closed else { return }
+        if let view = surface, let handle = view.surface, ghostty_surface_process_exited(handle) {
+            Self.log("terminal \(Short.id(tileID)): child gone (\(reason))")
+            attachClock = (Date(), reason)
+            surfaceExited(readOnly: view.readOnly)
             return
         }
-        core.send(["method": "tile.close", "params": ["tile": tileID]])
+        herdrBack(reason: reason)
     }
+
+    /// Routes core events this kind cares about: `herdr.status`.
+    static func route(_ json: String) {
+        guard json.contains("\"herdr.status\""),
+              let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["event"] as? String == "herdr.status",
+              let body = object["data"] as? [String: Any]
+        else { return }
+        let connected = body["connected"] as? Bool == true
+        log("herdr \(connected ? "connected" : "disconnected: \(body["message"] as? String ?? "")")")
+        guard connected else { return }
+        for tile in live.allObjects { tile.herdrBack(reason: "herdr back") }
+    }
+
+    /// Wake (NSWorkspace) and the dev hook: check every terminal tile.
+    static func healthCheckAll(reason: String) {
+        let tiles = live.allObjects
+        log("terminal health check (\(reason)): \(tiles.count) tiles")
+        for tile in tiles { tile.healthCheck(reason: reason) }
+    }
+
+    /// This process's start time, so launch timings include the core's boot.
+    static let processStart: Date = {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return Date() }
+        let tv = info.kp_proc.p_un.__p_starttime
+        return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1e6)
+    }()
 
     private func clickFocus() {
         Self.core?.send(["method": "tile.focus", "params": ["tile": tileID]])
@@ -382,7 +517,7 @@ final class TerminalTileView: NSView, TileView {
                 buttons: [.init(.respawn, "Respawn"), .init(.close, "Close")]))
         case .retrying(let attempt):
             overlay.show(.init(
-                style: .full, title: "herdr isn't answering",
+                style: .full, title: "Reconnecting to herdr",
                 detail: "Retrying (attempt \(attempt))…",
                 buttons: [.init(.retryNow, "Retry now")]))
         }
@@ -400,6 +535,9 @@ final class TerminalTileView: NSView, TileView {
         ) { note in
             let words = (note.object as? String ?? "").split(separator: " ").map(String.init)
             guard words.count == 2 else { return }
+            if words[0] == "wake" {
+                return MainActor.assumeIsolated { healthCheckAll(reason: "wake (debug)") }
+            }
             MainActor.assumeIsolated {
                 for window in NSApp.windows {
                     if let tile = window.contentView?.findTerminal(words[1]) {

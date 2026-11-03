@@ -41,8 +41,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         core.onEvent = { [weak self] json in
             PreviewTileView.route(json)
+            TerminalTileView.route(json)
             self?.scheduleRefresh()
         }
+        installWakeObservers()
         refresh()
         if session?.windows.isEmpty ?? true {
             send(["method": "window.create"])
@@ -75,6 +77,23 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// After sleep, screen lock or fast user switching, attach processes may
+    /// have died or stalled: check every terminal tile (PLAN 1.12).
+    private func installWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        let names: [Notification.Name] = [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ]
+        for name in names {
+            let reason = name.rawValue
+            center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { TerminalTileView.healthCheckAll(reason: reason) }
+            }
+        }
+    }
 
     /// `dev.sh --stop` and `kill` send SIGTERM: quit properly so state is saved.
     private func installSignalHandlers() {
@@ -256,7 +275,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "close_window":
             closeWindow(controller)
         case "toggle_sidebar":
-            controller.sidebarVisible.toggle()
+            // Saved in the core so it comes back on relaunch.
+            send(["method": "window.set_sidebar",
+                  "params": ["window": controller.windowID, "visible": !controller.sidebarVisible]])
         case "resize_mode":
             keys.enterResizeMode(in: controller)
         case "rename_tile", "rename_tab", "rename_workspace":

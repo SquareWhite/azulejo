@@ -57,6 +57,8 @@ final class WindowController: NSObject, NSWindowDelegate {
         let first = self.model == nil
         self.model = model
         if first { placeWindow(model.frame) }
+        let showSidebar = model.sidebarHidden != true
+        if sidebarVisible != showSidebar { sidebarVisible = showSidebar }
         sidebar.apply(model)
         tabBar.apply(model.workspace)
         tiles.apply(model)

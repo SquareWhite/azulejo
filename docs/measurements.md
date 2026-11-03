@@ -88,3 +88,21 @@ Machine: macOS test environment, release build, 2026-11-03. Method: `cargo run -
 - **Highlighting dominates.** Most of the 1 MB markdown time is syntect on its ~3,000 code fences; the 10k-line file is all syntect (pure-Rust `fancy-regex` engine). Files over 2 MB skip highlighting, and text over 5 MB is cut with a notice.
 - **The 200 ms target in step 1.9 holds for real plans:** a plan-sized file renders in ~4 ms, plus ~70 ms of watcher latency (mostly the 50 ms debounce). Large files render off the engine's thread, so they never block layout commands; they just update later.
 - **Not measured:** inotify on Linux, and webview time to display the HTML (shell side, step 1.9b).
+
+## 1.12 Session restore and wake (macOS)
+
+Machine: macOS test environment, debug build, 2026-11-03. Method: `apps/macos/automation/restore.sh` on dev instance `restore` (herdr session `azj-dev-restore`), app launched with `--bg`, no OS input. Session: 6 terminal tiles in a tall layout, a second tab with a browser and a zoomed preview, sidebar hidden, a ticker running in the first terminal. Times are wall clock until **every** terminal tile's attach is running and still running 2 s later (no `attach ended` after its last attach). Three runs; target ≤ 2 s.
+
+| Step | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- |
+| Quit (SIGTERM) → relaunch (launch → all attached) | 280 ms | 296 ms | 282 ms |
+| kill -9 → relaunch | 291 ms | 307 ms | 286 ms |
+| Every attach process SIGKILLed, then wake | 259 ms | 65 ms | 62 ms |
+| Every attach process SIGKILLed, no wake (second failure in 10 s backs off 1 s) | 1108 ms | 1104 ms | 1115 ms |
+| herdr server stopped and started again (server start → all reattached) | 756 ms | 752 ms | 754 ms |
+| Launch with the herdr server stopped (the app starts it) | 490 ms | 484 ms | 460 ms |
+
+- **No lost sessions.** After each relaunch and wake step the session JSON (minus window frames) was identical, herdr had the same terminal IDs with none added, and the ticker kept counting.
+- **herdr restarts lose processes.** That's herdr's own behaviour (ADR 0008): it restores workspaces, tabs and panes, but with fresh shells under new terminal IDs. Tiles rebind and reattach to them; whatever ran before is gone.
+- **"Attached" means the attach process runs and holds**, not first paint. The extra herdr hop is ~1.6 ms (0.4 above).
+- **Wake is simulated** through the dev debug hook (`dev.azulejo.debug.terminal "wake all"`), which runs the same health check as `NSWorkspace.didWakeNotification`. A real sleep/wake cycle isn't measured.

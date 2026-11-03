@@ -158,11 +158,23 @@ fn diagnose(herdr: Option<&HerdrInfo>, request: &ExitRequest) -> AttachExit {
         },
     );
     let terminal = TerminalId(request.terminal_id.clone());
-    runtime.block_on(client.diagnose_attach_exit(
-        request.status.or(Some(1)),
-        request.stderr.as_deref(),
-        &terminal,
-    ))
+    if request.status == Some(1) {
+        // herdr's own refusals exit 1; with the terminal still there, another
+        // client has it (ADR 0003).
+        return runtime.block_on(client.diagnose_attach_exit(
+            Some(1),
+            request.stderr.as_deref(),
+            &terminal,
+        ));
+    }
+    // Killed (a signal, or the status went missing with the wrapper): that's
+    // never a take-over. Only ask whether the terminal and herdr are still
+    // there; if so, the tile reattaches.
+    match runtime.block_on(client.resolve_terminal(&terminal)) {
+        Err(e) if e.is_unreachable() => AttachExit::ServerStopping,
+        Ok(None) => AttachExit::TerminalGone,
+        _ => exit,
+    }
 }
 
 fn exit_json(exit: &AttachExit) -> Value {
