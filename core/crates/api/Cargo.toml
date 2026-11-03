@@ -1,6 +1,6 @@
 [package]
 name = "azulejo-api"
-description = "Unix socket JSON-RPC server"
+description = "Unix socket JSON-RPC server, and a blocking client for it"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,3 +10,10 @@ rust-version.workspace = true
 [dependencies]
 azulejo-protocol.workspace = true
 azulejo-engine.workspace = true
+libc = "0.2"
+serde_json.workspace = true
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }

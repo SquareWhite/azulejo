@@ -1,22 +1,13 @@
 //! `azj`: command-line client for the Azulejo socket API.
 
-fn usage() -> String {
-    format!(
-        "azj {} (API v{})\nsocket: {}",
-        env!("CARGO_PKG_VERSION"),
-        azulejo_protocol::API_VERSION,
-        azulejo_api::socket_path().display()
-    )
-}
-
 fn main() {
-    println!("{}", usage());
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn usage_names_the_api_version() {
-        assert!(super::usage().contains("API v1"));
-    }
+    let args = std::env::args().skip(1).collect();
+    let env = azulejo_cli::Env::from_process();
+    let code = azulejo_cli::run(
+        args,
+        &env,
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+    );
+    std::process::exit(code);
 }
