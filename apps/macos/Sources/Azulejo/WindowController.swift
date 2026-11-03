@@ -8,7 +8,14 @@ final class WindowController: NSObject, NSWindowDelegate {
     let window: NSWindow
     let tiles = TileContainerView()
     private let sidebar = SidebarView()
-    private let tabBar = TabBarView()
+    /// The sidebar's rounded card: the traffic lights sit in its top band
+    /// and the sidebar's rows below them (D.2).
+    private let sidebarCard = SidebarCardView()
+    private let tabBar = TabStripView()
+    let search = ToolbarSearchView()
+    private lazy var sidebarToggle = SidebarToggleButton { [weak self] in
+        self?.app?.perform(action: "toggle_sidebar")
+    }
     private let hud = HUDView()
     let palette = PaletteView()
     let banner = BannerView()
@@ -23,6 +30,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarVisible = true {
         didSet {
             sidebar.isHidden = !sidebarVisible
+            sidebarCard.isHidden = !sidebarVisible
             content.needsLayout = true
         }
     }
@@ -32,24 +40,43 @@ final class WindowController: NSObject, NSWindowDelegate {
         self.app = app
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         super.init()
         window.isReleasedWhenClosed = false
         window.title = "Azulejo"
+        // D.2: no visible title bar; the toolbar row is ours and the traffic
+        // lights sit in the sidebar card (`TrafficLights`).
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = Design.Color.window
         window.minSize = NSSize(width: 480, height: 320)
         window.tabbingMode = .disallowed
+        content.sidebarCard = sidebarCard
         content.sidebar = sidebar
+        content.sidebarToggle = sidebarToggle
         content.tabBar = tabBar
+        content.search = search
         content.tiles = tiles
         content.hud = hud
         content.attention = attention
         content.banner = banner
         content.palette = palette
-        [sidebar, tabBar, tiles, attention, banner, hud, palette].forEach(content.addSubview)
+        // The card draws the sidebar's (rounded) background; the rows sit on it.
+        sidebar.layer?.backgroundColor = nil
+        [sidebarCard, sidebar, sidebarToggle, tabBar, search, tiles, attention, banner, hud, palette]
+            .forEach(content.addSubview)
         window.contentView = content
         window.delegate = self
+        search.apply(keymap: app.core.keymap())
+        search.onActivate = { [weak self, weak app] in
+            guard let self, let app else { return }
+            app.openQuickOpen(in: self)
+        }
+        palette.onShownChange = { [weak self] shown in self?.search.active = shown }
+        tabBar.onAdd = { [weak app] in app?.perform(action: "new_tab") }
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
         sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }
@@ -113,6 +140,14 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarView: SidebarView { sidebar }
     var tabMarkers: [String] { tabBar.markers }
 
+    /// The keymap changed (config reload): the search field's chord badge.
+    func refreshKeymap(_ keymap: [String: Any]) {
+        search.apply(keymap: keymap)
+    }
+
+    /// Automation: each tab's state icon.
+    var tabStatuses: [String] { tabBar.statuses }
+
     /// Re-lays out the chrome (palette or banner changed size).
     func layoutChrome() {
         content.needsLayout = true
@@ -147,10 +182,19 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         app?.windowBecameKey(self)
+        TrafficLights.place(in: window)
     }
 
     func windowDidResignKey(_ notification: Notification) {
         app?.windowResignedKey(self)
+        TrafficLights.place(in: window)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { content.needsLayout = true }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        content.needsLayout = true
+        TrafficLights.place(in: window)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -163,29 +207,79 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 }
 
-/// Sidebar on the left, tab bar over the tiles. Manual layout keeps it
-/// predictable while tiles are being moved around.
+/// The window's chrome (D.2), from the mockup: the sidebar card down the
+/// left with the traffic lights in its top band, a toolbar row along the top
+/// holding the tab strip and the search field, and the tiles below. Manual
+/// layout keeps it predictable while tiles are being moved around.
+///
+///     ╭─────────╮ ( tabs … + )                 [ Jump to …   ⌘K ]
+///     │ ● ● ●  ▯│ ┌─────────────────── tiles ───────────────────┐
+///     │ sidebar │ │                                              │
+///     ╰─────────╯ └──────────────────────────────────────────────┘
 @MainActor
 final class ChromeLayoutView: NSView {
+    weak var sidebarCard: NSView?
     weak var sidebar: NSView?
-    weak var tabBar: NSView?
+    weak var sidebarToggle: NSView?
+    weak var tabBar: TabStripView?
+    weak var search: ToolbarSearchView?
     weak var tiles: NSView?
     weak var hud: NSView?
     weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
     weak var palette: PaletteView?
 
+    /// The toolbar row along the top. Its empty space moves the window; the
+    /// tabs, "+", the toggle and the search field take their own clicks.
+    var toolbarRect: NSRect {
+        NSRect(x: 0, y: bounds.height - Design.Space.toolbarHeight,
+               width: bounds.width, height: Design.Space.toolbarHeight)
+    }
+
     override func layout() {
         super.layout()
-        var rest = bounds
-        if let sidebar, !sidebar.isHidden {
-            sidebar.frame = NSRect(x: 0, y: 0, width: SidebarView.width, height: bounds.height)
-            rest.origin.x += SidebarView.width
-            rest.size.width -= SidebarView.width
+        let inset = Design.Space.windowInset
+        // The toolbar row's centre line: level with the traffic lights.
+        let rowMidY = bounds.height - Design.Space.titlebarLightsY - 7
+        let sidebarShown = sidebar.map { !$0.isHidden } ?? false
+        let fullScreen = window?.styleMask.contains(.fullScreen) == true
+        var tilesLeft = inset
+        var toolbarLeft: CGFloat
+        if sidebarShown {
+            let card = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
+            sidebarCard?.frame = card
+            sidebar?.frame = NSRect(x: card.minX, y: card.minY, width: card.width,
+                                    height: max(0, card.height - Design.Space.titlebarZone))
+            sidebarToggle?.frame = NSRect(
+                x: card.maxX - Design.Space.titlebarToggleInset - 11, y: rowMidY - 11, width: 22, height: 22)
+            tilesLeft = card.maxX + inset
+            toolbarLeft = card.maxX + Design.Space.toolbarGap
+        } else {
+            // The toggle after the traffic lights (or first, in full screen).
+            let lightsEnd = fullScreen ? inset - 6 : Design.Space.titlebarLightsX + 2 * 20 + 14
+            sidebarToggle?.frame = NSRect(x: lightsEnd + 12, y: rowMidY - 11, width: 22, height: 22)
+            toolbarLeft = lightsEnd + 12 + 22 + Design.Space.toolbarGap
         }
-        tabBar?.frame = NSRect(
-            x: rest.minX, y: rest.maxY - TabBarView.height, width: rest.width, height: TabBarView.height)
-        rest.size.height -= TabBarView.height
+
+        // The search field at the row's right end; the tabs get what's left.
+        var searchLeft = bounds.width - inset
+        if let search {
+            let room = max(0, bounds.width - inset - toolbarLeft)
+            let width = max(min(Design.Space.searchWidth, room * 0.4), min(Design.Space.searchMinWidth, room))
+            let height = Design.Space.searchHeight
+            search.frame = NSRect(x: bounds.width - inset - width, y: rowMidY - height / 2, width: width, height: height)
+            searchLeft = search.frame.minX
+        }
+        if let tabBar {
+            let height = TabStripView.height
+            let room = max(0, searchLeft - Design.Space.toolbarGap - toolbarLeft)
+            tabBar.frame = NSRect(x: toolbarLeft, y: rowMidY - height / 2,
+                                  width: min(tabBar.naturalWidth, room), height: height)
+        }
+
+        let rest = NSRect(x: tilesLeft, y: inset,
+                          width: max(0, bounds.width - inset - tilesLeft),
+                          height: max(0, bounds.height - Design.Space.toolbarHeight - inset))
         tiles?.frame = rest
         if let attention, let container = tiles as? TileContainerView {
             attention.frame = rest
@@ -197,15 +291,104 @@ final class ChromeLayoutView: NSView {
             banner.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 10, width: width, height: height)
         }
         if let palette, !palette.isHidden {
-            let width = max(280, min(rest.width - 32, 640))
-            let height = min(palette.preferredHeight, rest.height - 24)
-            palette.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 12, width: width, height: height)
+            // D.8: a dropdown from the search field: right edges aligned, its
+            // own field over the toolbar field.
+            let anchor = search?.frame ?? NSRect(x: rest.maxX, y: rest.maxY, width: 0, height: 0)
+            let width = min(max(anchor.width, 560), max(0, bounds.width - 2 * inset))
+            let top = anchor.maxY + 4
+            let height = max(0, min(palette.preferredHeight, top - inset))
+            palette.frame = NSRect(x: max(inset, anchor.maxX - width), y: top - height, width: width, height: height)
         }
         if let hud {
             let size = hud.fittingSize
             hud.frame = NSRect(
                 x: rest.midX - size.width / 2, y: rest.minY + 16, width: size.width, height: size.height)
         }
+        if let window { TrafficLights.place(in: window) }
+    }
+
+    /// Empty toolbar space moves the window; a double click there does what
+    /// the user's "double-click a window's title bar" setting says.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard toolbarRect.contains(point), let window else { return super.mouseDown(with: event) }
+        if event.clickCount == 2 {
+            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+            case "Minimize": window.performMiniaturize(nil)
+            case "None": break
+            default: window.performZoom(nil)
+            }
+            return
+        }
+        window.performDrag(with: event)
+    }
+}
+
+/// The sidebar's rounded card (D.2); D.3 styles the rows inside it. Its top
+/// band holds the traffic lights and moves the window like a title bar.
+@MainActor
+final class SidebarCardView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = Design.Radius.card
+        layer?.borderWidth = Design.Border.hairline
+        applyColours()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func applyColours() {
+        layer?.backgroundColor = Design.Color.sidebar.cgColor
+        layer?.borderColor = Design.Color.border.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColours()
+    }
+
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+}
+
+/// Puts the traffic lights in the sidebar card's top band (D.2). AppKit lays
+/// the title bar out again on resizes, key changes and full screen, so the
+/// chrome calls this after each of those (and on every chrome layout).
+@MainActor
+enum TrafficLights {
+    static func place(in window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen),
+              let close = window.standardWindowButton(.closeButton),
+              let titlebar = close.superview, let container = titlebar.superview,
+              let theme = window.contentView?.superview
+        else { return }
+        // A title bar as tall as the toolbar row, so the lights sit level
+        // with the row's middle and still take their own clicks. Everything
+        // else in it falls through to the content view (it's transparent).
+        let height = Design.Space.toolbarHeight
+        let want = NSRect(x: 0, y: theme.bounds.height - height, width: theme.bounds.width, height: height)
+        if container.frame != want { container.frame = want }
+        if titlebar.frame != container.bounds { titlebar.frame = container.bounds }
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for (i, type) in types.enumerated() {
+            guard let button = window.standardWindowButton(type), let parent = button.superview else { continue }
+            let size = button.frame.size
+            let inTheme = NSRect(
+                x: Design.Space.titlebarLightsX + CGFloat(i) * 20,
+                y: theme.bounds.height - Design.Space.titlebarLightsY - size.height,
+                width: size.width, height: size.height)
+            let origin = parent.convert(inTheme, from: theme).origin
+            if button.frame.origin != origin { button.setFrameOrigin(origin) }
+        }
+    }
+
+    /// Automation: the close button's centre from the window's top left ("29,31").
+    static func describe(_ window: NSWindow) -> String {
+        guard let close = window.standardWindowButton(.closeButton), let theme = window.contentView?.superview
+        else { return "-" }
+        let r = close.convert(close.bounds, to: theme)
+        return "\(Int(r.midX.rounded())),\(Int((theme.bounds.height - r.midY).rounded()))"
     }
 }
 
@@ -254,4 +437,44 @@ final class HUDView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+extension WindowController {
+    /// Automation keys for the window chrome (D.2/D.4/D.8):
+    /// `chrome.lights` (close button centre from the top left, "29,31"),
+    /// `chrome.hit.<part>` (the view class a click there reaches: `tab1`,
+    /// `add`, `search`, `toggle`, `toolbar` (an empty spot in the row),
+    /// `close`), `chrome.tiles` (the tile area, top-left coordinates),
+    /// `chrome.fits`, `tab.statuses`, `search.chord`, `search.active` and
+    /// `palette.anchor` (`search` while the ⌘K dropdown hangs from the field).
+    func chromeState() -> [String: String] {
+        var s: [String: String] = ["chrome.lights": TrafficLights.describe(window)]
+        guard let theme = window.contentView?.superview else { return s }
+        func hit(_ view: NSView?, at point: NSPoint? = nil) -> String {
+            guard let view, !view.isHidden else { return "hidden" }
+            let p = point ?? view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: theme)
+            return theme.hitTest(p).map { "\(type(of: $0))" } ?? "nil"
+        }
+        s["chrome.hit.tab1"] = hit(tabBar.subviews.first { $0 is TabButton })
+        s["chrome.hit.add"] = hit(tabBar.subviews.first { $0 is NSButton })
+        s["chrome.hit.search"] = hit(search)
+        s["chrome.hit.toggle"] = hit(sidebarToggle)
+        // An empty spot in the row: between the tab strip and the search field.
+        let gap = NSPoint(x: (tabBar.frame.maxX + search.frame.minX) / 2, y: search.frame.midY)
+        s["chrome.hit.toolbar"] = hit(content, at: content.convert(gap, to: theme))
+        s["chrome.hit.close"] = hit(window.standardWindowButton(.closeButton))
+        let t = tiles.frame
+        s["chrome.tiles"] = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
+        s["chrome.fits"] = tabBar.frame.maxX <= search.frame.minX ? "yes" : "no"
+        s["tab.statuses"] = tabBar.statuses.joined(separator: ",")
+        s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText
+        s["search.active"] = search.active ? "yes" : "no"
+        if palette.isHidden {
+            s["palette.anchor"] = "-"
+        } else {
+            let p = palette.frame, f = search.frame
+            s["palette.anchor"] = abs(p.maxX - f.maxX) < 1 && p.maxY >= f.maxY ? "search" : "elsewhere"
+        }
+        return s
+    }
 }

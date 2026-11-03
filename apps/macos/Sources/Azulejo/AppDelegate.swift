@@ -251,7 +251,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         log("config.reloaded applied=\(payload["applied"] ?? "?")")
         if payload["applied"] as? Bool == true {
             // New bindings: rebuild the menus' key equivalents.
-            NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
+            let keymap = core.keymap()
+            NSApp.mainMenu = MainMenu.build(app: self, keymap: keymap)
+            for controller in controllers.values { controller.refreshKeymap(keymap) }
         }
         for controller in controllers.values {
             if controller.banner.apply(reload: payload) { controller.flash("Config reloaded") }

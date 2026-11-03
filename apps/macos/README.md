@@ -73,6 +73,18 @@ The sidebar shows each workspace's branch from `workspace.git`.
 `apps/macos/automation/headers.sh` checks headers, a branch switch in a tile
 and the preview toggle across a relaunch, on dev instance `hdr`.
 
+## Window chrome (M2.5 D.2, D.4, D.8)
+
+No visible title bar: the traffic lights sit in the sidebar card's top band
+(`TrafficLights` makes the transparent title bar as tall as the toolbar row and
+places them), and the toolbar row holds the tab strip (`TabStrip.swift`: state
+icon + name per tab, "+") and the search field (`ToolbarSearch.swift`: opens
+⌘K as a dropdown under itself; its badge shows `quick_open`'s chord). Empty
+toolbar space drags the window; a double click there follows the system's
+title-bar setting. `apps/macos/automation/toolbar.sh` checks where clicks land
+under the title bar, the tab icons, "+", the dropdown and the hidden-sidebar
+row, and takes window captures for comparing with `docs/design/mockup-v1.png`.
+
 ## Layout motion (F4, PLAN 2.1)
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall
