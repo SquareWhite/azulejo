@@ -1,6 +1,8 @@
 # 0007: Terminal tiles live in a dedicated herdr session, `azulejo`
 
-Status: accepted · Nov 3, 2026 · M1 integration
+Status: superseded by [0008](0008-use-the-users-herdr-session.md) · Nov 3, 2026 · M1 integration
+
+> The user wants Azulejo to use their own herdr session by default. ADR 0008 replaces this decision; the text below is kept as it was.
 
 ## Context
 
