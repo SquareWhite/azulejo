@@ -1,0 +1,168 @@
+# Azulejo default keymap (proposal). Rationale: docs/keybindings.md.
+#
+# Derived from the maintainer's herdr bindings (~/.config/herdr/config.toml):
+#   alt       = tiles      (focus, swap, resize, zoom, close, layout rules)
+#   cmd       = workspaces, tabs, app
+#   ctrl+cmd  = new tiles  (splits)
+# No default chord is a bare ctrl+<letter>, so shells and TUIs keep every
+# control key.
+#
+# Shape (the F25 config file uses the same shape under [keys]):
+#   action = "chord"                one chord
+#   action = ["chord", "chord"]     several chords
+#   action = "mod+1..8"             indexed binding; the action gets the index
+#   action = ""                     explicitly unbound
+# Sections:
+#   [keys.macos] / [keys.linux]     per platform
+#   [keys.<platform>.<context>]     only while that tile kind is focused
+#                                   (terminal | browser | preview | files);
+#                                   wins over the platform section
+#   [prefix] / [prefix.keys]        optional herdr-style prefix mode
+# Chords match the physical key, not the shifted character: "ctrl+shift+minus"
+# stays "minus", never "underscore".
+#
+# External keyboard remappers can intercept chords before the app.
+# Exclude dev.azulejo.Azulejo from conflicting global window-movement rules,
+# or override the corresponding bindings in your local config.
+
+[keys.macos]
+# Tiles: focus, swap, resize (herdr: alt+hjkl, alt+shift+hjkl, ctrl+alt+shift+hjkl)
+focus_tile_left  = "alt+h"
+focus_tile_down  = "alt+j"
+focus_tile_up    = "alt+k"
+focus_tile_right = "alt+l"
+swap_tile_left   = "alt+shift+h"
+swap_tile_down   = "alt+shift+j"
+swap_tile_up     = "alt+shift+k"
+swap_tile_right  = "alt+shift+l"
+resize_tile_left  = "ctrl+alt+shift+h"
+resize_tile_down  = "ctrl+alt+shift+j"
+resize_tile_up    = "ctrl+alt+shift+k"
+resize_tile_right = "ctrl+alt+shift+l"
+resize_mode = "ctrl+alt+r"            # sticky hjkl until esc (herdr prefix+r)
+zoom_tile   = "alt+shift+m"           # not cmd+m (Minimise), not alt+m (Hammerspoon)
+close_tile  = "alt+w"                 # detaches the herdr pane (F14); kill is palette-only
+cycle_tile_next     = "alt+]"         # herdr prefix+tab
+cycle_tile_previous = "alt+["
+
+# New tiles (herdr: ctrl+cmd+t via tall.py, ctrl+cmd+shift+t, prefix+v)
+split_auto  = "ctrl+cmd+t"            # "tall" rule: master left, stack right, append to stack
+split_down  = "ctrl+cmd+shift+t"
+split_right = "ctrl+cmd+v"
+
+# Tall-layout rules (herdr: tall.py promote / rotate / equalize)
+promote_tile    = "alt+enter"         # swap focused tile with the master
+rotate_layout   = "alt+o"             # master left <-> master on top
+equalize_layout = "alt+shift+e"       # even out the stack
+
+# Workspaces (herdr: cmd+t, cmd+1..9, alt+0)
+new_workspace    = "cmd+t"
+switch_workspace = "cmd+1..8"
+last_workspace   = ["cmd+9", "alt+0"] # browser-style "last", no forwarding trick needed
+
+# Tabs (herdr: cmd+shift+t, ctrl+tab, cmd+w; prefix+1..9)
+new_tab      = "cmd+shift+t"
+switch_tab   = "ctrl+1..8"
+last_tab     = "ctrl+9"               # herdr used alt+9; Hammerspoon owns it now
+next_tab     = "ctrl+tab"
+previous_tab = "ctrl+shift+tab"
+close_tab    = "cmd+w"
+
+# App
+command_palette = "cmd+shift+p"
+goto            = "cmd+p"             # workspace / tab / tile picker (herdr prefix+w, prefix+g)
+find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers
+new_window      = "cmd+n"
+open_config     = "cmd+,"
+# Deliberately unbound: cmd+h, cmd+m, cmd+` (macOS), cmd+k (clear does nothing under herdr).
+
+[keys.macos.terminal]
+toggle_sidebar = "cmd+a"              # herdr binding; terminal-only so cmd+a stays select-all elsewhere
+
+[keys.linux]
+# Super belongs to the window manager (GNOME, Hyprland, Sway), so cmd maps to
+# ctrl+shift, the Linux terminal convention. alt chords are unchanged.
+focus_tile_left  = "alt+h"
+focus_tile_down  = "alt+j"
+focus_tile_up    = "alt+k"
+focus_tile_right = "alt+l"
+swap_tile_left   = "alt+shift+h"
+swap_tile_down   = "alt+shift+j"
+swap_tile_up     = "alt+shift+k"
+swap_tile_right  = "alt+shift+l"
+resize_tile_left  = "ctrl+alt+shift+h"
+resize_tile_down  = "ctrl+alt+shift+j"
+resize_tile_up    = "ctrl+alt+shift+k"
+resize_tile_right = "ctrl+alt+shift+l"
+resize_mode = "ctrl+alt+r"
+zoom_tile   = "alt+shift+m"
+close_tile  = "alt+w"
+cycle_tile_next     = "alt+]"
+cycle_tile_previous = "alt+["
+
+split_auto  = "ctrl+shift+enter"      # kitty's "new window"; ctrl+alt+t opens a terminal on Ubuntu
+split_down  = "ctrl+shift+minus"
+split_right = "ctrl+shift+backslash"
+
+promote_tile    = "alt+enter"
+rotate_layout   = "alt+o"
+equalize_layout = "alt+shift+e"
+
+new_workspace    = "ctrl+shift+t"
+switch_workspace = "alt+1..8"         # ctrl+shift+digit types !@# on many layouts
+last_workspace   = ["alt+9", "alt+0"]
+
+new_tab      = "ctrl+alt+shift+t"
+switch_tab   = "ctrl+1..8"
+last_tab     = "ctrl+9"
+next_tab     = "ctrl+tab"
+previous_tab = "ctrl+shift+tab"
+close_tab    = "ctrl+shift+w"
+
+command_palette = "ctrl+shift+p"
+goto            = ""                  # ctrl+p is shell history; use the palette
+find            = "ctrl+shift+f"
+new_window      = "ctrl+shift+n"
+open_config     = "ctrl+comma"
+
+[keys.linux.terminal]
+toggle_sidebar = "ctrl+shift+b"       # ctrl+shift+a is select-all in GTK terminals
+
+# Optional prefix mode: mirrors herdr's prefix sequences for everything without
+# a direct chord. Off by default. The prefix is cmd+b (ctrl+shift+b on Linux),
+# never ctrl+b: Azulejo would have to swallow the shell's ctrl+b, or pass it on
+# to the attach client, where ctrl+b q detaches the tile.
+# (On Linux, enabling prefix mode moves toggle_sidebar to prefix+b.)
+[prefix]
+enabled = false
+key.macos = "cmd+b"
+key.linux = "ctrl+shift+b"
+
+[prefix.keys]
+focus_tile_left  = "prefix+h"
+focus_tile_down  = "prefix+j"
+focus_tile_up    = "prefix+k"
+focus_tile_right = "prefix+l"
+cycle_tile_next     = "prefix+tab"
+cycle_tile_previous = "prefix+shift+tab"
+split_right      = "prefix+v"
+split_down       = "prefix+minus"
+close_tile       = "prefix+x"
+kill_tile        = "prefix+shift+k"   # Azulejo-only: close tile AND kill the herdr pane
+zoom_tile        = "prefix+z"
+resize_mode      = "prefix+r"
+new_tab          = "prefix+c"
+next_tab         = "prefix+n"
+previous_tab     = "prefix+p"
+switch_tab       = "prefix+1..9"
+close_tab        = "prefix+shift+x"
+rename_tab       = "prefix+shift+t"
+rename_tile      = "prefix+shift+p"
+new_workspace    = "prefix+shift+n"
+rename_workspace = "prefix+shift+w"
+close_workspace  = "prefix+shift+d"
+goto             = ["prefix+w", "prefix+g"]
+toggle_sidebar   = "prefix+b"
+edit_scrollback  = "prefix+e"
+find             = "prefix+["         # herdr copy mode -> Azulejo scrollback search
+command_palette  = "prefix+?"         # herdr help -> palette lists every binding

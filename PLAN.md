@@ -142,7 +142,7 @@ Rule for every step: core first (logic + unit tests + API method + CLI subcomman
 - [ ] **1.5 API server and CLI** (`api`, `cli`). Unix socket, mode 0600, JSON-RPC 2.0. `azj` mirrors every method, with `--json` output and a human-readable default. Resolves the caller from `AZULEJO_TILE_ID`, falling back to `HERDR_PANE_ID`.
   **Done when** `azj tile split --right --kind browser --url http://localhost:3000` works from a terminal tile, and CLI tests cover every schema method.
 
-- [ ] **1.6 macOS shell skeleton.** `NSWindow` per app window; minimal workspace sidebar; tab bar; `TileContainerView` lays out the core's tree; focus ring; central key router (local `NSEvent` monitor → core keymap → command). Default keybindings for F2.
+- [ ] **1.6 macOS shell skeleton.** `NSWindow` per app window; minimal workspace sidebar; tab bar; `TileContainerView` lays out the core's tree; focus ring; central key router (local `NSEvent` monitor → core keymap → command), matching physical keys and honouring per-tile-kind contexts. Default keybindings from [`shared/config/keymap.default.toml`](shared/config/keymap.default.toml), derived from the maintainer's herdr bindings ([docs/keybindings.md](docs/keybindings.md)); the core embeds that file until 2.3 makes it user-overridable. Terminal tiles send a typed `ctrl+b` as `ctrl+b ctrl+b`, so `ctrl+b q` can't detach the attach client.
   **Done when** split, focus, swap, move, resize, zoom and close all work from the keyboard with placeholder tiles.
 
 - [ ] **1.7 Terminal tile** (F7, F12, F14). libghostty surface from the 0.3 spike behind a `TerminalTile` view; size the PTY before spawning the attach command from the core; never write EOF to it. Map the attach client's exit code and stderr to tile states per [ADR 0003](docs/adr/0003-take-over.md): silent reattach after an unrequested `ctrl+b q`, read-only `terminal session observe` with Take over / Take back, Respawn when the pane is gone. Title and cwd from herdr events, not surface callbacks.
@@ -182,7 +182,7 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 - [ ] **2.2 Command palette** (F5). Lists every command from the schema with its keybinding; fuzzy search.
   **Done when** every action in the schema is reachable from the palette.
 
-- [ ] **2.3 Config** (F25). TOML for keybindings, theme and animation; hot reload via `notify`; errors shown as a non-blocking banner.
+- [ ] **2.3 Config** (F25). TOML for keybindings, theme and animation; hot reload via `notify`; errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
   **Done when** saving the file changes a binding without a restart, and a bad file never crashes the app.
 
 - [ ] **2.4 Layout files** (F6). `.azulejo.toml` in a project describes tabs, splits and tiles (terminal command and cwd, browser URL, preview path); `azj layout apply [path]`; palette entry.
