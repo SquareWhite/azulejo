@@ -8,6 +8,9 @@ use azulejo_model::{Frame, Session, TabId, Tile, TileId, WindowId, WorkspaceId};
 
 use crate::event::{LayoutState, PreviewContent, TabInfo, WorkspaceInfo};
 
+// One reply per request, so an unboxed tile (with its header and pane
+// metadata) is fine.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Reply {

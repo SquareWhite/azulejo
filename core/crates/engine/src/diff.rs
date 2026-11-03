@@ -58,6 +58,8 @@ pub(crate) fn workspace_info(ws: &azulejo_model::Workspace) -> WorkspaceInfo {
             .filter(|a| a.status == AgentStatus::Blocked)
             .count() as u32,
         attention: agents().filter(|a| a.attention).count() as u32,
+        repo: ws.repo.clone(),
+        git: ws.git.clone(),
     }
 }
 
@@ -174,6 +176,13 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
                 window: *window,
                 workspace: info.clone(),
             });
+            // The branch the sidebar shows (F26).
+            if old.git != info.git {
+                events.push(Event::WorkspaceGit {
+                    workspace: *id,
+                    git: info.git.clone(),
+                });
+            }
         }
     }
     for (id, _, workspace, tab) in &a.tabs {

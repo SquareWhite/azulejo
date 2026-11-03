@@ -247,8 +247,11 @@ final class TileContainerView: NSView {
         for m in movers where !m.new && m.view.frame.size != m.to.size {
             guard let aware = m.view as? MotionAware else { continue }
             let (frame, bounds) = geometry(m.view)
-            let shown = aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
+            // Mid-motion: where the snapshot shows now. Otherwise it rests
+            // where freezing put it (below a tile's header strip, F28).
+            let showing = aware.snapshotFrame
             guard aware.motionWillStart(freeze: true, fill: style == .scale) else { continue }
+            let shown = showing ?? aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
             snapshotAt[m.id] = Motion.toContainer(shown, frame: frame, bounds: bounds, flipped: m.view.isFlipped)
             frozen[ObjectIdentifier(aware)] = aware
             if resizeCheck[m.id] == nil {
@@ -428,7 +431,7 @@ final class TileContainerView: NSView {
         layer.add(fade, forKey: Self.motionKey)
         guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { return }
         let size = picture.size
-        let top = view.isFlipped ? 0 : view.bounds.height - size.height
+        let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - size.height
         aware.placeSnapshot(CGRect(x: 0, y: top, width: size.width, height: size.height), cover: view.bounds)
         aware.revealWhenFresh(clock: clock)
         if let contents = aware.snapshotContents {
@@ -455,7 +458,7 @@ final class TileContainerView: NSView {
         guard let layer = view.layer else { return }
         layer.add(hiddenUntilEnd(duration), forKey: Self.motionKey)
         if let aware = view as? MotionAware, let picture = aware.snapshotFrame {
-            let top = view.isFlipped ? 0 : view.bounds.height - picture.height
+            let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - picture.height
             aware.placeSnapshot(CGRect(x: 0, y: top, width: picture.width, height: picture.height), cover: view.bounds)
         }
         let ghost = outline(at: to)

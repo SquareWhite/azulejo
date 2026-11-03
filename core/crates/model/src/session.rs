@@ -240,10 +240,36 @@ pub struct Workspace {
     /// herdr's saved-machine ID (ADR 0011).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
+    /// The folder whose git branch the sidebar shows, when the user set one
+    /// (`workspace.set_repo`). Without it the core follows the focused
+    /// terminal's working directory (F26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// The repository the workspace is in and its branch, as the core last
+    /// read it; absent outside a repository (F26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitInfo>,
     pub tabs: Vec<Tab>,
     /// `None` exactly when there are no tabs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_tab: Option<TabId>,
+}
+
+/// A workspace's repository and branch (F26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GitInfo {
+    /// The work tree's top folder.
+    pub repo: String,
+    /// The checked-out branch, or the short commit when `detached`. Absent in
+    /// a repository with no commits yet only if git can't name the branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// HEAD points at a commit, not a branch.
+    #[serde(default, skip_serializing_if = "crate::tile::is_false")]
+    pub detached: bool,
+    /// Tracked files have changes (untracked files don't count).
+    #[serde(default, skip_serializing_if = "crate::tile::is_false")]
+    pub dirty: bool,
 }
 
 /// An app window. It always holds at least one workspace; closing its last
@@ -517,6 +543,8 @@ impl Session {
             cwd,
             herdr_workspace: None,
             machine: None,
+            repo: None,
+            git: None,
             tabs: Vec::new(),
             active_tab: None,
         };
@@ -587,6 +615,8 @@ impl Session {
             cwd,
             herdr_workspace: None,
             machine: None,
+            repo: None,
+            git: None,
             tabs: Vec::new(),
             active_tab: None,
         };
@@ -657,6 +687,26 @@ impl Session {
         machine: Option<String>,
     ) -> Result<(), ModelError> {
         self.workspace_mut(id)?.machine = machine;
+        Ok(())
+    }
+
+    /// Sets or clears the folder whose branch `id` shows (F26).
+    pub fn set_workspace_repo(
+        &mut self,
+        id: WorkspaceId,
+        repo: Option<String>,
+    ) -> Result<(), ModelError> {
+        self.workspace_mut(id)?.repo = repo.filter(|r| !r.is_empty());
+        Ok(())
+    }
+
+    /// Records what the core last read about `id`'s repository (F26).
+    pub fn set_workspace_git(
+        &mut self,
+        id: WorkspaceId,
+        git: Option<GitInfo>,
+    ) -> Result<(), ModelError> {
+        self.workspace_mut(id)?.git = git;
         Ok(())
     }
 

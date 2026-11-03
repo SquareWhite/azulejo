@@ -250,6 +250,51 @@ pub enum Resolved {
     Gone,
 }
 
+/// One process in a pane's foreground process group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessEntry {
+    pub pid: u32,
+    /// The executable's name, e.g. `fish`, `just`.
+    #[serde(default)]
+    pub name: String,
+    /// The command line, e.g. `just dogfood`.
+    #[serde(default)]
+    pub cmdline: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+}
+
+/// What runs in a pane, from `pane.process_info`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ProcessInfo {
+    #[serde(default)]
+    pub shell_pid: Option<u32>,
+    #[serde(default)]
+    pub foreground_process_group_id: Option<u32>,
+    #[serde(default)]
+    pub foreground_processes: Vec<ProcessEntry>,
+}
+
+impl ProcessInfo {
+    /// The process group leader in the foreground (else its first process).
+    pub fn foreground(&self) -> Option<&ProcessEntry> {
+        let pgid = self.foreground_process_group_id;
+        self.foreground_processes
+            .iter()
+            .find(|p| Some(p.pid) == pgid)
+            .or_else(|| self.foreground_processes.first())
+    }
+
+    /// The shell has the terminal: nothing else runs in the foreground.
+    pub fn shell_in_foreground(&self) -> bool {
+        match (self.shell_pid, self.foreground()) {
+            (Some(shell), Some(fg)) => fg.pid == shell,
+            (_, None) => true,
+            (None, Some(_)) => false,
+        }
+    }
+}
+
 /// Which buffer `read` returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

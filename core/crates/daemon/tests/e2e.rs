@@ -186,6 +186,25 @@ fn terminals(session: &Value) -> Vec<(String, Option<String>, bool)> {
     out
 }
 
+/// `session.get` without what herdr reports live (pane titles and commands,
+/// headers, git branches): what a restart must bring back exactly.
+fn structural(mut session: Value) -> Value {
+    fn strip(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                for key in ["pane", "header", "git"] {
+                    map.remove(key);
+                }
+                map.values_mut().for_each(strip);
+            }
+            Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    strip(&mut session);
+    session
+}
+
 fn wait_bound(world: &World, expected: usize) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
@@ -252,7 +271,11 @@ fn layout_and_panes_survive_a_hard_kill() {
 
     world.start_daemon();
     let after = wait_bound(&world, 5);
-    assert_eq!(after, before, "the session comes back identical");
+    assert_eq!(
+        structural(after),
+        structural(before),
+        "the session comes back identical"
+    );
     assert_eq!(world.herdr_panes(), panes_before, "same panes, none added");
 
     let version = world.azj(&["version"]);

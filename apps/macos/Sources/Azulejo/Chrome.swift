@@ -78,6 +78,7 @@ final class SidebarView: NSView {
         var key = window.workspaces.map { ws in
             let r = rollups[ws.id]
             return "\(ws.id)|\(ws.name)|\(ws.machineID)|\(ws.id == window.activeWorkspace)|\(r?.blocked ?? 0)|\(r?.attention ?? 0)|\(r?.working ?? 0)"
+                + "|\(ws.git?.branch ?? "")|\(ws.git?.dirty == true)"
         }
         if grouped {
             key += groups.map { "\($0.id)|\($0.machine?.label ?? "")|\($0.machine?.state.rawValue ?? "")|\($0.machine?.message ?? "")" }
@@ -113,7 +114,8 @@ final class SidebarView: NSView {
     private func addRow(number: Int, _ ws: WorkspaceModel, window: WindowModel, rollup: AttentionStyle.Rollup?) {
         let row = RowButton(
             title: "\(number)  \(ws.name)", selected: ws.id == window.activeWorkspace,
-            marker: rollup?.marker
+            marker: rollup?.marker, detail: Self.branch(ws.git),
+            detailWidth: Self.width - 16
         ) { [weak self] in self?.onSelect?(ws.id) }
         stack.addArrangedSubview(row)
         row.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16).isActive = true
@@ -127,6 +129,17 @@ extension SidebarView {
     /// Automation: each machine group's header text ("dev-server ● Reconnecting…").
     var machineHeaders: [String] {
         stack.arrangedSubviews.compactMap { ($0 as? MachineHeader)?.summary }
+    }
+
+    /// Automation: each workspace row's branch, in order ("" outside a repo).
+    var branches: [String] { stackRows.map(\.detailText) }
+
+    /// The branch a row shows (F26): its name, `@abc1234` when detached, and
+    /// a dot when tracked files changed.
+    static func branch(_ git: GitModel?) -> String? {
+        guard let git, let branch = git.branch, !branch.isEmpty else { return nil }
+        let name = git.detached == true ? "@\(branch)" : branch
+        return git.dirty == true ? "\(name) •" : name
     }
 }
 
@@ -278,22 +291,42 @@ final class RowButton: NSButton {
 
     /// Automation: the marker's text (" ● 2"), or "".
     let markerText: String
+    /// Automation: the right-aligned detail (a branch), or "".
+    let detailText: String
 
-    init(title: String, selected: Bool, marker: NSAttributedString? = nil, handler: @escaping () -> Void) {
+    /// `detail` shows dim and right-aligned (a workspace's branch); it needs
+    /// `detailWidth`, the row's width.
+    init(title: String, selected: Bool, marker: NSAttributedString? = nil,
+         detail: String? = nil, detailWidth: CGFloat = 0, handler: @escaping () -> Void) {
         self.handler = handler
         markerText = marker?.string ?? ""
+        detailText = detail ?? ""
         super.init(frame: .zero)
         self.title = title
         isBordered = false
         alignment = .left
         font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
         contentTintColor = selected ? .labelColor : .secondaryLabelColor
-        if let marker {
+        if marker != nil || detail != nil {
+            let style = NSMutableParagraphStyle()
+            style.lineBreakMode = .byTruncatingTail
+            if detail != nil {
+                style.tabStops = [NSTextTab(textAlignment: .right, location: max(detailWidth - 16, 40))]
+            }
             let text = NSMutableAttributedString(string: title, attributes: [
                 .font: font ?? .systemFont(ofSize: 12),
                 .foregroundColor: selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
+                .paragraphStyle: style,
             ])
-            text.append(marker)
+            if let marker { text.append(marker) }
+            if let detail {
+                text.append(NSAttributedString(string: "\t" + Self.shorten(detail, to: 16), attributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .paragraphStyle: style,
+                ]))
+                toolTip = detail
+            }
             attributedTitle = text
         }
         wantsLayer = true
@@ -316,4 +349,9 @@ final class RowButton: NSButton {
     }
 
     @objc private func clicked() { handler() }
+
+    /// `text` cut to `max` characters with an ellipsis.
+    static func shorten(_ text: String, to max: Int) -> String {
+        text.count <= max ? text : String(text.prefix(max - 1)) + "…"
+    }
 }

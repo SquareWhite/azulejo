@@ -50,9 +50,12 @@ enum TileViews {
         makers[kind] = maker
     }
 
+    /// The tile's view inside a `TileFrame`, which adds the header strip (F28).
     static func make(_ tile: TileModel) -> any TileView {
-        if let maker = makers[tile.kind] { return maker(tile) }
-        return PlaceholderTileView(tile)
+        let content = makers[tile.kind].map { $0(tile) } ?? PlaceholderTileView(tile)
+        let frame = TileFrame.wrap(content)
+        frame.prime(tile)
+        return frame
     }
 }
 

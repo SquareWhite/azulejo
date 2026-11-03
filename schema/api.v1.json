@@ -393,6 +393,23 @@
           "type": "object"
         },
         {
+          "description": "Sets the folder whose git branch the sidebar shows; without `path` the\ncore follows the focused terminal's working directory again (F26).",
+          "properties": {
+            "method": {
+              "const": "workspace.set_repo",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceSetRepo"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "method": {
               "const": "workspace.move",
@@ -685,6 +702,23 @@
             },
             "params": {
               "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Shows a preview tile's file rendered or as highlighted source (F29);\nwithout `mode` it toggles. Saved per tile.",
+          "properties": {
+            "method": {
+              "const": "preview.set_mode",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/PreviewSetMode"
             }
           },
           "required": [
@@ -1736,6 +1770,41 @@
           "type": "object"
         },
         {
+          "description": "A workspace's repository or branch changed, or it left a repository\n(`git` absent): the sidebar shows the branch (F26). Also visible as\n`git` on `workspace.updated`.",
+          "properties": {
+            "data": {
+              "properties": {
+                "git": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/GitInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "workspace"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "workspace.git",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A window's workspaces changed order.",
           "properties": {
             "data": {
@@ -2663,6 +2732,34 @@
       ],
       "type": "object"
     },
+    "GitInfo": {
+      "description": "A workspace's repository and branch (F26).",
+      "properties": {
+        "branch": {
+          "description": "The checked-out branch, or the short commit when `detached`. Absent in\na repository with no commits yet only if git can't name the branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detached": {
+          "description": "HEAD points at a commit, not a branch.",
+          "type": "boolean"
+        },
+        "dirty": {
+          "description": "Tracked files have changes (untracked files don't count).",
+          "type": "boolean"
+        },
+        "repo": {
+          "description": "The work tree's top folder.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "type": "object"
+    },
     "HerdrRef": {
       "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes. The tab ID matters because closing a herdr\ntab reports only the tab, and herdr keeps pane and tab IDs (but not the\nprocess) across a server restart.",
       "properties": {
@@ -3393,6 +3490,40 @@
       ],
       "type": "string"
     },
+    "PaneMeta": {
+      "description": "What herdr reports about a terminal tile's pane (F28): enough to say what\nruns there and where.",
+      "properties": {
+        "command": {
+          "description": "The command running in the foreground when it isn't the shell, e.g.\n`just dogfood`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cwd": {
+          "description": "The pane's working directory (its foreground process's, when known).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shell": {
+          "description": "The shell's name, e.g. `zsh`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "The title the program in the pane set (OSC 0/2).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Placement": {
       "description": "Where one tile goes. `rect` is in the unit square, like\n[`Node::rects`]; higher `z` draws on top; hidden tiles keep their rect but\naren't drawn (Monocle's tiles under the top one).",
       "properties": {
@@ -3439,6 +3570,10 @@
             "string",
             "null"
           ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PreviewMode",
+          "description": "Rendered, or the file's source highlighted as code (F29)."
         },
         "path": {
           "type": "string"
@@ -3495,6 +3630,21 @@
         }
       ]
     },
+    "PreviewMode": {
+      "description": "How a preview tile shows its file (F29).",
+      "oneOf": [
+        {
+          "const": "rendered",
+          "description": "Rendered: markdown as a document, images as images.",
+          "type": "string"
+        },
+        {
+          "const": "source",
+          "description": "The file's text, highlighted as code (markdown included).",
+          "type": "string"
+        }
+      ]
+    },
     "PreviewOpen": {
       "properties": {
         "path": {
@@ -3515,6 +3665,33 @@
       "required": [
         "path"
       ],
+      "type": "object"
+    },
+    "PreviewSetMode": {
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreviewMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Absent toggles between rendered and source."
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A preview tile; defaults to the focused tile."
+        }
+      },
       "type": "object"
     },
     "ReadSource": {
@@ -4596,8 +4773,34 @@
           ],
           "description": "Terminal tiles only: the agent herdr reports in the pane."
         },
+        "header": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileHeader"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the header strip shows; the core keeps it current."
+        },
         "id": {
           "$ref": "#/$defs/TileId"
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PaneMeta"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Terminal tiles only: title, cwd and command herdr reports for the pane."
+        },
+        "preview_mode": {
+          "$ref": "#/$defs/PreviewMode",
+          "description": "Preview tiles only: rendered or source (F29). Saved per tile."
         },
         "title": {
           "type": [
@@ -4759,6 +4962,24 @@
         }
       ]
     },
+    "TileHeader": {
+      "description": "What a tile's header strip shows (F28), worked out by the core so every\nshell says the same: e.g. `zsh` — `just dogfood`, `claude` —\n`~/src/azulejo`, `README.md` — `~/code/shop`.",
+      "properties": {
+        "subtitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
     "TileId": {
       "pattern": "^tile_[0-9A-HJKMNP-TV-Z]{26}$",
       "type": "string"
@@ -4906,8 +5127,34 @@
           "description": "Whether this is the focused tile.",
           "type": "boolean"
         },
+        "header": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileHeader"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the header strip shows; the core keeps it current."
+        },
         "id": {
           "$ref": "#/$defs/TileId"
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PaneMeta"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Terminal tiles only: title, cwd and command herdr reports for the pane."
+        },
+        "preview_mode": {
+          "$ref": "#/$defs/PreviewMode",
+          "description": "Preview tiles only: rendered or source (F29). Saved per tile."
         },
         "tab": {
           "$ref": "#/$defs/TabId"
@@ -5177,6 +5424,17 @@
             "null"
           ]
         },
+        "git": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The repository the workspace is in and its branch, as the core last\nread it; absent outside a repository (F26)."
+        },
         "herdr_workspace": {
           "description": "The herdr workspace backing this one, once the adapter has created it.",
           "type": [
@@ -5196,6 +5454,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "repo": {
+          "description": "The folder whose git branch the sidebar shows, when the user set one\n(`workspace.set_repo`). Without it the core follows the focused\nterminal's working directory (F26).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tabs": {
           "items": {
@@ -5286,6 +5551,17 @@
             "null"
           ]
         },
+        "git": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its repository and branch (F26)."
+        },
         "herdr_workspace": {
           "type": [
             "string",
@@ -5297,6 +5573,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "repo": {
+          "description": "The folder whose branch it shows, when the user set one\n(`workspace.set_repo`).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5366,6 +5649,29 @@
       ],
       "type": "object"
     },
+    "WorkspaceSetRepo": {
+      "properties": {
+        "path": {
+          "description": "A folder inside the repository; absent or empty follows the focused\nterminal again.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused workspace."
+        }
+      },
+      "type": "object"
+    },
     "WorkspaceSummary": {
       "description": "A workspace and where it lives.",
       "properties": {
@@ -5395,6 +5701,17 @@
           "description": "Active in the focused window.",
           "type": "boolean"
         },
+        "git": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its repository and branch (F26)."
+        },
         "herdr_workspace": {
           "type": [
             "string",
@@ -5406,6 +5723,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "repo": {
+          "description": "The folder whose branch it shows, when the user set one\n(`workspace.set_repo`).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tabs": {
           "format": "uint",
@@ -5460,6 +5784,7 @@
     "workspace.close",
     "workspace.focus",
     "workspace.rename",
+    "workspace.set_repo",
     "workspace.move",
     "workspace.bind",
     "tab.list",
@@ -5478,6 +5803,7 @@
     "browser.state",
     "preview.open",
     "preview.get",
+    "preview.set_mode",
     "files.list",
     "files.expand",
     "files.collapse",

@@ -43,9 +43,11 @@ struct WorkspaceModel: Decodable, Equatable {
     var activeTab: String?
     /// The herdr machine its terminals run on; nil for Local (ADR 0011).
     var machine: String?
+    /// The repository and branch the sidebar shows (F26).
+    var git: GitModel?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, cwd, tabs, machine
+        case id, name, cwd, tabs, machine, git
         case activeTab = "active_tab"
     }
 
@@ -199,14 +201,35 @@ struct TileModel: Decodable, Equatable {
     var root: String?
     /// Terminal tiles: the agent herdr reports in the pane (F11, F16).
     var agent: AgentModel?
+    /// What the header strip shows, worked out by the core (F28).
+    var header: TileHeaderModel?
+    /// Preview tiles: `rendered` (default) or `source` (F29).
+    var previewMode: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent
+        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent, header
         case pageTitle = "page_title"
+        case previewMode = "preview_mode"
     }
+
+    var showsSource: Bool { previewMode == "source" }
 
     /// Needs a look: the agent became blocked or finished and nobody has seen it.
     var needsAttention: Bool { agent?.attention == true }
+}
+
+/// A tile's header text (`azulejo_model::TileHeader`).
+struct TileHeaderModel: Decodable, Equatable {
+    var title: String
+    var subtitle: String?
+}
+
+/// A workspace's repository and branch (`azulejo_model::GitInfo`, F26).
+struct GitModel: Decodable, Equatable {
+    var repo: String
+    var branch: String?
+    var detached: Bool?
+    var dirty: Bool?
 }
 
 /// What herdr says the agent in a terminal tile is doing.

@@ -102,6 +102,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarMarkers: [String] { sidebar.markers }
     /// Automation: the sidebar's machine group headers.
     var sidebarMachines: [String] { sidebar.machineHeaders }
+    /// Automation: each sidebar row's branch (F26).
+    var sidebarBranches: [String] { sidebar.branches }
     var tabMarkers: [String] { tabBar.markers }
 
     /// Re-lays out the chrome (palette or banner changed size).
