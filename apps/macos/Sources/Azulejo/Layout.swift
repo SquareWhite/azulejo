@@ -1,6 +1,6 @@
 import Foundation
 
-/// Mirrors `azulejo_protocol::LayoutNode`. Spike-grade (step 0.6).
+/// Mirrors `azulejo_model::Node`. Spike-grade (step 0.6); tile IDs are opaque strings.
 indirect enum LayoutNode: Decodable, Equatable {
     case split(axis: Axis, ratio: Double, a: LayoutNode, b: LayoutNode)
     case leaf(id: String)
@@ -32,7 +32,7 @@ indirect enum LayoutNode: Decodable, Equatable {
     }
 }
 
-/// The `layout.changed` event.
+/// The `layout.changed` event (other fields, such as `tab` and `zoomed`, are ignored for now).
 struct LayoutChanged: Decodable {
     let tree: LayoutNode
     let focused: String

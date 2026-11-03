@@ -76,8 +76,9 @@ final class TileTreeView: NSView {
         }
     }
 
+    /// Stable per tile: tile IDs are ULIDs, so hash the characters.
     private static func colour(for id: String) -> NSColor {
-        let n = Int(id.dropFirst()) ?? 0
+        let n = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
         return palette[n % palette.count]
     }
 }
@@ -91,7 +92,8 @@ private final class TileView: NSView {
     }
 
     init(id: String, colour: NSColor) {
-        label = NSTextField(labelWithString: id)
+        // Full IDs are long ULIDs; the last four characters tell tiles apart.
+        label = NSTextField(labelWithString: "…" + id.suffix(4))
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = colour.withAlphaComponent(0.75).cgColor

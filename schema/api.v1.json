@@ -1,0 +1,2548 @@
+{
+  "$defs": {
+    "Axis": {
+      "description": "How a split lays out its two children: `horizontal` puts them side by side,\n`vertical` stacks them.",
+      "enum": [
+        "horizontal",
+        "vertical"
+      ],
+      "type": "string"
+    },
+    "Command": {
+      "description": "A request to the core.",
+      "oneOf": [
+        {
+          "description": "Liveness check; replies `pong`.",
+          "properties": {
+            "method": {
+              "const": "core.ping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The whole object model; replies `session`.",
+          "properties": {
+            "method": {
+              "const": "session.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Opens a window with one empty workspace.",
+          "properties": {
+            "method": {
+              "const": "window.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WindowCreate"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "window.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WindowTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "window.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WindowTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Records a window's frame after the user moves or resizes it.",
+          "properties": {
+            "method": {
+              "const": "window.set_frame",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WindowSetFrame"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceCreate"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.rename",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceRename"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.move",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceMove"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Records the herdr workspace backing a workspace. Sent by the herdr adapter.",
+          "properties": {
+            "method": {
+              "const": "workspace.bind",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceBind"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Opens a tab with one tile (a terminal unless `content` says otherwise).",
+          "properties": {
+            "method": {
+              "const": "tab.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabCreate"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.rename",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabRename"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.move",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabMove"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Lists tiles; replies `tiles`.",
+          "properties": {
+            "method": {
+              "const": "tile.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileList"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One tile; replies `tile`.",
+          "properties": {
+            "method": {
+              "const": "tile.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Closes a tile. A terminal's herdr pane is detached, not killed, unless\n`kill` is set (F14).",
+          "properties": {
+            "method": {
+              "const": "tile.close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileClose"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tile.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
+          "properties": {
+            "method": {
+              "const": "layout.get",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Splits a tile and opens a new one beside it, which takes focus.",
+          "properties": {
+            "method": {
+              "const": "layout.split",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSplit"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Moves focus to the neighbouring tile.",
+          "properties": {
+            "method": {
+              "const": "layout.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutFocus"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Swaps a tile with its neighbour in `direction`, or with tile `with`.",
+          "properties": {
+            "method": {
+              "const": "layout.swap",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSwap"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Moves a tile one step: into its neighbour's slot, or to the tab's edge.",
+          "properties": {
+            "method": {
+              "const": "layout.move",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutMove"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Moves a tile's edge in `direction` by `amount` (negative shrinks).",
+          "properties": {
+            "method": {
+              "const": "layout.resize",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutResize"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Zooms a tile to fill its tab; leave `zoomed` out to toggle.",
+          "properties": {
+            "method": {
+              "const": "layout.zoom",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutZoom"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Records the herdr pane a terminal tile views. Sent by the herdr adapter.",
+          "properties": {
+            "method": {
+              "const": "terminal.bind",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalBind"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "terminal.send_text",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalSendText"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "terminal.send_keys",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalSendKeys"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Reads a terminal's screen or history; replies `text`.",
+          "properties": {
+            "method": {
+              "const": "terminal.read",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalRead"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Created": {
+      "description": "IDs of what a command created; only the relevant fields are set.",
+      "properties": {
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Direction": {
+      "description": "A direction on screen.",
+      "enum": [
+        "left",
+        "right",
+        "up",
+        "down"
+      ],
+      "type": "string"
+    },
+    "Error": {
+      "description": "A failed command.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "description": "Why a command failed.",
+      "oneOf": [
+        {
+          "enum": [
+            "method_not_found",
+            "invalid_params",
+            "internal"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "parse_error",
+          "description": "The request wasn't valid JSON.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_request",
+          "description": "Valid JSON, but not a request (e.g. no `method`).",
+          "type": "string"
+        },
+        {
+          "const": "not_found",
+          "description": "A window, workspace, tab or tile doesn't exist.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_state",
+          "description": "The command doesn't apply right now (nothing focused, no neighbour that way…).",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "Not available in this build or configuration.",
+          "type": "string"
+        }
+      ]
+    },
+    "Event": {
+      "description": "Something that changed in the core.",
+      "oneOf": [
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                }
+              },
+              "required": [
+                "window"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "window.created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                }
+              },
+              "required": [
+                "window"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "window.closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "frame": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Frame"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                }
+              },
+              "required": [
+                "window"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "window.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceInfo"
+                }
+              },
+              "required": [
+                "window",
+                "workspace"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "workspace.created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "window",
+                "workspace"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "workspace.closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Name, cwd or herdr binding changed.",
+          "properties": {
+            "data": {
+              "properties": {
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceInfo"
+                }
+              },
+              "required": [
+                "window",
+                "workspace"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "workspace.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A window's workspaces changed order.",
+          "properties": {
+            "data": {
+              "properties": {
+                "order": {
+                  "items": {
+                    "$ref": "#/$defs/WorkspaceId"
+                  },
+                  "type": "array"
+                },
+                "window": {
+                  "$ref": "#/$defs/WindowId"
+                }
+              },
+              "required": [
+                "window",
+                "order"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "workspace.reordered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "tab": {
+                  "$ref": "#/$defs/TabInfo"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "workspace",
+                "tab"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tab.created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "tab": {
+                  "$ref": "#/$defs/TabId"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "workspace",
+                "tab"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tab.closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "tab": {
+                  "$ref": "#/$defs/TabInfo"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "workspace",
+                "tab"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tab.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A workspace's tabs changed order.",
+          "properties": {
+            "data": {
+              "properties": {
+                "order": {
+                  "items": {
+                    "$ref": "#/$defs/TabId"
+                  },
+                  "type": "array"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/WorkspaceId"
+                }
+              },
+              "required": [
+                "workspace",
+                "order"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tab.reordered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "data": {
+              "properties": {
+                "tab": {
+                  "$ref": "#/$defs/TabId"
+                },
+                "tile": {
+                  "$ref": "#/$defs/Tile"
+                }
+              },
+              "required": [
+                "tab",
+                "tile"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tile.created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tile's title or content changed (e.g. a terminal got its herdr pane).",
+          "properties": {
+            "data": {
+              "properties": {
+                "tab": {
+                  "$ref": "#/$defs/TabId"
+                },
+                "tile": {
+                  "$ref": "#/$defs/Tile"
+                }
+              },
+              "required": [
+                "tab",
+                "tile"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tile.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tile closed. `kill` asks the herdr adapter to kill the terminal's pane\nrather than detach from it.",
+          "properties": {
+            "data": {
+              "properties": {
+                "kill": {
+                  "type": "boolean"
+                },
+                "tab": {
+                  "$ref": "#/$defs/TabId"
+                },
+                "tile": {
+                  "$ref": "#/$defs/Tile"
+                }
+              },
+              "required": [
+                "tab",
+                "tile",
+                "kill"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tile.closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tab's tree, focused tile or zoom changed.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/LayoutState"
+            },
+            "event": {
+              "const": "layout.changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The focused window, workspace, tab or tile changed.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/Focus"
+            },
+            "event": {
+              "const": "focus.changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Focus": {
+      "description": "Where the user's focus is. Inner fields are `None` when that level is empty.",
+      "properties": {
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Frame": {
+      "description": "A window's frame on screen, in points, origin top left of the main display.",
+      "properties": {
+        "height": {
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "HerdrRef": {
+      "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes.",
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "terminal_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pane_id",
+        "terminal_id"
+      ],
+      "type": "object"
+    },
+    "LayoutFocus": {
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/Direction"
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "type": "object"
+    },
+    "LayoutMove": {
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/Direction"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "type": "object"
+    },
+    "LayoutResize": {
+      "properties": {
+        "amount": {
+          "default": 0.05,
+          "description": "Share of the enclosing split to move the edge by. Defaults to 0.05.",
+          "format": "double",
+          "type": "number"
+        },
+        "direction": {
+          "$ref": "#/$defs/Direction"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "type": "object"
+    },
+    "LayoutSplit": {
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The new tile; defaults to a terminal."
+        },
+        "direction": {
+          "$ref": "#/$defs/Direction",
+          "description": "Which side of `tile` the new tile goes."
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The tile to split; defaults to the focused one."
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "type": "object"
+    },
+    "LayoutState": {
+      "description": "A tab's layout, as `layout.changed` and `layout.get` report it.",
+      "properties": {
+        "focused": {
+          "$ref": "#/$defs/TileId"
+        },
+        "tab": {
+          "$ref": "#/$defs/TabId"
+        },
+        "tree": {
+          "$ref": "#/$defs/Node"
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "zoomed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "window",
+        "workspace",
+        "tab",
+        "tree",
+        "focused"
+      ],
+      "type": "object"
+    },
+    "LayoutSwap": {
+      "properties": {
+        "direction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Swap with the neighbour this way. Give exactly one of `direction`, `with`."
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "with": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Swap with this tile, which must be in the same tab."
+        }
+      },
+      "type": "object"
+    },
+    "LayoutZoom": {
+      "properties": {
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "zoomed": {
+          "description": "`true` zooms, `false` unzooms, absent toggles.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Node": {
+      "description": "One node of a layout tree.",
+      "oneOf": [
+        {
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/Node"
+            },
+            "axis": {
+              "$ref": "#/$defs/Axis"
+            },
+            "b": {
+              "$ref": "#/$defs/Node"
+            },
+            "ratio": {
+              "description": "Share of the space given to `a`, in (0, 1).",
+              "format": "double",
+              "type": "number"
+            },
+            "type": {
+              "const": "split",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "axis",
+            "ratio",
+            "a",
+            "b"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/TileId"
+            },
+            "type": {
+              "const": "leaf",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ReadSource": {
+      "description": "What `terminal.read` returns.",
+      "oneOf": [
+        {
+          "const": "visible",
+          "description": "The visible screen.",
+          "type": "string"
+        },
+        {
+          "const": "recent",
+          "description": "Recent output, soft-wrapped as on screen.",
+          "type": "string"
+        },
+        {
+          "const": "recent_unwrapped",
+          "description": "Recent output with soft wraps joined, for log-like text.",
+          "type": "string"
+        }
+      ]
+    },
+    "Reply": {
+      "oneOf": [
+        {
+          "description": "Done; nothing to return.",
+          "properties": {
+            "type": {
+              "const": "ok",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "api_version": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "pong",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "api_version"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/Session"
+            },
+            "type": {
+              "const": "session",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/LayoutState",
+          "properties": {
+            "type": {
+              "const": "layout",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/Created",
+          "description": "IDs of what the command created.",
+          "properties": {
+            "type": {
+              "const": "created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "tiles": {
+              "items": {
+                "$ref": "#/$defs/TileInfo"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "tiles",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tiles"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TileInfo",
+          "properties": {
+            "type": {
+              "const": "tile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Session": {
+      "description": "Everything the app shows.",
+      "properties": {
+        "focused_window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` exactly when there are no windows."
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/Window"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "windows"
+      ],
+      "type": "object"
+    },
+    "Tab": {
+      "description": "A tab: one layout tree. A tab always holds at least one tile; closing its\nlast tile closes the tab.",
+      "properties": {
+        "focused": {
+          "$ref": "#/$defs/TileId"
+        },
+        "id": {
+          "$ref": "#/$defs/TabId"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "root": {
+          "$ref": "#/$defs/Node"
+        },
+        "tiles": {
+          "description": "The tiles in `root`, in no particular order.",
+          "items": {
+            "$ref": "#/$defs/Tile"
+          },
+          "type": "array"
+        },
+        "zoomed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A zoomed tile fills the tab until unzoomed."
+        }
+      },
+      "required": [
+        "id",
+        "root",
+        "tiles",
+        "focused"
+      ],
+      "type": "object"
+    },
+    "TabCreate": {
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The tab's first tile; defaults to a terminal."
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused workspace."
+        }
+      },
+      "type": "object"
+    },
+    "TabId": {
+      "pattern": "^tab_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "TabInfo": {
+      "description": "A tab without its tiles.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TabId"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "TabMove": {
+      "properties": {
+        "index": {
+          "description": "New position within its workspace; past the end means last.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "type": "object"
+    },
+    "TabRename": {
+      "properties": {
+        "name": {
+          "description": "`null` or absent clears the name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TabTarget": {
+      "properties": {
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "type": "object"
+    },
+    "TerminalBind": {
+      "properties": {
+        "herdr": {
+          "$ref": "#/$defs/HerdrRef"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        }
+      },
+      "required": [
+        "tile",
+        "herdr"
+      ],
+      "type": "object"
+    },
+    "TerminalRead": {
+      "properties": {
+        "lines": {
+          "description": "Upper bound on lines returned.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/ReadSource",
+          "default": "visible"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TerminalSendKeys": {
+      "properties": {
+        "keys": {
+          "description": "Key names in herdr's notation, e.g. `enter`, `ctrl+c`, `up`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "type": "object"
+    },
+    "TerminalSendText": {
+      "properties": {
+        "text": {
+          "description": "Sent literally, as if pasted.",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "Tile": {
+      "description": "One tile.",
+      "oneOf": [
+        {
+          "properties": {
+            "command": {
+              "description": "Command to run instead of the user's shell.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "cwd": {
+              "description": "Working directory for a new pane.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "herdr": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HerdrRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Set once the herdr adapter has created or adopted a pane."
+            },
+            "kind": {
+              "const": "terminal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "browser",
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "preview",
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "files",
+              "type": "string"
+            },
+            "root": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TileId"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "TileClose": {
+      "properties": {
+        "kill": {
+          "default": false,
+          "description": "Kill the terminal's herdr pane instead of detaching from it.",
+          "type": "boolean"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TileContent": {
+      "description": "A tile's content and its kind-specific state.",
+      "oneOf": [
+        {
+          "properties": {
+            "command": {
+              "description": "Command to run instead of the user's shell.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "cwd": {
+              "description": "Working directory for a new pane.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "herdr": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HerdrRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Set once the herdr adapter has created or adopted a pane."
+            },
+            "kind": {
+              "const": "terminal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "browser",
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "preview",
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "files",
+              "type": "string"
+            },
+            "root": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileId": {
+      "pattern": "^tile_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "TileInfo": {
+      "description": "A tile and where it lives.",
+      "oneOf": [
+        {
+          "properties": {
+            "command": {
+              "description": "Command to run instead of the user's shell.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "cwd": {
+              "description": "Working directory for a new pane.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "herdr": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HerdrRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Set once the herdr adapter has created or adopted a pane."
+            },
+            "kind": {
+              "const": "terminal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "browser",
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "preview",
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "files",
+              "type": "string"
+            },
+            "root": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "focused": {
+          "description": "Whether this is the focused tile.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/TileId"
+        },
+        "tab": {
+          "$ref": "#/$defs/TabId"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        }
+      },
+      "required": [
+        "window",
+        "workspace",
+        "tab",
+        "focused",
+        "id"
+      ],
+      "type": "object"
+    },
+    "TileList": {
+      "properties": {
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only tiles in this workspace; all tiles when absent."
+        }
+      },
+      "type": "object"
+    },
+    "TileTarget": {
+      "properties": {
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tile."
+        }
+      },
+      "type": "object"
+    },
+    "Window": {
+      "description": "An app window. It always holds at least one workspace; closing its last\nworkspace closes the window.",
+      "properties": {
+        "active_workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "frame": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Frame"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Last known screen frame, in points; restored on relaunch."
+        },
+        "id": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "workspaces": {
+          "items": {
+            "$ref": "#/$defs/Workspace"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "workspaces",
+        "active_workspace"
+      ],
+      "type": "object"
+    },
+    "WindowCreate": {
+      "properties": {
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace_name": {
+          "description": "Name of the window's first workspace.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "WindowId": {
+      "pattern": "^win_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "WindowSetFrame": {
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/Frame"
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        }
+      },
+      "required": [
+        "window",
+        "frame"
+      ],
+      "type": "object"
+    },
+    "WindowTarget": {
+      "properties": {
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "type": "object"
+    },
+    "Workspace": {
+      "description": "A workspace; maps one-to-one to a herdr workspace. It may have no tabs.",
+      "properties": {
+        "active_tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` exactly when there are no tabs."
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "herdr_workspace": {
+          "description": "The herdr workspace backing this one, once the adapter has created it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tabs": {
+          "items": {
+            "$ref": "#/$defs/Tab"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "tabs"
+      ],
+      "type": "object"
+    },
+    "WorkspaceBind": {
+      "properties": {
+        "herdr_workspace": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        }
+      },
+      "required": [
+        "workspace",
+        "herdr_workspace"
+      ],
+      "type": "object"
+    },
+    "WorkspaceCreate": {
+      "properties": {
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused window."
+        }
+      },
+      "type": "object"
+    },
+    "WorkspaceId": {
+      "pattern": "^ws_[0-9A-HJKMNP-TV-Z]{26}$",
+      "type": "string"
+    },
+    "WorkspaceInfo": {
+      "description": "A workspace without its tabs.",
+      "properties": {
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "herdr_workspace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "WorkspaceMove": {
+      "properties": {
+        "index": {
+          "description": "New position within its window; past the end means last.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "type": "object"
+    },
+    "WorkspaceRename": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "WorkspaceTarget": {
+      "properties": {
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused workspace."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://azulejo.dev/schema/api.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Generated from core/crates/protocol by `just schema`. Do not edit.",
+  "methods": [
+    "core.ping",
+    "session.get",
+    "window.create",
+    "window.close",
+    "window.focus",
+    "window.set_frame",
+    "workspace.create",
+    "workspace.close",
+    "workspace.focus",
+    "workspace.rename",
+    "workspace.move",
+    "workspace.bind",
+    "tab.create",
+    "tab.close",
+    "tab.focus",
+    "tab.rename",
+    "tab.move",
+    "tile.list",
+    "tile.get",
+    "tile.close",
+    "tile.focus",
+    "layout.get",
+    "layout.split",
+    "layout.focus",
+    "layout.swap",
+    "layout.move",
+    "layout.resize",
+    "layout.zoom",
+    "terminal.bind",
+    "terminal.send_text",
+    "terminal.send_keys",
+    "terminal.read"
+  ],
+  "title": "Azulejo API",
+  "version": 1
+}

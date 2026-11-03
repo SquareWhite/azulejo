@@ -35,9 +35,9 @@ lint-linux:
 linux:
     cargo build -p azulejo-linux
 
-# Regenerate schema/api.v1.json (not implemented until step 1.2)
+# Regenerate schema/api.v1.json from the protocol crate. `just test` fails while it's stale.
 schema:
-    @echo "schema generation lands in step 1.2" >&2
+    cargo run -q -p azulejo-protocol --bin azj-schema schema/api.v1.json
 
 # Build GhosttyKit from vendor/ghostty
 ghostty:

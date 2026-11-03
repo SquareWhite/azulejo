@@ -7,6 +7,12 @@ license.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "azj-schema"
+path = "src/bin/azj-schema.rs"
+
 [dependencies]
+azulejo-model.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

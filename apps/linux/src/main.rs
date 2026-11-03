@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use azulejo_engine::Engine;
-use azulejo_protocol::{Axis, Command, Direction, Event, LayoutNode};
+use azulejo_protocol::{Axis, Command, Direction, Event, LayoutSplit, Node};
 use gtk4::{gdk, glib};
 use libadwaita as adw;
 
@@ -36,7 +36,8 @@ impl Shell {
     }
 
     fn apply(&self, event: Event) {
-        if let Event::LayoutChanged { tree, focused } = event {
+        if let Event::LayoutChanged(state) = event {
+            let (tree, focused) = (state.tree, state.focused.to_string());
             let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
             root.set_margin_top(4);
             root.set_margin_bottom(4);
@@ -50,21 +51,25 @@ impl Shell {
 
 /// Spike-grade (step 0.6): a split is a homogeneous Box, so every ratio draws as
 /// 0.5. The real `TileLayout` widget in step 3.1 honours ratios.
-fn build(node: &LayoutNode, focused: &str) -> gtk4::Widget {
+fn build(node: &Node, focused: &str) -> gtk4::Widget {
     match node {
-        LayoutNode::Leaf { id } => {
-            let label = gtk4::Label::new(Some(id));
+        Node::Leaf { id } => {
+            let id = id.to_string();
+            // Full IDs are long ULIDs; the last four characters tell tiles apart.
+            let label = gtk4::Label::new(Some(&format!("…{}", &id[id.len() - 4..])));
             label.set_hexpand(true);
             label.set_vexpand(true);
             label.add_css_class("tile");
-            let n: usize = id.trim_start_matches('t').parse().unwrap_or(0);
+            let n = id
+                .bytes()
+                .fold(0usize, |h, b| (h.wrapping_mul(31) + b as usize) & 0xFFFF);
             label.add_css_class(&format!("tile-{}", n % 8));
             if id == focused {
                 label.add_css_class("focused");
             }
             label.upcast()
         }
-        LayoutNode::Split { axis, a, b, .. } => {
+        Node::Split { axis, a, b, .. } => {
             let orientation = match axis {
                 Axis::Horizontal => gtk4::Orientation::Horizontal,
                 Axis::Vertical => gtk4::Orientation::Vertical,
@@ -76,6 +81,15 @@ fn build(node: &LayoutNode, focused: &str) -> gtk4::Widget {
             split.upcast()
         }
     }
+}
+
+/// Splits the focused tile, opening a terminal on the `direction` side.
+fn split(direction: Direction) -> Command {
+    Command::LayoutSplit(LayoutSplit {
+        tile: None,
+        direction,
+        content: None,
+    })
 }
 
 fn main() -> glib::ExitCode {
@@ -120,22 +134,16 @@ fn main() -> glib::ExitCode {
                 }
                 _ => return glib::Propagation::Proceed,
             };
-            handler.send(Command::LayoutSplit { direction });
+            handler.send(split(direction));
             glib::Propagation::Stop
         });
         window.add_controller(keys);
 
         // Spike (step 0.6): seed the same splits as the macOS shell.
         shell.send(Command::LayoutGet);
-        shell.send(Command::LayoutSplit {
-            direction: Direction::Right,
-        });
-        shell.send(Command::LayoutSplit {
-            direction: Direction::Down,
-        });
-        shell.send(Command::LayoutSplit {
-            direction: Direction::Right,
-        });
+        for direction in [Direction::Right, Direction::Down, Direction::Right] {
+            shell.send(split(direction));
+        }
         window.present();
     });
     app.run()
