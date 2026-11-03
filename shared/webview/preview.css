@@ -13,6 +13,18 @@
   --azj-notice-border: #d4a72c;
   --azj-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "DejaVu Sans Mono", monospace;
   --azj-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif;
+  --azj-heading: var(--azj-fg);
+  --azj-code: var(--azj-fg);
+  --azj-code-bg: var(--azj-subtle);
+  /* Type scale from the mockup's preview tile (docs/design/README.md,
+     Typography): body = tokens.json font.body (13), heading semibold 18,
+     code blocks 11; radius = tokens.json radius.field (6). */
+  --azj-size-body: 13px;
+  --azj-size-h1: 18px;
+  --azj-size-h2: 15px;
+  --azj-size-h3: 13px;
+  --azj-size-code: 11px;
+  --azj-radius: 6px;
 }
 
 /* Dark: the mockup's preview tile (One Dark, shared/design/tokens.json:
@@ -27,6 +39,12 @@
     --azj-link: #61afef;
     --azj-notice-bg: #2e2a1a;
     --azj-notice-border: #9e6a03;
+    /* Body text textSecondary, headings textPrimary, inline code error red
+       on no fill, code blocks on sunken: as the mockup draws them. */
+    --azj-fg: #9da5b4;
+    --azj-heading: #d7dae0;
+    --azj-code: #e06c75;
+    --azj-code-bg: transparent;
   }
 }
 
@@ -37,21 +55,21 @@ html, body {
   background: var(--azj-bg);
   color: var(--azj-fg);
   font-family: var(--azj-sans);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: var(--azj-size-body);
+  line-height: 1.5;
 }
 
-#azj-content { padding: 20px 28px 48px; }
+#azj-content { padding: 14px 16px 32px; }
 .azj-kind-markdown #azj-content { max-width: 900px; margin: 0 auto; }
 .azj-kind-code #azj-content, .azj-kind-text #azj-content { padding: 0; }
 
 a { color: var(--azj-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.5em 0 0.6em; font-weight: 600; }
-h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--azj-border); }
-h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--azj-border); }
-h3 { font-size: 1.25em; }
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.2em 0 0.5em; font-weight: 600; color: var(--azj-heading); }
+h1 { font-size: var(--azj-size-h1); }
+h2 { font-size: var(--azj-size-h2); padding-bottom: 0.3em; border-bottom: 1px solid var(--azj-border); }
+h3, h4, h5, h6 { font-size: var(--azj-size-h3); }
 #azj-content > :first-child { margin-top: 0; }
 
 p, ul, ol, blockquote, table, pre, details { margin: 0 0 1em; }
@@ -59,9 +77,9 @@ blockquote { padding: 0 1em; color: var(--azj-muted); border-left: 0.25em solid 
 hr { border: 0; height: 1px; background: var(--azj-border); margin: 1.5em 0; }
 img, video { max-width: 100%; }
 
-code, pre { font-family: var(--azj-mono); font-size: 0.875em; }
-:not(pre) > code { padding: 0.15em 0.35em; background: var(--azj-subtle); border-radius: 6px; }
-pre { padding: 14px 16px; overflow: auto; background: var(--azj-subtle); border-radius: 6px; line-height: 1.45; }
+code, pre { font-family: var(--azj-mono); font-size: 0.9em; }
+:not(pre) > code { padding: 0.1em 0.2em; color: var(--azj-code); background: var(--azj-code-bg); border-radius: var(--azj-radius); }
+pre { padding: 10px 12px; overflow: auto; background: var(--azj-subtle); border-radius: var(--azj-radius); line-height: 1.6; font-size: var(--azj-size-code); }
 pre code { background: none; padding: 0; font-size: inherit; }
 /* Beats the syntax themes' own `.syn-code` background, which comes later. */
 pre.syn-code { background: var(--azj-subtle); color: var(--azj-fg); }

@@ -46,7 +46,7 @@ if [[ "$mode" == "--slow" ]]; then
   }
   step 01-split ctrl+cmd+t
   step 02-resize ctrl+alt+shift+h
-  step 03-swap alt+shift+l
+  step 03-swap alt+shift+h                     # the focused tile sits on the right
   step 04-zoom alt+shift+m
   step 05-unzoom alt+shift+m
   step 06-rotate alt+o

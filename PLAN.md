@@ -299,7 +299,7 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 
 - [x] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
-  **Result:** 94663ec (merged 3da01cf): hidden title bar, lights at the card's top left, toolbar row 60 pt, empty toolbar space drags the window. Fixed in D.9: the content view now paints the window colour (the gaps around the cards were see-through), and the lights are re-placed after every refresh (a workspace rename or switch put them back behind the card). Open: in the full D.9 scene the lights still don't show in the capture ([compare-v1](docs/design/compare-v1.md), item 6).
+  **Result:** 94663ec (merged 3da01cf): hidden title bar, lights at the card's top left, toolbar row 60 pt, empty toolbar space drags the window. Fixed in D.9: the content view now paints the window colour (the gaps around the cards were see-through), and the lights are re-placed after every refresh (a workspace rename or switch put them back behind the card). The full D.9 scene's capture lacked them because the app's render covers only the content view; it draws the title bar's buttons now (5dc9fef).
 
 - [x] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
   **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names, and the Files panel navigates and opens files like the files tile.
@@ -311,7 +311,7 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 
 - [x] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
   **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
-  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Focus indicator still pending the designer. Mid-motion screenshots of the caps are a deferred check (screen locked).
+  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Focus indicator still pending the designer. Mid-motion captures (the app's render, `anim.sh --slow`) show caps and headers moving with the tiles and no content outside any card; the ring now rides with the focused tile, and cross-fade ghosts stay in their old card (5eabfc9).
 
 - [x] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
   **Done when** it matches the mockup's browser tile.
@@ -354,9 +354,10 @@ D.1–D.9 ticked; the side-by-side comparison signed off.
 - The default terminal font size when the user's Ghostty config sets none.
 - The mockup's wording: "session" becomes "workspace".
 
-**Open after D.9:**
-- The traffic lights don't show in the full scene's capture (compare-v1, item 6).
-- Crop motion: in a slowed split, a shrinking terminal's 1:1 snapshot draws past its tile's moving bottom edge into the new tile (about 15 pt, cut at the terminal view's final height). The tiles' on-screen frames are in step (logged by `capture`), so the tile frame's clip isn't applied to the snapshot. Setting `clipsToBounds` on the tile views didn't change it. Reproduce: `AZJ_DEV_NAME=x apps/macos/automation/anim.sh --slow`, captures `01-split-a-mid*.png`.
+**Resolved after D.9 (Nov 3, 2026):**
+- Crop motion "snapshot past the edge" (5eabfc9): the snapshot was clipped all along; the focus ring was the edge it crossed. It went from the old focused tile straight to the new one, so mid-split it cut across the shrinking tile (and across both cards on a close). It now follows the focused tile's own path. Cross-fade ghosts (rotate, Tile → Three Column) drew a tile's last frame unclipped, past the container's edge for a tile back from Monocle; they're clipped to the old card and only for tiles that were on screen. Slowed captures of split, resize, swap, zoom, rotate, Monocle, Three Column and close: no bright pixel outside the logged tile and ring frames (was 3–5,840 per capture). Crop stress: 55 animations, PTY resizes 115/115, 0 dropped ticks, but with the screen locked (0 display-link ticks; 1 of 1,436 main-thread passes over a frame), so the screen-on run stays a deferred check.
+- Traffic lights in the scene's capture (5dc9fef): the capture method. `capture-v1.png` is the app's render of its content view, and the lights live in the title bar outside it; both in-app renders draw them now (grey: the automation window is never key). Recaptured; compare-v1 items 5 and 6 fixed.
+- Preview headings about twice the mockup's size (9002409): body 13 px, heading 18 px semibold, code 11 px, mockup colours in dark.
 
 ---
 
