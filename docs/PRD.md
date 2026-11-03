@@ -104,7 +104,7 @@ Azulejo must feel as fast as Ghostty for terminal work and never drop frames whi
 | Cold start | Under 500 ms to a usable window with restored layout |
 | Input latency | Keystroke to glyph within 1 frame of standalone Ghostty on the same machine (Ghostty GTK on Linux) |
 | Animation | 120 Hz on ProMotion displays; at least 60 Hz on Linux, display refresh rate where the compositor allows; layout transitions 150 to 250 ms |
-| Memory | Under 150 MB for one window with 4 terminal tiles, excluding browser tiles |
+| Memory | Within 25% of Ghostty.app with the same splits (one window, 4 terminals, excluding browser tiles). Restated Nov 3, 2026: the first target, under 150 MB, sat below libghostty's own floor (~150 MB for one surface); M1 measured 195 MB with 4 terminals |
 | herdr reconnect | Terminal tiles reattach within 2 s after app restart or sleep |
 | Stability | A crash in a browser or preview tile never takes down terminal tiles |
 | API | Every user action reachable through the socket API; JSON responses versioned |

@@ -41,3 +41,6 @@ clients/python/dist/
 .claude-last-session
 .claude/settings.local.json
 .dev/
+
+# Frozen dogfood builds (docs/dogfooding.md)
+/dist/
