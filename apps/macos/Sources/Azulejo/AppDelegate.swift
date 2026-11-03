@@ -321,8 +321,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             rename(name, in: controller)
         case "open_config":
             openConfig(in: controller)
-        case "command_palette": openPalette(.commands, in: controller)
-        case "goto": openPalette(.goto, in: controller)
+        case "quick_open": openQuickOpen(in: controller)
+        case "command_palette": openQuickOpen(query: ">", in: controller)
+        case "goto": openQuickOpen(query: "@", in: controller)
         case "find": controller.flash("Find lands with the terminal tile (1.7)")
         case "edit_scrollback": controller.flash("Edit scrollback isn't wired yet")
         case "reload_config":

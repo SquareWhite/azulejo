@@ -52,7 +52,7 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
 ## Everyday use
 
 - Your herdr chords carry over: `alt+hjkl` focus, `alt+shift+hjkl` swap, `ctrl+alt+shift+hjkl` resize, `ctrl+cmd+t` tall split, `alt+enter` promote, `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom, `alt+w` close tile, `cmd+t` / `cmd+1..8` workspaces, `cmd+shift+t` / `ctrl+1..8` tabs. Full list and overrides: [keybindings](keybindings.md).
-- `cmd+shift+p` opens the command palette: every action with its chord, fuzzy search, recent first. Commands that need input (rename, open URL, preview a file, open or save a layout) ask for it inline. `cmd+p` jumps to any workspace, tab or tile by name, cwd, URL, path or agent.
+- `cmd+k` opens quick open: one menu for every action (with its chord) and every workspace, tab and tile (by name, cwd, URL, path or agent), fuzzy search, recent first. Start with `>` for commands only or `@` for places only. Commands that need input (rename, open URL, preview a file, open or save a layout) ask for it inline. `cmd+shift+p` and `cmd+p` are unbound now; [docs/keybindings.md](keybindings.md#quick-open-k) shows how to bring them back. In terminals `cmd+k` no longer clears (Ghostty's default): use `ctrl+l`.
 - Agents show in their tile's corner (`claude · working`). Blocked is red, finished-but-unseen green; the sidebar, tab bar and Dock badge count them. Focusing the tile marks it seen. Turn the Dock badge off with `defaults write dev.azulejo.Azulejo AzulejoDockBadge -bool false`.
 - Browser and preview tiles also come from `azj`:
 

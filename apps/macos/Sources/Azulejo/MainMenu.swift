@@ -85,7 +85,8 @@ enum MainMenu {
             item("Toggle Sidebar", "toggle_sidebar"),
             item("Zoom Tile", "zoom_tile"),
             .separator(),
-            item("Command Palette…", "command_palette"),
+            item("Quick Open…", "quick_open"),
+            item("Commands…", "command_palette"),
             item("Go To…", "goto"),
         ]))
         main.addItem(menu("Layout", [
