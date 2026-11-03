@@ -51,6 +51,10 @@ pub struct Engine {
     /// When each pane's title or working directory last came in on herdr's
     /// stream or from the process poller, for the same reason.
     info_reported: std::collections::HashMap<(link::Machine, String), u64>,
+    /// Panes herdr reported closed (or exited, or gone with their
+    /// workspace), with when: a survey requested before that still lists
+    /// them and mustn't adopt them again.
+    closed_reported: Vec<(azulejo_model::HerdrRef, u64)>,
 }
 
 /// How many closed-here herdr panes `Session::detached_herdr` remembers.
@@ -76,6 +80,7 @@ impl Engine {
             placeholder: Some(workspace),
             agent_reported: Default::default(),
             info_reported: Default::default(),
+            closed_reported: Vec::new(),
             fresh_tab: Some(tab),
         }
     }
@@ -89,6 +94,7 @@ impl Engine {
             fresh_tab: None,
             agent_reported: Default::default(),
             info_reported: Default::default(),
+            closed_reported: Vec::new(),
         }
     }
 

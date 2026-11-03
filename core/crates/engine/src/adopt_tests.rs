@@ -475,3 +475,49 @@ fn a_survey_older_than_streamed_pane_info_keeps_the_streamed_info() {
         (Some("old title"), Some("/old"))
     );
 }
+
+/// The tile showing a pane, if any.
+fn tile_of_pane(session: &Session, pane: &str) -> Option<azulejo_model::TileId> {
+    session
+        .tiles()
+        .find(|(_, t)| pane_of_tile(t) == Some(pane))
+        .map(|(_, t)| t.id)
+}
+
+/// A survey requested before herdr reported a pane, tab or workspace closed
+/// still lists it; applied late, it mustn't bring the tiles back. A survey
+/// requested after the close is believed.
+#[test]
+fn a_survey_older_than_a_close_in_herdr_doesnt_bring_the_pane_back() {
+    let mut engine = Engine::new();
+    survey(&mut engine, &fixture());
+    let stale = fixture();
+
+    // A one-pane tab (w1:t2) and a split-off pane (w1:p3 in w1:t1) close in
+    // herdr; so does workspace w2.
+    for pane in ["w1:p4", "w1:p3"] {
+        let tile = tile_of_pane(engine.session(), pane).unwrap();
+        engine.apply_internal(Internal::ClosedElsewhere { tile });
+        assert!(tile_of_pane(engine.session(), pane).is_none());
+    }
+    engine.apply_internal(Internal::HerdrWorkspaceClosed {
+        machine: None,
+        herdr: "w2".into(),
+    });
+    assert!(tile_of_pane(engine.session(), "w2:p1").is_none());
+
+    // The survey requested before those closes lands now.
+    let events = engine.apply_internal(Internal::Surveyed(None, Box::new(stale.clone()), 1_000));
+    for pane in ["w1:p4", "w1:p3", "w2:p1", "w2:p2"] {
+        assert!(
+            tile_of_pane(engine.session(), pane).is_none(),
+            "stale survey re-adopted {pane}: {events:?}"
+        );
+    }
+    assert_eq!(engine.session().check_invariants(), Ok(()));
+
+    // One requested after the closes, still listing w1:p4, is believed.
+    let later = crate::agent::now_ms() + 60_000;
+    engine.apply_internal(Internal::Surveyed(None, Box::new(stale), later));
+    assert!(tile_of_pane(engine.session(), "w1:p4").is_some());
+}

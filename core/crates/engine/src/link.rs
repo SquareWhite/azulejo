@@ -28,6 +28,9 @@ use tokio::sync::mpsc;
 
 use crate::{Engine, adopt, agent, diff};
 
+/// How many closed-in-herdr panes the stale-survey check remembers.
+const MAX_CLOSED_REPORTED: usize = 1024;
+
 /// What the engine needs from herdr. [`herdr::Client`] implements it; tests
 /// use a fake.
 pub trait HerdrPort: Send + Sync + 'static {
@@ -358,13 +361,17 @@ impl Engine {
                 if self.session.close_tile(tile).is_err() {
                     return Vec::new();
                 }
-                self.changes_since(&before)
+                let events = self.changes_since(&before);
+                self.remember_closed_in_herdr(&events);
+                events
             }
             Internal::HerdrWorkspaceClosed { machine, herdr } => {
                 let before = self.session.clone();
                 close_herdr_workspace(&mut self.session, &machine, &herdr);
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
-                self.changes_since(&before)
+                let events = self.changes_since(&before);
+                self.remember_closed_in_herdr(&events);
+                events
             }
             Internal::AgentStatus {
                 machine,
@@ -400,7 +407,18 @@ impl Engine {
                 } else {
                     None
                 };
-                let mut changed = adopt::adopt(&mut self.session, &machine, &survey, placeholder);
+                // A survey requested after a close reflects it; one requested
+                // before still lists the pane and mustn't bring it back.
+                self.closed_reported
+                    .retain(|(r, at)| r.machine != machine || *at >= requested);
+                let closed: Vec<HerdrRef> = self
+                    .closed_reported
+                    .iter()
+                    .filter(|(r, _)| r.machine == machine)
+                    .map(|(r, _)| r.clone())
+                    .collect();
+                let mut changed =
+                    adopt::adopt(&mut self.session, &machine, &survey, placeholder, &closed);
                 changed |= self.refresh_agents(&machine, &survey, requested);
                 // Likewise for titles and working directories.
                 let info = &mut self.info_reported;
@@ -494,6 +512,24 @@ impl Engine {
 
     /// Events for what changed since `before`, with headers brought up to
     /// date first (F28).
+    /// Notes the herdr panes of tiles that closed because herdr closed them,
+    /// for [`Internal::Surveyed`]'s stale-survey check.
+    fn remember_closed_in_herdr(&mut self, events: &[Event]) {
+        let now = agent::now_ms();
+        for event in events {
+            if let Event::TileClosed { tile, .. } = event
+                && let TileContent::Terminal { herdr: Some(h), .. } = &tile.content
+            {
+                self.closed_reported.retain(|(r, _)| r != h);
+                self.closed_reported.push((h.clone(), now));
+            }
+        }
+        let len = self.closed_reported.len();
+        if len > MAX_CLOSED_REPORTED {
+            self.closed_reported.drain(..len - MAX_CLOSED_REPORTED);
+        }
+    }
+
     pub(crate) fn changes_since(&mut self, before: &Session) -> Vec<Event> {
         crate::meta::refresh_headers(&mut self.session);
         diff(before, &self.session, false)
