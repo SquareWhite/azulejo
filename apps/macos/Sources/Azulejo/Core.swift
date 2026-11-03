@@ -57,12 +57,39 @@ final class Core {
 
     /// Decodes a reply field (e.g. `session`) into a Codable type.
     func fetch<T: Decodable>(_ method: String, field: String, as type: T.Type) -> T? {
-        guard case .success(let reply) = execute(["method": method]),
+        guard case .success(let reply) = Perf.measure("fetch.exec:\(method)", { execute(["method": method]) }),
               let value = reply[field],
               let data = try? JSONSerialization.data(withJSONObject: value)
         else { return nil }
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try Perf.measure("fetch.decode:\(method)") { try JSONDecoder().decode(T.self, from: data) }
+        } catch {
+            NSLog("azulejo: can't decode \(method).\(field): \(error)")
+            return nil
+        }
+    }
+
+    /// A reply field as the core sent it, with the raw reply text so callers
+    /// can skip work when nothing changed. Decodes straight from the core's
+    /// JSON (no `JSONSerialization` round trip): a session fetch runs after
+    /// every change, so it's on the motion path.
+    func fetchRaw<T: Decodable>(
+        _ method: String, field: String, as type: T.Type, unlessEqualTo previous: String?
+    ) -> (raw: String, value: T?)? {
+        if freed { return nil }
+        guard let json = Self.encode(["method": method]),
+              let pointer = Perf.measure("fetch.exec:\(method)", { azj_core_execute(handle, json) })
+        else { return nil }
+        defer { azj_string_free(pointer) }
+        let raw = String(cString: pointer)
+        if raw == previous { return (raw, nil) }
+        do {
+            let decoder = JSONDecoder()
+            decoder.userInfo[FieldEnvelope<T>.fieldKey] = field
+            let envelope = try Perf.measure("fetch.decode:\(method)") {
+                try decoder.decode(FieldEnvelope<T>.self, from: Data(raw.utf8))
+            }
+            return (raw, envelope.value)
         } catch {
             NSLog("azulejo: can't decode \(method).\(field): \(error)")
             return nil
@@ -146,6 +173,33 @@ final class Core {
 
     deinit {
         if !freed { azj_core_free(handle) }
+    }
+}
+
+/// `{"ok":true,"reply":{"<field>":T,…}}`, with the field named in the
+/// decoder's `userInfo`. A failed command (`ok` false) decodes as nil.
+struct FieldEnvelope<T: Decodable>: Decodable {
+    static var fieldKey: CodingUserInfoKey { CodingUserInfoKey(rawValue: "azj.field")! }
+    let value: T?
+
+    private struct Key: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let top = try decoder.container(keyedBy: Key.self)
+        guard try top.decodeIfPresent(Bool.self, forKey: Key(stringValue: "ok")) == true,
+              let field = decoder.userInfo[Self.fieldKey] as? String,
+              top.contains(Key(stringValue: "reply"))
+        else {
+            value = nil
+            return
+        }
+        let reply = try top.nestedContainer(keyedBy: Key.self, forKey: Key(stringValue: "reply"))
+        value = try reply.decodeIfPresent(T.self, forKey: Key(stringValue: field))
     }
 }
 

@@ -211,3 +211,56 @@ Each step left the session identical, kept the same herdr terminals and the tick
 - **Test:** SIGKILLed the browser tile's `com.apple.WebKit.WebContent` process, then the new QuickLookUIService process. Only processes that appeared for these tiles were killed.
 - **Result:** the app kept running, the attach processes were the same PIDs, and the ticker went from 23 to 42.
 - **Socket:** the API socket is 0600 and its directory 0700, both owned by the user.
+
+## Animation frame drops after 2.12–2.15: cause and fix
+
+macOS test environment, 120 Hz display, Nov 3–4 2026, dev instance `perf`, `anim.sh` crop stress (55 animations: resize, swap, zoom, rotate, promote, focus, equalize, close, split, tab switch), load average 0.7–1.8.
+
+### What the drops were
+
+The crop stress test's missed ticks rose from 0–3 per run (before 2.12) to 1–9 (after 2.14/2.15). Every drop was a single missed tick, and PTY resize counts always matched. The display-link counter only sees main-thread stalls, so `Perf` (new, `Perf.swift`) times the main thread's work in named spans, plus each run-loop pass and AppKit's display cycle. `anim stats` now reports which spans overlapped each dropped tick (`drops`, `drop_causes_ms`) and per-phase timings (`perf.phases`).
+
+The screen was locked during this work, so the display link didn't fire (`ticks: 0`). `perf.motion_passes_*` stands in for it: main run-loop passes while tiles move, excluding the pass that starts the motion. Any pass over half a frame (4.2 ms) risks a tick and one over a frame (8.3 ms) misses one.
+
+- **The cause: a second, full UI refresh mid-motion, about once per motion.** The command that starts a motion refreshes the UI at once. Its events (`layout.changed`, `focus.changed`, `tile.updated`) then arrive a few ms later and triggered another `session.get` fetch, decode and apply of every window, inside the motion's first frames. 2.12 and 2.14/2.15 made that refresh dearer (bigger tiles: rects, headers, pane metadata, agent state) and more frequent (header and process events):
+  - typically 3–5 ms
+  - 10–13 ms when a `tile.updated` (agent state or header) reached the terminal view, which re-ran its attach bookkeeping and a layout pass
+- **Smaller costs:**
+  - a `machines.list` fetch on every refresh
+  - a `JSONSerialization` parse and re-serialise of every reply before `JSONDecoder`
+
+### Fixes
+
+1. **Events don't refresh mid-motion.** An event-driven refresh waits until the motion ends (+30 ms). A user command still refreshes at once, as before.
+2. **Unchanged sessions skip the apply.** A refresh whose `session.get` reply is byte-identical to the last one skips decoding and every window's apply. That's 71 of 130 refreshes in the stress.
+3. **Direct decode.** The reply decodes straight from the core's JSON (`Core.fetchRaw`).
+4. **`machines.list` on demand,** only after `machine.*` or `config.reloaded` events.
+5. **Content views ignore header and agent changes.** `TileFrame` stops forwarding them; only the header strip and the attention overlay use them.
+
+### Before and after (proxy: mid-motion run-loop passes)
+
+| | runs | passes > 4.2 ms | passes > 8.3 ms | worst pass | refreshes while moving |
+| --- | --- | --- | --- | --- | --- |
+| Before (instrumented, no fixes) | 4 | 4, 4, 7, 5 | 1, 1, 0, 2 | 10.7, 12.0, 7.5, 13.4 ms | 58–60 per run |
+| After | 7 | 3, 0, 1, 2, 4, 1, 1 | 0 in every run | 3.6–7.9 ms | 0 |
+
+The passes over 4.2 ms that remain after the fixes contain no app span and no display-cycle time. They're most likely the main thread losing the CPU under load.
+
+### Phase timings (after, typical run)
+
+| Span | Count | Mean | Max | When |
+| --- | --- | --- | --- | --- |
+| `refresh` | 129 | 3.5 ms | 22.7 ms | 58 decode + apply; the rest stop at the unchanged check (~0.5 ms) |
+| `fetch.exec:session.get` | 129 | 0.53 ms | | core round trip |
+| `fetch.decode:session.get` | 58 | 0.25 ms | | |
+| `apply.tiles` | 58 | 5.7 ms | 19.9 ms | mostly the motion's own start: `motion.layout`, 53 × 4.5 ms mean, the one PTY resize plus headers |
+| `apply.sidebar`, `apply.tabbar`, `apply.attention` | | < 0.2 ms | | |
+| `key` | 74 | 0.9 ms | | |
+| `event.route` | 80 | 0.4 ms | | |
+| `ghostty.tick` | 307 | 0.006 ms | | |
+
+Work before the first frame (`setup_median_ms`) is about 5 ms. It runs before the display link restarts, so it doesn't count as a drop.
+
+### Deferred
+
+Re-run `apps/macos/automation/anim.sh` with the screen unlocked on a quiet machine, so the display link fires. Target: ≤ 3 missed ticks in ≥ 5 of 6 runs. Any drop that remains now lists its cause in `anim-stats.json` (`drops`).
