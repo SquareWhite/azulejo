@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["core/crates/*", "apps/linux"]
+# The Linux shell needs GTK4, which isn't installed on macOS dev machines.
+# `cargo build` at the root builds only the core; the Linux shell builds with
+# `cargo build -p azulejo-linux` (see `just linux`).
+default-members = ["core/crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+rust-version = "1.99"
+
+[workspace.dependencies]
+azulejo-model = { path = "core/crates/model" }
+azulejo-protocol = { path = "core/crates/protocol" }
+azulejo-herdr = { path = "core/crates/herdr" }
+azulejo-engine = { path = "core/crates/engine" }
+azulejo-api = { path = "core/crates/api" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

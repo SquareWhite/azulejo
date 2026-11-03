@@ -1,0 +1,12 @@
+[package]
+name = "azulejo-protocol"
+description = "Commands, events and errors; source of the JSON Schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

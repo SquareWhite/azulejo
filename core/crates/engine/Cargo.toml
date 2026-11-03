@@ -1,0 +1,13 @@
+[package]
+name = "azulejo-engine"
+description = "Core state machine, persistence and config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+azulejo-model.workspace = true
+azulejo-protocol.workspace = true
+azulejo-herdr.workspace = true
