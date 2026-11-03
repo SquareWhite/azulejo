@@ -308,3 +308,115 @@ proptest! {
         }
     }
 }
+
+/// The leaf sibling of `tile` and the axis of their shared split, if `tile`'s
+/// parent split holds another leaf directly.
+fn leaf_sibling(node: &azulejo_model::Node, tile: TileId) -> Option<(azulejo_model::Axis, TileId)> {
+    use azulejo_model::Node;
+    let Node::Split { axis, a, b, .. } = node else {
+        return None;
+    };
+    match (a.as_ref(), b.as_ref()) {
+        (Node::Leaf { id: x }, Node::Leaf { id: y }) if *x == tile => Some((*axis, *y)),
+        (Node::Leaf { id: x }, Node::Leaf { id: y }) if *y == tile => Some((*axis, *x)),
+        _ => leaf_sibling(a, tile).or_else(|| leaf_sibling(b, tile)),
+    }
+}
+
+#[derive(Debug, Clone)]
+enum TreeOp {
+    Split(usize, Direction),
+    SplitAuto,
+    Resize(usize, Direction, f64),
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 10_000, ..ProptestConfig::default() })]
+
+    /// Moving a tile into an aligned neighbour and back restores the tree
+    /// exactly; always true for a leaf sibling in a split along the move.
+    #[test]
+    fn move_there_and_back_restores_aligned_moves(
+        ops in prop::collection::vec(
+            prop_oneof![
+                3 => (0usize..16, direction()).prop_map(|(t, d)| TreeOp::Split(t, d)),
+                2 => Just(TreeOp::SplitAuto),
+                2 => (0usize..16, direction(), -0.4f64..0.4).prop_map(|(t, d, a)| TreeOp::Resize(t, d, a)),
+            ],
+            1..16,
+        ),
+        pick in 0usize..16,
+        d in direction(),
+    ) {
+        use azulejo_model::Node;
+        let mut root = Node::leaf(TileId::new());
+        for op in &ops {
+            let tiles = root.tiles();
+            match *op {
+                TreeOp::Split(i, dir) => root.split(tiles[i % tiles.len()], dir, TileId::new()).unwrap(),
+                TreeOp::SplitAuto => root.split_auto(TileId::new()).unwrap(),
+                TreeOp::Resize(i, dir, amount) => {
+                    let _ = root.resize(tiles[i % tiles.len()], dir, amount);
+                }
+            }
+        }
+        let tiles = root.tiles();
+        let tile = tiles[pick % tiles.len()];
+        let Some(neighbour) = root.neighbour(tile, d) else {
+            return Ok(());
+        };
+        let sibling = matches!(
+            leaf_sibling(&root, tile),
+            Some((axis, s)) if s == neighbour && axis == d.axis()
+        );
+        let before = root.clone();
+        let mut moved = root.clone();
+        moved.move_tile(tile, d).unwrap();
+        let back_target = moved.neighbour(tile, d.opposite());
+        // A move that kept the shape (a slot swap) must undo exactly.
+        let swapped = {
+            let mut s = before.clone();
+            s.swap(tile, neighbour).unwrap();
+            s == moved
+        };
+        if sibling {
+            prop_assert!(swapped, "sibling move restructured the tree");
+        }
+        if swapped {
+            prop_assert_eq!(back_target, Some(neighbour));
+            moved.move_tile(tile, d.opposite()).unwrap();
+            prop_assert_eq!(&moved, &before);
+        }
+    }
+
+    /// Resize only errors when the tile has no divider at all on that axis.
+    #[test]
+    fn resize_errors_only_without_a_divider_on_the_axis(
+        ops in prop::collection::vec((0usize..16, direction()), 0..12),
+        pick in 0usize..16,
+        d in direction(),
+        amount in -0.5f64..0.5,
+    ) {
+        use azulejo_model::Node;
+        let mut root = Node::leaf(TileId::new());
+        for (i, dir) in &ops {
+            let tiles = root.tiles();
+            root.split(tiles[i % tiles.len()], *dir, TileId::new()).unwrap();
+        }
+        let tiles = root.tiles();
+        let tile = tiles[pick % tiles.len()];
+        let rect = root.rects().into_iter().find(|(t, _)| *t == tile).unwrap().1;
+        let spans_axis = match d.axis() {
+            azulejo_model::Axis::Horizontal => rect.width >= 1.0 - 1e-9,
+            azulejo_model::Axis::Vertical => rect.height >= 1.0 - 1e-9,
+        };
+        let before = root.clone();
+        match root.resize(tile, d, amount) {
+            Ok(()) => prop_assert!(!spans_axis),
+            Err(_) => {
+                prop_assert!(spans_axis, "refused although a divider exists");
+                prop_assert_eq!(&root, &before);
+            }
+        }
+    }
+}

@@ -52,6 +52,16 @@ impl Direction {
     pub fn is_forward(self) -> bool {
         matches!(self, Direction::Right | Direction::Down)
     }
+
+    /// The direction pointing the other way.
+    pub fn opposite(self) -> Direction {
+        match self {
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+            Direction::Up => Direction::Down,
+            Direction::Down => Direction::Up,
+        }
+    }
 }
 
 /// A rectangle in the unit square, origin top left.
@@ -324,10 +334,17 @@ impl Node {
             .map(|(id, ..)| id)
     }
 
-    /// Moves `tile` one step in `direction`. If there's a neighbour that way, the
-    /// tile leaves its slot and splits the neighbour, landing on its far side.
-    /// Otherwise it moves to that edge of the whole tab. Returns false when
-    /// nothing changed.
+    /// Moves `tile` one step in `direction`, changing the tree as little as
+    /// possible:
+    ///
+    /// - If the neighbour that way spans exactly the same edge (a sibling in the
+    ///   same split, or the next tile in a stack chain), the two swap slots and
+    ///   the tree keeps its shape. Moving back undoes it exactly.
+    /// - Otherwise the tile leaves its slot and splits the neighbour, landing on
+    ///   its far side.
+    /// - With no neighbour, it moves to that edge of the whole tab.
+    ///
+    /// Returns false when nothing changed.
     pub fn move_tile(&mut self, tile: TileId, direction: Direction) -> Result<bool, ModelError> {
         if !self.contains(tile) {
             return Err(ModelError::TileNotFound(tile));
@@ -337,6 +354,12 @@ impl Node {
         }
         let before = self.clone();
         let target = self.neighbour(tile, direction);
+        if let Some(neighbour) = target
+            && self.aligned(tile, neighbour, direction.axis())
+        {
+            self.swap(tile, neighbour)?;
+            return Ok(*self != before);
+        }
         self.remove(tile);
         match target {
             Some(neighbour) => self.split(neighbour, direction, tile)?,
@@ -358,9 +381,34 @@ impl Node {
         Ok(*self != before)
     }
 
-    /// Moves `tile`'s edge in `direction` by `amount` (a share of the enclosing
-    /// split, negative to shrink). Uses the nearest split whose divider is on that
-    /// edge. Ratios are clamped to [`MIN_RATIO`], [`MAX_RATIO`].
+    /// True when `x` and `y` cover exactly the same span across `axis` (same top
+    /// and bottom for a horizontal move, same left and right for a vertical one).
+    fn aligned(&self, x: TileId, y: TileId, axis: Axis) -> bool {
+        let rects = self.rects();
+        let rect = |t: TileId| rects.iter().find(|(id, _)| *id == t).map(|(_, r)| *r);
+        let (Some(rx), Some(ry)) = (rect(x), rect(y)) else {
+            return false;
+        };
+        let span = |r: Rect| match axis {
+            Axis::Horizontal => (r.y, r.bottom()),
+            Axis::Vertical => (r.x, r.right()),
+        };
+        let ((x0, x1), (y0, y1)) = (span(rx), span(ry));
+        (x0 - y0).abs() < EPS && (x1 - y1).abs() < EPS
+    }
+
+    /// Moves a divider of `tile` in `direction` by `amount` (a share of the
+    /// enclosing split; negative moves it the other way), tmux-style:
+    ///
+    /// - If the tile has a divider on its `direction` edge, that one moves, so
+    ///   the tile grows that way.
+    /// - Otherwise the divider on the opposite edge moves in `direction`, so the
+    ///   tile shrinks (e.g. "resize left" on a tile at the left edge pulls its
+    ///   right divider left).
+    ///
+    /// Uses the nearest split in each case. Errors only when the tile has no
+    /// divider on either side of that axis. Ratios are clamped to
+    /// [`MIN_RATIO`], [`MAX_RATIO`].
     pub fn resize(
         &mut self,
         tile: TileId,
@@ -396,7 +444,12 @@ impl Node {
                 }
             }
         }
-        match walk(self, tile, direction, amount) {
+        if walk(self, tile, direction, amount) == Some(true) {
+            return Ok(());
+        }
+        // No divider on that edge: move the opposite one the same way. `walk`
+        // only changes a ratio when it succeeds, so the first try left no trace.
+        match walk(self, tile, direction.opposite(), -amount) {
             Some(true) => Ok(()),
             _ => Err(ModelError::NoEdge { tile, direction }),
         }
@@ -657,10 +710,60 @@ mod tests {
         assert!((root.ratios()[0] - 0.4).abs() < 1e-9);
         root.resize(a, Direction::Right, 5.0).unwrap();
         assert_eq!(root.ratios()[0], MAX_RATIO);
+    }
+
+    #[test]
+    fn resize_without_an_edge_moves_the_opposite_divider() {
+        let (mut root, [a, b, c]) = three();
+        // a touches the tab's left edge: "resize left" pulls its right divider left.
+        root.resize(a, Direction::Left, 0.1).unwrap();
+        assert!((root.ratios()[0] - 0.4).abs() < 1e-9);
+        // b sits at the top: "resize up" pulls its bottom divider up.
+        root.resize(b, Direction::Up, 0.2).unwrap();
+        assert!((root.ratios()[1] - 0.3).abs() < 1e-9);
+        // c has a divider above, so "resize up" grows it.
+        root.resize(c, Direction::Up, 0.1).unwrap();
+        assert!((root.ratios()[1] - 0.2).abs() < 1e-9);
+        // A lone tile has nothing to move.
+        let mut lone = Node::leaf(a);
         assert!(matches!(
-            root.resize(a, Direction::Left, 0.1),
+            lone.resize(a, Direction::Left, 0.1),
             Err(ModelError::NoEdge { .. })
         ));
+        // Neither does a tile with no divider on that axis at all.
+        let mut row = Node::leaf(a);
+        row.split(a, Direction::Right, b).unwrap();
+        assert!(matches!(
+            row.resize(a, Direction::Up, 0.1),
+            Err(ModelError::NoEdge { .. })
+        ));
+    }
+
+    #[test]
+    fn moving_into_an_aligned_neighbour_swaps_and_reverses() {
+        // A sibling pair: move right then left restores the tree.
+        let [a, b] = ids();
+        let mut pair = Node::leaf(a);
+        pair.split(a, Direction::Right, b).unwrap();
+        pair.resize(a, Direction::Right, 0.2).unwrap();
+        let before = pair.clone();
+        assert!(pair.move_tile(a, Direction::Right).unwrap());
+        assert_eq!(pair.tiles(), vec![b, a]);
+        assert!(pair.move_tile(a, Direction::Left).unwrap());
+        assert_eq!(pair, before);
+
+        // Inside a tall stack the chain keeps its shape.
+        let [m, s1, s2, s3] = ids();
+        let mut tall = Node::leaf(m);
+        for t in [s1, s2, s3] {
+            tall.split_auto(t).unwrap();
+        }
+        let before = tall.clone();
+        assert!(tall.move_tile(s1, Direction::Down).unwrap());
+        assert_eq!(tall.tall().stack, vec![s2, s1, s3]);
+        assert_eq!(tall.ratios(), before.ratios());
+        assert!(tall.move_tile(s1, Direction::Up).unwrap());
+        assert_eq!(tall, before);
     }
 
     #[test]
