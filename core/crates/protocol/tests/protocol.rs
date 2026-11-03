@@ -243,6 +243,15 @@ fn sample_commands() -> Vec<Command> {
             path: "README.md".into(),
             target: FilesOpenTarget::Terminal,
         }),
+        Command::FilesPanel(FilesPanel {
+            panel: None,
+            root: "~/src/shop".into(),
+        }),
+        Command::FilesPanel(FilesPanel {
+            panel: Some(tile),
+            root: "/src/shop".into(),
+        }),
+        Command::FilesPanelClose(FilesPanelClose { panel: tile }),
         Command::LayoutApply(LayoutApply {
             path: Some("/src/shop/.azulejo.toml".into()),
             mode: ApplyMode::ReplaceTab,

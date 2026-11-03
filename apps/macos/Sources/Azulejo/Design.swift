@@ -150,6 +150,7 @@ enum Design {
         static let tab: CGFloat = 8
         static let searchField: CGFloat = 8
         static let searchBadge: CGFloat = 4
+        static let sidebarSegment: CGFloat = 7
     }
 
     /// Border widths, in points.
@@ -189,7 +190,11 @@ enum Design {
         static let searchHeight: CGFloat = 30
         static let searchBadgeHeight: CGFloat = 16
         static let rowHeight: CGFloat = 22
-        static let sidebarWidth: CGFloat = 168
+        static let sidebarWidth: CGFloat = 230
+        static let sidebarPadding: CGFloat = 8
+        static let sidebarRowHeight: CGFloat = 30
+        static let sidebarSegmentHeight: CGFloat = 28
+        static let sidebarFooterHeight: CGFloat = 36
     }
 
     /// UI fonts. Terminals use the user's Ghostty font, not these.
@@ -201,7 +206,11 @@ enum Design {
         nonisolated(unsafe) static let rowSelected: NSFont = .systemFont(ofSize: 12, weight: .semibold)
         nonisolated(unsafe) static let detail: NSFont = .systemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let caption: NSFont = .systemFont(ofSize: 10, weight: .regular)
-        nonisolated(unsafe) static let groupLabel: NSFont = .systemFont(ofSize: 10, weight: .semibold)
+        nonisolated(unsafe) static let groupLabel: NSFont = .systemFont(ofSize: 11, weight: .regular)
+        nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let sidebarBranch: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let sidebarSegment: NSFont = .systemFont(ofSize: 12, weight: .medium)
+        nonisolated(unsafe) static let footerCount: NSFont = .systemFont(ofSize: 12, weight: .regular)
         nonisolated(unsafe) static let dot: NSFont = .systemFont(ofSize: 8, weight: .regular)
         nonisolated(unsafe) static let addButton: NSFont = .systemFont(ofSize: 13, weight: .regular)
         nonisolated(unsafe) static let badge: NSFont = .systemFont(ofSize: 11, weight: .semibold)

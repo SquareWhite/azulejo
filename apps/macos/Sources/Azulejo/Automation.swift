@@ -133,6 +133,11 @@ final class Automation {
         case "delivery": directDelivery = arg == "direct"; record("delivery \(arg)"); delay = 0
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
+        case "sidebar":
+            if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
+                failures.append("line \(step): sidebar \(arg): \(problem)")
+            }
+            record("sidebar \(arg)")
         case "until": return until(arg)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
@@ -421,6 +426,7 @@ final class Automation {
         }
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(SidebarAutomation.state(controller)) { $1 }
         s.merge(controller.chromeState()) { $1 }
         return s
     }

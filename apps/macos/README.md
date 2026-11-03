@@ -85,6 +85,21 @@ title-bar setting. `apps/macos/automation/toolbar.sh` checks where clicks land
 under the title bar, the tab icons, "+", the dropdown and the hidden-sidebar
 row, and takes window captures for comparing with `docs/design/mockup-v1.png`.
 
+## Sidebar (M2.5 D.3)
+
+`Sidebar.swift` is what sits in that card below its top band: an Agents |
+Files switch (remembered per viewer), then either the workspace list or the
+Files view, and a footer counting workspaces by state. Agents: one group per
+herdr machine (connection dot, or a spinner and "Reconnecting…"), workspace
+rows with a status icon (blocked, then done-unseen, working, done, idle), the
+name and the git branch, and "+" per group. Files: a `files.panel` on the
+focused workspace's repository (else its cwd), the files tile's tree and keys
+without its card; Return opens a file beside the focused tile, Esc gives the
+keyboard back, and refreshes don't take it while the tree has it
+(`KeepsKeyboard` in `TileFocus.swift`). `apps/macos/automation/sidebar.sh`
+checks both views with fixture repositories (`sidebar mode|select|focus|files
+…` in scripts; `sidebar.*` state keys).
+
 ## Layout motion (F4, PLAN 2.1)
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall

@@ -63,13 +63,34 @@ pub enum FilesOpenTarget {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesOpen {
-    /// The files tile the path comes from; defaults to the focused tile.
+    /// The files tile the path comes from; defaults to the focused tile. A
+    /// files panel (`files.panel`) works too: the path then opens beside the
+    /// focused tile. Any other tile is used as the anchor when `path` is
+    /// absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
     /// Absolute, or relative to the tile's root.
     pub path: String,
     #[serde(default)]
     pub target: FilesOpenTarget,
+}
+
+/// A files panel: a file tree outside the layout (the sidebar's Files view).
+/// It answers `files.list`, `files.expand`, `files.collapse`,
+/// `files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,
+/// with its id as `tile`, and its events carry that id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FilesPanel {
+    /// The panel to point at `root`; a new panel when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel: Option<TileId>,
+    /// The folder to show; `~` expands to the home folder.
+    pub root: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FilesPanelClose {
+    pub panel: TileId,
 }
 
 /// A path's git state, for a badge. Folders take the strongest state of the
