@@ -10,3 +10,4 @@ One file per decision: `NNNN-short-title.md`, numbered in order. Each record say
 | [0004](0004-animation-resize-timing.md) | Resize terminals once, at the start of a layout animation |
 | [0005](0005-scrollback-and-passthrough.md) | Scrollback, search, title and attention come from herdr |
 | [0006](0006-herdr-process-hygiene.md) | Clean herdr environment; size the PTY before attach |
+| [0007](0007-dedicated-herdr-session.md) | Terminal tiles live in a dedicated herdr session, `azulejo` |
