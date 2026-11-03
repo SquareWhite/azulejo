@@ -53,6 +53,11 @@ final class WindowController: NSObject, NSWindowDelegate {
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
         sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }
+        sidebar.onReturnFocus = { [weak self] in
+            guard let self else { return }
+            window.makeFirstResponder(nil)
+            tiles.focusedView?.setFocused(true)
+        }
         tabBar.onSelect = { [weak app] id in app?.send(["method": "tab.focus", "params": ["tab": id]]) }
         tiles.onClickTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
     }
@@ -104,6 +109,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarMachines: [String] { sidebar.machineHeaders }
     /// Automation: each sidebar row's branch (F26).
     var sidebarBranches: [String] { sidebar.branches }
+    /// Automation: the sidebar itself (Agents | Files, rows, footer).
+    var sidebarView: SidebarView { sidebar }
     var tabMarkers: [String] { tabBar.markers }
 
     /// Re-lays out the chrome (palette or banner changed size).
@@ -144,6 +151,10 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         app?.windowResignedKey(self)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        sidebar.closePanel()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
