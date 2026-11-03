@@ -1,0 +1,16 @@
+[package]
+name = "azulejo-config"
+description = "Config file, keymap and the Ghostty config subset the shells read"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+azulejo-protocol.workspace = true
+toml = { version = "1", default-features = false, features = ["std", "parse"] }
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile = "3"
