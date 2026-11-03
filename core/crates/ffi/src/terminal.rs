@@ -98,10 +98,13 @@ pub unsafe extern "C" fn azj_core_terminal_command(
     let inherited: Vec<String> = std::env::vars_os()
         .filter_map(|(k, _)| k.into_string().ok())
         .collect();
-    out(match terminal_command(herdr, &request, &inherited) {
-        Ok((command, argv)) => json!({"ok": true, "command": command, "argv": argv}),
-        Err(message) => failure("invalid_params", &message),
-    })
+    let terminfo = bundle_terminfo();
+    out(
+        match terminal_command(herdr, &request, &inherited, terminfo.as_deref()) {
+            Ok((command, argv)) => json!({"ok": true, "command": command, "argv": argv}),
+            Err(message) => failure("invalid_params", &message),
+        },
+    )
 }
 
 /// Reads why a terminal tile's child ended. `request_json`:
@@ -189,11 +192,13 @@ fn exit_json(exit: &AttachExit) -> Value {
     json!({"exit": kind, "message": message})
 }
 
-/// `inherited` is the app's environment variable names.
+/// `inherited` is the app's environment variable names; `terminfo` the
+/// bundle's own terminfo directory, when it ships one.
 fn terminal_command(
     herdr: &HerdrInfo,
     request: &CommandRequest,
     inherited: &[String],
+    terminfo: Option<&Path>,
 ) -> Result<(String, Vec<String>), String> {
     let terminal = &request.terminal_id;
     if terminal.is_empty() {
@@ -233,6 +238,11 @@ fn terminal_command(
         line.push("-u".into());
         line.push(name);
     }
+    // Terminfo from the launching environment (e.g. kitty's) never reaches
+    // the attach client; only the bundle's own does (ADR 0006).
+    if let Some(dir) = terminfo {
+        line.push(format!("TERMINFO={}", path_str(dir)?));
+    }
     line.extend([
         "/bin/sh".into(),
         "-c".into(),
@@ -261,6 +271,8 @@ const OBSERVE_SCRIPT: &str = r#"err=$1; st=$2; dec=$3; shift 3; rm -f "$st"; set
 /// (the user's own), and `CLAUDE*` / `AZULEJO_*` / `AZJ_*` are an agent's or
 /// a dev launcher's, not the terminal's. Everything else, and the TERM
 /// variables libghostty sets for its child, stays.
+/// `TERMINFO` and `TERMINFO_DIRS` are always dropped: whatever launched the
+/// app (kitty, say) set them for its own terminal, not ours.
 fn inherited_to_unset(inherited: &[String]) -> Vec<String> {
     let mut unset: Vec<String> = inherited
         .iter()
@@ -270,9 +282,19 @@ fn inherited_to_unset(inherited: &[String]) -> Vec<String> {
                 .any(|p| k.starts_with(p))
         })
         .cloned()
+        .chain(["TERMINFO".to_owned(), "TERMINFO_DIRS".to_owned()])
         .collect();
     unset.sort();
+    unset.dedup();
     unset
+}
+
+/// `Azulejo.app/Contents/Resources/terminfo` next to the running executable
+/// (`Contents/MacOS/…`), if the bundle ships it.
+fn bundle_terminfo() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.parent()?.join("Resources").join("terminfo");
+    dir.is_dir().then_some(dir)
 }
 
 fn path_str(path: &Path) -> Result<String, String> {
@@ -340,7 +362,7 @@ mod tests {
 
     #[test]
     fn attach_line_round_trips_through_the_shell() {
-        let (_, argv) = terminal_command(&info(), &request(Mode::Takeover), &[]).unwrap();
+        let (_, argv) = terminal_command(&info(), &request(Mode::Takeover), &[], None).unwrap();
         assert_eq!(
             argv,
             [
@@ -360,7 +382,7 @@ mod tests {
         let mut req = request(Mode::Attach);
         req.status_file = status.clone();
         req.stderr_file = err.clone();
-        let (line, _) = terminal_command(&info(), &req, &inherited()).unwrap();
+        let (line, _) = terminal_command(&info(), &req, &inherited(), None).unwrap();
         // Swap the herdr binary for a probe that prints its argv and env.
         let probe = dir.join("herdr");
         std::fs::write(
@@ -387,7 +409,7 @@ mod tests {
 
     #[test]
     fn observe_pipes_through_the_decoder() {
-        let (line, argv) = terminal_command(&info(), &request(Mode::Observe), &[]).unwrap();
+        let (line, argv) = terminal_command(&info(), &request(Mode::Observe), &[], None).unwrap();
         assert_eq!(
             argv[3..],
             [
@@ -397,7 +419,52 @@ mod tests {
         assert!(line.contains("/Apps/Azulejo.app/Contents/MacOS/azj-observe"));
         let mut missing = request(Mode::Observe);
         missing.decoder = None;
-        assert!(terminal_command(&info(), &missing, &[]).is_err());
+        assert!(terminal_command(&info(), &missing, &[], None).is_err());
+    }
+
+    /// Terminfo from the launching terminal never reaches the attach client;
+    /// the bundle's own does.
+    #[test]
+    fn launching_terminfo_is_replaced_by_the_bundles() {
+        let dir = std::env::temp_dir().join(format!("azj-ffi-ti-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut req = request(Mode::Attach);
+        req.status_file = dir.join("status");
+        req.stderr_file = dir.join("err");
+        let probe = dir.join("herdr");
+        std::fs::write(
+            &probe,
+            "#!/bin/sh\nprintf 'ti=%s dirs=%s' \"${TERMINFO-unset}\" \"${TERMINFO_DIRS-unset}\"\n",
+        )
+        .unwrap();
+        std::process::Command::new("chmod")
+            .arg("+x")
+            .arg(&probe)
+            .status()
+            .unwrap();
+        let shell = |line: String| {
+            let line = line.replace("/opt/bin/herdr", probe.to_str().unwrap());
+            let out = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(line)
+                .env(
+                    "TERMINFO",
+                    "/Applications/kitty.app/Contents/Resources/kitty/terminfo",
+                )
+                .env("TERMINFO_DIRS", "/opt/kitty/terminfo")
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let (line, _) = terminal_command(&info(), &req, &[], None).unwrap();
+        assert_eq!(shell(line), "ti=unset dirs=unset");
+        let bundle = Path::new("/Apps/Azulejo.app/Contents/Resources/terminfo");
+        let (line, _) = terminal_command(&info(), &req, &[], Some(bundle)).unwrap();
+        assert_eq!(
+            shell(line),
+            "ti=/Apps/Azulejo.app/Contents/Resources/terminfo dirs=unset"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

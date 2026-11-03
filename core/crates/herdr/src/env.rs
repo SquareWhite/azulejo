@@ -5,7 +5,9 @@
 
 use std::ffi::{OsStr, OsString};
 
-/// Exact names passed through.
+/// Exact names passed through. `TERMINFO` and `TERMINFO_DIRS` are left out on
+/// purpose: they point at the launching terminal's database (e.g. kitty's),
+/// which herdr and its panes have no business reading (ADR 0006).
 const ALLOW: &[&str] = &[
     "HOME",
     "USER",
@@ -14,8 +16,6 @@ const ALLOW: &[&str] = &[
     "PATH",
     "LANG",
     "TERM",
-    "TERMINFO",
-    "TERMINFO_DIRS",
     "COLORTERM",
     "TMPDIR",
     "SSH_AUTH_SOCK",
@@ -106,6 +106,23 @@ mod tests {
             &[],
         );
         assert_eq!(got, ["HOME"]);
+    }
+
+    #[test]
+    fn launching_terminfo_is_dropped() {
+        let got = names(
+            &[
+                ("TERM", "xterm-kitty"),
+                (
+                    "TERMINFO",
+                    "/Applications/kitty.app/Contents/Resources/kitty/terminfo",
+                ),
+                ("TERMINFO_DIRS", "/opt/kitty/terminfo"),
+                ("COLORTERM", "truecolor"),
+            ],
+            &[],
+        );
+        assert_eq!(got, ["TERM", "COLORTERM"]);
     }
 
     #[test]
