@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use azulejo_model::{Session, TileContent, TileId};
-use azulejo_preview::{Kind, Rendered, Watcher};
+use azulejo_preview::{Kind, Rendered, Stamp, Watcher};
 use azulejo_protocol::{Event, PreviewContent, PreviewKind};
 
 use crate::driver::LogFn;
@@ -28,6 +28,8 @@ pub(crate) struct Previews {
     /// The file each preview tile shows, as the tile stores it.
     shown: HashMap<TileId, PathBuf>,
     latest: HashMap<TileId, PreviewContent>,
+    /// The file stamp behind each tile's latest render.
+    stamps: HashMap<TileId, Option<Stamp>>,
     revision: u64,
 }
 
@@ -55,6 +57,7 @@ impl Previews {
             log,
             shown: HashMap::new(),
             latest: HashMap::new(),
+            stamps: HashMap::new(),
             revision: 0,
         }
     }
@@ -78,6 +81,7 @@ impl Previews {
         for id in stale {
             self.shown.remove(&id);
             self.latest.remove(&id);
+            self.stamps.remove(&id);
             if let Some(w) = &mut self.watcher {
                 w.unwatch(&id);
             }
@@ -100,7 +104,8 @@ impl Previews {
     }
 
     /// A finished render: the event to publish, or `None` when the tile has
-    /// closed or moved on to another file since.
+    /// closed or moved on to another file since, or when the file is exactly
+    /// as it was at the last render (a repeated or replayed notification).
     pub(crate) fn accept(
         &mut self,
         tile: TileId,
@@ -110,6 +115,10 @@ impl Previews {
         if self.shown.get(&tile).map(PathBuf::as_path) != Some(path) {
             return None;
         }
+        if self.latest(tile, path).is_some() && self.stamps.get(&tile) == Some(&rendered.stamp) {
+            return None;
+        }
+        self.stamps.insert(tile, rendered.stamp);
         self.revision += 1;
         let content = content(tile, path, rendered, self.revision);
         self.latest.insert(tile, content.clone());

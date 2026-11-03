@@ -81,11 +81,40 @@ pub struct Rendered {
     pub html: Option<String>,
     /// Only the first [`MAX_TEXT_BYTES`] were rendered.
     pub truncated: bool,
+    /// The file as it was just before it was read; `None` when it couldn't be
+    /// examined (missing, no permission).
+    pub stamp: Option<Stamp>,
+}
+
+/// What a file looked like when it was rendered: enough to tell a real change
+/// from a repeated notification. File watchers report events that happened
+/// just before a watch started (FSEvents replays the tail of its latency
+/// window), so the same unchanged file can be reported more than once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stamp {
+    pub len: u64,
+    pub modified: Option<std::time::SystemTime>,
+    pub is_dir: bool,
+}
+
+impl Stamp {
+    /// Examines `path`, following symlinks.
+    pub fn of(path: &Path) -> Option<Stamp> {
+        let meta = std::fs::metadata(path).ok()?;
+        Some(Stamp {
+            len: meta.len(),
+            modified: meta.modified().ok(),
+            is_dir: meta.is_dir(),
+        })
+    }
 }
 
 /// Classifies and renders `path`. Never fails: problems become a page that
 /// explains them.
 pub fn render(path: &Path) -> Rendered {
+    // Taken before reading, so a write that races the read gives the next
+    // render a different stamp and can't be mistaken for a repeat.
+    let stamp = Stamp::of(path);
     let classified = classify(path);
     let path = path.to_path_buf();
     let title = path
@@ -139,6 +168,7 @@ pub fn render(path: &Path) -> Rendered {
         kind,
         language: classified.language,
         truncated: classified.truncated,
+        stamp,
     }
 }
 

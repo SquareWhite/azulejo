@@ -118,6 +118,28 @@ fn renders_on_open_and_on_change_and_stops_on_close() {
 }
 
 #[test]
+fn replayed_notifications_for_an_unchanged_file_publish_nothing() {
+    // FSEvents replays events from just before a watch starts: here the
+    // folder's and the file's creation. They must not re-publish the file.
+    let dir = tempfile::tempdir().unwrap();
+    let plan = dir.path().join("plan.md");
+    std::fs::write(&plan, "# Same\n").unwrap();
+    let core = core(None);
+    let events = core.subscribe();
+
+    let tile = split_preview(&core, Some(&plan));
+    let first = next_preview(&events, tile);
+    no_preview(&events, Duration::from_millis(400));
+
+    // Rewriting identical bytes is still a save: the stamp changes.
+    std::thread::sleep(Duration::from_millis(20));
+    std::fs::write(&plan, "# Same\n").unwrap();
+    let again = next_preview(&events, tile);
+    assert_eq!(again.html, first.html);
+    assert!(again.revision > first.revision);
+}
+
+#[test]
 fn deleted_and_native_files() {
     let dir = tempfile::tempdir().unwrap();
     let image = dir.path().join("shot.png");
