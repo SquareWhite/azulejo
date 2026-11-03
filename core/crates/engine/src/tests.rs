@@ -244,3 +244,44 @@ fn terminal_io_waits_for_the_herdr_adapter() {
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::Unsupported);
 }
+
+#[test]
+fn tall_commands_append_promote_rotate_and_equalize() {
+    let mut engine = Engine::new();
+    let master = engine.session().focused_tile().unwrap();
+    let mut stack = Vec::new();
+    for _ in 0..3 {
+        let outcome = engine
+            .execute(Command::LayoutSplitAuto(LayoutSplitAuto::default()))
+            .unwrap();
+        let Reply::Created(Created { tile: Some(t), .. }) = outcome.reply else {
+            panic!("expected created");
+        };
+        assert!(names(&outcome.events).contains(&"layout.changed".to_string()));
+        stack.push(t);
+    }
+    let tab = engine.session().focus().tab.unwrap();
+    let root = || engine.session().tab(tab).unwrap().root.clone();
+    assert_eq!(root().tall().master, master);
+    assert_eq!(root().tall().stack, stack);
+
+    engine
+        .execute(Command::LayoutPromote(TileTarget::default()))
+        .unwrap();
+    assert_eq!(
+        engine.session().tab(tab).unwrap().root.tall().master,
+        stack[2]
+    );
+    assert_eq!(engine.session().focused_tile(), Some(stack[2]));
+
+    engine
+        .execute(Command::LayoutRotate(TabTarget::default()))
+        .unwrap();
+    assert!(!engine.session().tab(tab).unwrap().root.tall().vertical);
+
+    // Already even: no layout event.
+    let outcome = engine
+        .execute(Command::LayoutEqualize(TabTarget::default()))
+        .unwrap();
+    assert!(outcome.events.is_empty());
+}

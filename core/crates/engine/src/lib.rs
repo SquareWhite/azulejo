@@ -241,6 +241,28 @@ impl Engine {
                 s.zoom(s.target(p.tile)?, p.zoomed)?;
                 Reply::Ok
             }
+            Command::LayoutSplitAuto(p) => {
+                let tab = p.tab.or(focus.tab).ok_or_else(nothing)?;
+                let tile = Tile::new(p.content.unwrap_or_else(TileContent::terminal));
+                let id = tile.id;
+                s.split_auto(tab, tile)?;
+                Reply::Created(Created {
+                    tile: Some(id),
+                    ..Created::default()
+                })
+            }
+            Command::LayoutPromote(p) => {
+                s.promote(s.target(p.tile)?)?;
+                Reply::Ok
+            }
+            Command::LayoutRotate(p) => {
+                s.rotate(p.tab.or(focus.tab).ok_or_else(nothing)?)?;
+                Reply::Ok
+            }
+            Command::LayoutEqualize(p) => {
+                s.equalize(p.tab.or(focus.tab).ok_or_else(nothing)?)?;
+                Reply::Ok
+            }
 
             Command::TerminalBind(p) => {
                 let tile = s.tile_mut(p.tile)?;

@@ -668,6 +668,50 @@ impl Session {
         Ok(on)
     }
 
+    // ----- tall (master-stack) layout; see `Node::tall` -----
+
+    /// Adds `tile` to the end of the tab's stack and focuses it.
+    pub fn split_auto(&mut self, tab: TabId, tile: Tile) -> Result<(), ModelError> {
+        let p = self.tab_index(tab)?;
+        if self.locate(tile.id).is_ok() {
+            return Err(ModelError::InvalidValue(format!(
+                "tile {} already exists",
+                tile.id
+            )));
+        }
+        let tab = self.tab_at_mut(p);
+        tab.root.split_auto(tile.id)?;
+        tab.focused = tile.id;
+        tab.zoomed = None;
+        tab.tiles.push(tile);
+        self.activate(p);
+        Ok(())
+    }
+
+    /// Swaps `tile` with its tab's master. Focus stays on `tile`. Returns false
+    /// when it already is the master.
+    pub fn promote(&mut self, tile: TileId) -> Result<bool, ModelError> {
+        let p = self.locate(tile)?;
+        let tab = self.tab_at_mut(p);
+        let changed = tab.root.promote(tile)?;
+        if changed {
+            tab.zoomed = None;
+        }
+        Ok(changed)
+    }
+
+    /// Turns the tab's tall layout on its side. Focus and zoom are kept.
+    pub fn rotate(&mut self, tab: TabId) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        Ok(self.tab_at_mut(p).root.rotate())
+    }
+
+    /// Evens out the tab's stack.
+    pub fn equalize(&mut self, tab: TabId) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        Ok(self.tab_at_mut(p).root.equalize())
+    }
+
     // ----- invariants -----
 
     /// Checks every structural rule; returns the first one broken.

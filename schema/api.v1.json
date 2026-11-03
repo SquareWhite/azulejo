@@ -464,6 +464,74 @@
           "type": "object"
         },
         {
+          "description": "Opens a tile at the end of the tab's stack, whichever tile has focus; a\nlone tile becomes master | stack. Evens out the stack afterwards.",
+          "properties": {
+            "method": {
+              "const": "layout.split_auto",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSplitAuto"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Swaps a tile with its tab's master; focus stays on the tile.",
+          "properties": {
+            "method": {
+              "const": "layout.promote",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Toggles master on the left ↔ master on top, keeping the stack's order.",
+          "properties": {
+            "method": {
+              "const": "layout.rotate",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Gives every tile in the tab's stack the same size.",
+          "properties": {
+            "method": {
+              "const": "layout.equalize",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Records the herdr pane a terminal tile views. Sent by the herdr adapter.",
           "properties": {
             "method": {
@@ -1266,6 +1334,33 @@
       "required": [
         "direction"
       ],
+      "type": "object"
+    },
+    "LayoutSplitAuto": {
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The new tile; defaults to a terminal."
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
       "type": "object"
     },
     "LayoutState": {
@@ -2538,6 +2633,10 @@
     "layout.move",
     "layout.resize",
     "layout.zoom",
+    "layout.split_auto",
+    "layout.promote",
+    "layout.rotate",
+    "layout.equalize",
     "terminal.bind",
     "terminal.send_text",
     "terminal.send_keys",

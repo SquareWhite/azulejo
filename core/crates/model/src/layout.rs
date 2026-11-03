@@ -401,6 +401,179 @@ impl Node {
             _ => Err(ModelError::NoEdge { tile, direction }),
         }
     }
+
+    // ----- tall (master-stack) -----
+    //
+    // kitty's `tall` layout as rules over the split tree, not a layout mode: one
+    // master, every other tile in an evenly divided stack beside it, new tiles
+    // appended to the end of the stack. Master and stack are read off the
+    // geometry, so the ops work on any tree; the canonical shape they build is
+    //
+    //     Split { axis, a: Leaf(master), b: chain }
+    //
+    // where `chain` nests along the other axis, one tile per `a`, in stack order.
+    // `axis` is horizontal for tall proper (master left) and vertical once
+    // rotated (master on top).
+
+    /// This tree read as a tall layout.
+    pub fn tall(&self) -> Tall {
+        let rects = self.rects();
+        // Top-left corner in both orientations; ties on x mean a column, so y
+        // breaks them. Rounded so float noise from ratios can't reorder them.
+        let key = |r: &Rect| ((r.x * 1e6).round() as i64, (r.y * 1e6).round() as i64);
+        let (master, master_rect) = *rects
+            .iter()
+            .min_by_key(|(_, r)| key(r))
+            .expect("a tree has at least one leaf");
+        let vertical = master_rect.height >= 1.0 - EPS;
+        let mut stack: Vec<(TileId, Rect)> =
+            rects.into_iter().filter(|(id, _)| *id != master).collect();
+        stack.sort_by_key(|(_, r)| {
+            let (x, y) = key(r);
+            if vertical { (y, x) } else { (x, y) }
+        });
+        Tall {
+            master,
+            stack: stack.into_iter().map(|(id, _)| id).collect(),
+            vertical,
+        }
+    }
+
+    /// Adds `new_tile` the tall way: a lone tile becomes master | stack;
+    /// otherwise the last stack tile is split along the stack axis. Then the
+    /// stack is equalized.
+    pub fn split_auto(&mut self, new_tile: TileId) -> Result<(), ModelError> {
+        let tall = self.tall();
+        let (target, direction) = match (tall.stack.last(), tall.vertical) {
+            (None, true) => (tall.master, Direction::Right),
+            (None, false) => (tall.master, Direction::Down),
+            (Some(last), true) => (*last, Direction::Down),
+            (Some(last), false) => (*last, Direction::Right),
+        };
+        self.split(target, direction, new_tile)?;
+        self.equalize();
+        Ok(())
+    }
+
+    /// Swaps `tile` with the master (dwm-style zoom). Returns false when `tile`
+    /// already is the master.
+    pub fn promote(&mut self, tile: TileId) -> Result<bool, ModelError> {
+        if !self.contains(tile) {
+            return Err(ModelError::TileNotFound(tile));
+        }
+        let master = self.tall().master;
+        if master == tile {
+            return Ok(false);
+        }
+        self.swap(tile, master)?;
+        Ok(true)
+    }
+
+    /// Gives every stack tile the same share. Only touches the canonical shape;
+    /// a hand-branched stack is left alone. Returns whether a ratio changed.
+    pub fn equalize(&mut self) -> bool {
+        let master = self.tall().master;
+        let Node::Split { axis, a, b, .. } = self else {
+            return false;
+        };
+        if !a.is_leaf(master) {
+            return false;
+        }
+        let along = axis.other();
+        let Some(n) = b.chain_len(along) else {
+            return false;
+        };
+        // The i'th split of an n-tile chain gives 1/(n-i) to its `a` tile.
+        let mut changed = false;
+        let mut node = b.as_mut();
+        let mut i = 0;
+        while let Node::Split { ratio, b, .. } = node {
+            let want = 1.0 / (n - i) as f64;
+            if (*ratio - want).abs() > EPS {
+                *ratio = want;
+                changed = true;
+            }
+            node = b.as_mut();
+            i += 1;
+        }
+        changed
+    }
+
+    /// Turns the layout on its side: master left ↔ master on top, keeping the
+    /// stack's order and the master's share. Rebuilds the tree in canonical
+    /// shape, so a hand-branched stack becomes an even one. Returns false for a
+    /// lone tile.
+    pub fn rotate(&mut self) -> bool {
+        let tall = self.tall();
+        if tall.stack.is_empty() {
+            return false;
+        }
+        let ratio = match self {
+            Node::Split { ratio, a, .. } if a.is_leaf(tall.master) => *ratio,
+            _ => 0.5,
+        };
+        let axis = if tall.vertical {
+            Axis::Vertical
+        } else {
+            Axis::Horizontal
+        };
+        *self = Node::Split {
+            axis,
+            ratio,
+            a: Box::new(Node::leaf(tall.master)),
+            b: Box::new(Node::chain(&tall.stack, axis.other())),
+        };
+        true
+    }
+
+    /// Tiles in a chain along `axis`, each split giving its `a` tile an equal
+    /// share of what's left.
+    fn chain(tiles: &[TileId], axis: Axis) -> Node {
+        match tiles {
+            [] => unreachable!("chain of no tiles"),
+            [only] => Node::leaf(*only),
+            [first, rest @ ..] => Node::Split {
+                axis,
+                ratio: 1.0 / tiles.len() as f64,
+                a: Box::new(Node::leaf(*first)),
+                b: Box::new(Node::chain(rest, axis)),
+            },
+        }
+    }
+
+    /// Length of the chain along `axis` rooted here, or `None` if it branches.
+    fn chain_len(&self, along: Axis) -> Option<usize> {
+        match self {
+            Node::Leaf { .. } => Some(1),
+            Node::Split { axis, a, b, .. }
+                if *axis == along && matches!(a.as_ref(), Node::Leaf { .. }) =>
+            {
+                b.chain_len(along).map(|n| n + 1)
+            }
+            Node::Split { .. } => None,
+        }
+    }
+}
+
+impl Axis {
+    pub fn other(self) -> Axis {
+        match self {
+            Axis::Horizontal => Axis::Vertical,
+            Axis::Vertical => Axis::Horizontal,
+        }
+    }
+}
+
+/// A tree read as kitty's `tall` layout; see [`Node::tall`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tall {
+    /// The tile in the top-left corner.
+    pub master: TileId,
+    /// Every other tile, in order along the stack.
+    pub stack: Vec<TileId>,
+    /// True for master on the left (tall proper), false when rotated. A lone
+    /// tile counts as vertical.
+    pub vertical: bool,
 }
 
 fn overlap(a0: f64, a1: f64, b0: f64, b1: f64) -> f64 {
@@ -496,6 +669,96 @@ mod tests {
         root.swap(a, c).unwrap();
         assert_eq!(root.tiles()[0], c);
         assert_eq!(root.tiles()[2], a);
+    }
+
+    fn heights(root: &Node, tiles: &[TileId]) -> Vec<f64> {
+        let rects = root.rects();
+        tiles
+            .iter()
+            .map(|t| rects.iter().find(|(id, _)| id == t).unwrap().1.height)
+            .collect()
+    }
+
+    #[test]
+    fn split_auto_builds_master_and_an_even_stack() {
+        let [m, s1, s2, s3, s4] = ids();
+        let mut root = Node::leaf(m);
+        for t in [s1, s2, s3, s4] {
+            root.split_auto(t).unwrap();
+        }
+        let tall = root.tall();
+        assert_eq!(tall.master, m);
+        assert_eq!(tall.stack, vec![s1, s2, s3, s4]);
+        assert!(tall.vertical);
+        for h in heights(&root, &[s1, s2, s3, s4]) {
+            assert!((h - 0.25).abs() < 1e-9, "stack height {h}");
+        }
+        assert!(!root.equalize(), "already even");
+    }
+
+    #[test]
+    fn split_auto_ignores_focus_and_appends() {
+        let [m, s1, s2, s3] = ids();
+        let mut root = Node::leaf(m);
+        root.split_auto(s1).unwrap();
+        root.split_auto(s2).unwrap();
+        // Promoting doesn't change where the next tile lands: end of the stack.
+        root.promote(s2).unwrap();
+        root.split_auto(s3).unwrap();
+        let tall = root.tall();
+        assert_eq!(tall.master, s2);
+        assert_eq!(tall.stack, vec![s1, m, s3]);
+    }
+
+    #[test]
+    fn promote_swaps_with_the_master() {
+        let [m, s1, s2] = ids();
+        let mut root = Node::leaf(m);
+        root.split_auto(s1).unwrap();
+        root.split_auto(s2).unwrap();
+        assert!(!root.promote(m).unwrap());
+        assert!(root.promote(s2).unwrap());
+        assert_eq!(root.tall().master, s2);
+        assert_eq!(root.tall().stack, vec![s1, m]);
+    }
+
+    #[test]
+    fn rotate_toggles_and_keeps_order_and_master_share() {
+        let [m, s1, s2] = ids();
+        let mut root = Node::leaf(m);
+        assert!(!root.rotate(), "a lone tile has nothing to rotate");
+        root.split_auto(s1).unwrap();
+        root.split_auto(s2).unwrap();
+        root.resize(m, Direction::Right, 0.1).unwrap();
+        let original = root.clone();
+
+        assert!(root.rotate());
+        let tall = root.tall();
+        assert!(!tall.vertical);
+        assert_eq!(tall.master, m);
+        assert_eq!(tall.stack, vec![s1, s2]);
+        assert!((root.ratios()[0] - 0.6).abs() < 1e-9);
+
+        assert!(root.rotate());
+        assert_eq!(root, original);
+    }
+
+    #[test]
+    fn equalize_leaves_a_hand_branched_stack_alone() {
+        let [m, s1, s2, x] = ids();
+        let mut root = Node::leaf(m);
+        root.split_auto(s1).unwrap();
+        root.split_auto(s2).unwrap();
+        // Branch the stack by hand: s1 gets a tile beside it.
+        root.split(s1, Direction::Right, x).unwrap();
+        root.resize(s2, Direction::Up, 0.2).unwrap();
+        let before = root.clone();
+        assert!(!root.equalize());
+        assert_eq!(root, before);
+        // split_auto still works and still appends at the end of the stack.
+        let [y] = ids();
+        root.split_auto(y).unwrap();
+        assert_eq!(root.tall().stack.last(), Some(&y));
     }
 
     #[test]

@@ -27,6 +27,10 @@ enum Op {
     CloseMissingTile,
     MoveTab(usize, usize),
     MoveWorkspace(usize, usize),
+    SplitAuto(usize),
+    Promote(usize),
+    Rotate(usize),
+    Equalize(usize),
 }
 
 fn direction() -> impl Strategy<Value = Direction> {
@@ -57,6 +61,10 @@ fn op() -> impl Strategy<Value = Op> {
         1 => Just(Op::CloseMissingTile),
         1 => (0usize..64, 0usize..8).prop_map(|(t, i)| Op::MoveTab(t, i)),
         1 => (0usize..64, 0usize..8).prop_map(|(w, i)| Op::MoveWorkspace(w, i)),
+        6 => (0usize..64).prop_map(Op::SplitAuto),
+        2 => (0usize..64).prop_map(Op::Promote),
+        2 => (0usize..64).prop_map(Op::Rotate),
+        2 => (0usize..64).prop_map(Op::Equalize),
     ]
 }
 
@@ -184,6 +192,26 @@ fn apply(s: &mut Session, op: &Op) -> Result<(), azulejo_model::ModelError> {
                 s.move_workspace(id, i)?;
             }
         }
+        Op::SplitAuto(i) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.split_auto(id, terminal())?;
+            }
+        }
+        Op::Promote(i) => {
+            if let Some(id) = nth(&tiles, i) {
+                s.promote(id)?;
+            }
+        }
+        Op::Rotate(i) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.rotate(id)?;
+            }
+        }
+        Op::Equalize(i) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.equalize(id)?;
+            }
+        }
     }
     Ok(())
 }
@@ -212,7 +240,7 @@ proptest! {
             // except the closing ops.
             let after = session.tiles().count();
             match op {
-                Op::Split(..) | Op::CreateTab(_) => prop_assert!(after <= tile_count + 1),
+                Op::Split(..) | Op::SplitAuto(_) | Op::CreateTab(_) => prop_assert!(after <= tile_count + 1),
                 Op::CloseTile(_) => prop_assert!(after + 1 >= tile_count),
                 Op::CloseTab(_) | Op::CloseWorkspace(_) | Op::CloseWindow(_) => {
                     prop_assert!(after <= tile_count)
@@ -226,6 +254,57 @@ proptest! {
                 let (_, _, tab) = session.ids_at(path);
                 prop_assert_eq!(Some(tab), focus.tab);
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum TallOp {
+    SplitAuto,
+    Promote(usize),
+    Rotate,
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 2_000, ..ProptestConfig::default() })]
+
+    /// Only tall ops: the stack always stays one evenly divided chain.
+    #[test]
+    fn tall_ops_keep_an_even_stack(ops in prop::collection::vec(
+        prop_oneof![
+            3 => Just(TallOp::SplitAuto),
+            1 => (0usize..16).prop_map(TallOp::Promote),
+            1 => Just(TallOp::Rotate),
+        ],
+        1..20,
+    )) {
+        let mut root = azulejo_model::Node::leaf(TileId::new());
+        for op in &ops {
+            match *op {
+                TallOp::SplitAuto => root.split_auto(TileId::new()).unwrap(),
+                TallOp::Promote(i) => {
+                    let tiles = root.tiles();
+                    root.promote(tiles[i % tiles.len()]).unwrap();
+                }
+                TallOp::Rotate => {
+                    root.rotate();
+                }
+            }
+            let tall = root.tall();
+            prop_assert_eq!(tall.stack.len() + 1, root.leaf_count());
+            let rects = root.rects();
+            let size = |id: &TileId| {
+                let r = rects.iter().find(|(t, _)| t == id).unwrap().1;
+                if tall.vertical { r.height } else { r.width }
+            };
+            if let Some(first) = tall.stack.first() {
+                let want = size(first);
+                for t in &tall.stack {
+                    prop_assert!((size(t) - want).abs() < 1e-9, "uneven stack after {:?}", op);
+                }
+                prop_assert!((want * tall.stack.len() as f64 - 1.0).abs() < 1e-9);
+            }
+            prop_assert!(!root.clone().equalize(), "equalize had work left after {:?}", op);
         }
     }
 }

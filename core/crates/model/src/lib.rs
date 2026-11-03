@@ -11,7 +11,7 @@ mod tile;
 
 pub use error::ModelError;
 pub use ids::{ParseIdError, TabId, TileId, WindowId, WorkspaceId};
-pub use layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect};
+pub use layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect, Tall};
 pub use session::{
     ClosedTile, ClosedWorkspace, Focus, Frame, Session, Tab, TilePath, Window, Workspace,
 };

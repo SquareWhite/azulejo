@@ -105,6 +105,13 @@ fn sample_commands() -> Vec<Command> {
             tile: None,
             zoomed: Some(true),
         }),
+        Command::LayoutSplitAuto(LayoutSplitAuto {
+            tab: Some(tab),
+            content: None,
+        }),
+        Command::LayoutPromote(TileTarget { tile: None }),
+        Command::LayoutRotate(TabTarget { tab: None }),
+        Command::LayoutEqualize(TabTarget { tab: Some(tab) }),
         Command::TerminalBind(TerminalBind {
             tile,
             herdr: herdr.clone(),

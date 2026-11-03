@@ -103,6 +103,21 @@ pub enum Command {
     #[serde(rename = "layout.zoom")]
     LayoutZoom(LayoutZoom),
 
+    // ----- tall layout: master left, even stack right (F3) -----
+    /// Opens a tile at the end of the tab's stack, whichever tile has focus; a
+    /// lone tile becomes master | stack. Evens out the stack afterwards.
+    #[serde(rename = "layout.split_auto")]
+    LayoutSplitAuto(LayoutSplitAuto),
+    /// Swaps a tile with its tab's master; focus stays on the tile.
+    #[serde(rename = "layout.promote")]
+    LayoutPromote(TileTarget),
+    /// Toggles master on the left ↔ master on top, keeping the stack's order.
+    #[serde(rename = "layout.rotate")]
+    LayoutRotate(TabTarget),
+    /// Gives every tile in the tab's stack the same size.
+    #[serde(rename = "layout.equalize")]
+    LayoutEqualize(TabTarget),
+
     // ----- terminals (F12, F20) -----
     /// Records the herdr pane a terminal tile views. Sent by the herdr adapter.
     #[serde(rename = "terminal.bind")]
@@ -146,6 +161,10 @@ pub const METHODS: &[&str] = &[
     "layout.move",
     "layout.resize",
     "layout.zoom",
+    "layout.split_auto",
+    "layout.promote",
+    "layout.rotate",
+    "layout.equalize",
     "terminal.bind",
     "terminal.send_text",
     "terminal.send_keys",
@@ -378,6 +397,16 @@ pub struct LayoutZoom {
     /// `true` zooms, `false` unzooms, absent toggles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoomed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutSplitAuto {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// The new tile; defaults to a terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<TileContent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
