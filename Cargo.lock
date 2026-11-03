@@ -25,7 +25,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "azulejo-api"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-engine",
  "azulejo-protocol",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-api",
  "azulejo-engine",
@@ -47,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-config"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-protocol",
  "proptest",
@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-daemon"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-api",
  "azulejo-config",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-engine"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-herdr",
  "azulejo-model",
@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-ffi"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-config",
  "azulejo-daemon",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-herdr"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-linux"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-engine",
  "azulejo-protocol",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-model"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "proptest",
  "schemars",
@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-preview"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "comrak",
  "notify",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "azulejo-protocol"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azulejo-model",
  "schemars",
