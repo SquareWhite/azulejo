@@ -37,6 +37,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
         keys.install()
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
+        TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         core.onEvent = { [weak self] json in
             PreviewTileView.route(json)
             self?.scheduleRefresh()
@@ -168,7 +169,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Automation: keyDowns the monitor has seen, and a way in when it can't.
     var keysSeen: Int { keys.seen }
-    func routeDirectly(_ event: NSEvent) { keys.handle(event) }
+    func routeDirectly(_ event: NSEvent) {
+        // Unbound chords go on to the focused tile, as AppKit would deliver them.
+        if !keys.handle(event) { event.window?.firstResponder?.keyDown(with: event) }
+    }
 
     /// The controller for a session window, for automation.
     func controller(id: String) -> WindowController? { controllers[id] }

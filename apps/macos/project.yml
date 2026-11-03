@@ -14,6 +14,11 @@ targets:
     platform: macOS
     sources:
       - Sources/Azulejo
+    dependencies:
+      - framework: ../../vendor/ghostty/macos/GhosttyKit.xcframework
+        embed: false
+      - target: azj-observe
+        link: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.azulejo.Azulejo
@@ -21,7 +26,7 @@ targets:
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/AzulejoCore
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../../target/$(AZJ_CARGO_PROFILE)
         AZJ_CARGO_PROFILE: debug
-        OTHER_LDFLAGS: -lazulejo_ffi
+        OTHER_LDFLAGS: -lazulejo_ffi -lc++
         CODE_SIGN_IDENTITY: "-"
       configs:
         Release:
@@ -37,3 +42,8 @@ targets:
           else
             cargo build -p azulejo-ffi
           fi
+  azj-observe:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/AzjObserve
