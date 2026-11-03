@@ -256,6 +256,10 @@ final class Automation {
     /// included). The app can't run `screencapture` itself (no Screen
     /// Recording permission), so it drops a request in `<out>/.capture/` for
     /// the harness to take (apps/macos/automation/anim.sh watches it).
+    /// `screencapture` gets nothing while the screen is locked, so the app
+    /// also renders the layer presentation tree itself to `<name>-app.png`:
+    /// tiles, headers and corner caps where the motion has them at that
+    /// instant (live Metal surfaces show as their background).
     private func capture(_ arg: String) {
         let parts = arg.split(separator: " ").map(String.init)
         guard let name = parts.first else { return }
@@ -264,8 +268,40 @@ final class Automation {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             try? Data().write(to: dir.appendingPathComponent(name), options: .atomic)
+            self.renderPresentation("\(name)-app")
         }
         record("capture \(name) +\(Int(delay * 1000)) ms")
+    }
+
+    /// The window's content as Core Animation is showing it right now
+    /// (presentation values, so mid-motion frames come out mid-motion).
+    private func renderPresentation(_ name: String) {
+        guard let window = app?.focusedController?.window,
+              let view = window.contentView, let layer = view.layer else { return }
+        let scale = window.backingScaleFactor
+        let size = view.bounds.size
+        guard size.width > 0, size.height > 0,
+              let ctx = CGContext(
+                data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.setFillColor(Design.Color.window.cgColor)
+        ctx.fill(CGRect(origin: .zero, size: size))
+        if layer.isGeometryFlipped || view.isFlipped {
+            ctx.translateBy(x: 0, y: size.height)
+            ctx.scaleBy(x: 1, y: -1)
+        }
+        (layer.presentation() ?? layer).render(in: ctx)
+        guard let image = ctx.makeImage() else { return }
+        let rep = NSBitmapImageRep(cgImage: image)
+        let url = out.appendingPathComponent("\(name).png")
+        do {
+            try rep.representation(using: .png, properties: [:])?.write(to: url)
+        } catch {
+            notes.append("capture \(name): \(error)")
+        }
     }
 
     private func expect(_ arg: String) {

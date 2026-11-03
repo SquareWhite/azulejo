@@ -118,6 +118,15 @@ status=$?
 set -e
 kill "$watcher" 2>/dev/null || true
 rm -rf "$out/.capture"
+# The system capture needs an unlocked screen; the app's own render
+# (<name>-app.png) lands either way.
+asked="$(grep -c ' capture ' "$out/automation.log" 2>/dev/null || true)"
+taken="$(find "$out" -maxdepth 1 -name '*.png' ! -name '*-app.png' ! -name '*-stress.png' 2>/dev/null | wc -l | tr -d ' ')"
+rendered="$(find "$out" -maxdepth 1 -name '*-app.png' 2>/dev/null | wc -l | tr -d ' ')"
+if [[ "${asked:-0}" -gt 0 ]]; then
+  echo "captures: $asked asked, $taken system (screencapture), $rendered in-app"
+  [[ "$taken" -lt "$asked" ]] && echo "  (system captures missing: is the screen locked? the -app.png renders cover the motion)"
+fi
 "$root/apps/macos/dev.sh" --reset >/dev/null 2>&1 || true
 echo "stats: $out/anim-stats.json"
 exit $status
