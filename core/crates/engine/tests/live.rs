@@ -245,3 +245,96 @@ fn closing_a_tile_without_kill_detaches() {
     );
     core.shutdown();
 }
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn terminal_io_round_trips_through_a_real_pane() {
+    use azulejo_protocol::{
+        ErrorCode, ReadSource, Reply, TerminalRead, TerminalScroll, TerminalSearch,
+        TerminalSendKeys, TerminalSendText,
+    };
+    let h = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    assert_eq!(core.herdr_socket(), Some(h.client.socket_path()));
+    let session = wait_until(&core, Duration::from_secs(10), all_bound);
+    let tile = session.focused_tile().unwrap();
+
+    let reply = |c| core.execute(c).map(|o| o.reply);
+    assert_eq!(
+        reply(Command::TerminalSendText(TerminalSendText {
+            tile: Some(tile),
+            text: "printf 'azj-%s\\n' marker-42".into(),
+        })),
+        Ok(Reply::Ok)
+    );
+    assert_eq!(
+        reply(Command::TerminalSendKeys(TerminalSendKeys {
+            tile: Some(tile),
+            keys: vec!["enter".into()],
+        })),
+        Ok(Reply::Ok)
+    );
+
+    // Only the shell's output has `azj-marker-42` in one piece, so seeing it
+    // proves the text and the Enter key both reached the pane.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let text = loop {
+        let Ok(Reply::Text { text }) = reply(Command::TerminalRead(TerminalRead {
+            tile: Some(tile),
+            source: ReadSource::Visible,
+            lines: None,
+        })) else {
+            panic!("read failed")
+        };
+        if text.lines().any(|l| l.trim() == "azj-marker-42") {
+            break text;
+        }
+        assert!(Instant::now() < deadline, "no output; screen:\n{text}");
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(text.contains("printf 'azj-%s"), "{text}");
+
+    let Ok(Reply::Matches { matches, .. }) = reply(Command::TerminalSearch(TerminalSearch {
+        tile: Some(tile),
+        query: "AZJ-MARKER-42".into(),
+        case_sensitive: false,
+        lines: Some(200),
+    })) else {
+        panic!("search failed")
+    };
+    assert!(
+        matches.iter().any(|m| m.text.trim() == "azj-marker-42"),
+        "{matches:?}"
+    );
+
+    let Ok(Reply::Scroll(state)) = reply(Command::TerminalScroll(TerminalScroll {
+        tile: Some(tile),
+        offset_from_bottom: 0,
+    })) else {
+        panic!("scroll failed")
+    };
+    assert_eq!(state.offset_from_bottom, 0);
+    assert!(state.viewport_rows > 0, "{state:?}");
+
+    // A pane killed behind the core's back: the tile ends and I/O says so.
+    let pane = match &core.session().unwrap().tile(tile).unwrap().content {
+        TileContent::Terminal { herdr: Some(r), .. } => r.pane_id.clone(),
+        other => panic!("{other:?}"),
+    };
+    h.kill(&pane);
+    wait_until(&core, Duration::from_secs(10), |s| {
+        matches!(
+            s.tile(tile).map(|t| &t.content),
+            Ok(TileContent::Terminal { ended: true, .. })
+        )
+    });
+    let err = reply(Command::TerminalRead(TerminalRead {
+        tile: Some(tile),
+        source: ReadSource::Visible,
+        lines: None,
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+    core.shutdown();
+}

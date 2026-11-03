@@ -18,7 +18,7 @@ use tokio::sync::mpsc as tmpsc;
 
 use crate::link::{self, Effect, HerdrPort, Internal};
 use crate::persist::{self, Loaded, Saver};
-use crate::{Engine, Outcome};
+use crate::{Engine, Outcome, terminal};
 
 /// Called with a log line. Defaults to stderr.
 pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
@@ -54,6 +54,7 @@ enum Msg {
 pub struct Core {
     tx: mpsc::Sender<Msg>,
     thread: Option<thread::JoinHandle<()>>,
+    herdr_socket: Option<PathBuf>,
 }
 
 impl Core {
@@ -68,6 +69,7 @@ impl Core {
     }
 
     fn spawn<P: HerdrPort>(opts: CoreOptions, port: Option<P>) -> Core {
+        let herdr_socket = port.as_ref().and_then(HerdrPort::socket);
         let (tx, rx) = mpsc::channel();
         let self_tx = tx.clone();
         let thread = thread::Builder::new()
@@ -77,7 +79,14 @@ impl Core {
         Core {
             tx,
             thread: Some(thread),
+            herdr_socket,
         }
+    }
+
+    /// The herdr session socket terminal tiles live in, when connected to
+    /// herdr. Lets the CLI tell `HERDR_PANE_ID`s from different sessions apart.
+    pub fn herdr_socket(&self) -> Option<&std::path::Path> {
+        self.herdr_socket.as_deref()
     }
 
     /// Runs a command on the core's thread and waits for the result.
@@ -215,14 +224,18 @@ fn run<P: HerdrPort>(
         for effect in link::restore_effects(engine.session()) {
             let _ = effects_tx.send(effect);
         }
-        (runtime, effects_tx)
+        Herdr {
+            runtime,
+            effects_tx,
+            port,
+        }
     });
     drop(self_tx);
 
     let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
     let publish = |engine: &Engine,
                    events: &[Event],
-                   herdr: &Option<(tokio::runtime::Runtime, tmpsc::UnboundedSender<Effect>)>,
+                   herdr: &Option<Herdr<P>>,
                    listeners: &mut Vec<mpsc::Sender<Event>>| {
         if events.is_empty() {
             return;
@@ -231,15 +244,40 @@ fn run<P: HerdrPort>(
             saver.schedule(engine.session().clone());
         }
         listeners.retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
-        if let Some((_, effects_tx)) = herdr {
+        if let Some(h) = herdr {
             for effect in link::effects(events, engine.session()) {
-                let _ = effects_tx.send(effect);
+                let _ = h.effects_tx.send(effect);
             }
         }
     };
 
     while let Ok(msg) = rx.recv() {
         match msg {
+            Msg::Command(command, reply) if terminal::is_io(&command) => {
+                // Resolve the pane here; talk to herdr off this thread.
+                let pane = engine.terminal_pane(terminal::target(&command));
+                match (pane, &herdr) {
+                    (Err(e), _) => {
+                        let _ = reply.send(Err(e));
+                    }
+                    (Ok(_), None) => {
+                        let _ = reply.send(Err(Error::new(
+                            ErrorCode::Unavailable,
+                            "this core isn't connected to herdr",
+                        )));
+                    }
+                    (Ok(pane), Some(h)) => {
+                        let port = h.port.clone();
+                        h.runtime.spawn(async move {
+                            let result = terminal::run(&*port, pane, command).await;
+                            let _ = reply.send(result.map(|reply| Outcome {
+                                reply,
+                                events: Vec::new(),
+                            }));
+                        });
+                    }
+                }
+            }
             Msg::Command(command, reply) => {
                 let result = engine.execute(command);
                 if let Ok(outcome) = &result {
@@ -257,9 +295,9 @@ fn run<P: HerdrPort>(
                     let events = engine.apply_internal(internal);
                     publish(&engine, &events, &herdr, &mut listeners);
                 }
-                if let Some((_, effects_tx)) = &herdr {
+                if let Some(h) = &herdr {
                     for effect in reaction.effects {
-                        let _ = effects_tx.send(effect);
+                        let _ = h.effects_tx.send(effect);
                     }
                 }
             }
@@ -274,9 +312,16 @@ fn run<P: HerdrPort>(
         }
     }
     // Stop herdr work before the saver goes; panes keep running in herdr.
-    if let Some((runtime, _)) = herdr.take() {
-        runtime.shutdown_background();
+    if let Some(h) = herdr.take() {
+        h.runtime.shutdown_background();
     }
+}
+
+/// The herdr side of a running core.
+struct Herdr<P> {
+    runtime: tokio::runtime::Runtime,
+    effects_tx: tmpsc::UnboundedSender<Effect>,
+    port: Arc<P>,
 }
 
 #[cfg(test)]

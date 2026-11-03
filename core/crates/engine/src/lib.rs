@@ -7,10 +7,12 @@ mod diff;
 mod driver;
 pub mod link;
 pub mod persist;
+pub mod terminal;
 
-use azulejo_model::{ModelError, Session, Tile, TileContent, TileId};
+use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId};
 use azulejo_protocol::{
-    API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TileInfo,
+    API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
+    TileInfo, WindowSummary, WorkspaceSummary,
 };
 
 pub use diff::diff;
@@ -111,6 +113,39 @@ impl Engine {
                 s.set_window_frame(p.window, p.frame)?;
                 Reply::Ok
             }
+            Command::WindowList => Reply::Windows {
+                windows: s
+                    .windows
+                    .iter()
+                    .map(|w| WindowSummary {
+                        id: w.id,
+                        focused: focus.window == Some(w.id),
+                        active_workspace: w.active_workspace,
+                        workspaces: w.workspaces.iter().map(|ws| ws.id).collect(),
+                        frame: w.frame,
+                    })
+                    .collect(),
+            },
+            Command::WorkspaceList(p) => {
+                if let Some(window) = p.window {
+                    s.window(window)?;
+                }
+                let workspaces = s
+                    .windows
+                    .iter()
+                    .filter(|w| p.window.is_none_or(|id| id == w.id))
+                    .flat_map(|w| {
+                        w.workspaces.iter().map(move |ws| WorkspaceSummary {
+                            window: w.id,
+                            active: w.active_workspace == ws.id,
+                            focused: focus.workspace == Some(ws.id),
+                            tabs: ws.tabs.len(),
+                            workspace: diff::workspace_info(ws),
+                        })
+                    })
+                    .collect();
+                Reply::Workspaces { workspaces }
+            }
 
             Command::WorkspaceCreate(p) => {
                 let window = p.window.or(focus.window).ok_or_else(nothing)?;
@@ -146,6 +181,29 @@ impl Engine {
                 Reply::Ok
             }
 
+            Command::TabList(p) => {
+                if let Some(workspace) = p.workspace {
+                    s.workspace(workspace)?;
+                }
+                let tabs = s
+                    .windows
+                    .iter()
+                    .flat_map(|w| w.workspaces.iter().map(move |ws| (w.id, ws)))
+                    .filter(|(_, ws)| p.workspace.is_none_or(|id| id == ws.id))
+                    .flat_map(|(window, ws)| {
+                        ws.tabs.iter().map(move |tab| TabSummary {
+                            window,
+                            workspace: ws.id,
+                            active: ws.active_tab == Some(tab.id),
+                            focused: focus.tab == Some(tab.id),
+                            tiles: tab.tiles.len(),
+                            focused_tile: tab.focused,
+                            tab: diff::tab_info(tab),
+                        })
+                    })
+                    .collect();
+                Reply::Tabs { tabs }
+            }
             Command::TabCreate(p) => {
                 let workspace = p.workspace.or(focus.workspace).ok_or_else(nothing)?;
                 let tile = Tile::new(p.content.unwrap_or_else(TileContent::terminal));
@@ -196,6 +254,27 @@ impl Engine {
             }
             Command::TileFocus(p) => {
                 s.focus_tile(s.target(p.tile)?)?;
+                Reply::Ok
+            }
+            Command::TileRename(p) => {
+                let id = s.target(p.tile)?;
+                s.tile_mut(id)?.title = p.title.filter(|t| !t.is_empty());
+                Reply::Ok
+            }
+            Command::BrowserOpen(p) => {
+                let id = s.target(p.tile)?;
+                match &mut s.tile_mut(id)?.content {
+                    TileContent::Browser { url } => *url = Some(p.url),
+                    other => return Err(wrong_kind(id, other, "browser")),
+                }
+                Reply::Ok
+            }
+            Command::PreviewOpen(p) => {
+                let id = s.target(p.tile)?;
+                match &mut s.tile_mut(id)?.content {
+                    TileContent::Preview { path } => *path = Some(p.path),
+                    other => return Err(wrong_kind(id, other, "preview")),
+                }
                 Reply::Ok
             }
 
@@ -276,25 +355,52 @@ impl Engine {
                         *herdr = Some(p.herdr);
                         *ended = false;
                     }
-                    _ => {
-                        return Err(Error::new(
-                            ErrorCode::InvalidState,
-                            format!("{} is not a terminal tile", p.tile),
-                        ));
-                    }
+                    other => return Err(wrong_kind(p.tile, other, "terminal")),
                 }
                 Reply::Ok
             }
+            // The engine can't do I/O; `Core` runs these against herdr.
             Command::TerminalSendText(_)
             | Command::TerminalSendKeys(_)
-            | Command::TerminalRead(_) => {
+            | Command::TerminalRead(_)
+            | Command::TerminalScroll(_)
+            | Command::TerminalSearch(_) => {
                 return Err(Error::new(
-                    ErrorCode::Unsupported,
-                    "terminal I/O needs the herdr adapter (PLAN step 1.10)",
+                    ErrorCode::Unavailable,
+                    "terminal I/O needs a core connected to herdr",
                 ));
             }
         })
     }
+
+    /// The herdr pane behind a terminal tile (the focused tile when `tile` is
+    /// absent), for terminal I/O.
+    pub fn terminal_pane(&self, tile: Option<TileId>) -> Result<HerdrRef, Error> {
+        let id = self.session.target(tile)?;
+        match &self.session.tile(id)?.content {
+            TileContent::Terminal { ended: true, .. } => Err(Error::new(
+                ErrorCode::InvalidState,
+                format!("{id}'s herdr pane has ended"),
+            )),
+            TileContent::Terminal { herdr: None, .. } => Err(Error::new(
+                ErrorCode::Unavailable,
+                format!("{id} isn't attached to a herdr pane yet"),
+            )),
+            TileContent::Terminal { herdr: Some(h), .. } => Ok(h.clone()),
+            other => Err(wrong_kind(id, other, "terminal")),
+        }
+    }
+}
+
+fn wrong_kind(id: TileId, content: &TileContent, want: &str) -> Error {
+    let kind = serde_json::to_value(content.kind())
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    Error::new(
+        ErrorCode::InvalidState,
+        format!("{id} is a {kind} tile, not a {want} tile"),
+    )
 }
 
 fn tile_info(

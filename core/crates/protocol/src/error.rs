@@ -21,6 +21,8 @@ pub enum ErrorCode {
     InvalidState,
     /// Not available in this build or configuration.
     Unsupported,
+    /// A service the command needs (herdr) isn't reachable right now.
+    Unavailable,
     Internal,
 }
 
@@ -36,6 +38,7 @@ impl ErrorCode {
             ErrorCode::NotFound => -32001,
             ErrorCode::InvalidState => -32002,
             ErrorCode::Unsupported => -32003,
+            ErrorCode::Unavailable => -32004,
         }
     }
 }

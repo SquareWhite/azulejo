@@ -37,8 +37,14 @@ pub enum Command {
     /// Records a window's frame after the user moves or resizes it.
     #[serde(rename = "window.set_frame")]
     WindowSetFrame(WindowSetFrame),
+    /// Every window; replies `windows`.
+    #[serde(rename = "window.list")]
+    WindowList,
 
     // ----- workspaces (F1, F13, F18) -----
+    /// Workspaces of one window, or of all windows; replies `workspaces`.
+    #[serde(rename = "workspace.list")]
+    WorkspaceList(WorkspaceList),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreate),
     #[serde(rename = "workspace.close")]
@@ -54,6 +60,9 @@ pub enum Command {
     WorkspaceBind(WorkspaceBind),
 
     // ----- tabs (F1, F18) -----
+    /// Tabs of one workspace, or of all workspaces; replies `tabs`.
+    #[serde(rename = "tab.list")]
+    TabList(TabList),
     /// Opens a tab with one tile (a terminal unless `content` says otherwise).
     #[serde(rename = "tab.create")]
     TabCreate(TabCreate),
@@ -79,6 +88,17 @@ pub enum Command {
     TileClose(TileClose),
     #[serde(rename = "tile.focus")]
     TileFocus(TileTarget),
+    /// Sets or clears a tile's title.
+    #[serde(rename = "tile.rename")]
+    TileRename(TileRename),
+
+    // ----- browser and preview tiles (F8, F9) -----
+    /// Points a browser tile at `url`; the shell loads it on `tile.updated`.
+    #[serde(rename = "browser.open")]
+    BrowserOpen(BrowserOpen),
+    /// Shows `path` in a preview tile.
+    #[serde(rename = "preview.open")]
+    PreviewOpen(PreviewOpen),
 
     // ----- layout (F2) -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
@@ -126,9 +146,17 @@ pub enum Command {
     TerminalSendText(TerminalSendText),
     #[serde(rename = "terminal.send_keys")]
     TerminalSendKeys(TerminalSendKeys),
-    /// Reads a terminal's screen or history; replies `text`.
+    /// Reads a terminal's screen or history; replies `text`. History lives in
+    /// herdr, not in the tile (ADR 0005).
     #[serde(rename = "terminal.read")]
     TerminalRead(TerminalRead),
+    /// Scrolls a terminal's view; replies `scroll`. 0 is the live bottom.
+    #[serde(rename = "terminal.scroll")]
+    TerminalScroll(TerminalScroll),
+    /// Finds lines containing `query` in a terminal's history; replies
+    /// `matches`. Runs over `recent_unwrapped` output in the core.
+    #[serde(rename = "terminal.search")]
+    TerminalSearch(TerminalSearch),
 }
 
 /// Every method name, in declaration order.
@@ -139,12 +167,15 @@ pub const METHODS: &[&str] = &[
     "window.close",
     "window.focus",
     "window.set_frame",
+    "window.list",
+    "workspace.list",
     "workspace.create",
     "workspace.close",
     "workspace.focus",
     "workspace.rename",
     "workspace.move",
     "workspace.bind",
+    "tab.list",
     "tab.create",
     "tab.close",
     "tab.focus",
@@ -154,6 +185,9 @@ pub const METHODS: &[&str] = &[
     "tile.get",
     "tile.close",
     "tile.focus",
+    "tile.rename",
+    "browser.open",
+    "preview.open",
     "layout.get",
     "layout.split",
     "layout.focus",
@@ -169,6 +203,8 @@ pub const METHODS: &[&str] = &[
     "terminal.send_text",
     "terminal.send_keys",
     "terminal.read",
+    "terminal.scroll",
+    "terminal.search",
 ];
 
 impl Command {
@@ -453,4 +489,64 @@ pub struct TerminalRead {
     /// Upper bound on lines returned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lines: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceList {
+    /// Only this window's workspaces; all when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TileRename {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// `null` or absent clears the title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserOpen {
+    /// A browser tile; defaults to the focused tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PreviewOpen {
+    /// A preview tile; defaults to the focused tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TerminalScroll {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// Lines above the live bottom; 0 returns to it.
+    pub offset_from_bottom: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TerminalSearch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// Literal text to find.
+    pub query: String,
+    #[serde(default)]
+    pub case_sensitive: bool,
+    /// How many lines of history to search; herdr's default when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TabList {
+    /// Only this workspace's tabs; all when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<WorkspaceId>,
 }

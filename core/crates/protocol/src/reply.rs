@@ -4,9 +4,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use azulejo_model::{Session, TabId, Tile, TileId, WindowId, WorkspaceId};
+use azulejo_model::{Frame, Session, TabId, Tile, TileId, WindowId, WorkspaceId};
 
-use crate::event::LayoutState;
+use crate::event::{LayoutState, TabInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -29,6 +29,77 @@ pub enum Reply {
     Text {
         text: String,
     },
+    Windows {
+        windows: Vec<WindowSummary>,
+    },
+    Workspaces {
+        workspaces: Vec<WorkspaceSummary>,
+    },
+    Tabs {
+        tabs: Vec<TabSummary>,
+    },
+    /// Where a terminal's view sits after `terminal.scroll`.
+    Scroll(ScrollState),
+    /// Lines that matched `terminal.search`.
+    Matches {
+        matches: Vec<SearchMatch>,
+        /// herdr cut the history short; older lines weren't searched.
+        #[serde(default)]
+        truncated: bool,
+    },
+}
+
+/// A window without its workspaces' contents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WindowSummary {
+    pub id: WindowId,
+    pub focused: bool,
+    pub active_workspace: WorkspaceId,
+    pub workspaces: Vec<WorkspaceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<Frame>,
+}
+
+/// A workspace and where it lives.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceSummary {
+    pub window: WindowId,
+    /// The window's active workspace.
+    pub active: bool,
+    /// Active in the focused window.
+    pub focused: bool,
+    pub tabs: usize,
+    #[serde(flatten)]
+    pub workspace: WorkspaceInfo,
+}
+
+/// A tab and where it lives.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TabSummary {
+    pub window: WindowId,
+    pub workspace: WorkspaceId,
+    /// The workspace's active tab.
+    pub active: bool,
+    /// The focused tab.
+    pub focused: bool,
+    pub tiles: usize,
+    pub focused_tile: TileId,
+    #[serde(flatten)]
+    pub tab: TabInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ScrollState {
+    pub offset_from_bottom: u64,
+    pub max_offset_from_bottom: u64,
+    pub viewport_rows: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SearchMatch {
+    /// 0-based line in the searched history, oldest first.
+    pub line: usize,
+    pub text: String,
 }
 
 /// IDs of what a command created; only the relevant fields are set.

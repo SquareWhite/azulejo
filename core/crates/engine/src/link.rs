@@ -44,6 +44,38 @@ pub trait HerdrPort: Send + Sync + 'static {
 
     /// herdr's lifecycle events. Called once, inside the runtime.
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem>;
+
+    // ----- terminal I/O (F20) -----
+
+    fn send_text(
+        &self,
+        pane_id: String,
+        text: String,
+    ) -> impl Future<Output = Result<(), String>> + Send;
+
+    fn send_keys(
+        &self,
+        pane_id: String,
+        keys: Vec<String>,
+    ) -> impl Future<Output = Result<(), String>> + Send;
+
+    fn read(
+        &self,
+        pane_id: String,
+        source: herdr::ReadSource,
+        lines: Option<u32>,
+    ) -> impl Future<Output = Result<herdr::ReadResult, String>> + Send;
+
+    fn scroll(
+        &self,
+        pane_id: String,
+        offset_from_bottom: u64,
+    ) -> impl Future<Output = Result<herdr::ScrollInfo, String>> + Send;
+
+    /// The herdr session socket this port talks to, if it has one.
+    fn socket(&self) -> Option<std::path::PathBuf> {
+        None
+    }
 }
 
 impl HerdrPort for herdr::Client {
@@ -77,6 +109,44 @@ impl HerdrPort for herdr::Client {
         herdr::Client::reresolve(self, &stored)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn send_text(&self, pane_id: String, text: String) -> Result<(), String> {
+        herdr::Client::send_text(self, &herdr::PaneId(pane_id), &text)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn send_keys(&self, pane_id: String, keys: Vec<String>) -> Result<(), String> {
+        herdr::Client::send_keys(self, &herdr::PaneId(pane_id), &keys)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn read(
+        &self,
+        pane_id: String,
+        source: herdr::ReadSource,
+        lines: Option<u32>,
+    ) -> Result<herdr::ReadResult, String> {
+        herdr::Client::read(self, &herdr::PaneId(pane_id), source, lines)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn scroll(
+        &self,
+        pane_id: String,
+        offset_from_bottom: u64,
+    ) -> Result<herdr::ScrollInfo, String> {
+        herdr::Client::scroll(self, &herdr::PaneId(pane_id), offset_from_bottom)
+            .await
+            .map(|pane| pane.scroll.unwrap_or_default())
+            .map_err(|e| e.to_string())
+    }
+
+    fn socket(&self) -> Option<std::path::PathBuf> {
+        Some(self.socket_path().to_path_buf())
     }
 
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem> {

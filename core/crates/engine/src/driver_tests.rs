@@ -24,6 +24,13 @@ struct FakeState {
     /// Overrides for `reresolve`, by terminal ID.
     resolve: HashMap<String, herdr::Resolved>,
     events: Option<tmpsc::Sender<herdr::StreamItem>>,
+    /// Text typed into each pane, by pane ID; `read` returns it.
+    typed: HashMap<String, String>,
+    keys: Vec<(String, Vec<String>)>,
+    reads: Vec<(String, herdr::ReadSource, Option<u32>)>,
+    scrolled: Vec<(String, u64)>,
+    /// Makes every terminal I/O call fail, as when herdr is down.
+    down: bool,
 }
 
 #[derive(Clone, Default)]
@@ -129,6 +136,59 @@ impl HerdrPort for Fake {
         let (tx, rx) = tmpsc::channel(16);
         self.state().events = Some(tx);
         rx
+    }
+
+    async fn send_text(&self, pane_id: String, text: String) -> Result<(), String> {
+        let mut s = self.state();
+        if s.down {
+            return Err("connection refused".into());
+        }
+        s.typed.entry(pane_id).or_default().push_str(&text);
+        Ok(())
+    }
+
+    async fn send_keys(&self, pane_id: String, keys: Vec<String>) -> Result<(), String> {
+        let mut s = self.state();
+        if s.down {
+            return Err("connection refused".into());
+        }
+        s.keys.push((pane_id, keys));
+        Ok(())
+    }
+
+    async fn read(
+        &self,
+        pane_id: String,
+        source: herdr::ReadSource,
+        lines: Option<u32>,
+    ) -> Result<herdr::ReadResult, String> {
+        let mut s = self.state();
+        if s.down {
+            return Err("connection refused".into());
+        }
+        s.reads.push((pane_id.clone(), source, lines));
+        Ok(herdr::ReadResult {
+            text: s.typed.get(&pane_id).cloned().unwrap_or_default(),
+            revision: 1,
+            truncated: lines.is_some(),
+        })
+    }
+
+    async fn scroll(
+        &self,
+        pane_id: String,
+        offset_from_bottom: u64,
+    ) -> Result<herdr::ScrollInfo, String> {
+        let mut s = self.state();
+        if s.down {
+            return Err("connection refused".into());
+        }
+        s.scrolled.push((pane_id, offset_from_bottom));
+        Ok(herdr::ScrollInfo {
+            offset_from_bottom: offset_from_bottom.min(100),
+            max_offset_from_bottom: 100,
+            viewport_rows: 40,
+        })
     }
 }
 
@@ -431,4 +491,224 @@ fn shutdown_flushes_and_corrupt_state_starts_fresh() {
     core.shutdown();
     assert!(path.with_extension("json.bak").exists());
     assert!(logged.lock().unwrap()[0].contains("unusable"));
+}
+
+// ----- terminal I/O (F20) -----
+
+fn focused_pane(core: &Core) -> (TileId, String) {
+    let session = wait_until(core, all_bound);
+    let tile = session.focused_tile().unwrap();
+    match &session.tile(tile).unwrap().content {
+        TileContent::Terminal { herdr: Some(h), .. } => (tile, h.pane_id.clone()),
+        other => panic!("not a bound terminal: {other:?}"),
+    }
+}
+
+fn reply(core: &Core, command: Command) -> Result<Reply, azulejo_protocol::Error> {
+    core.execute(command).map(|o| o.reply)
+}
+
+#[test]
+fn terminal_io_goes_to_the_tiles_pane() {
+    use azulejo_protocol::*;
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let (tile, pane) = focused_pane(&core);
+
+    let sent = reply(
+        &core,
+        Command::TerminalSendText(TerminalSendText {
+            tile: None,
+            text: "echo hi\nError: boom\nerror again\n".into(),
+        }),
+    );
+    assert_eq!(sent, Ok(Reply::Ok));
+    assert_eq!(
+        reply(
+            &core,
+            Command::TerminalSendKeys(TerminalSendKeys {
+                tile: Some(tile),
+                keys: vec!["ctrl+c".into(), "enter".into()],
+            }),
+        ),
+        Ok(Reply::Ok)
+    );
+    assert_eq!(
+        fake.state().keys,
+        vec![(
+            pane.clone(),
+            vec!["ctrl+c".to_string(), "enter".to_string()]
+        )]
+    );
+
+    let text = reply(
+        &core,
+        Command::TerminalRead(TerminalRead {
+            tile: Some(tile),
+            source: ReadSource::Recent,
+            lines: Some(50),
+        }),
+    );
+    assert_eq!(
+        text,
+        Ok(Reply::Text {
+            text: "echo hi\nError: boom\nerror again\n".into()
+        })
+    );
+    assert_eq!(
+        fake.state().reads.last(),
+        Some(&(pane.clone(), herdr::ReadSource::Recent, Some(50)))
+    );
+
+    let scrolled = reply(
+        &core,
+        Command::TerminalScroll(TerminalScroll {
+            tile: None,
+            offset_from_bottom: 250,
+        }),
+    );
+    assert_eq!(
+        scrolled,
+        Ok(Reply::Scroll(ScrollState {
+            offset_from_bottom: 100,
+            max_offset_from_bottom: 100,
+            viewport_rows: 40,
+        }))
+    );
+    assert_eq!(fake.state().scrolled, vec![(pane.clone(), 250)]);
+
+    let found = reply(
+        &core,
+        Command::TerminalSearch(TerminalSearch {
+            tile: None,
+            query: "ERROR".into(),
+            case_sensitive: false,
+            lines: None,
+        }),
+    );
+    assert_eq!(
+        found,
+        Ok(Reply::Matches {
+            matches: vec![
+                SearchMatch {
+                    line: 1,
+                    text: "Error: boom".into()
+                },
+                SearchMatch {
+                    line: 2,
+                    text: "error again".into()
+                },
+            ],
+            truncated: false,
+        })
+    );
+    assert_eq!(
+        fake.state().reads.last(),
+        Some(&(pane, herdr::ReadSource::RecentUnwrapped, None))
+    );
+    let exact = reply(
+        &core,
+        Command::TerminalSearch(TerminalSearch {
+            tile: None,
+            query: "ERROR".into(),
+            case_sensitive: true,
+            lines: None,
+        }),
+    );
+    assert_eq!(
+        exact,
+        Ok(Reply::Matches {
+            matches: vec![],
+            truncated: false
+        })
+    );
+}
+
+#[test]
+fn terminal_io_errors() {
+    use azulejo_protocol::*;
+    let read = |tile| {
+        Command::TerminalRead(TerminalRead {
+            tile,
+            source: ReadSource::Visible,
+            lines: None,
+        })
+    };
+
+    // No herdr at all.
+    let core = Core::start(opts(None));
+    assert_eq!(
+        reply(&core, read(None)).unwrap_err().code,
+        ErrorCode::Unavailable
+    );
+    drop(core);
+
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let (tile, pane) = focused_pane(&core);
+
+    // Not a terminal.
+    let browser = match core
+        .execute(Command::LayoutSplit(LayoutSplit {
+            tile: None,
+            direction: Direction::Down,
+            content: Some(TileContent::Browser { url: None }),
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::Created(c) => c.tile.unwrap(),
+        other => panic!("{other:?}"),
+    };
+    let err = reply(&core, read(Some(browser))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+    assert!(err.message.contains("browser tile"), "{err}");
+
+    // Unknown tile.
+    assert_eq!(
+        reply(&core, read(Some(TileId::new()))).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+
+    // Bad params never reach herdr.
+    let err = reply(
+        &core,
+        Command::TerminalSendKeys(TerminalSendKeys {
+            tile: Some(tile),
+            keys: vec![],
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+    assert!(fake.state().keys.is_empty());
+
+    // herdr down.
+    fake.state().down = true;
+    let err = reply(&core, read(Some(tile))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unavailable);
+    assert!(err.message.contains("connection refused"), "{err}");
+    fake.state().down = false;
+
+    // Ended pane.
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+        pane_id: herdr::PaneId(pane),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+    wait_until(&core, |s| {
+        matches!(
+            s.tile(tile).map(|t| &t.content),
+            Ok(TileContent::Terminal { ended: true, .. })
+        )
+    });
+    let err = reply(&core, read(Some(tile))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+    assert!(err.message.contains("ended"), "{err}");
+}
+
+#[test]
+fn herdr_socket_comes_from_the_port() {
+    let core = Core::start_with_herdr(opts(None), Fake::default());
+    assert_eq!(core.herdr_socket(), None);
+    let core = Core::start(opts(None));
+    assert_eq!(core.herdr_socket(), None);
 }
