@@ -1,0 +1,86 @@
+diff --git a/build.zig b/build.zig
+index 85a91fb..38879ad 100644
+--- a/build.zig
++++ b/build.zig
+@@ -225,6 +225,14 @@ pub fn build(b: *std.Build) !void {
+ 
+         // We shouldn't have this guard but we don't currently
+         // build on macOS this way ironically so we need to fix that.
++        // azulejo: AZJ_RUNTIME_METAL=1 also installs the macOS static lib
++        // directly, since we can't wrap it with `xcodebuild -create-xcframework`.
++        if (config.target.result.os.tag.isDarwin() and
++            b.graph.environ_map.get("AZJ_RUNTIME_METAL") != null)
++        {
++            lib_shared.installHeader();
++            lib_static.install("libghostty.a");
++        }
+         if (!config.target.result.os.tag.isDarwin()) {
+             lib_shared.installHeader(); // Only need one header
+             if (config.target.result.os.tag == .windows) {
+diff --git a/src/build/SharedDeps.zig b/src/build/SharedDeps.zig
+index 8f4e239..a65b073 100644
+--- a/src/build/SharedDeps.zig
++++ b/src/build/SharedDeps.zig
+@@ -500,11 +500,19 @@ pub fn add(
+     if (step.rootModuleTarget().os.tag.isDarwin()) {
+         try @import("apple_sdk").addPaths(b, step);
+ 
+-        const metallib = self.metallib.?;
+-        metallib.output.addStepDependencies(&step.step);
+-        step.root_module.addAnonymousImport("ghostty_metallib", .{
+-            .root_source_file = metallib.output,
+-        });
++        // azulejo: AZJ_RUNTIME_METAL=1 embeds the shader source, compiled
++        // at runtime, for machines without Xcode's `metal` compiler.
++        if (b.graph.environ_map.get("AZJ_RUNTIME_METAL") != null) {
++            step.root_module.addAnonymousImport("ghostty_metallib", .{
++                .root_source_file = b.path("src/renderer/shaders/shaders.metal"),
++            });
++        } else {
++            const metallib = self.metallib.?;
++            metallib.output.addStepDependencies(&step.step);
++            step.root_module.addAnonymousImport("ghostty_metallib", .{
++                .root_source_file = metallib.output,
++            });
++        }
+     }
+ 
+     // Other dependencies, mostly pure Zig
+diff --git a/src/renderer/metal/shaders.zig b/src/renderer/metal/shaders.zig
+index b14068f..9ac993b 100644
+--- a/src/renderer/metal/shaders.zig
++++ b/src/renderer/metal/shaders.zig
+@@ -336,8 +336,32 @@ pub const BgImage = extern struct {
+ fn initLibrary(device: objc.Object) !objc.Object {
+     const start: std.Io.Timestamp = .now(global.io(), .awake);
+ 
++    const embedded = @embedFile("ghostty_metallib");
++
++    // azulejo: without Xcode there is no offline `metal` compiler, so the
++    // build may embed the shader source instead of a metallib. A compiled
++    // metallib starts with the "MTLB" magic; anything else is source.
++    if (!std.mem.startsWith(u8, embedded, "MTLB")) {
++        const source = try macos.foundation.String.createWithBytes(
++            embedded,
++            .utf8,
++            false,
++        );
++        defer source.release();
++
++        var src_err: ?*anyopaque = null;
++        const src_library = device.msgSend(
++            objc.Object,
++            objc.sel("newLibraryWithSource:options:error:"),
++            .{ source, @as(?*anyopaque, null), &src_err },
++        );
++        try checkError(src_err);
++        log.debug("shader library compiled from source time={}us", .{start.untilNow(global.io(), .awake).toMicroseconds()});
++        return src_library;
++    }
++
+     const data = try macos.dispatch.Data.create(
+-        @embedFile("ghostty_metallib"),
++        embedded,
+         macos.dispatch.queue.getMain(),
+         macos.dispatch.Data.DESTRUCTOR_DEFAULT,
+     );

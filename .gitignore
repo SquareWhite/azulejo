@@ -21,9 +21,15 @@ zig-cache/
 zig-out/
 *.xcframework/
 
-# Spikes
+# Spikes and scripts: build output, cloned deps, captures (may hold screen content)
 spikes/*/build/
 spikes/*/.build/
+spikes/*/.deps/
+spikes/*/out/*
+!spikes/linux-terminal/out/*.png
+!spikes/linux-terminal/out/vtdump.txt
+scripts/latency/build/
+scripts/*/build/
 
 # Python
 __pycache__/
