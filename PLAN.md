@@ -300,8 +300,9 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
 
-- [ ] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
+- [x] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
   **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names, and the Files panel navigates and opens files like the files tile.
+  **Result:** `Sidebar.swift` styles the content of D.2's card: Agents | Files switch, machine groups (dot, or amber spinner + "Reconnecting…"; rows dimmed while a machine isn't connected), workspace rows (status icon, name, branch truncated on the right, selected fill, hover), "+" per group, footer counts. Files is a new core `files.panel` (a tree outside the layout; `files.open` from it lands beside the focused tile, which keeps focus); Esc hands the keyboard back, and refreshes don't take it (`KeepsKeyboard` in TileFocus). Remote workspaces' files aren't shown yet. `apps/macos/automation/sidebar.sh` checks it; screenshots compared with the mockup's left column. Open: the working icon (`progress.indicator`, D.1) draws rays where the mockup has a partial ring; "done" can't be simulated with `herdr pane report-agent`.
 
 - [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
   **Done when** tabs match the mockup and attention state shows on them.
