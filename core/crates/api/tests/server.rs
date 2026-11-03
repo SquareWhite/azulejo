@@ -86,6 +86,25 @@ fn errors_carry_the_protocol_code() {
 }
 
 #[test]
+fn an_over_long_socket_path_is_refused_with_its_limit() {
+    let dir = temp_dir();
+    let max = azulejo_api::max_socket_path_len();
+    let mut name = "s".repeat(max + 10);
+    name.push_str(".sock");
+    let path = dir.join(name);
+    let Err(err) = Server::bind(&path) else {
+        panic!("bind must fail")
+    };
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    let msg = err.to_string();
+    assert!(msg.contains(&format!("limit of {max}")), "{msg}");
+    assert!(
+        !dir.exists(),
+        "nothing created for a path the OS can't take"
+    );
+}
+
+#[test]
 fn socket_is_private() {
     let dir = temp_dir().join("nested");
     let path = dir.join("azulejo.sock");

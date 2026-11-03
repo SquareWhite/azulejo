@@ -34,7 +34,7 @@ pub use dispatch::{
 };
 pub use events::DEFAULT_EVENT_BUFFER;
 pub use rpc::{SERVER_METHODS, handle_text};
-pub use server::{Server, ServerHandle};
+pub use server::{Server, ServerHandle, max_socket_path_len};
 
 /// Overrides the socket path, for the server and for clients.
 pub const SOCKET_ENV: &str = "AZULEJO_SOCKET";

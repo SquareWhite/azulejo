@@ -173,3 +173,21 @@ TileViews.register(.terminal) { tile in TerminalTileView(tile) }
 Closing the last window quits the app (the session is saved and comes back on
 relaunch); closing any other window closes it in the core, detaching its
 terminals.
+
+## herdr machines (ADR 0011)
+
+Dev profiles use a named herdr session, so herdr's saved machines are off
+there: a dev run never reaches a real machine. To try the sidebar's machine
+groups, `apps/macos/automation/machines.sh` sets up an instance
+(`AZJ_DEV_NAME=mm`) whose config points at a fixture machine list and the ssh
+stand-in (`scripts/ssh-standin.sh`), with a throwaway herdr session playing
+the remote:
+
+```toml
+[herdr]
+session = "azj-dev-mm"
+machines = true                 # on despite the named session
+machines_file = "/…/machines.json"  # instead of `herdr machine list --json`
+ssh = "/…/ssh"                  # the stand-in instead of ssh
+```
+

@@ -66,7 +66,7 @@ app.setActivationPolicy(launch.automation != nil ? .accessory : .regular)
 
 let delegate: AppController = MainActor.assumeIsolated {
     guard let core = Core(options: launch.coreOptions) else {
-        fail("the core didn't start (bad AZULEJO_CORE_OPTIONS, or the API socket is taken)")
+        fail("the core didn't start; the line above says why (bad AZULEJO_CORE_OPTIONS, the API socket taken, or its path too long)")
     }
     // Belt and braces: whatever the options said, a dev run must not be on the
     // default herdr session.

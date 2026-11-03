@@ -74,7 +74,7 @@ pub(crate) fn fixture() -> herdr::Survey {
 }
 
 fn survey(engine: &mut Engine, s: &herdr::Survey) -> Vec<Event> {
-    engine.apply_internal(Internal::Surveyed(Box::new(s.clone())))
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone())))
 }
 
 fn pane_of(session: &Session, tile: azulejo_model::TileId) -> String {

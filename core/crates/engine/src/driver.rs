@@ -4,20 +4,25 @@
 //! - Commands from shells and the API arrive through [`Core::execute`].
 //! - herdr work runs on a small tokio runtime ([`crate::link`]); results come
 //!   back as internal commands, so state only ever changes on the engine's
-//!   thread.
+//!   thread. Each herdr machine (Local, and herdr's saved machines added with
+//!   [`Core::add_machine`], ADR 0011) has its own link: worker, event stream
+//!   and agent subscription, so one machine dropping never holds up another.
 //! - Every change is saved, debounced ([`crate::persist`]), and broadcast to
 //!   [`Core::subscribe`] listeners.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 use std::thread;
 
 use azulejo_herdr::StreamItem;
-use azulejo_protocol::{Command, Error, ErrorCode, Event, Reply, Session};
+use azulejo_protocol::{
+    Command, Error, ErrorCode, Event, LOCAL_MACHINE, MachineInfo, MachineState, Reply, Session,
+};
 use tokio::sync::mpsc as tmpsc;
 
 use crate::files::{self as file_tiles, Files, Handled};
-use crate::link::{self, Effect, HerdrPort, Internal};
+use crate::link::{self, Effect, HerdrPort, Internal, Machine};
 use crate::persist::{self, Loaded, Saver};
 use crate::preview::{self, Previews};
 use crate::{Engine, Outcome, terminal};
@@ -50,7 +55,14 @@ impl Default for CoreOptions {
 enum Msg {
     Command(Command, mpsc::Sender<Result<Outcome, Error>>),
     Internal(Internal),
-    Herdr(StreamItem),
+    Herdr(Machine, StreamItem),
+    /// Connect a herdr machine (ADR 0011). The port is the core's `P`.
+    AddMachine(MachineInfo, Box<dyn std::any::Any + Send>),
+    /// Show a machine without connecting it (`off`, or an error before
+    /// there's anything to connect).
+    ShowMachine(MachineInfo),
+    /// A machine left herdr's list (or is hidden now).
+    RemoveMachine(String),
     /// A preview tile's file finished rendering.
     Preview(
         azulejo_protocol::TileId,
@@ -126,6 +138,32 @@ impl Core {
                 format!("unexpected reply {other:?}"),
             )),
         }
+    }
+
+    /// Connects a herdr saved machine (ADR 0011): its workspaces are adopted
+    /// like Local's, and workspaces created on it put their terminals there.
+    /// `port` must be the same type the core was started with. Adding a
+    /// machine that's already there replaces its link.
+    pub fn add_machine<P: HerdrPort>(&self, id: String, label: String, port: P) {
+        let info = MachineInfo {
+            id,
+            label,
+            state: MachineState::Connecting,
+            message: None,
+        };
+        let _ = self.tx.send(Msg::AddMachine(info, Box::new(port)));
+    }
+
+    /// Lists a machine without connecting to it, e.g. `off` because it's
+    /// disabled in herdr. Replaces a running link.
+    pub fn show_machine(&self, info: MachineInfo) {
+        let _ = self.tx.send(Msg::ShowMachine(info));
+    }
+
+    /// Disconnects a machine and drops it from `machines.list`. Its
+    /// workspaces stay, unconnected, until it comes back.
+    pub fn remove_machine(&self, id: String) {
+        let _ = self.tx.send(Msg::RemoveMachine(id));
     }
 
     /// Every event from now on, including those caused by herdr.
@@ -253,64 +291,21 @@ fn run<P: HerdrPort>(
     };
     files.sync(engine.session());
 
-    // herdr: a worker for effects and a forwarder for herdr's events.
-    let mut herdr = port.map(|port| {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .thread_name("azulejo-herdr")
-            .enable_all()
-            .build()
-            .expect("tokio runtime");
-        let port = Arc::new(port);
-        let (effects_tx, effects_rx) = tmpsc::unbounded_channel::<Effect>();
-        {
-            let out = self_tx.clone();
-            let log = opts.log.clone();
-            let port = port.clone();
-            let socket = opts.api_socket.clone();
-            runtime.spawn(link::run_worker(
-                port,
-                effects_rx,
-                socket,
-                move |internal| {
-                    let _ = out.send(Msg::Internal(internal));
-                },
-                move |line| log(line),
-            ));
-        }
-        {
-            let out = self_tx.clone();
-            let mut events = runtime.block_on(async { port.events() });
-            runtime.spawn(async move {
-                while let Some(item) = events.recv().await {
-                    if out.send(Msg::Herdr(item)).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
-        // Agent status needs a subscription per pane; follow the bound ones.
-        let (agents, want) = tokio::sync::watch::channel(link::agent_panes(engine.session()));
-        {
-            let out = self_tx.clone();
-            runtime.spawn(follow_agents(port.clone(), want, move |item| {
-                let _ = out.send(Msg::Herdr(item));
-            }));
-        }
-        // Adopt what herdr already runs first (ADR 0008); restoring waits for
-        // that, so a fresh session's placeholder terminal doesn't create a
-        // herdr workspace the user's own ones make unnecessary.
-        let _ = effects_tx.send(Effect::Survey);
-        Herdr {
-            runtime,
-            effects_tx,
+    // herdr: one link per machine, all on one small runtime.
+    let mut herdr = Links::<P>::new(self_tx.clone(), opts.log.clone(), opts.api_socket.clone());
+    if let Some(port) = port {
+        herdr.add(
+            None,
+            MachineInfo {
+                id: LOCAL_MACHINE.into(),
+                label: "Local".into(),
+                state: MachineState::Connecting,
+                message: None,
+            },
             port,
-            agents,
-            creating: Default::default(),
-            restored: false,
-            survey: SurveyState::InFlight,
-        }
-    });
+            &engine,
+        );
+    }
     drop(self_tx);
 
     let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
@@ -318,7 +313,7 @@ fn run<P: HerdrPort>(
     let mut on_exit = azulejo_model::OnExit::default();
     let publish = |engine: &Engine,
                    events: &[Event],
-                   herdr: &Option<Herdr<P>>,
+                   herdr: &Links<P>,
                    listeners: &mut Vec<mpsc::Sender<Event>>,
                    previews: &mut Previews,
                    files: &mut Files| {
@@ -331,19 +326,10 @@ fn run<P: HerdrPort>(
             saver.schedule(engine.session().clone());
         }
         listeners.retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
-        if let Some(h) = herdr {
-            for effect in link::effects(events, engine.session()) {
-                h.send(effect);
-            }
-            let want = link::agent_panes(engine.session());
-            h.agents.send_if_modified(|panes| {
-                let changed = *panes != want;
-                if changed {
-                    *panes = want;
-                }
-                changed
-            });
+        for (machine, effect) in link::effects(events, engine.session()) {
+            herdr.send(&machine, effect);
         }
+        herdr.follow_agents(engine.session());
     };
 
     while let Ok(msg) = rx.recv() {
@@ -351,19 +337,20 @@ fn run<P: HerdrPort>(
             Msg::Command(command, reply) if terminal::is_io(&command) => {
                 // Resolve the pane here; talk to herdr off this thread.
                 let pane = engine.terminal_pane(terminal::target(&command));
-                match (pane, &herdr) {
+                let port = pane
+                    .as_ref()
+                    .ok()
+                    .and_then(|p| herdr.port(&p.machine))
+                    .zip(herdr.runtime.as_ref());
+                match (pane, port) {
                     (Err(e), _) => {
                         let _ = reply.send(Err(e));
                     }
-                    (Ok(_), None) => {
-                        let _ = reply.send(Err(Error::new(
-                            ErrorCode::Unavailable,
-                            "this core isn't connected to herdr",
-                        )));
+                    (Ok(pane), None) => {
+                        let _ = reply.send(Err(not_connected(&herdr, &pane.machine)));
                     }
-                    (Ok(pane), Some(h)) => {
-                        let port = h.port.clone();
-                        h.runtime.spawn(async move {
+                    (Ok(pane), Some((port, runtime))) => {
+                        runtime.spawn(async move {
                             let result = terminal::run(&*port, pane, command).await;
                             let _ = reply.send(result.map(|reply| Outcome {
                                 reply,
@@ -473,11 +460,35 @@ fn run<P: HerdrPort>(
                     .and_then(layout_file_io::write);
                 let _ = reply.send(result);
             }
-            Msg::Command(Command::TerminalRespawn(_), reply) if herdr.is_none() => {
+            Msg::Command(Command::TerminalRespawn(_), reply) if herdr.links.is_empty() => {
                 let _ = reply.send(Err(Error::new(
                     ErrorCode::Unavailable,
                     "this core isn't connected to herdr",
                 )));
+            }
+            Msg::Command(Command::MachinesList, reply) => {
+                let _ = reply.send(Ok(Outcome {
+                    reply: Reply::Machines {
+                        machines: herdr.list(),
+                    },
+                    events: Vec::new(),
+                }));
+            }
+            Msg::Command(Command::WorkspaceCreate(mut p), reply) if p.machine.is_some() => {
+                let result = herdr.resolve(p.machine.as_deref()).and_then(|machine| {
+                    p.machine = machine;
+                    let outcome = engine.execute(Command::WorkspaceCreate(p))?;
+                    publish(
+                        &engine,
+                        &outcome.events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                        &mut files,
+                    );
+                    Ok(outcome)
+                });
+                let _ = reply.send(result);
             }
             Msg::Command(command, reply) => {
                 let respawn = match &command {
@@ -485,10 +496,10 @@ fn run<P: HerdrPort>(
                     _ => None,
                 };
                 let result = engine.execute(command);
-                if let (Ok(_), Some(tile), Some(h)) = (&result, respawn, &herdr)
-                    && let Some(effect) = link::respawn_effect(engine.session(), tile)
+                if let (Ok(_), Some(tile)) = (&result, respawn)
+                    && let Some((machine, effect)) = link::respawn_effect(engine.session(), tile)
                 {
-                    h.send(effect);
+                    herdr.send(&machine, effect);
                 }
                 if let Ok(outcome) = &result {
                     publish(
@@ -503,13 +514,14 @@ fn run<P: HerdrPort>(
                 let _ = reply.send(result);
             }
             Msg::Internal(internal) => {
-                let surveyed = matches!(internal, Internal::Surveyed(_) | Internal::SurveyFailed);
-                if let (
-                    Internal::BindTerminal { tile, .. } | Internal::MarkEnded { tile },
-                    Some(h),
-                ) = (&internal, &herdr)
+                let surveyed = match &internal {
+                    Internal::Surveyed(m, _) | Internal::SurveyFailed(m) => Some(m.clone()),
+                    _ => None,
+                };
+                if let Internal::BindTerminal { tile, .. } | Internal::MarkEnded { tile } =
+                    &internal
                 {
-                    h.creating.borrow_mut().remove(tile);
+                    herdr.created(*tile);
                 }
                 let events = engine.apply_internal(internal);
                 publish(
@@ -520,11 +532,15 @@ fn run<P: HerdrPort>(
                     &mut previews,
                     &mut files,
                 );
-                if surveyed && let Some(h) = &mut herdr {
-                    h.survey_done(&engine);
+                if let Some(machine) = surveyed {
+                    herdr.survey_done(&machine, &engine);
                 }
             }
-            Msg::Herdr(item) => {
+            Msg::Herdr(machine, item) => {
+                if !herdr.links.contains_key(&machine) {
+                    // A removed machine's stream, still draining.
+                    continue;
+                }
                 let status = match &item {
                     StreamItem::Connected | StreamItem::Resync => Some(Event::HerdrStatus {
                         connected: true,
@@ -536,10 +552,17 @@ fn run<P: HerdrPort>(
                     }),
                     StreamItem::Event(_) => None,
                 };
-                if let Some(event) = status {
+                // `herdr.status` stays Local's; every machine gets
+                // `machine.status` (ADR 0011).
+                if machine.is_none()
+                    && let Some(event) = status
+                {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
-                let reaction = link::reconcile(&item, engine.session(), on_exit);
+                if let Some(event) = herdr.track(&machine, &item) {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
+                let reaction = link::reconcile(&machine, &item, engine.session(), on_exit);
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
                     publish(
@@ -551,13 +574,31 @@ fn run<P: HerdrPort>(
                         &mut files,
                     );
                 }
-                if let Some(h) = &mut herdr {
-                    for effect in reaction.effects {
-                        h.send(effect);
-                    }
-                    if reaction.survey {
-                        h.request_survey();
-                    }
+                for effect in reaction.effects {
+                    herdr.send(&machine, effect);
+                }
+                if reaction.survey {
+                    herdr.request_survey(&machine);
+                }
+            }
+            Msg::AddMachine(info, port) => match port.downcast::<P>() {
+                Ok(port) => {
+                    let id = Some(info.id.clone());
+                    let event = herdr.add(id, info, *port, &engine);
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
+                Err(_) => (opts.log)(format!(
+                    "machine {}: its port isn't the core's herdr port type",
+                    info.label
+                )),
+            },
+            Msg::ShowMachine(info) => {
+                let event = herdr.show(info);
+                listeners.retain(|l| l.send(event.clone()).is_ok());
+            }
+            Msg::RemoveMachine(id) => {
+                if let Some(event) = herdr.remove(&id) {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
             }
             Msg::Preview(tile, path, rendered) => {
@@ -597,14 +638,39 @@ fn run<P: HerdrPort>(
     drop(previews);
     drop(files);
     // Stop herdr work before the saver goes; panes keep running in herdr.
-    if let Some(h) = herdr.take() {
-        h.runtime.shutdown_background();
+    herdr.shutdown();
+}
+
+fn not_connected<P: HerdrPort>(herdr: &Links<P>, machine: &Machine) -> Error {
+    match machine {
+        None if herdr.links.contains_key(&None) => {
+            Error::new(ErrorCode::Unavailable, "Local herdr isn't connected")
+        }
+        None => Error::new(ErrorCode::Unavailable, "this core isn't connected to herdr"),
+        Some(id) => Error::new(
+            ErrorCode::Unavailable,
+            format!(
+                "machine {} isn't connected",
+                herdr.label(id).unwrap_or(id.as_str())
+            ),
+        ),
     }
 }
 
-/// The herdr side of a running core.
-struct Herdr<P> {
-    runtime: tokio::runtime::Runtime,
+/// The herdr side of a running core: one link per machine (ADR 0011).
+struct Links<P> {
+    /// Created with the first link.
+    runtime: Option<tokio::runtime::Runtime>,
+    links: HashMap<Machine, Link<P>>,
+    /// Every machine listed, connected or not.
+    info: HashMap<Machine, MachineInfo>,
+    out: mpsc::Sender<Msg>,
+    log: LogFn,
+    api_socket: String,
+}
+
+/// One machine's worker, event stream and agent subscription.
+struct Link<P> {
     effects_tx: tmpsc::UnboundedSender<Effect>,
     port: Arc<P>,
     /// Tiles with a `CreateTerminal` on its way: a split right after launch
@@ -615,6 +681,7 @@ struct Herdr<P> {
     /// Set once the first survey is in and restore work has been queued.
     restored: bool,
     survey: SurveyState,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 /// Surveys are coalesced: at most one queued, plus one more if something
@@ -627,38 +694,268 @@ enum SurveyState {
     Again,
 }
 
-impl<P> Herdr<P> {
-    /// Queues herdr work, once per tile for pane creation.
-    fn send(&self, effect: Effect) {
+/// A machine ID as the session stores it: `None` for Local.
+fn machine_key(id: &str) -> Machine {
+    (id != LOCAL_MACHINE).then(|| id.to_owned())
+}
+
+impl<P: HerdrPort> Links<P> {
+    fn new(out: mpsc::Sender<Msg>, log: LogFn, api_socket: String) -> Self {
+        Self {
+            runtime: None,
+            links: HashMap::new(),
+            info: HashMap::new(),
+            out,
+            log,
+            api_socket,
+        }
+    }
+
+    fn runtime(&mut self) -> &tokio::runtime::Runtime {
+        self.runtime.get_or_insert_with(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .thread_name("azulejo-herdr")
+                .enable_all()
+                .build()
+                .expect("tokio runtime")
+        })
+    }
+
+    /// Connects `machine` through `port`: a worker for effects, a forwarder
+    /// for herdr's events, agent status for its bound panes, and a first
+    /// survey (adoption, then restore; ADR 0008).
+    fn add(&mut self, machine: Machine, info: MachineInfo, port: P, engine: &Engine) -> Event {
+        self.drop_link(&machine);
+        let out = self.out.clone();
+        let log = self.log.clone();
+        let api_socket = self.api_socket.clone();
+        let label = info.label.clone();
+        let runtime = self.runtime();
+        let port = Arc::new(port);
+        let (effects_tx, effects_rx) = tmpsc::unbounded_channel::<Effect>();
+        let mut tasks = Vec::new();
+        {
+            let out = out.clone();
+            let prefix = if machine.is_some() {
+                format!("{label}: ")
+            } else {
+                String::new()
+            };
+            tasks.push(runtime.spawn(link::run_worker(
+                machine.clone(),
+                port.clone(),
+                effects_rx,
+                api_socket,
+                move |internal| {
+                    let _ = out.send(Msg::Internal(internal));
+                },
+                move |line| log(format!("{prefix}{line}")),
+            )));
+        }
+        {
+            let out = out.clone();
+            let machine = machine.clone();
+            let mut events = runtime.block_on(async { port.events() });
+            tasks.push(runtime.spawn(async move {
+                while let Some(item) = events.recv().await {
+                    if out.send(Msg::Herdr(machine.clone(), item)).is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
+        // Agent status needs a subscription per pane; follow the bound ones.
+        let (agents, want) =
+            tokio::sync::watch::channel(link::agent_panes(engine.session(), &machine));
+        {
+            let machine = machine.clone();
+            tasks.push(
+                runtime.spawn(follow_agents(port.clone(), want, move |item| {
+                    let _ = out.send(Msg::Herdr(machine.clone(), item));
+                })),
+            );
+        }
+        let _ = effects_tx.send(Effect::Survey);
+        self.links.insert(
+            machine.clone(),
+            Link {
+                effects_tx,
+                port,
+                agents,
+                creating: Default::default(),
+                restored: false,
+                survey: SurveyState::InFlight,
+                tasks,
+            },
+        );
+        self.info.insert(machine, info.clone());
+        Event::MachineStatus { machine: info }
+    }
+
+    /// Lists a machine without a link.
+    fn show(&mut self, info: MachineInfo) -> Event {
+        let machine = machine_key(&info.id);
+        self.drop_link(&machine);
+        self.info.insert(machine, info.clone());
+        Event::MachineStatus { machine: info }
+    }
+
+    fn remove(&mut self, id: &str) -> Option<Event> {
+        let machine = machine_key(id);
+        self.drop_link(&machine);
+        self.info.remove(&machine).map(|_| Event::MachineRemoved {
+            machine: id.to_owned(),
+        })
+    }
+
+    fn drop_link(&mut self, machine: &Machine) {
+        if let Some(link) = self.links.remove(machine) {
+            for task in link.tasks {
+                task.abort();
+            }
+        }
+    }
+
+    fn port(&self, machine: &Machine) -> Option<Arc<P>> {
+        self.links.get(machine).map(|l| l.port.clone())
+    }
+
+    /// Queues herdr work on `machine`, once per tile for pane creation. A
+    /// machine that isn't connected gets it when it connects (restore).
+    fn send(&self, machine: &Machine, effect: Effect) {
+        let Some(link) = self.links.get(machine) else {
+            return;
+        };
         if let Effect::CreateTerminal { tile, .. } = &effect
-            && !self.creating.borrow_mut().insert(*tile)
+            && !link.creating.borrow_mut().insert(*tile)
         {
             return;
         }
-        let _ = self.effects_tx.send(effect);
+        let _ = link.effects_tx.send(effect);
     }
 
-    fn request_survey(&mut self) {
-        self.survey = match self.survey {
+    /// A tile's pane creation finished, one way or the other.
+    fn created(&self, tile: azulejo_protocol::TileId) {
+        for link in self.links.values() {
+            link.creating.borrow_mut().remove(&tile);
+        }
+    }
+
+    fn request_survey(&mut self, machine: &Machine) {
+        let Some(link) = self.links.get_mut(machine) else {
+            return;
+        };
+        link.survey = match link.survey {
             SurveyState::Idle => {
-                let _ = self.effects_tx.send(Effect::Survey);
+                let _ = link.effects_tx.send(Effect::Survey);
                 SurveyState::InFlight
             }
             SurveyState::InFlight | SurveyState::Again => SurveyState::Again,
         };
     }
 
-    fn survey_done(&mut self, engine: &Engine) {
-        if !self.restored {
-            self.restored = true;
-            for effect in link::restore_effects(engine.session()) {
-                self.send(effect);
+    fn survey_done(&mut self, machine: &Machine, engine: &Engine) {
+        let Some(link) = self.links.get_mut(machine) else {
+            return;
+        };
+        let restore = !link.restored;
+        link.restored = true;
+        let again = link.survey == SurveyState::Again;
+        link.survey = SurveyState::Idle;
+        if restore {
+            for effect in link::restore_effects(engine.session(), machine) {
+                self.send(machine, effect);
             }
         }
-        let again = self.survey == SurveyState::Again;
-        self.survey = SurveyState::Idle;
         if again {
-            self.request_survey();
+            self.request_survey(machine);
+        }
+    }
+
+    /// Points every machine's agent subscription at its bound panes.
+    fn follow_agents(&self, session: &azulejo_model::Session) {
+        for (machine, link) in &self.links {
+            let want = link::agent_panes(session, machine);
+            link.agents.send_if_modified(|panes| {
+                let changed = *panes != want;
+                if changed {
+                    *panes = want;
+                }
+                changed
+            });
+        }
+    }
+
+    /// Follows a machine's connection state from its event stream; returns
+    /// `machine.status` when it changed.
+    fn track(&mut self, machine: &Machine, item: &StreamItem) -> Option<Event> {
+        let (state, message) = match item {
+            StreamItem::Connected | StreamItem::Resync => (MachineState::Connected, None),
+            StreamItem::Disconnected(why) if azulejo_herdr::needs_attention(why) => {
+                (MachineState::Error, Some(why.clone()))
+            }
+            StreamItem::Disconnected(why) => (MachineState::Reconnecting, Some(why.clone())),
+            StreamItem::Event(_) => return None,
+        };
+        let info = self.info.get_mut(machine)?;
+        if info.state == state && info.message == message {
+            return None;
+        }
+        info.state = state;
+        info.message = message;
+        Some(Event::MachineStatus {
+            machine: info.clone(),
+        })
+    }
+
+    /// Local first, then by label.
+    fn list(&self) -> Vec<MachineInfo> {
+        let mut all: Vec<MachineInfo> = self.info.values().cloned().collect();
+        all.sort_by(|a, b| {
+            (!a.is_local(), a.label.to_lowercase(), &a.id).cmp(&(
+                !b.is_local(),
+                b.label.to_lowercase(),
+                &b.id,
+            ))
+        });
+        all
+    }
+
+    /// A machine named in `workspace.create`: `local`, an ID or a label.
+    fn resolve(&self, name: Option<&str>) -> Result<Machine, Error> {
+        let Some(name) = name.filter(|n| *n != LOCAL_MACHINE) else {
+            return Ok(None);
+        };
+        self.info
+            .values()
+            .filter(|m| !m.is_local())
+            .find(|m| m.id == name)
+            .or_else(|| {
+                self.info
+                    .values()
+                    .find(|m| !m.is_local() && m.label == name)
+            })
+            .map(|m| Some(m.id.clone()))
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorCode::InvalidParams,
+                    format!("no herdr machine `{name}`; see machines.list"),
+                )
+            })
+    }
+
+    fn label(&self, id: &str) -> Option<&str> {
+        self.info.get(&machine_key(id)).map(|m| m.label.as_str())
+    }
+
+    fn shutdown(mut self) {
+        let machines: Vec<Machine> = self.links.keys().cloned().collect();
+        for machine in machines {
+            self.drop_link(&machine);
+        }
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
         }
     }
 }

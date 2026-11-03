@@ -66,6 +66,10 @@ pub enum Reply {
     Commands {
         commands: Vec<crate::project::CommandEntry>,
     },
+    /// herdr machines, Local first, from `machines.list`.
+    Machines {
+        machines: Vec<crate::machines::MachineInfo>,
+    },
 }
 
 /// A window without its workspaces' contents.

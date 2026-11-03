@@ -80,7 +80,7 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F14 | herdr | Closing a tile detaches by default; killing the herdr pane is an explicit choice | P0 |
 | F15 | herdr | Panes created or closed elsewhere (phone, CLI, agent) appear or disappear in the app within 1 second | P1 |
 | F16 | herdr | herdr agent state (blocked, working, done, idle) shown on tiles and in the sidebar | P1 |
-| F17 | herdr | Several herdr servers at once, local and remote over SSH, grouped by machine in the sidebar with per-machine connection state (moved from P2 on Nov 3, 2026 after the design mockup; PLAN 2.13) | P1 |
+| F17 | herdr | Several herdr servers at once, local and remote over SSH, grouped by machine in the sidebar with per-machine connection state; the machines are the ones saved in herdr (`herdr machine add`), Azulejo only presents them ([ADR 0011](adr/0011-multiple-herdr-machines.md); moved from P2 on Nov 3, 2026 after the design mockup; PLAN 2.13) | P1 |
 | F18 | API | Socket API to list, create, close, focus, move and resize windows, workspaces, tabs and tiles, and to point browser and preview tiles at a URL or path | P0 |
 | F19 | API | CLI covering the whole socket API, with JSON output; environment variables identify the calling tile and workspace | P0 |
 | F20 | API | Terminal operations: send text and keys, read the screen and scrollback (through herdr's `pane.read`) | P0 |

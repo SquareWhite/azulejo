@@ -287,6 +287,44 @@ fn herdr_session_defaults_to_the_users_own() {
 }
 
 #[test]
+fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
+    // On with herdr's default session, off with a named one (ADR 0011).
+    assert!(Config::defaults(MAC).herdr.machines_enabled());
+    let named = user("[herdr]\nsession = \"azj-dev\"\n", MAC);
+    assert!(!named.herdr.machines_enabled());
+    let forced = user("[herdr]\nsession = \"azj-dev\"\nmachines = true\n", MAC);
+    assert!(forced.herdr.machines_enabled());
+    let off = user("[herdr]\nmachines = false\n", MAC);
+    assert!(!off.herdr.machines_enabled());
+
+    let config = user(
+        "[herdr.machine.\"dev-server\"]\nconnect = false\n\
+         [herdr.machine.\"0123456789abcdef0123456789abcdef\"]\nhidden = true\n",
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+    assert!(config.herdr.prefs("x", "dev-server").no_connect);
+    assert!(!config.herdr.prefs("x", "dev-server").hidden);
+    assert!(
+        config
+            .herdr
+            .prefs("0123456789abcdef0123456789abcdef", "build")
+            .hidden
+    );
+    assert_eq!(
+        config.herdr.prefs("y", "other"),
+        azulejo_config::MachinePrefs::default()
+    );
+
+    // Connection details belong in herdr: a target here is flagged.
+    let config = user("[herdr.machine.\"dev-server\"]\ntarget = \"me@dev-server\"\n", MAC);
+    let d = &config.diagnostics[0];
+    assert!(d.message.contains("herdr machine add"), "{d:?}");
+    let config = user("[herdr]\nmachines = \"yes\"\n", MAC);
+    assert!(config.has_errors());
+}
+
+#[test]
 fn a_terminal_closes_when_its_shell_exits_unless_kept() {
     use azulejo_protocol::OnExit;
     assert_eq!(Config::defaults(MAC).terminal.on_exit, OnExit::Close);

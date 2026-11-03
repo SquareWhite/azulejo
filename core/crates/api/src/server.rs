@@ -63,6 +63,7 @@ impl Server {
     /// `path` is never removed.
     pub fn bind(path: impl Into<PathBuf>) -> io::Result<Server> {
         let path = path.into();
+        check_path_len(&path)?;
         let dir = path
             .parent()
             .filter(|d| !d.as_os_str().is_empty())
@@ -326,4 +327,30 @@ async fn serve_connection(stream: UnixStream, dispatcher: Arc<dyn Dispatcher>, h
     drop(conn);
     drop(out);
     let _ = writer.await;
+}
+
+/// The longest socket path the OS takes: `sun_path` less its NUL (103 bytes
+/// on macOS, 107 on Linux).
+pub fn max_socket_path_len() -> usize {
+    // SAFETY: sockaddr_un is plain old data; all-zero is a valid value.
+    let addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    std::mem::size_of_val(&addr.sun_path) - 1
+}
+
+/// Refuses a path the OS would reject, naming the limit, rather than
+/// failing later with a bare "invalid argument".
+fn check_path_len(path: &Path) -> io::Result<()> {
+    let len = path.as_os_str().len();
+    let max = max_socket_path_len();
+    if len > max {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "socket path is {len} bytes, over the OS limit of {max}: {} \
+                 (use a shorter AZULEJO_SOCKET or state directory)",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
 }

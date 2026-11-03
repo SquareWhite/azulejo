@@ -132,6 +132,8 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "events.subscribe",
     "events.unsubscribe",
     "commands.list",
+    // The sidebar's machine groups read it; "+" on a group is workspace.create.
+    "machines.list",
 ];
 
 /// Every palette entry for `config`'s keymap, in a stable order: keymap

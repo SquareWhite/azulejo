@@ -85,7 +85,7 @@ final class Automation {
         notes.removeAll()
         switch parts[0] {
         case "key": press(arg)
-        case "palette", "seen-visible", "sh":
+        case "palette", "seen-visible", "sh", "machine-add":
             if let problem = ShellAutomation.run(parts[0], arg, app: app) {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }

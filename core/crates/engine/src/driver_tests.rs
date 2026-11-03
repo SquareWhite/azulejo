@@ -565,6 +565,7 @@ fn a_closed_herdr_workspace_takes_its_tiles_and_binding() {
                 window: None,
                 name: Some("other".into()),
                 cwd: None,
+                machine: None,
             },
         ))
         .unwrap();
@@ -1298,6 +1299,7 @@ fn a_tiles_own_on_exit_beats_the_config() {
                 pane_id: pane.into(),
                 terminal_id: format!("term_{pane}"),
                 tab_id: "w1:t1".into(),
+                machine: None,
             }),
             ended: false,
             on_exit,
@@ -1315,6 +1317,7 @@ fn a_tiles_own_on_exit_beats_the_config() {
 
     let exit = |pane: &str, default| {
         crate::link::reconcile(
+            &None,
             &herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
                 pane_id: herdr::PaneId(pane.into()),
                 workspace_id: herdr::WorkspaceId("w1".into()),
@@ -1336,4 +1339,250 @@ fn a_tiles_own_on_exit_beats_the_config() {
         [ClosedElsewhere { tile: closed_id }]
     );
     assert!(exit("w9:p9", OnExit::Close).is_empty());
+}
+
+// ----- several herdr machines (ADR 0011) -----
+
+const REMOTE: &str = "0123456789abcdef0123456789abcdef";
+
+fn on_machine(s: &Session, machine: Option<&str>) -> Vec<(TileId, HerdrRef)> {
+    terminals(s)
+        .into_iter()
+        .filter_map(|(id, h, _)| h.map(|h| (id, h)))
+        .filter(|(_, h)| h.machine.as_deref() == machine)
+        .collect()
+}
+
+fn machines(core: &Core) -> Vec<azulejo_protocol::MachineInfo> {
+    match core.execute(Command::MachinesList).unwrap().reply {
+        Reply::Machines { machines } => machines,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Local and a remote machine whose herdr uses the very same IDs (`w1:p1`
+/// …): every match must look at the machine first.
+fn two_machines() -> (Core, Fake, Fake) {
+    let local = Fake::with_existing(crate::adopt::tests::fixture());
+    let remote = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(None), local.clone());
+    wait_until(&core, |s| on_machine(s, None).len() == 6);
+    core.add_machine(REMOTE.into(), "dev-server".into(), remote.clone());
+    wait_until(&core, |s| on_machine(s, Some(REMOTE)).len() == 6);
+    (core, local, remote)
+}
+
+#[test]
+fn a_remote_machines_herdr_is_adopted_beside_locals() {
+    let (core, local, remote) = two_machines();
+    let s = core.session().unwrap();
+    let ws: Vec<_> = s.windows[0].workspaces.iter().collect();
+    assert_eq!(ws.len(), 4, "two herdr workspaces per machine");
+    assert_eq!(
+        ws.iter()
+            .filter(|w| w.machine.as_deref() == Some(REMOTE))
+            .count(),
+        2
+    );
+    // Same herdr IDs on both machines, kept apart.
+    let local_p1 = on_machine(&s, None)
+        .into_iter()
+        .find(|(_, h)| h.pane_id == "w1:p1")
+        .unwrap();
+    let remote_p1 = on_machine(&s, Some(REMOTE))
+        .into_iter()
+        .find(|(_, h)| h.pane_id == "w1:p1")
+        .unwrap();
+    assert_ne!(local_p1.0, remote_p1.0);
+    // Adopting the remote one only read the remote herdr.
+    wait_for_calls(&remote, "reresolve", 6);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(remote.mutations(), Vec::<&str>::new());
+    assert_eq!(local.mutations(), Vec::<&str>::new());
+
+    // herdr closing w1:p1 on the remote machine removes only its tile.
+    remote.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+        pane_id: herdr::PaneId("w1:p1".into()),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+    let s = wait_until(&core, |s| on_machine(s, Some(REMOTE)).len() == 5);
+    assert!(s.tile(local_p1.0).is_ok(), "Local's w1:p1 stays");
+
+    // Agent status for w1:p2 on Local doesn't touch the remote tile.
+    let remote_p2 = on_machine(&s, Some(REMOTE))
+        .into_iter()
+        .find(|(_, h)| h.pane_id == "w1:p2")
+        .unwrap()
+        .0;
+    let local_p2 = on_machine(&s, None)
+        .into_iter()
+        .find(|(_, h)| h.pane_id == "w1:p2")
+        .unwrap()
+        .0;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while local.state().agent_tx.is_none() {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    local.send_agent("w1:p2", herdr::AgentStatus::Blocked);
+    let s = wait_until(&core, |s| agent_of(s, local_p2).is_some());
+    assert!(agent_of(&s, remote_p2).is_none());
+    core.shutdown();
+}
+
+#[test]
+fn workspaces_on_a_machine_get_their_terminals_there() {
+    let (core, local, remote) = two_machines();
+    // As the daemon does from the default config: new tabs are dynamic Tile.
+    core.set_layout_prefs(azulejo_model::LayoutPrefs {
+        default: azulejo_model::LayoutKind::Tile,
+        ..azulejo_model::LayoutPrefs::default()
+    });
+    let created_local = local.state().created_terminals.len();
+    let reply = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                window: None,
+                name: Some("remote work".into()),
+                cwd: None,
+                machine: Some("dev-server".into()),
+            },
+        ))
+        .unwrap();
+    let Reply::Created(created) = reply.reply else {
+        panic!()
+    };
+    let ws = created.workspace.unwrap();
+    assert_eq!(
+        core.session()
+            .unwrap()
+            .workspace(ws)
+            .unwrap()
+            .machine
+            .as_deref(),
+        Some(REMOTE),
+        "by label"
+    );
+    // A terminal in it gets a pane from the remote herdr.
+    let tab = core
+        .execute(Command::TabCreate(azulejo_protocol::TabCreate {
+            workspace: Some(ws),
+            ..Default::default()
+        }))
+        .unwrap();
+    assert!(matches!(tab.reply, Reply::Created(_)));
+    let s = wait_until(&core, |s| on_machine(s, Some(REMOTE)).len() == 7);
+    assert_eq!(
+        remote.state().created_workspaces,
+        101,
+        "a remote herdr workspace"
+    );
+    assert_eq!(local.state().created_terminals.len(), created_local);
+    let ws_tiles: Vec<TileId> = s
+        .workspace(ws)
+        .unwrap()
+        .tabs
+        .iter()
+        .flat_map(|t| t.tiles.iter().map(|t| t.id))
+        .collect();
+    assert!(
+        on_machine(&s, Some(REMOTE))
+            .iter()
+            .any(|(id, _)| ws_tiles.contains(id))
+    );
+    // A new tab there is a dynamic Tile tab (ADR 0010), and tiles it gains
+    // get their panes from the same remote herdr (ADR 0011).
+    let new_tab = s.workspace(ws).unwrap().tabs.last().unwrap();
+    assert!(new_tab.is_dynamic(), "new tabs default to dynamic Tile");
+    let new_tab = new_tab.id;
+    core.execute(Command::LayoutSplitAuto(
+        azulejo_protocol::LayoutSplitAuto {
+            tab: Some(new_tab),
+            content: None,
+        },
+    ))
+    .unwrap();
+    let s = wait_until(&core, |s| on_machine(s, Some(REMOTE)).len() == 8);
+    assert!(s.workspace(ws).unwrap().tabs.last().unwrap().is_dynamic());
+    assert_eq!(local.state().created_terminals.len(), created_local);
+    // Unknown machines are refused.
+    let err = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                machine: Some("nope".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap_err();
+    assert_eq!(err.code, azulejo_protocol::ErrorCode::InvalidParams);
+    core.shutdown();
+}
+
+#[test]
+fn each_machine_has_its_own_connection_state() {
+    let (core, local, remote) = two_machines();
+    // The fake doesn't say Connected by itself; the real stream does.
+    local.send(herdr::StreamItem::Connected);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while machines(&core)[0].state != azulejo_protocol::MachineState::Connected {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let events = core.subscribe();
+    core.session().unwrap();
+    let list = machines(&core);
+    assert_eq!(list[0].id, azulejo_protocol::LOCAL_MACHINE);
+    assert_eq!(list[1].label, "dev-server");
+
+    remote.send(herdr::StreamItem::Disconnected(
+        "machine dev-server: ssh: connect to host dev-server port 22: Connection refused".into(),
+    ));
+    let status = |want: azulejo_protocol::MachineState| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(Instant::now() < deadline, "no {want:?}");
+            match events.recv_timeout(Duration::from_millis(50)) {
+                Ok(Event::MachineStatus { machine }) if machine.state == want => return machine,
+                Ok(Event::HerdrStatus { .. }) => panic!("Local's status must not change"),
+                _ => {}
+            }
+        }
+    };
+    let m = status(azulejo_protocol::MachineState::Reconnecting);
+    assert_eq!(m.id, REMOTE);
+    assert!(m.message.unwrap().contains("Connection refused"));
+    let list = machines(&core);
+    assert_eq!(list[0].state, azulejo_protocol::MachineState::Connected);
+    assert_eq!(list[1].state, azulejo_protocol::MachineState::Reconnecting);
+
+    // A host key problem won't fix itself by retrying.
+    remote.send(herdr::StreamItem::Disconnected(
+        "machine dev-server: Host key verification failed.".into(),
+    ));
+    status(azulejo_protocol::MachineState::Error);
+    remote.send(herdr::StreamItem::Resync);
+    status(azulejo_protocol::MachineState::Connected);
+
+    // Removed from herdr: listed no more, tiles stay.
+    let tiles = on_machine(&core.session().unwrap(), Some(REMOTE)).len();
+    core.remove_machine(REMOTE.into());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while machines(&core).len() != 1 {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        on_machine(&core.session().unwrap(), Some(REMOTE)).len(),
+        tiles
+    );
+    // Terminal I/O to a tile on a machine that's gone says so.
+    let (tile, _) = on_machine(&core.session().unwrap(), Some(REMOTE))[0].clone();
+    let err = core
+        .execute(Command::TerminalRead(azulejo_protocol::TerminalRead {
+            tile: Some(tile),
+            ..Default::default()
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, azulejo_protocol::ErrorCode::Unavailable);
+    core.shutdown();
 }

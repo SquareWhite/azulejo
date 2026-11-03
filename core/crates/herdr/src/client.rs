@@ -10,6 +10,8 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
+use crate::transport::{BridgeCommand, Conn, Transport, spawn_bridge};
+
 use crate::MIN_PROTOCOL;
 use crate::error::{Error, Result};
 use crate::event::Subscription;
@@ -76,16 +78,26 @@ pub struct Client {
 
 #[derive(Debug)]
 struct Inner {
-    socket: PathBuf,
+    transport: Transport,
     opts: ClientOptions,
     next_id: AtomicU64,
 }
 
 impl Client {
     pub fn new(socket: impl Into<PathBuf>, opts: ClientOptions) -> Self {
+        Self::with_transport(Transport::Socket(socket.into()), opts)
+    }
+
+    /// A client whose connections are bridge processes (a remote machine,
+    /// ADR 0011).
+    pub fn bridged(bridge: BridgeCommand, opts: ClientOptions) -> Self {
+        Self::with_transport(Transport::Bridge(bridge), opts)
+    }
+
+    pub fn with_transport(transport: Transport, opts: ClientOptions) -> Self {
         Self {
             inner: Arc::new(Inner {
-                socket: socket.into(),
+                transport,
                 opts,
                 next_id: AtomicU64::new(1),
             }),
@@ -102,8 +114,16 @@ impl Client {
         Ok((client, info))
     }
 
-    pub fn socket_path(&self) -> &Path {
-        &self.inner.socket
+    /// The local socket, for a client that talks to this machine's herdr.
+    pub fn socket_path(&self) -> Option<&Path> {
+        match &self.inner.transport {
+            Transport::Socket(path) => Some(path),
+            Transport::Bridge(_) => None,
+        }
+    }
+
+    pub fn transport(&self) -> &Transport {
+        &self.inner.transport
     }
 
     pub fn options(&self) -> ClientOptions {
@@ -408,35 +428,48 @@ impl Client {
     pub(crate) async fn call<P: Serialize>(&self, method: &str, params: P) -> Result<Value> {
         let id = self.next_id();
         let line = wire::encode(&id, method, params)?;
-        let stream = self.connect_with_backoff(self.inner.opts.connect).await?;
+        let mut conn = self.connect_with_backoff(self.inner.opts.connect).await?;
         let timeout = self.inner.opts.request_timeout;
-        let reply = tokio::time::timeout(timeout, round_trip(stream, &line))
+        let reply = tokio::time::timeout(timeout, round_trip(&mut conn, &line))
             .await
             .map_err(|_| Error::Timeout {
                 method: method.to_owned(),
                 timeout,
-            })??;
+            })?;
         match reply {
-            Some(reply) => wire::decode_reply(&reply, &id),
-            None => Err(Error::Closed {
+            Ok(Some(reply)) => wire::decode_reply(&reply, &id),
+            // A bridge that died says why on stderr (ssh unreachable, no
+            // herdr on the machine, …).
+            Ok(None) | Err(Error::Io(_)) if conn.guard.is_some() => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                Err(conn.bridge_error().expect("bridge"))
+            }
+            Ok(None) => Err(Error::Closed {
                 method: method.to_owned(),
             }),
+            Err(e) => Err(e),
         }
     }
 
-    pub(crate) async fn connect_with_backoff(&self, backoff: Backoff) -> Result<UnixStream> {
+    pub(crate) async fn connect_with_backoff(&self, backoff: Backoff) -> Result<Conn> {
+        let socket = match &self.inner.transport {
+            Transport::Socket(path) => path,
+            // A bridge always starts; whether it reaches herdr shows on the
+            // first read. Retrying is the caller's (the event stream's) job.
+            Transport::Bridge(cmd) => return spawn_bridge(cmd),
+        };
         let start = Instant::now();
         let mut delay = backoff.initial;
         loop {
-            match UnixStream::connect(&self.inner.socket).await {
-                Ok(s) => return Ok(s),
+            match UnixStream::connect(socket).await {
+                Ok(s) => return Ok(Conn::unix(s)),
                 Err(e) if retryable(&e) && start.elapsed() + delay <= backoff.give_up_after => {
                     tokio::time::sleep(delay).await;
                     delay = backoff.next(delay);
                 }
                 Err(source) => {
                     return Err(Error::Connect {
-                        path: self.inner.socket.clone(),
+                        path: socket.clone(),
                         source,
                     });
                 }
@@ -445,11 +478,10 @@ impl Client {
     }
 }
 
-async fn round_trip(stream: UnixStream, line: &str) -> Result<Option<String>> {
-    let (read, mut write) = stream.into_split();
-    write.write_all(line.as_bytes()).await?;
-    write.flush().await?;
-    let mut reader = BufReader::new(read);
+async fn round_trip(conn: &mut Conn, line: &str) -> Result<Option<String>> {
+    conn.write.write_all(line.as_bytes()).await?;
+    conn.write.flush().await?;
+    let mut reader = BufReader::new(&mut conn.read);
     let mut reply = String::new();
     let n = reader.read_line(&mut reply).await?;
     Ok((n > 0).then_some(reply))

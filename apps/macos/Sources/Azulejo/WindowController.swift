@@ -52,6 +52,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         window.delegate = self
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
+        sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }
         tabBar.onSelect = { [weak app] id in app?.send(["method": "tab.focus", "params": ["tab": id]]) }
         tiles.onClickTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
     }
@@ -65,7 +66,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         if first { placeWindow(model.frame) }
         let showSidebar = model.sidebarHidden != true
         if sidebarVisible != showSidebar { sidebarVisible = showSidebar }
-        sidebar.apply(model)
+        sidebar.apply(model, machines: app?.machines ?? [])
         tabBar.apply(model.workspace)
         tiles.apply(model)
         attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames())
@@ -99,6 +100,8 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     /// Automation: the sidebar's and tab bar's attention markers.
     var sidebarMarkers: [String] { sidebar.markers }
+    /// Automation: the sidebar's machine group headers.
+    var sidebarMachines: [String] { sidebar.machineHeaders }
     var tabMarkers: [String] { tabBar.markers }
 
     /// Re-lays out the chrome (palette or banner changed size).

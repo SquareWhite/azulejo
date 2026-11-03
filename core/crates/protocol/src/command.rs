@@ -258,6 +258,12 @@ pub enum Command {
     /// replies `commands`.
     #[serde(rename = "commands.list")]
     CommandsList,
+
+    // ----- machines (F17, ADR 0011) -----
+    /// Local plus herdr's saved machines and their connection state;
+    /// replies `machines`.
+    #[serde(rename = "machines.list")]
+    MachinesList,
 }
 
 /// Every method name, in declaration order.
@@ -329,6 +335,7 @@ pub const METHODS: &[&str] = &[
     "layout.apply",
     "layout.export",
     "commands.list",
+    "machines.list",
 ];
 
 impl Command {
@@ -414,6 +421,10 @@ pub struct WorkspaceCreate {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// The herdr machine its terminals run on: `"local"` (the default), or a
+    /// machine's ID or label from `machines.list` (ADR 0011).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
