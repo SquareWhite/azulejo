@@ -275,8 +275,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Runs a resolved keymap action (`azj_core_key` / `azj_core_action` JSON).
     func perform(_ outcome: [String: Any], in controller: WindowController) {
         if let command = outcome["command"] as? [String: Any] {
-            if case .failure(let error) = send(command) {
+            switch send(command) {
+            case .failure(let error):
                 controller.flash(error.message)
+            case .success(let reply):
+                // A new workspace from the keyboard gets a first terminal, as
+                // "+" in the sidebar does: an empty one has nothing to type into.
+                if command["method"] as? String == "workspace.create",
+                   let workspace = reply["workspace"] as? String {
+                    send(["method": "tab.create", "params": ["workspace": workspace]])
+                }
             }
             return
         }
