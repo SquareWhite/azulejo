@@ -15,14 +15,16 @@
   --azj-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif;
 }
 
+/* Dark: the mockup's preview tile (One Dark, shared/design/tokens.json:
+   tileAlt, textPrimary, textMuted, sunken, accent). */
 @media (prefers-color-scheme: dark) {
   :root {
-    --azj-bg: #0d1117;
-    --azj-fg: #e6edf3;
-    --azj-muted: #9198a1;
-    --azj-border: #3d444d;
-    --azj-subtle: #151b23;
-    --azj-link: #4493f8;
+    --azj-bg: #252930;
+    --azj-fg: #d7dae0;
+    --azj-muted: #7f848e;
+    --azj-border: #3a3f4b;
+    --azj-subtle: #202329;
+    --azj-link: #61afef;
     --azj-notice-bg: #2e2a1a;
     --azj-notice-border: #9e6a03;
   }

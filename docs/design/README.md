@@ -93,7 +93,10 @@ Four tiles in the mockup: a terminal as the master on the left, a browser top-ri
 The values above live in [`shared/design/tokens.json`](../../shared/design/tokens.json), the single source for both shells. The macOS shell reads them through `Design.swift`, which `scripts/design-tokens` (or `just design-tokens`) generates; `just lint` fails while it's stale. No view sets a colour, font or corner radius directly any more.
 
 - **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Each has a dark and a light value; the light ones are provisional.
-- **Radii and spacing** are the values shipping today, not yet the mockup's. D.5 moves them to the mockup targets in the JSON: gutter 4 → 8 pt, tile radius 6 → 10 pt, sidebar width 168 → 230 pt.
+- **Tile radii and spacing** follow the mockup since D.5: gutter and outer margin 8 pt, tile radius 10 pt, header strip 28 pt, browser toolbar 36 pt, 8 pt margin round a terminal's text. The sidebar width (168 → 230 pt) moves with D.3.
+- **Tile cards** (D.5): the card's corners are the window colour drawn over the tile (`CornerCapLayer`, a nine-slice image), not a rounded mask, so the terminal's Metal surface and web views aren't masked (a rounded mask costs an offscreen pass). During crop motion the caps follow the moving clip.
+- **Header strips** (D.5): unfocused tiles `header` (#202329), the focused tile `headerFocused` (#21252b), with a `headerHairline` underneath, sampled from the mockup, whose focused tile is a shade lighter. Terminal titles are centred; tiles with controls on the right (preview, files) are left-aligned. Browser tiles have no header strip; their toolbar takes its place (`browserChrome`, address pill `browserField`, D.6).
+- **Preview** (D.7): Preview | Source pill (`previewToggleTrack`, `previewToggleSelected`); Open and Reveal show while the pointer is over the header. The page's dark palette (`shared/webview/preview.css`) now uses the mockup's One Dark values (body #252930).
 - **Status icons** (`Design.Status`): working `progress.indicator`, blocked `exclamationmark.circle.fill`, done `checkmark.circle`, idle `circle.dashed`, off and connecting `circle.dotted`, reconnecting `arrow.triangle.2.circlepath`, error `exclamationmark.triangle.fill`, connected `circle.fill`, each with its status colour.
 - **Blocked is yellow**, as in the mockup, where the shell used red before. Red is for errors only.
 
@@ -103,6 +106,7 @@ The mockup doesn't show focus. Until the designer decides, the focused tile gets
 
 - a 1 pt outline in the accent blue at 45 % opacity (`Design.Color.focus`, `Design.Border.focus`), drawn just outside the tile and sliding between tiles as before;
 - its header title at full brightness (`textPrimary`); other tiles' header titles use `textSecondary`;
+- its header strip a shade lighter (`headerFocused` vs `header`, D.5), as on the mockup's focused tile. The mockup's focused tile body is lighter too (#282c34 vs #252930); terminals draw their own body from the Ghostty theme, so that part isn't copied;
 - an orange outline instead while the tile is zoomed (`Design.Color.zoom`).
 
 Changing any of these is a one-line edit in `tokens.json`.
