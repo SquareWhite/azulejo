@@ -1,3 +1,12 @@
 # Architecture decision records
 
 One file per decision: `NNNN-short-title.md`, numbered in order. Each record says what we decided, why, and what we gave up. Gate G0 adds the first ones: terminal bridge, herdr mapping and take-over behaviour.
+
+| ADR | Decision |
+| --- | --- |
+| [0001](0001-terminal-bridge.md) | Terminal tiles run `herdr terminal attach` as their child process |
+| [0002](0002-herdr-mapping.md) | One herdr tab per terminal tile; herdr workspaces 1:1 |
+| [0003](0003-take-over.md) | Take-over: ask first, fall back to read-only, never retake automatically |
+| [0004](0004-animation-resize-timing.md) | Resize terminals once, at the start of a layout animation |
+| [0005](0005-scrollback-and-passthrough.md) | Scrollback, search, title and attention come from herdr |
+| [0006](0006-herdr-process-hygiene.md) | Clean herdr environment; size the PTY before attach |
