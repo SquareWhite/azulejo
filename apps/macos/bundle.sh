@@ -15,6 +15,18 @@ if xcodebuild -version >/dev/null 2>&1; then
 else
   echo "Full Xcode not found; building with SwiftPM." >&2
   (cd "$root" && cargo build -p azulejo-ffi)
+  # SwiftPM doesn't track the Rust static library or its generated header, so
+  # a core change alone wouldn't relink (or recompile against a new header).
+  # Drop the stale outputs so it has to.
+  lib="$root/target/debug/libazulejo_ffi.a"
+  header="$root/core/crates/ffi/include/azulejo.h"
+  bindir="$(swift build --show-bin-path)"
+  bin="$bindir/Azulejo"
+  if [[ -f "$bin" && "$header" -nt "$bin" ]]; then
+    rm -rf "$bindir/Azulejo.build" "$bindir/Modules" "$bindir/ModuleCache" "$bin"
+  elif [[ -f "$bin" && "$lib" -nt "$bin" ]]; then
+    rm -f "$bin"
+  fi
   swift build
   app="$out/Azulejo.app"
   rm -rf "$app"

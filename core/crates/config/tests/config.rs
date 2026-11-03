@@ -761,3 +761,26 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn actions_round_trip_through_their_names() {
+    use azulejo_config::{Action, Platform};
+    let config = azulejo_config::Config::defaults(Platform::Macos);
+    for (_, action) in config.keymap.bindings(None) {
+        assert_eq!(
+            Action::from_name(&action.name(), action.index()),
+            Some(action)
+        );
+    }
+    assert_eq!(
+        Action::from_name("switch_tab", None),
+        None,
+        "indexed needs an index"
+    );
+    assert_eq!(
+        Action::from_name("split_auto", Some(2)),
+        None,
+        "plain takes none"
+    );
+    assert_eq!(Action::from_name("nope", None), None);
+}
