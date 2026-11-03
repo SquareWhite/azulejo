@@ -227,9 +227,20 @@ final class Automation {
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
+        // Onto a plain bitmap with the traffic lights, which live outside
+        // the content view.
+        var output = rep
+        if let window = view.window, let image = rep.cgImage, let ctx = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            ctx.scaleBy(x: CGFloat(image.width) / view.bounds.width, y: CGFloat(image.height) / view.bounds.height)
+            Self.drawTitlebarButtons(of: window, in: ctx)
+            if let composed = ctx.makeImage() { output = NSBitmapImageRep(cgImage: composed) }
+        }
         let url = out.appendingPathComponent("\(name).png")
         do {
-            try rep.representation(using: .png, properties: [:])?.write(to: url)
+            try output.representation(using: .png, properties: [:])?.write(to: url)
             record("shot \(name) → \(url.lastPathComponent)")
         } catch {
             failures.append("line \(step): shot \(name): \(error)")
@@ -309,11 +320,14 @@ final class Automation {
         ctx.scaleBy(x: scale, y: scale)
         ctx.setFillColor(Design.Color.window.cgColor)
         ctx.fill(CGRect(origin: .zero, size: size))
+        ctx.saveGState()
         if layer.isGeometryFlipped || view.isFlipped {
             ctx.translateBy(x: 0, y: size.height)
             ctx.scaleBy(x: 1, y: -1)
         }
         (layer.presentation() ?? layer).render(in: ctx)
+        ctx.restoreGState()
+        Self.drawTitlebarButtons(of: window, in: ctx)
         guard let image = ctx.makeImage() else { return }
         let rep = NSBitmapImageRep(cgImage: image)
         let url = out.appendingPathComponent("\(name).png")
@@ -322,6 +336,26 @@ final class Automation {
         } catch {
             notes.append("capture \(name): \(error)")
         }
+    }
+
+    /// The traffic lights live in the window's title bar, outside the
+    /// content view, so neither render above has them: draw each where it
+    /// sits. `ctx` is in window points, bottom-up (the content view fills the
+    /// window). A background window's lights are grey, as on screen: AppKit
+    /// draws those to add light to what's under them, so they go on with
+    /// plus-lighter (that matches `screencapture` to a couple of levels).
+    private static func drawTitlebarButtons(of window: NSWindow, in ctx: CGContext) {
+        ctx.saveGState()
+        if !window.isKeyWindow { ctx.setBlendMode(.plusLighter) }
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(type), !button.isHiddenOrHasHiddenAncestor,
+                  let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds)
+            else { continue }
+            button.cacheDisplay(in: button.bounds, to: rep)
+            guard let image = rep.cgImage else { continue }
+            ctx.draw(image, in: button.convert(button.bounds, to: nil))
+        }
+        ctx.restoreGState()
     }
 
     private func expect(_ arg: String) {

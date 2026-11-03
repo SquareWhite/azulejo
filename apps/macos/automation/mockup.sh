@@ -7,7 +7,9 @@
 # tile shows a static fixture page served from a temp folder.
 #   apps/macos/automation/mockup.sh [--keep]   (--keep: leave the instance)
 # Output: .dev/<name>.out/mockup/01-scene.png (system capture, needs an
-# unlocked screen) and 01-scene-app.png (the app's own render).
+# unlocked screen), 01-scene-app.png (the app's render of the layer tree, as
+# Core Animation shows it) and 01-scene-shot.png (AppKit's cacheDisplay); the
+# app's own renders draw the traffic lights in too.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
@@ -71,7 +73,9 @@ port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));prin
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$fx/site" >/dev/null 2>&1 &
 server=$!
 
-sed -e "s|@FX@|$fx|g" -e "s|@REPO@|$root|g" -e "s|@PORT@|$port|g" \
+# The terminals' working folder, which their headers and prompts show:
+# AZJ_MOCKUP_CWD overrides it (the main checkout, when run from another one).
+sed -e "s|@FX@|$fx|g" -e "s|@REPO@|${AZJ_MOCKUP_CWD:-$root}|g" -e "s|@PORT@|$port|g" \
   "$here/mockup/scene.toml.in" >"$fx/scene.toml"
 
 # The two "remote" machines: throwaway herdr sessions with one workspace each.

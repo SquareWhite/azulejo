@@ -402,10 +402,14 @@ enum TrafficLights {
         }
     }
 
-    /// Automation: the close button's centre from the window's top left ("29,31").
+    /// Automation: the close button's centre from the window's top left
+    /// ("29,31"), or "hidden".
     static func describe(_ window: NSWindow) -> String {
         guard let close = window.standardWindowButton(.closeButton), let theme = window.contentView?.superview
         else { return "-" }
+        if close.isHiddenOrHasHiddenAncestor || close.alphaValue == 0 || close.superview?.alphaValue == 0 {
+            return "hidden"
+        }
         let r = close.convert(close.bounds, to: theme)
         return "\(Int(r.midX.rounded())),\(Int((theme.bounds.height - r.midY).rounded()))"
     }
