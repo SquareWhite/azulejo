@@ -108,10 +108,45 @@ struct TileModel: Decodable, Equatable {
     var path: String?
     // files
     var root: String?
+    /// Terminal tiles: the agent herdr reports in the pane (F11, F16).
+    var agent: AgentModel?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, cwd, command, herdr, ended, url, path, root
+        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent
         case pageTitle = "page_title"
+    }
+
+    /// Needs a look: the agent became blocked or finished and nobody has seen it.
+    var needsAttention: Bool { agent?.attention == true }
+}
+
+/// What herdr says the agent in a terminal tile is doing.
+struct AgentModel: Decodable, Equatable {
+    enum Status: String, Decodable {
+        case idle, working, blocked, done, unknown
+
+        init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Status(rawValue: raw) ?? .unknown
+        }
+    }
+
+    var name: String?
+    var status: Status
+    var sinceMs: UInt64?
+    var attention: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case name, status, attention
+        case sinceMs = "since_ms"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        status = try c.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
+        sinceMs = try c.decodeIfPresent(UInt64.self, forKey: .sinceMs)
+        attention = try c.decodeIfPresent(Bool.self, forKey: .attention) ?? false
     }
 }
 

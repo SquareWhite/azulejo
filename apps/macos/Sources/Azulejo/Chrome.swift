@@ -1,7 +1,8 @@
 import AppKit
 
-/// The workspace list down the left edge. Minimal for M1: one row per
-/// workspace with its 1-based number (what `cmd+1..8` switches to).
+/// The workspace list down the left edge: one row per workspace with its
+/// 1-based number (what `cmd+1..8` switches to) and a dot when its agents
+/// need a look (red: blocked, green: done, blue: working).
 @MainActor
 final class SidebarView: NSView {
     static let width: CGFloat = 168
@@ -29,8 +30,13 @@ final class SidebarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    var stackRows: [RowButton] { stack.arrangedSubviews.compactMap { $0 as? RowButton } }
+
     func apply(_ window: WindowModel) {
-        let key = window.workspaces.map { "\($0.id)|\($0.name)|\($0.id == window.activeWorkspace)" }
+        let rollups = window.workspaces.map { AttentionStyle.Rollup($0.tabs.flatMap(\.tiles)) }
+        let key = zip(window.workspaces, rollups).map { ws, r in
+            "\(ws.id)|\(ws.name)|\(ws.id == window.activeWorkspace)|\(r.blocked)|\(r.attention)|\(r.working)"
+        }
         guard key != shown else { return }
         shown = key
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -40,12 +46,18 @@ final class SidebarView: NSView {
         stack.addArrangedSubview(header)
         for (i, ws) in window.workspaces.enumerated() {
             let row = RowButton(
-                title: "\(i + 1)  \(ws.name)", selected: ws.id == window.activeWorkspace
+                title: "\(i + 1)  \(ws.name)", selected: ws.id == window.activeWorkspace,
+                marker: rollups[i].marker
             ) { [weak self] in self?.onSelect?(ws.id) }
             stack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16).isActive = true
         }
     }
+}
+
+extension SidebarView {
+    /// Automation: each workspace row's marker, in order.
+    var markers: [String] { stackRows.map(\.markerText) }
 }
 
 /// The active workspace's tabs, across the top.
@@ -75,17 +87,24 @@ final class TabBarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Automation: each tab's marker, in order.
+    var markers: [String] { stack.arrangedSubviews.compactMap { ($0 as? RowButton)?.markerText } }
+
     func apply(_ workspace: WorkspaceModel?) {
         let tabs = workspace?.tabs ?? []
         let active = workspace?.tab?.id
-        let key = tabs.map { "\($0.id)|\($0.label)|\($0.id == active)|\($0.tiles.count)" }
+        let rollups = tabs.map { AttentionStyle.Rollup($0.tiles) }
+        let key = zip(tabs, rollups).map { tab, r in
+            "\(tab.id)|\(tab.label)|\(tab.id == active)|\(tab.tiles.count)|\(r.blocked)|\(r.attention)|\(r.working)"
+        }
         guard key != shown else { return }
         shown = key
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (i, tab) in tabs.enumerated() {
             let count = tab.tiles.count > 1 ? " ·\(tab.tiles.count)" : ""
             stack.addArrangedSubview(RowButton(
-                title: "\(i + 1) \(tab.label)\(count)", selected: tab.id == active
+                title: "\(i + 1) \(tab.label)\(count)", selected: tab.id == active,
+                marker: rollups[i].marker
             ) { [weak self] in self?.onSelect?(tab.id) })
         }
     }
@@ -96,14 +115,26 @@ final class TabBarView: NSView {
 final class RowButton: NSButton {
     private let handler: () -> Void
 
-    init(title: String, selected: Bool, handler: @escaping () -> Void) {
+    /// Automation: the marker's text (" ● 2"), or "".
+    let markerText: String
+
+    init(title: String, selected: Bool, marker: NSAttributedString? = nil, handler: @escaping () -> Void) {
         self.handler = handler
+        markerText = marker?.string ?? ""
         super.init(frame: .zero)
         self.title = title
         isBordered = false
         alignment = .left
         font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
         contentTintColor = selected ? .labelColor : .secondaryLabelColor
+        if let marker {
+            let text = NSMutableAttributedString(string: title, attributes: [
+                .font: font ?? .systemFont(ofSize: 12),
+                .foregroundColor: selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            ])
+            text.append(marker)
+            attributedTitle = text
+        }
         wantsLayer = true
         layer?.cornerRadius = 5
         layer?.backgroundColor = selected
