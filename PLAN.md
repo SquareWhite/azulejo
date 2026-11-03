@@ -20,7 +20,7 @@ The step-by-step plan for building Azulejo. The what and why live in [docs/PRD.m
 | Core ↔ Linux | Direct Rust dependency, same JSON command enum |
 | Terminal, macOS | GhosttyKit.xcframework from `vendor/ghostty` (submodule, v1.4.0). Xcode is optional: without it `scripts/build-ghostty.sh` applies `scripts/patches/ghostty-no-xcode.patch` (runtime-compiled Metal shaders). Surface runs `herdr terminal attach <terminal-id>` ([ADR 0001](docs/adr/0001-terminal-bridge.md)) |
 | Terminal, Linux | VTE (gtk4 build) running the same command until M4, then libghostty-vt + our own GL renderer |
-| Browser | WKWebView / WebKitGTK 6.0; automation JS shared in `shared/webview/` |
+| Browser | WKWebView / WebKitGTK 6.0; preview HTML/CSS/JS shared in `shared/webview/` |
 | Markdown, code | Rendered in the core: comrak + syntect → HTML, shown in a webview |
 | File watching | `notify` crate in the core (FSEvents / inotify) |
 | API | JSON-RPC 2.0 over a Unix socket (mode 0600). Types in Rust with serde + schemars → `schema/api.v1.json` |
@@ -52,7 +52,7 @@ azulejo/
 ├── apps/
 │   ├── macos/             XcodeGen project.yml, Swift sources
 │   └── linux/             gtk4-rs crate (member of the Cargo workspace)
-├── shared/webview/        automation JS, preview HTML/CSS shared by both shells
+├── shared/webview/        preview HTML/CSS/JS shared by both shells
 ├── clients/python/        generated client + tests
 ├── schema/                api.v1.json (generated, committed)
 ├── vendor/ghostty/        git submodule, pinned tag
@@ -198,7 +198,7 @@ Rule for every step: core first (logic + unit tests + API method + CLI subcomman
   - Input latency: pass against the libghostty spike (18.8 vs 18.9 ms median on the same pane). Standalone Ghostty.app is still deferred.
   - Memory: 195 MB with 4 terminals. A bare libghostty surface alone is 150 MB (90 MB of Metal), so the old 150 MB target sat below libghostty's floor. the maintainer restated it as "within 25% of Ghostty.app with the same splits"; measuring Ghostty.app is under Deferred checks.
   - herdr reconnect, stability (WebContent and QuickLook killed, terminals untouched) and socket permissions: pass.
-  - Animation and the per-workspace automation switch: M2 (F4, F21).
+  - Animation: M2 (F4). The per-workspace automation switch went with F21, dropped Nov 3, 2026.
 
 - [x] **1.14 Packaging.** Developer ID signing and notarisation via `just release-mac`; `azj` inside the bundle plus an "Install command-line tool" action (until the CLI open question is settled).
   **Done when** a notarised .dmg installs on a clean Mac and `azj` works from a fresh terminal.
@@ -237,8 +237,7 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 - [ ] **2.8 Event stream** (F22). `events.subscribe` on our socket with filters; `azj events --follow`.
   **Done when** tile, focus and agent-state events stream with stable JSON.
 
-- [ ] **2.9 Browser automation** (F21). `shared/webview/automation.js`: accessibility snapshot (roles, names, refs), click and fill by ref, evaluate, screenshot (`takeSnapshot`). Per-workspace kill switch.
-  **Done when** an agent logs into a local test app and verifies a page using `azj browser …` only.
+- [ ] ~~**2.9 Browser automation** (F21)~~ **Dropped, Nov 3, 2026.** the maintainer decided agents don't need to drive browser tiles; they use their own browser tooling. `browser.open` (F18) stays.
 
 - [ ] **2.10 Python client** (F23). Generated from `schema/api.v1.json` by `scripts/codegen-python`; `azulejo.Client` and `azulejo.AsyncClient`; tests run against a headless core.
   **Done when** the package installs with `uv`, and examples for every use case in the PRD run.
@@ -247,7 +246,7 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
   **Done when** 30+ scenarios pass in CI.
 
 ### Gate G2
-All P1 boxes ticked on macOS. The 4-week success-metric clock starts.
+All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock starts.
 
 ---
 

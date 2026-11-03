@@ -43,6 +43,7 @@ The gap is a native shell that owns the layout and the non-terminal tiles, and d
 - Electron, Tauri or any approach that renders the terminal inside a webview.
 - Being a system-wide window manager. Tiling applies only inside the app's windows.
 - Built-in AI chat. Agents run in terminal tiles.
+- Agent-driven browser automation (accessibility snapshot, click, fill, evaluate, screenshot). Agents use their own browser tooling; dropped Nov 3, 2026 (was F21).
 
 ## Users and use cases
 
@@ -53,7 +54,6 @@ The primary user is a developer on macOS or Linux who runs several coding agents
 - **Plan review.** As an agent, I write `plan.md` and open it in a preview tile, so the human can follow the plan as I update it.
 - **Pick up anywhere.** As a developer, I close my laptop, check an agent from my phone, and find the same session when I reopen the app.
 - **Scripted layouts.** As a developer, I run one command to open a project layout: editor terminal, test watcher, dev server and browser.
-- **Agent browsing.** As an agent, I open a browser tile, read its page structure, click and fill forms to verify my own work.
 - **File inspection.** As a developer, I browse a project's files in a tile and preview images, video and PDFs without leaving the workspace.
 - **Same tool on both machines.** As a developer with a Mac laptop and a Linux workstation, I use the same app, config and layout files on both.
 
@@ -81,10 +81,10 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F15 | herdr | Panes created or closed elsewhere (phone, CLI, agent) appear or disappear in the app within 1 second | P1 |
 | F16 | herdr | herdr agent state (blocked, working, done, idle) shown on tiles and in the sidebar | P1 |
 | F17 | herdr | Workspaces backed by a remote herdr server over SSH | P2 |
-| F18 | API | Socket API to list, create, close, focus, move and resize windows, workspaces, tabs and tiles | P0 |
+| F18 | API | Socket API to list, create, close, focus, move and resize windows, workspaces, tabs and tiles, and to point browser and preview tiles at a URL or path | P0 |
 | F19 | API | CLI covering the whole socket API, with JSON output; environment variables identify the calling tile and workspace | P0 |
 | F20 | API | Terminal operations: send text and keys, read the screen and scrollback (through herdr's `pane.read`) | P0 |
-| F21 | API | Browser operations: open a URL, accessibility snapshot, click, fill, evaluate JS, screenshot | P1 |
+| F21 | API | ~~Browser operations: accessibility snapshot, click, fill, evaluate JS, screenshot~~ Dropped Nov 3, 2026: agents use their own browser tooling. Opening a URL stays in F18 | — |
 | F22 | API | Event stream: tile created or closed, focus changed, agent state changed | P1 |
 | F23 | API | Python client mirroring the socket API, sync and async | P1 |
 | F24 | Session | Restore layout, browser URLs and preview paths on relaunch; terminal tiles reattach to their herdr panes | P0 |
@@ -108,7 +108,7 @@ Azulejo must feel as fast as Ghostty for terminal work and never drop frames whi
 | herdr reconnect | Terminal tiles reattach within 2 s after app restart or sleep |
 | Stability | A crash in a browser or preview tile never takes down terminal tiles |
 | API | Every user action reachable through the socket API; JSON responses versioned |
-| Security | Socket readable only by the user; browser automation through the API can be turned off per workspace |
+| Security | Socket readable only by the user |
 
 ## Technical approach
 
@@ -137,7 +137,7 @@ Agents reach Azulejo only through the socket API. Terminal tiles talk to herdr t
 - **Terminal tiles.** The terminal surface runs `herdr terminal attach <terminal-id>` as its child process ([ADR 0001](adr/0001-terminal-bridge.md)). herdr streams a full repaint and then re-rendered ANSI frames; keys, mouse and paste go straight back; the PTY size becomes the pane size. The herdr hop adds about 1.3 ms median keystroke → glyph. On macOS the surface is full libghostty. On Linux it starts on VTE and moves to libghostty-vt with our own GPU renderer, because libghostty's embedding API (renderer and surface) only supports macOS and iOS. herdr's NDJSON controller mode (`herdr terminal session control`) is the upgrade path: no detach key and explicit close records. One adapter module owns all herdr wire names.
 - **What herdr owns for terminals.** Because the stream is herdr's redraw, not the program's bytes, the local terminal never builds scrollback. Scrollback, find, title, cwd and agent state come from herdr's API and events ([ADR 0005](adr/0005-scrollback-and-passthrough.md)). herdr workspaces map 1:1 to app workspaces, and each terminal tile Azulejo creates is its own herdr tab ([ADR 0002](adr/0002-herdr-mapping.md)). Tile state (attached, taken over, owned elsewhere, ended) follows the attach client's exit ([ADR 0003](adr/0003-take-over.md)). Azulejo sizes the PTY before attaching, and starts herdr with a clean environment when the server isn't running yet ([ADR 0006](adr/0006-herdr-process-hygiene.md)).
 - **The user's own herdr session.** By default Azulejo connects to herdr's default session, the one the user's herdr TUI and phone already use, and adopts what runs there: one workspace per herdr workspace, one tab per herdr tab with the same splits, one terminal tile per pane. Adoption only reads herdr, and a tile closed here stays closed on relaunch. A named session is a config option ([ADR 0008](adr/0008-use-the-users-herdr-session.md)).
-- **Browser tiles.** WKWebView on macOS, WebKitGTK 6 on Linux. Both are WebKit, so the injected JavaScript for accessibility snapshot, click, fill and evaluate is shared. WebKit has no DevTools protocol.
+- **Browser tiles.** WKWebView on macOS, WebKitGTK 6 on Linux. Agents can point a browser tile at a URL through the API (`browser.open`), but Azulejo doesn't script pages for them.
 - **Preview and file tiles.** The core renders markdown and highlighted code to HTML and watches files; shells show it in a webview. Images, video and PDF use QuickLook on macOS and GTK4 media, glycin and poppler on Linux. File browser: NSOutlineView on macOS, GtkListView with a tree model on Linux, both fed by the core's file tree.
 - **Animations.** Core Animation on macOS, GtkSnapshot transforms driven by frame-clock tick callbacks on Linux. During motion a terminal shows a scaled snapshot (an IOSurface copy on macOS), and its PTY is resized once when the motion starts. The spike held 120 Hz with no dropped frames.
 - **API.** JSON-RPC over a Unix socket in the user's runtime directory. Types are defined once in Rust and exported as JSON Schema; the CLI shares the Rust types and the Python client is generated from the schema.
@@ -180,7 +180,6 @@ The biggest risk is depending on two young projects, herdr and libghostty, whose
 | Two clients on one herdr pane (app and phone) | Size fights, garbled full-screen apps | One writable owner; explicit Take over / Take back, read-only observe otherwise (ADR 0003). A phone on the TUI sees Mac-sized panes while the Mac is attached |
 | Focus and key routing between terminals and webviews | Lost shortcuts, IME bugs, stuck focus | Central key router per shell, keymap in the core; a test suite of key and focus scenarios |
 | Terminal flicker during animation | Animations feel worse than none | Snapshot during motion, single PTY resize at the start (ADR 0004); animations can be turned off |
-| WebKit limits for automation | Weaker agent browsing than Chrome-based tools | Injected JS first; revisit if agents hit hard limits |
 | Linux packaging | Flatpak sandbox blocks spawning herdr and the socket | Ship tarball, .deb and AUR first; Flatpak later with host access |
 
 ## Success metrics

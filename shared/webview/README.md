@@ -1,6 +1,6 @@
 # Shared webview assets
 
-JavaScript and CSS used by both shells' WebKit views: browser automation (step 2.9) and preview styling (step 1.9).
+HTML, CSS and JavaScript for preview tiles (step 1.9), shared by both shells. Browser automation (step 2.9, F21) was dropped on Nov 3, 2026, so nothing here scripts browser tiles.
 
 ## Preview tiles (F9)
 
