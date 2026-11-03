@@ -82,7 +82,7 @@ final class TerminalRuntime {
     }
 
     func tick() {
-        if let app { ghostty_app_tick(app) }
+        if let app { Perf.measure("ghostty.tick") { ghostty_app_tick(app) } }
     }
 
     // MARK: Surface registry
@@ -115,7 +115,7 @@ private func onMain(_ token: UInt?, _ body: @escaping @MainActor (TerminalSurfac
     guard let token else { return }
     DispatchQueue.main.async {
         MainActor.assumeIsolated {
-            if let view = TerminalRuntime.shared?.surface(token) { body(view) }
+            if let view = TerminalRuntime.shared?.surface(token) { Perf.measure("ghostty.action") { body(view) } }
         }
     }
 }

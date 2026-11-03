@@ -66,10 +66,10 @@ final class WindowController: NSObject, NSWindowDelegate {
         if first { placeWindow(model.frame) }
         let showSidebar = model.sidebarHidden != true
         if sidebarVisible != showSidebar { sidebarVisible = showSidebar }
-        sidebar.apply(model, machines: app?.machines ?? [])
-        tabBar.apply(model.workspace)
-        tiles.apply(model)
-        attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames())
+        Perf.measure("apply.sidebar") { sidebar.apply(model, machines: app?.machines ?? []) }
+        Perf.measure("apply.tabbar") { tabBar.apply(model.workspace) }
+        Perf.measure("apply.tiles") { tiles.apply(model) }
+        Perf.measure("apply.attention") { attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames()) }
         let ws = model.workspace
         window.title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
     }

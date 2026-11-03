@@ -62,18 +62,19 @@ final class TileContainerView: NSView {
     func apply(_ window: WindowModel) {
         let t0 = CACurrentMediaTime()
         let newTab = window.workspace?.tab
-        let animate = Motion.active && self.window != nil && bounds.width > 1 && bounds.height > 1
+        let active = Perf.measure("motion.active") { Motion.active }
+        let animate = active && self.window != nil && bounds.width > 1 && bounds.height > 1
         let sameTab = tab != nil && newTab?.id == tab?.id
         let switching = tab != nil && newTab != nil && !sameTab
 
         // Where everything appears right now (mid-motion: the presentation).
-        let before = animate && sameTab ? visualFrames() : [:]
+        let before = animate && sameTab ? Perf.measure("tiles.visual") { visualFrames() } : [:]
         let ringBefore = ring.isHidden ? nil : visual(ring)
         let previousFocus = tab?.focused
         let tilesBefore = tab?.tiles.count ?? 0
         let zoomBefore = tab?.zoomed
         let axisBefore = tab?.root.rootAxis
-        finishLeaving()
+        Perf.measure("tiles.finishLeaving") { finishLeaving() }
 
         if switching, animate { addTabTransition(to: window) }
 
@@ -92,12 +93,14 @@ final class TileContainerView: NSView {
             views[id] = nil
         }
         var created: Set<String> = []
-        for tile in all {
-            if let view = views[tile.id] {
-                view.update(tile)
-            } else {
-                views[tile.id] = TileViews.make(tile)
-                created.insert(tile.id)
+        Perf.measure("tiles.update") {
+            for tile in all {
+                if let view = views[tile.id] {
+                    view.update(tile)
+                } else {
+                    views[tile.id] = TileViews.make(tile)
+                    created.insert(tile.id)
+                }
             }
         }
 
@@ -128,9 +131,11 @@ final class TileContainerView: NSView {
             if kind == "layout", let axisBefore, let after = tab?.root.rootAxis, after != axisBefore {
                 kind = "rotate"
             }
-            runMotion(kind: kind, before: before, appearing: appearing, created: created,
-                      closing: closing, hiding: hiding,
-                      ringBefore: ringBefore, focusChanged: previousFocus != tab?.focused, t0: t0)
+            Perf.measure("tiles.runMotion") {
+                runMotion(kind: kind, before: before, appearing: appearing, created: created,
+                          closing: closing, hiding: hiding,
+                          ringBefore: ringBefore, focusChanged: previousFocus != tab?.focused, t0: t0)
+            }
         } else {
             cancelMotion()
             needsLayout = true
@@ -138,12 +143,14 @@ final class TileContainerView: NSView {
             if !animate, previousFocus != tab?.focused { ring.layer?.removeAllAnimations() }
         }
 
-        if let tab {
-            for (id, view) in views where visible.contains(id) {
-                view.setFocused(id == tab.focused)
+        Perf.measure("tiles.focus") {
+            if let tab {
+                for (id, view) in views where visible.contains(id) {
+                    view.setFocused(id == tab.focused)
+                }
             }
         }
-        applyDim(animate: animate)
+        Perf.measure("tiles.dim") { applyDim(animate: animate) }
     }
 
     /// Tile IDs on screen: the zoomed tile alone, the focused one in a
@@ -229,11 +236,13 @@ final class TileContainerView: NSView {
         let layoutMoves = !movers.isEmpty || !closing.isEmpty || !hiding.isEmpty
         guard layoutMoves || focusChanged else {
             // Nothing moves (a title, a URL): don't disturb motion in flight.
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            needsLayout = true
-            layoutSubtreeIfNeeded()
-            CATransaction.commit()
+            Perf.measure("tiles.idle-layout") {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                needsLayout = true
+                layoutSubtreeIfNeeded()
+                CATransaction.commit()
+            }
             return
         }
         let retarget = CACurrentMediaTime() < motionEnds
@@ -250,7 +259,8 @@ final class TileContainerView: NSView {
             // Mid-motion: where the snapshot shows now. Otherwise it rests
             // where freezing put it (below a tile's header strip, F28).
             let showing = aware.snapshotFrame
-            guard aware.motionWillStart(freeze: true, fill: style == .scale) else { continue }
+            guard Perf.measure("motion.snapshot", { aware.motionWillStart(freeze: true, fill: style == .scale) })
+            else { continue }
             let shown = showing ?? aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
             snapshotAt[m.id] = Motion.toContainer(shown, frame: frame, bounds: bounds, flipped: m.view.isFlipped)
             frozen[ObjectIdentifier(aware)] = aware
@@ -267,17 +277,21 @@ final class TileContainerView: NSView {
 
         // 2. Final frames now: the one resize, under the snapshots.
         for m in movers { m.view.layer?.removeAnimation(forKey: Self.motionKey) }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        needsLayout = true
-        layoutSubtreeIfNeeded()
-        CATransaction.commit()
+        Perf.measure("motion.layout") {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            needsLayout = true
+            layoutSubtreeIfNeeded()
+            CATransaction.commit()
+        }
 
         // 3. Carry everything there visually.
         generation += 1
         let gen = generation
         let tail = style == .outline && layoutMoves ? Motion.outlineFade : 0
         motionEnds = CACurrentMediaTime() + duration + tail
+        MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, motionEnds)
+        Perf.motionStarted = CACurrentMediaTime()
         removeGhosts()
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen) }
@@ -650,6 +664,8 @@ final class TileContainerView: NSView {
         layer?.add(transition, forKey: "azj.tab")
         MotionStats.shared.started(kind: "tab_switch", setup: 0)
         motionEnds = CACurrentMediaTime() + Motion.tabDuration
+        MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, motionEnds)
+        Perf.motionStarted = CACurrentMediaTime()
         wake()
     }
 
@@ -729,11 +745,11 @@ final class TileContainerView: NSView {
     @objc private func tick(_ link: CADisplayLink) {
         let now = CACurrentMediaTime()
         if now <= motionEnds + 0.02 {
-            MotionStats.shared.tick(link.timestamp)
+            MotionStats.shared.tick(link.timestamp, now: now)
         } else {
             MotionStats.shared.idle()
         }
-        clock.tick(now)
+        Perf.measure("clock.tick") { clock.tick(now) }
         if clock.isEmpty, now > motionEnds + 0.05 {
             link.isPaused = true
             MotionStats.shared.idle()
