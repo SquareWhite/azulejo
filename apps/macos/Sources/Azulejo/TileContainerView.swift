@@ -141,10 +141,12 @@ final class TileContainerView: NSView {
         applyDim(animate: animate)
     }
 
-    /// Tile IDs on screen: the zoomed tile alone, or every tile in the tab.
+    /// Tile IDs on screen: the zoomed tile alone, the focused one in a
+    /// Monocle tab, or every tile in the tab.
     private var visibleTiles: [String] {
         guard let tab else { return [] }
         if let zoomed = tab.zoomed { return [zoomed] }
+        if tab.kind == .monocle { return [tab.focused] }
         return tab.order
     }
 
@@ -157,14 +159,32 @@ final class TileContainerView: NSView {
         let dx = min(Self.inset, self.bounds.width / 2), dy = min(Self.inset, self.bounds.height / 2)
         let bounds = self.bounds.insetBy(dx: dx, dy: dy)
         if let zoomed = tab.zoomed { return [zoomed: bounds] }
+        // Monocle: every tile full size, so switching between them restacks
+        // and never resizes a terminal; only the focused one is on screen.
+        if tab.kind == .monocle {
+            return Dictionary(uniqueKeysWithValues: tab.tiles.map { ($0.id, bounds) })
+        }
         return tab.root.frames(in: bounds, gap: Self.gap)
+    }
+
+    /// PTY resizes so far across this window's terminal tiles, for checks
+    /// that a change resized nothing (Monocle focus switches).
+    var totalSurfaceResizes: Int {
+        views.values.compactMap { ($0 as? MotionAware)?.surfaceResizes }.reduce(0, +)
+    }
+
+    /// Frames of the tiles actually on screen (Monocle and zoom hide the
+    /// rest), for overlays such as attention badges.
+    func visibleTileFrames() -> [String: CGRect] {
+        let shown = Set(visibleTiles)
+        return tileFrames().filter { shown.contains($0.key) }
     }
 
     override func layout() {
         super.layout()
         let frames = tileFrames()
         for (id, frame) in frames { views[id]?.frame = frame }
-        if let tab, let focused = frames[tab.focused], frames.count > 1 || tab.zoomed != nil {
+        if let tab, let focused = frames[tab.focused], visibleTiles.count > 1 || tab.zoomed != nil {
             ring.isHidden = false
             ring.frame = focused.insetBy(dx: -2, dy: -2)
             ring.zoomed = tab.zoomed != nil
@@ -178,7 +198,8 @@ final class TileContainerView: NSView {
     private func runMotion(kind: String, before: [String: CGRect], appearing: Set<String>, created: Set<String>,
                            closing: [(NSView, CGRect)], hiding: [(NSView, CGRect)],
                            ringBefore: CGRect?, focusChanged: Bool, t0: CFTimeInterval) {
-        let frames = tileFrames()
+        let shown = Set(visibleTiles)
+        let frames = tileFrames().filter { shown.contains($0.key) }
 
         // Who moves, from where. A tile already on its way to the same frame
         // keeps its animation.
@@ -492,7 +513,8 @@ final class TileContainerView: NSView {
     /// Tiles that don't handle clicks pass them up the responder chain to here.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let id = tileFrames().first(where: { $0.value.contains(point) })?.key {
+        let shown = Set(visibleTiles)
+        if let id = tileFrames().first(where: { shown.contains($0.key) && $0.value.contains(point) })?.key {
             onClickTile?(id)
         }
         super.mouseDown(with: event)

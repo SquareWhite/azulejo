@@ -247,7 +247,7 @@ fn title(action: Action) -> String {
         Split(d) => format!("Split {}", dir(d)),
         SplitAuto => "New tile in stack (tall)".into(),
         PromoteTile => "Promote tile to master".into(),
-        RotateLayout => "Rotate layout (master left ↔ top)".into(),
+        RotateLayout => "Rotate layout".into(),
         EqualizeLayout => "Equalize stack".into(),
         CycleLayoutNext => "Next layout".into(),
         CycleLayoutPrevious => "Previous layout".into(),

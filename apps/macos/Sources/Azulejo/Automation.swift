@@ -16,7 +16,10 @@ import AppKit
 ///     shot name              PNG of the window's content → <out>/name.png
 ///     expect tiles 3         assert on the focused window's state; keys:
 ///                            windows workspaces workspace tabs tab tiles
-///                            focus zoomed sidebar axis ratio
+///                            focus zoomed sidebar axis ratio kind masters
+///                            orientation part visible resizes
+///     remember key           note a state value now…
+///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
 ///     core {json}            run a core command (`{"method": …, "params": …}`)
 ///     tile verb [arg]        hand a verb to the focused tile (AutomatableTile)
@@ -44,6 +47,7 @@ final class Automation {
     private var logText = ""
     private var failures: [String] = []
     private var notes: [String] = []
+    private var remembered: [String: String] = [:]
 
     init(app: AppController, script: String, out: String) {
         self.app = app
@@ -92,6 +96,18 @@ final class Automation {
         case "wait": delay = (Double(arg) ?? 0) / 1000
         case "shot": shot(arg); delay = 0
         case "expect": expect(arg); delay = 0
+        case "remember":
+            remembered[arg] = state()[arg] ?? "?"
+            record("remember \(arg) = \(remembered[arg] ?? "?")"); delay = 0
+        case "unchanged":
+            let now = state()[arg] ?? "?"
+            if now == remembered[arg] {
+                record("unchanged \(arg) \(now) ✓")
+            } else {
+                failures.append("line \(step): \(arg) changed from \(remembered[arg] ?? "?") to \(now)")
+                record("unchanged FAILED: \(arg) \(remembered[arg] ?? "?") → \(now)")
+            }
+            delay = 0
         case "log": record("# \(arg)"); delay = 0
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
@@ -305,6 +321,22 @@ final class Automation {
                 let mark = id == tab.focused ? "*" : ""
                 return "\(mark)\(Short.id(id))"
             }
+            s["kind"] = tab.kind.rawValue
+            let params = tab.layout?.params
+            switch tab.kind {
+            case .tile:
+                s["masters"] = params.map { "\($0.tile.masters)" } ?? "?"
+                s["orientation"] = params?.tile.orientation ?? "?"
+                s["part"] = params?.tile.rotatePart == true ? "yes" : "no"
+                s["ratio"] = params.map { String(format: "%.2f", $0.tile.ratio) } ?? "?"
+            case .threeColumn:
+                s["masters"] = params.map { "\($0.threeColumn.masters)" } ?? "?"
+                s["ratio"] = params.map { String(format: "%.2f", $0.threeColumn.ratio) } ?? "?"
+            case .manual, .monocle:
+                break
+            }
+            s["visible"] = "\(controller.tiles.visibleTileFrames().count)"
+            s["resizes"] = "\(controller.tiles.totalSurfaceResizes)"
         }
         if let tile = controller.tiles.focusedView as? AutomatableTile {
             s.merge(tile.automationState()) { $1 }
