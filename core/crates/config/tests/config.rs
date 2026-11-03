@@ -121,6 +121,52 @@ fn defaults_follow_the_herdr_bindings_on_macos() {
     assert_eq!(resolve(&config, "cmd+t", None), Some(Action::NewWorkspace));
 }
 
+/// One ⌘K menu: `quick_open` owns cmd+k (super+k on Linux). The old palette
+/// and picker actions still exist (they open the same menu pre-filtered) but
+/// have no default chord, so cmd+shift+p and cmd+p are free.
+#[test]
+fn quick_open_owns_cmd_k_and_the_old_palettes_are_unbound() {
+    for (platform, key) in [(MAC, "cmd+k"), (LINUX, "super+k")] {
+        let config = Config::defaults(platform);
+        for tile in [
+            None,
+            Some(TileKind::Terminal),
+            Some(TileKind::Browser),
+            Some(TileKind::Preview),
+            Some(TileKind::Files),
+        ] {
+            assert_eq!(
+                resolve(&config, key, tile),
+                Some(Action::QuickOpen),
+                "{platform:?} {tile:?}"
+            );
+        }
+        for action in [Action::CommandPalette, Action::Goto] {
+            assert_eq!(
+                config.keymap.chords_for(action, None).len(),
+                0,
+                "{platform:?}: {action:?} should be unbound by default"
+            );
+        }
+        assert_eq!(resolve(&config, "cmd+p", None), None);
+        assert_eq!(resolve(&config, "cmd+shift+p", None), None);
+        assert_eq!(Action::QuickOpen.target(), Target::Shell);
+    }
+
+    // Users can bring the old chords back.
+    let config = user(
+        "[keys]\ncommand_palette = \"cmd+shift+p\"\ngoto = \"cmd+p\"\n",
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+    assert_eq!(
+        resolve(&config, "cmd+shift+p", None),
+        Some(Action::CommandPalette)
+    );
+    assert_eq!(resolve(&config, "cmd+p", None), Some(Action::Goto));
+    assert_eq!(resolve(&config, "cmd+k", None), Some(Action::QuickOpen));
+}
+
 #[test]
 fn every_default_action_maps_to_a_protocol_method_or_shell_action() {
     for platform in Platform::ALL {
@@ -162,6 +208,7 @@ fn stateless_actions_build_commands() {
         matches!(
             a,
             ResizeMode
+                | QuickOpen
                 | CommandPalette
                 | Goto
                 | Find

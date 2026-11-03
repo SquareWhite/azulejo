@@ -219,7 +219,7 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 
 - [x] **2.2 Command palette** (F5). Lists every command from the schema with its keybinding; fuzzy search.
   **Done when** every action in the schema is reachable from the palette.
-  **Result:** done. Core catalogue `commands.list` in `b78a68b` (a test fails if a user-facing method is missing); shell palette (⌘⇧P, fuzzy, inline prompts, recents) and picker (⌘P) in `cc6f717`.
+  **Result:** done. Core catalogue `commands.list` in `b78a68b` (a test fails if a user-facing method is missing); shell palette (⌘⇧P, fuzzy, inline prompts, recents) and picker (⌘P) in `cc6f717`. Merged into one ⌘K quick-open menu (commands and places in one list, `>` / `@` to scope; ⌘⇧P and ⌘P unbound by default but still bindable) at the user's request.
 
 - [x] **2.3 Config** (F25b). TOML for keybindings, theme and animation; hot reload via `notify` (startup overrides already land in M1, F25a); errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
   **Done when** saving the file changes a binding without a restart, and a bad file never crashes the app.
@@ -299,8 +299,8 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [ ] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
   **Done when** it matches the mockup's preview tile.
 
-- [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens the picker (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The picker's default chord moves from `cmd+p` to `cmd+k` (update `shared/config/keymap.default.toml` and [docs/keybindings.md](docs/keybindings.md)).
-  **Done when** clicking the field or pressing the chord opens the same picker.
+- [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
+  **Done when** clicking the field or pressing the chord opens the same menu.
 
 - [ ] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
   **Done when** the maintainer and the designer sign off on the side-by-side.
@@ -314,7 +314,7 @@ Details and status per element are in [docs/design/README.md](docs/design/README
 3. **Git branch per workspace**: built before polish, as 2.14 (F26 → P1).
 4. **Tile headers with title and cwd or command**: built before polish, as 2.15 (F28).
 5. **Preview | Source toggle**: built before polish, as 2.15 (F29).
-6. **⌘K for the picker** and an always-visible search field: M2.5, in D.8.
+6. **⌘K for the picker** and an always-visible search field: ⌘K done (one quick-open menu for commands and places); the search field stays in M2.5, D.8.
 7. **Chrome theming** and a default terminal theme: M2.5, in D.1 (not decided separately; follows the design tokens).
 8. **Naming**: keep "workspace" in code, docs, API and UI; the designer relabels "session".
 

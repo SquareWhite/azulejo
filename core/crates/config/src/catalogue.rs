@@ -258,7 +258,8 @@ fn title(action: Action) -> String {
         RenameTab => "Rename tab…".into(),
         NewWindow => "New window".into(),
         CloseWindow => "Close window".into(),
-        CommandPalette => "Command palette".into(),
+        QuickOpen => "Quick open".into(),
+        CommandPalette => "Commands…".into(),
         Goto => "Go to…".into(),
         Find => "Find in terminal…".into(),
         OpenConfig => "Open config file".into(),
@@ -280,7 +281,8 @@ fn category(action: Action) -> &'static str {
         NewTab | SwitchTab(_) | LastTab | NextTab | PreviousTab | CloseTab | RenameTab => "tab",
         NewWindow | CloseWindow => "window",
         Find | EditScrollback => "terminal",
-        CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar | EnterPrefix => "app",
+        QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
+        | EnterPrefix => "app",
     }
 }
 
@@ -412,6 +414,10 @@ mod tests {
         assert_eq!(get("layout.apply").prompt.as_deref(), Some("path"));
         assert!(get("edit_scrollback").planned);
         assert!(!get("rename_tile").planned, "tile.rename exists now");
+        assert_eq!(get("quick_open").chords, ["cmd+k"]);
+        assert_eq!(get("quick_open").category, "app");
+        assert!(get("command_palette").chords.is_empty());
+        assert!(get("goto").chords.is_empty());
         for e in &list {
             assert!(!e.title.is_empty() && !e.category.is_empty(), "{e:?}");
         }

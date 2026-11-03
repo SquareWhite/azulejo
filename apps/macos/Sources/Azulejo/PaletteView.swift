@@ -1,10 +1,52 @@
 import AppKit
 
-/// One row in the command palette (⌘⇧P) or the picker (⌘P).
+/// One row in the ⌘K quick-open menu: a command or a place to jump to.
 struct PaletteItem {
+    enum Kind: Equatable {
+        case command
+        case workspace
+        case tab
+        case tile(TileKind)
+
+        var isCommand: Bool { self == .command }
+
+        /// Short tag drawn on the row.
+        var label: String {
+            switch self {
+            case .command: return "Command"
+            case .workspace: return "Workspace"
+            case .tab: return "Tab"
+            case .tile(let kind):
+                switch kind {
+                case .terminal: return "Terminal"
+                case .browser: return "Browser"
+                case .preview: return "Preview"
+                case .files: return "Files"
+                }
+            }
+        }
+
+        /// SF Symbol for the row's icon.
+        var symbol: String {
+            switch self {
+            case .command: return "command"
+            case .workspace: return "square.stack.3d.up"
+            case .tab: return "rectangle.topthird.inset.filled"
+            case .tile(let kind):
+                switch kind {
+                case .terminal: return "terminal"
+                case .browser: return "globe"
+                case .preview: return "doc.text"
+                case .files: return "folder"
+                }
+            }
+        }
+    }
+
     /// Stable key for "recent first" ordering.
     var id: String
     var title: String
+    var kind: Kind = .command
     /// Grey text after the title: the category, or where a tile lives.
     var detail: String = ""
     var chords: [String] = []
@@ -16,23 +58,51 @@ struct PaletteItem {
     var initialInput: String?
     /// Also searched, never highlighted (ids, paths, URLs).
     var searchExtra = ""
-    /// A coloured dot before the title (agent attention in the picker).
+    /// A coloured dot before the title (agent attention on jump targets).
     var dot: NSColor?
 }
 
-/// The palette overlay: a search field over a fuzzy-filtered list, drawn over
-/// the tiles (not a separate window). Keys reach it through `handle(chord:)`
-/// from the key router; plain typing goes to the field.
+/// The ⌘K quick-open menu: a search field over one fuzzy-filtered list of
+/// commands and jump targets (workspaces, tabs, tiles), drawn over the tiles
+/// (not a separate window). A leading `>` limits it to commands, `@` to jump
+/// targets. Keys reach it through `handle(chord:)` from the key router; plain
+/// typing goes to the field.
 @MainActor
 final class PaletteView: NSView, NSTextFieldDelegate {
-    enum Mode: String { case commands, goto }
+    /// What the current query lists, from its leading character.
+    enum Scope: String {
+        case all, commands, jump
+
+        static func of(_ query: String) -> (scope: Scope, rest: String) {
+            if query.hasPrefix(">") { return (.commands, String(query.dropFirst())) }
+            if query.hasPrefix("@") { return (.jump, String(query.dropFirst())) }
+            return (.all, query)
+        }
+
+        var prefix: String {
+            switch self {
+            case .all: return ""
+            case .commands: return ">"
+            case .jump: return "@"
+            }
+        }
+
+        func includes(_ kind: PaletteItem.Kind) -> Bool {
+            switch self {
+            case .all: return true
+            case .commands: return kind.isCommand
+            case .jump: return !kind.isCommand
+            }
+        }
+    }
 
     static let maxRows = 10
     static let rowHeight: CGFloat = 28
     static let fieldHeight: CGFloat = 44
 
-    private(set) var mode: Mode?
-    var isOpen: Bool { mode != nil }
+    private(set) var isOpen = false
+    /// The scope the current query asks for.
+    var scope: Scope { Scope.of(field.stringValue).scope }
     /// Runs the chosen item, with the prompt's input for two-step items.
     var onRun: ((PaletteItem, String?) -> Void)?
     var onClose: (() -> Void)?
@@ -94,23 +164,26 @@ final class PaletteView: NSView, NSTextFieldDelegate {
 
     // MARK: Open / close
 
-    func open(_ mode: Mode, items: [PaletteItem], recents: [String]) {
-        self.mode = mode
+    static let placeholder = "Commands, workspaces, tabs and tiles    > commands   @ go to"
+
+    /// Opens with `query` in the field (`">"` or `"@"` for a scoped open).
+    func open(items: [PaletteItem], recents: [String], query: String = "") {
+        isOpen = true
         self.items = items
         self.recents = recents
         promptItem = nil
-        field.stringValue = ""
-        field.placeholderString = mode == .commands
-            ? "Type a command…" : "Go to a tile, tab or workspace…"
+        field.stringValue = query
+        field.placeholderString = Self.placeholder
         isHidden = false
         refilter()
         window?.makeFirstResponder(field)
+        field.currentEditor()?.moveToEndOfDocument(nil)
         installClickMonitor()
     }
 
     func close() {
         guard isOpen else { return }
-        mode = nil
+        isOpen = false
         promptItem = nil
         isHidden = true
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
@@ -149,9 +222,9 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         case "pageup":
             move(-Self.maxRows)
         case "tab":
-            // Complete the field with the selected title.
+            // Complete the field with the selected title (keeping `>` / `@`).
             if promptItem == nil, results.indices.contains(selected) {
-                field.stringValue = results[selected].item.title
+                field.stringValue = scope.prefix + results[selected].item.title
                 refilter()
                 field.currentEditor()?.moveToEndOfDocument(nil)
             }
@@ -180,15 +253,22 @@ final class PaletteView: NSView, NSTextFieldDelegate {
     }
 
     private func refilter() {
-        let query = field.stringValue.trimmingCharacters(in: .whitespaces)
+        let (scope, rest) = Scope.of(field.stringValue)
+        let query = rest.trimmingCharacters(in: .whitespaces)
+        let lowered = query.lowercased()
         let rank = Dictionary(recents.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
         var scored: [(item: PaletteItem, match: PaletteFuzzy.Match?, score: Int, order: Int)] = []
-        for (order, item) in items.enumerated() {
+        for (order, item) in items.enumerated() where scope.includes(item.kind) {
             let titleMatch = PaletteFuzzy.match(query, in: item.title)
             var match = titleMatch
             var score: Int
             if let m = titleMatch {
                 score = m.score
+                // Names typed out in full or from the start beat scattered hits.
+                let title = item.title.lowercased()
+                if !lowered.isEmpty {
+                    if title == lowered { score += 60 } else if title.hasPrefix(lowered) { score += 30 }
+                }
             } else if let m = PaletteFuzzy.match(query, in: item.title + " " + item.detail + " " + item.searchExtra) {
                 // Matched outside the title: half weight, no highlight.
                 score = m.score / 2
@@ -196,15 +276,21 @@ final class PaletteView: NSView, NSTextFieldDelegate {
             } else {
                 continue
             }
+            // A name-like query more often means a place than a command.
+            if !item.kind.isCommand { score += 4 }
             if let r = rank[item.id] { score += max(0, 30 - r * 3) }
             if !item.enabled { score -= 8 }
             scored.append((item, match, score, order))
         }
         if query.isEmpty {
-            // Recent first, then the catalogue's own order.
+            // Recent first (commands and places mixed), then places, then
+            // commands, each in their own order.
             scored.sort {
                 let ra = rank[$0.item.id] ?? Int.max, rb = rank[$1.item.id] ?? Int.max
-                return ra != rb ? ra < rb : $0.order < $1.order
+                if ra != rb { return ra < rb }
+                let ca = $0.item.kind.isCommand, cb = $1.item.kind.isCommand
+                if ca != cb { return !ca }
+                return $0.order < $1.order
             }
         } else {
             scored.sort { $0.score != $1.score ? $0.score > $1.score : $0.order < $1.order }
@@ -313,6 +399,13 @@ final class PaletteListView: NSView {
 
     private func draw(_ item: PaletteItem, match: PaletteFuzzy.Match?, in rect: NSRect) {
         var x: CGFloat = 12
+        if let image = Self.icon(item.kind) {
+            let size: CGFloat = 14
+            image.draw(in: NSRect(x: x, y: rect.midY - size / 2, width: size, height: size),
+                       from: .zero, operation: .sourceOver, fraction: item.enabled ? 0.8 : 0.35,
+                       respectFlipped: true, hints: nil)
+            x += size + 8
+        }
         if let dot = item.dot {
             dot.setFill()
             NSBezierPath(ovalIn: NSRect(x: x, y: rect.midY - 4, width: 8, height: 8)).fill()
@@ -320,13 +413,19 @@ final class PaletteListView: NSView {
         }
         // Right side first, so the title knows how much room it has.
         let right = NSMutableAttributedString()
+        // Kind tag first, so commands and places read apart at a glance.
+        right.append(NSAttributedString(string: item.kind.label, attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ]))
         if let note = item.note {
+            right.append(NSAttributedString(string: "   "))
             right.append(NSAttributedString(string: note, attributes: [
                 .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor,
             ]))
         }
         if !item.chords.isEmpty {
-            if right.length > 0 { right.append(NSAttributedString(string: "   ")) }
+            right.append(NSAttributedString(string: "   "))
             right.append(NSAttributedString(
                 string: item.chords.prefix(2).map(PaletteFuzzy.prettyChord).joined(separator: "  "),
                 attributes: [
@@ -361,6 +460,18 @@ final class PaletteListView: NSView {
         let size = text.size()
         text.draw(with: NSRect(x: x, y: rect.midY - size.height / 2, width: maxWidth, height: size.height),
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+
+    private static var icons: [String: NSImage] = [:]
+
+    static func icon(_ kind: PaletteItem.Kind) -> NSImage? {
+        if let cached = icons[kind.symbol] { return cached }
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            .applying(.init(paletteColors: [.secondaryLabelColor]))
+        guard let image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.label)?
+            .withSymbolConfiguration(config) else { return nil }
+        icons[kind.symbol] = image
+        return image
     }
 
     override func mouseDown(with event: NSEvent) {

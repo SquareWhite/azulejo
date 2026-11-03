@@ -1,9 +1,10 @@
 import AppKit
 
-/// Automation verbs and `expect` keys for the palette, the config banner and
+/// Automation verbs and `expect` keys for the ⌘K menu, the config banner and
 /// attention badges (dev runs only; see `Automation`).
 ///
-///     palette open commands|goto   open the palette or the picker
+///     palette open [QUERY]         open the ⌘K menu (QUERY `>` or `@` scopes it)
+///     palette forget               clear the dev profile's recents
 ///     palette type TEXT            set the search text (as if typed)
 ///     palette key CHORD            hand a navigation key to the palette
 ///     palette close
@@ -15,8 +16,10 @@ import AppKit
 ///                                  reading order), `{window}` (window number)
 ///                                  and `{out}` (automation output) are filled in
 ///
-/// Keys: `palette` (closed / commands / goto / prompt:<id>), `palette.top`,
-/// `palette.count`, `palette.selected`, `banner` (first line or `none`),
+/// Keys: `palette` (closed / all / commands / jump / prompt:<id>), `palette.top`,
+/// `palette.topkind` (Command / Workspace / Tab / Terminal …), `palette.kinds`
+/// (the distinct kinds in the results), `palette.count`, `palette.selected`,
+/// `banner` (first line or `none`),
 /// `badges` (`ABCD=blocked!,…` or `none`), `agents` (each tile's agent in
 /// reading order: `blocked!,none`), `sidebar.markers` / `tab.markers` (`●2|-`),
 /// `tab.label`, `dock`.
@@ -31,9 +34,8 @@ enum ShellAutomation {
             let rest = parts.count > 1 ? parts[1] : ""
             switch parts.first ?? "" {
             case "open":
-                guard let mode = PaletteView.Mode(rawValue: rest) else { return "palette open commands|goto" }
-                if !controller.palette.isOpen || controller.palette.mode != mode {
-                    app.openPalette(mode, in: controller)
+                if !controller.palette.isOpen || controller.palette.scope != PaletteView.Scope.of(rest).scope {
+                    app.openQuickOpen(query: rest, in: controller)
                 }
             case "type":
                 guard controller.palette.isOpen else { return "palette isn't open" }
@@ -45,8 +47,11 @@ enum ShellAutomation {
                 controller.layoutChrome()
             case "close":
                 controller.palette.close()
+            case "forget":
+                // Fresh recents for a deterministic run (dev keys only).
+                guard PaletteStore.forgetDevRecents() else { return "palette forget is dev-only" }
             default:
-                return "palette open|type|key|close"
+                return "palette open|type|key|close|forget"
             }
         case "seen-visible":
             AttentionTracker.assumeVisible = arg != "off"
@@ -102,10 +107,14 @@ enum ShellAutomation {
         if let id = palette.promptingFor {
             s["palette"] = "prompt:\(id)"
         } else {
-            s["palette"] = palette.mode?.rawValue ?? "closed"
+            s["palette"] = palette.isOpen ? palette.scope.rawValue : "closed"
         }
         s["palette.count"] = "\(palette.results.count)"
         s["palette.top"] = palette.results.first?.item.title ?? "-"
+        s["palette.topkind"] = palette.results.first?.item.kind.label ?? "-"
+        var kinds: [String] = []
+        for row in palette.results where !kinds.contains(row.item.kind.label) { kinds.append(row.item.kind.label) }
+        s["palette.kinds"] = kinds.sorted().joined(separator: ",")
         s["palette.selected"] = palette.results.indices.contains(palette.selected)
             ? palette.results[palette.selected].item.title : "-"
         s["banner"] = controller.banner.isHidden
