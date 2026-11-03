@@ -1,6 +1,6 @@
 # Default keybindings
 
-Azulejo's default keymap starts from the maintainer's herdr bindings (`~/.config/herdr/config.toml`), so the muscle memory carries over. The proposed defaults live in [`shared/config/keymap.default.toml`](../shared/config/keymap.default.toml), the file step 2.3 (F25) will load. Step 1.6 hard-codes the same table until then.
+Azulejo's default keymap starts from the maintainer's herdr bindings (`~/.config/herdr/config.toml`), so the muscle memory carries over. The defaults live in [`shared/config/keymap.default.toml`](../shared/config/keymap.default.toml), which the core's config crate (`core/crates/config`) loads in M1. **Every binding is user-overridable**; see [Overriding bindings](#overriding-bindings).
 
 ## What the herdr config does today
 
@@ -45,7 +45,7 @@ The config already uses a direct-modifier layer: `alt` for panes, `cmd` for work
 | edit scrollback in `$EDITOR` | `prefix+e` | same | no |
 | help | `prefix+?` | same | no |
 
-One more thing from the config: `tall.py` encodes a placement rule, kitty's `tall` layout. There's one master on the left and an evenly divided stack on the right, and new panes always append to the bottom of the stack. That's how the maintainer actually tiles day to day. PRD F3 (master-stack) is P2 today; see [Open decisions](#open-decisions).
+One more thing from the config: `tall.py` encodes a placement rule, kitty's `tall` layout. There's one master on the left and an evenly divided stack on the right, and new panes always append to the bottom of the stack. That's how the maintainer actually tiles day to day, so the four tall actions are P0 and ship in M1 (step 1.1b); see [Decisions](#decisions).
 
 ## The proposal
 
@@ -92,29 +92,67 @@ Rename, close workspace, kill the herdr pane, help and edit-scrollback are left 
 
 ### Linux defaults
 
-There's no Hammerspoon on Linux, and the window manager owns Super: GNOME uses `super+1..9`, `super+arrows` and more, and Hyprland and Sway put almost everything on Super. So Azulejo stays off Super. `cmd` maps to **`ctrl+shift`**, the convention Linux terminals use (kitty, GNOME Terminal, Ptyxis). `alt` chords stay as they are. The exceptions are where a straight translation would collide or break a desktop default:
+**`cmd` maps to Super** (decided), so the macOS chords carry over one for one: `cmd+t` becomes `super+t`, `ctrl+cmd+t` becomes `ctrl+super+t`, and so on. `alt` and `ctrl` chords stay as they are. There's no Hammerspoon on Linux, so nothing else changes.
 
-| Azulejo action | Linux | Why it differs from a plain cmd→ctrl+shift swap |
+| Azulejo action | Linux |
+| --- | --- |
+| tile actions (`alt+…`) | same as macOS |
+| `split_auto` / `split_down` / `split_right` | `ctrl+super+t` / `ctrl+super+shift+t` / `ctrl+super+v` |
+| `new_workspace` / `new_tab` | `super+t` / `super+shift+t` |
+| `switch_workspace` 1–8, `last_workspace` | `super+1..8`, `super+9` and `alt+0` |
+| `switch_tab` 1–8, `last_tab` | `ctrl+1..8`, `ctrl+9` |
+| `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` |
+| `close_tab` | `super+w` |
+| `toggle_sidebar` | `super+a`, terminal tiles only |
+| `command_palette` / `goto` / `find` | `super+shift+p` / `super+p` / `super+f` |
+| `new_window` / `open_config` | `super+n` / `super+comma` |
+
+**Caveat: the window manager sees Super first.** On Wayland and X11 the compositor's own bindings win, so a clash means Azulejo never gets the key. Known clashes with stock defaults:
+
+- **GNOME:** `super+1..9` (launch dash favourites), `super+a` (app grid), `super+p` (display switcher), `super+n` (focus notification), `super+tab`.
+- **KDE Plasma:** `super+1..9` (task manager entries), `super+tab`.
+- **Hyprland / Sway / i3:** depends on the user's config, but `super+1..9`, `super+w`, `super+f`, `super+enter` and `super+shift+…` are the usual workspace and window binds.
+
+Either free those chords in the WM, or switch Azulejo to the `ctrl+shift` layout below.
+
+#### Linux alternative: `ctrl+shift`
+
+The Linux terminal convention (kitty, GNOME Terminal, Ptyxis). It avoids every WM clash. Copy it into `[keys.linux]` in your config to use it:
+
+| Azulejo action | `ctrl+shift` layout | Why it differs from a plain super→ctrl+shift swap |
 | --- | --- | --- |
-| tile actions (`alt+…`) | same as macOS | |
 | `split_auto` | `ctrl+shift+enter` | `ctrl+alt+t` opens a terminal in Ubuntu; kitty uses `ctrl+shift+enter` for "new window" |
 | `split_down` / `split_right` | `ctrl+shift+minus` / `ctrl+shift+backslash` | visual mnemonics, no 4-modifier chords |
 | `new_workspace` / `new_tab` | `ctrl+shift+t` / `ctrl+alt+shift+t` | |
 | `switch_workspace` 1–8, `last_workspace` | `alt+1..8`, `alt+9`/`alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
-| `switch_tab` 1–8, `last_tab` | `ctrl+1..8`, `ctrl+9` | |
 | `close_tab` | `ctrl+shift+w` | |
 | `toggle_sidebar` | `ctrl+shift+b` | `ctrl+shift+a` is select-all in GTK terminals |
-| `command_palette` | `ctrl+shift+p` | |
-| `goto` | unbound (palette) | `ctrl+p` is shell history |
-| `find` | `ctrl+shift+f` | |
+| `command_palette` / `goto` / `find` | `ctrl+shift+p` / unbound / `ctrl+shift+f` | `ctrl+p` is shell history |
+| `new_window` / `open_config` | `ctrl+shift+n` / `ctrl+comma` | |
 
 Match keys by physical key (hardware keycode), not by the shifted keyval. Otherwise `ctrl+shift+minus` arrives as `underscore` on GTK, and `alt+shift+h` arrives as `H`.
+
+### Overriding bindings
+
+Every binding, including the defaults above, the per-tile-kind context sections and prefix mode, is overridable from `~/.config/azulejo/config.toml`, in the same shape as `keymap.default.toml`:
+
+```toml
+[keys.linux]
+new_workspace = "ctrl+shift+t"   # replaces the default chord(s) for this action
+goto = ""                        # unbinds it
+promote_tile = ["alt+enter", "super+enter"]
+
+[keys.macos.browser]
+toggle_sidebar = "cmd+b"         # only while a browser tile is focused
+```
+
+A user entry replaces the default for that action only; everything else keeps its default. Overrides load at startup in M1; reloading on save comes with F25 in M2.
 
 ### Optional prefix mode
 
 Off by default. When on, it mirrors herdr's prefix sequences exactly (`prefix+x`, `prefix+v`, `prefix+minus`, `prefix+1..9`, `prefix+shift+w`, …), so anything without a direct chord is still a two-key sequence away.
 
-- **Prefix: `cmd+b` on macOS, `ctrl+shift+b` on Linux** (Linux then moves the sidebar toggle to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
+- **Prefix: `cmd+b` on macOS, `super+b` on Linux** (`ctrl+shift+b` in the `ctrl+shift` layout, which then moves the sidebar toggle to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
 - `ctrl+b` as the Azulejo prefix would make the key router swallow the shell's `ctrl+b`. Passing it through instead hands it to the attach client, where `ctrl+b q` detaches. Either way it's worse.
 
 ### `ctrl+b` inside terminal tiles
@@ -134,7 +172,7 @@ To verify in 1.7: whether this still holds when the pane has the kitty keyboard 
 | `cmd+w` | close window/tab | `close_tab`, consistent with the convention. Closing the last tab closes the window. Panes stay alive in herdr |
 | `cmd+q` | quit | kept as quit. Safe: sessions live in herdr |
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | not bound. the maintainer's config avoids `cmd+m` for this reason |
-| `cmd+a` | select all | conflicts in browser tiles, preview tiles and text fields (address bar, palette). `toggle_sidebar` is bound **only when a terminal tile is focused**; elsewhere `cmd+a` is select-all. Needs a `when` context in the keymap |
+| `cmd+a` | select all | **Decided:** `toggle_sidebar` is bound **only when a terminal tile is focused**; in browser and preview tiles and text fields (address bar, palette) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` context section |
 | `cmd+t` / `cmd+shift+t` | new tab / reopen closed tab | used for workspace / tab, as in herdr. No clash because browser tiles have no inner tabs |
 | `cmd+p` | print | taken by `goto`. Printing a browser tile goes through the palette |
 | `cmd+k` | clear (Ghostty, Terminal.app) | not bound. A local clear does nothing under herdr's re-rendering. A later `clear_screen` action should send `ctrl+l` to the pane |
@@ -149,8 +187,10 @@ If Hammerspoon owns a chord globally, it may intercept it before Azulejo. Exclud
 
 For example, a global `alt+shift+h/j/k/l` window mover must stand aside for Azulejo if those chords should swap tiles instead.
 
-## Open decisions
+## Decisions
 
-1. **Pull the "tall" placement rule into the MVP?** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` are how the maintainer tiles today. They're rules on the split tree rather than a full layout mode, so they're cheap: a few core ops in `model`. Proposal: implement them in M1 (1.1 / 1.6), and keep F3's other modes (scrolling columns) at P2.
-2. **`cmd+a` for the sidebar:** keep it terminal-only as proposed, or move the sidebar to `cmd+b`? That would free `cmd+a` everywhere, with prefix mode moving to `cmd+shift+b`.
-3. **Linux modifier:** `ctrl+shift` as proposed, or Super for users whose WM leaves it free (configurable, not default)?
+Settled with the maintainer on Nov 3, 2026:
+
+1. **Tall layout is in the MVP.** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` are P0 and implemented in the core (step 1.1b, `layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`). F3's other mode, niri-style scrolling columns, stays P2.
+2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else.
+3. **Linux uses Super by default** for the `cmd` chords, with the `ctrl+shift` layout documented as the alternative. **Every shortcut is configurable.**

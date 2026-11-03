@@ -1,4 +1,8 @@
-# Azulejo default keymap (proposal). Rationale: docs/keybindings.md.
+# Azulejo default keymap. Rationale: docs/keybindings.md.
+#
+# Every binding here is overridable: ~/.config/azulejo/config.toml takes the
+# same [keys.*] and [prefix] shape, and a user entry replaces the default for
+# that action only ("" unbinds it).
 #
 # Derived from the maintainer's herdr bindings (~/.config/herdr/config.toml):
 #   alt       = tiles      (focus, swap, resize, zoom, close, layout rules)
@@ -80,8 +84,10 @@ open_config     = "cmd+,"
 toggle_sidebar = "cmd+a"              # herdr binding; terminal-only so cmd+a stays select-all elsewhere
 
 [keys.linux]
-# Super belongs to the window manager (GNOME, Hyprland, Sway), so cmd maps to
-# ctrl+shift, the Linux terminal convention. alt chords are unchanged.
+# cmd maps to Super, so the macOS chords carry over one for one. The window
+# manager sees Super first and wins any clash (GNOME: super+1..9, super+a,
+# super+p, super+n). If yours does, free those chords in the WM or use the
+# ctrl+shift layout in docs/keybindings.md ("Linux alternative").
 focus_tile_left  = "alt+h"
 focus_tile_down  = "alt+j"
 focus_tile_up    = "alt+k"
@@ -100,43 +106,42 @@ close_tile  = "alt+w"
 cycle_tile_next     = "alt+]"
 cycle_tile_previous = "alt+["
 
-split_auto  = "ctrl+shift+enter"      # kitty's "new window"; ctrl+alt+t opens a terminal on Ubuntu
-split_down  = "ctrl+shift+minus"
-split_right = "ctrl+shift+backslash"
+split_auto  = "ctrl+super+t"
+split_down  = "ctrl+super+shift+t"
+split_right = "ctrl+super+v"
 
 promote_tile    = "alt+enter"
 rotate_layout   = "alt+o"
 equalize_layout = "alt+shift+e"
 
-new_workspace    = "ctrl+shift+t"
-switch_workspace = "alt+1..8"         # ctrl+shift+digit types !@# on many layouts
-last_workspace   = ["alt+9", "alt+0"]
+new_workspace    = "super+t"
+switch_workspace = "super+1..8"
+last_workspace   = ["super+9", "alt+0"]
 
-new_tab      = "ctrl+alt+shift+t"
+new_tab      = "super+shift+t"
 switch_tab   = "ctrl+1..8"
 last_tab     = "ctrl+9"
 next_tab     = "ctrl+tab"
 previous_tab = "ctrl+shift+tab"
-close_tab    = "ctrl+shift+w"
+close_tab    = "super+w"
 
-command_palette = "ctrl+shift+p"
-goto            = ""                  # ctrl+p is shell history; use the palette
-find            = "ctrl+shift+f"
-new_window      = "ctrl+shift+n"
-open_config     = "ctrl+comma"
+command_palette = "super+shift+p"
+goto            = "super+p"
+find            = "super+f"
+new_window      = "super+n"
+open_config     = "super+comma"
 
 [keys.linux.terminal]
-toggle_sidebar = "ctrl+shift+b"       # ctrl+shift+a is select-all in GTK terminals
+toggle_sidebar = "super+a"            # terminal-only, like macOS
 
 # Optional prefix mode: mirrors herdr's prefix sequences for everything without
-# a direct chord. Off by default. The prefix is cmd+b (ctrl+shift+b on Linux),
+# a direct chord. Off by default. The prefix is cmd+b (super+b on Linux),
 # never ctrl+b: Azulejo would have to swallow the shell's ctrl+b, or pass it on
 # to the attach client, where ctrl+b q detaches the tile.
-# (On Linux, enabling prefix mode moves toggle_sidebar to prefix+b.)
 [prefix]
 enabled = false
 key.macos = "cmd+b"
-key.linux = "ctrl+shift+b"
+key.linux = "super+b"
 
 [prefix.keys]
 focus_tile_left  = "prefix+h"

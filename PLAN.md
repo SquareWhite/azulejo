@@ -130,6 +130,10 @@ Rule for every step: core first (logic + unit tests + API method + CLI subcomman
 - [ ] **1.1 Object model and layout tree** (`model`). Types: `Window`, `Workspace`, `Tab`, `Node = Split{axis, ratio, a, b} | Leaf(TileId)`, `Tile{id, kind, state}`. Ops: split, close, focus by direction (geometry-based), swap, move, resize, zoom. Stable IDs (ULID).
   **Done when** proptest runs 10,000 random op sequences with no broken invariants (every tile in exactly one leaf, ratios in (0, 1), focus always valid).
 
+- [x] **1.1b Tall layout ops** (F3a, pulled into M1). `split_auto`, `promote`, `rotate`, `equalize` as rules over the split tree, matching the maintainer's herdr `tall.py`: master and stack read off the geometry; canonical shape `Split{master, chain}`; equalize leaves a hand-branched stack alone. Commands `layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`.
+  **Done when** the tall ops join the 10,000-sequence proptest, and a second proptest shows tall-only sequences keep one evenly divided stack.
+  Result: done in `a5ef71c`; both proptests pass.
+
 - [ ] **1.2 Protocol and schema** (`protocol`). Every user action as a command, every change as an event, typed errors. `just schema` writes `schema/api.v1.json`; CI fails if it's stale.
   **Done when** the schema covers F1, F2, F12–F14, F18, F20 and F24, and round-trip serde tests pass.
 
@@ -142,7 +146,7 @@ Rule for every step: core first (logic + unit tests + API method + CLI subcomman
 - [ ] **1.5 API server and CLI** (`api`, `cli`). Unix socket, mode 0600, JSON-RPC 2.0. `azj` mirrors every method, with `--json` output and a human-readable default. Resolves the caller from `AZULEJO_TILE_ID`, falling back to `HERDR_PANE_ID`.
   **Done when** `azj tile split --right --kind browser --url http://localhost:3000` works from a terminal tile, and CLI tests cover every schema method.
 
-- [ ] **1.6 macOS shell skeleton.** `NSWindow` per app window; minimal workspace sidebar; tab bar; `TileContainerView` lays out the core's tree; focus ring; central key router (local `NSEvent` monitor → core keymap → command), matching physical keys and honouring per-tile-kind contexts. Default keybindings from [`shared/config/keymap.default.toml`](shared/config/keymap.default.toml), derived from the maintainer's herdr bindings ([docs/keybindings.md](docs/keybindings.md)); the core embeds that file until 2.3 makes it user-overridable. Terminal tiles send a typed `ctrl+b` as `ctrl+b ctrl+b`, so `ctrl+b q` can't detach the attach client.
+- [ ] **1.6 macOS shell skeleton.** `NSWindow` per app window; minimal workspace sidebar; tab bar; `TileContainerView` lays out the core's tree; focus ring; central key router (local `NSEvent` monitor → core keymap → command), matching physical keys and honouring per-tile-kind contexts. Default keybindings from [`shared/config/keymap.default.toml`](shared/config/keymap.default.toml), derived from the maintainer's herdr bindings ([docs/keybindings.md](docs/keybindings.md)); the core embeds that file, and user overrides from `~/.config/azulejo/config.toml` load at startup through `core/crates/config` (F25a, moved into M1; reload on save stays in 2.3). Linux defaults use Super for the `cmd` chords. Terminal tiles send a typed `ctrl+b` as `ctrl+b ctrl+b`, so `ctrl+b q` can't detach the attach client.
   **Done when** split, focus, swap, move, resize, zoom and close all work from the keyboard with placeholder tiles.
 
 - [ ] **1.7 Terminal tile** (F7, F12, F14). libghostty surface from the 0.3 spike behind a `TerminalTile` view; size the PTY before spawning the attach command from the core; never write EOF to it. Map the attach client's exit code and stderr to tile states per [ADR 0003](docs/adr/0003-take-over.md): silent reattach after an unrequested `ctrl+b q`, read-only `terminal session observe` with Take over / Take back, Respawn when the pane is gone. Title and cwd from herdr events, not surface callbacks.
@@ -182,7 +186,7 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 - [ ] **2.2 Command palette** (F5). Lists every command from the schema with its keybinding; fuzzy search.
   **Done when** every action in the schema is reachable from the palette.
 
-- [ ] **2.3 Config** (F25). TOML for keybindings, theme and animation; hot reload via `notify`; errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
+- [ ] **2.3 Config** (F25b). TOML for keybindings, theme and animation; hot reload via `notify` (startup overrides already land in M1, F25a); errors shown as a non-blocking banner. User `[keys]` override the defaults in `shared/config/keymap.default.toml` (same shape: per-platform and per-context sections, indexed `1..N` bindings, optional prefix mode).
   **Done when** saving the file changes a binding without a restart, and a bad file never crashes the app.
 
 - [ ] **2.4 Layout files** (F6). `.azulejo.toml` in a project describes tabs, splits and tiles (terminal command and cwd, browser URL, preview path); `azj layout apply [path]`; palette entry.
@@ -262,7 +266,7 @@ P1 parity on Linux; Linux success-metric clock starts.
 
 ## M5 — Later, P2
 
-- [ ] **5.1** Master-stack and niri-style scrolling layouts (F3).
+- [ ] **5.1** Niri-style scrolling columns layout (F3b). Master-stack moved to M1 (1.1b).
 - [ ] **5.2** Remote herdr workspaces over SSH (F17), via herdr's machine forwarding.
 - [ ] **5.3** Sidebar with git branch, cwd and agent states (F26).
 - [ ] **5.4** Flatpak with host access for herdr.

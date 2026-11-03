@@ -65,7 +65,8 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | --- | --- | --- | --- |
 | F1 | Layout | Hierarchy of windows, workspaces, tabs and tiles; each tab is a tree of horizontal and vertical splits | P0 |
 | F2 | Layout | Keyboard actions to split, focus by direction, swap, move, resize, zoom and close tiles | P0 |
-| F3 | Layout | Alternative layout modes: master-stack and niri-style scrolling columns | P2 |
+| F3a | Layout | Master-stack ("tall") actions on the split tree: add a tile to the end of an evenly divided stack, promote a tile to master, rotate master left ↔ top, equalize the stack ([keybindings](keybindings.md#decisions)) | P0 |
+| F3b | Layout | Niri-style scrolling columns layout mode | P2 |
 | F4 | Layout | Animated open, close, move and resize; terminals scale a snapshot during motion and resize the PTY once, at the start of the motion, so the redraw finishes under the snapshot ([ADR 0004](adr/0004-animation-resize-timing.md)); can be turned off | P1 |
 | F5 | Layout | Command palette for every action | P1 |
 | F6 | Layout | Declarative layout files per project, loaded from the CLI or palette | P1 |
@@ -87,7 +88,8 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F22 | API | Event stream: tile created or closed, focus changed, agent state changed | P1 |
 | F23 | API | Python client mirroring the socket API, sync and async | P1 |
 | F24 | Session | Restore layout, browser URLs and preview paths on relaunch; terminal tiles reattach to their herdr panes | P0 |
-| F25 | Config | TOML config for keybindings, theme and animation, reloaded on save; the same file works on both platforms | P1 |
+| F25a | Config | Every keybinding overridable from the TOML config, loaded at startup; per-platform defaults (`cmd` on macOS, Super on Linux) in [`keymap.default.toml`](../shared/config/keymap.default.toml) | P0 |
+| F25b | Config | TOML config for keybindings, theme and animation, reloaded on save; the same file works on both platforms | P1 |
 | F26 | Config | Sidebar per workspace showing git branch, working directory and agent states | P2 |
 | F27 | Platform | Linux build (GTK4, Wayland and X11) with P0 parity, then P1 parity | P1 |
 
@@ -164,6 +166,7 @@ The biggest risk is depending on two young projects, herdr and libghostty, whose
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | herdr socket API changes | Terminal tiles break on herdr upgrades | One adapter module; pin a minimum herdr protocol version; contribute upstream |
+| A herdr server restart restores layout but not processes | Workspaces, tabs and pane IDs come back, but shells restart fresh and running agents die; terminal IDs and `--env` vars change | Azulejo never stops or restarts the herdr server itself; recommend `herdr update --handoff` for upgrades; the adapter re-resolves panes after a restart and tiles whose process was respawned show it clearly instead of passing as the old session |
 | herdr attach streams re-rendered frames, not raw PTY bytes | No local scrollback; OSC 52, OSC 9/777/99, BEL, kitty graphics, DECCKM and focus reporting are dropped | Scrollback, search, title and attention through herdr's API (ADR 0005); upstream asks filed |
 | OSC 52 clipboard lost | Copy from vim or agents to the system clipboard doesn't work in terminal tiles | Upstream ask; local selection copy and `pane.selection.read` meanwhile |
 | Detach key `ctrl+b q` can't be turned off | An accidental keypress drops the tile; tmux users lose `prefix q` | Reattach silently on an unrequested detach; upstream `--no-detach-key`; controller mode has no detach key |
@@ -197,5 +200,5 @@ Success means Azulejo replaces the current terminal-plus-browser setup for daily
 - [x] One herdr tab per terminal tile, or mirror the app's splits into herdr's layout? Decided: one herdr tab per tile; `layout.apply` kills live panes ([ADR 0002](adr/0002-herdr-mapping.md)).
 - [ ] Does the CLI live inside the app bundle or ship as a separate Homebrew formula and Linux package?
 - [ ] Open source from day one, and under which license?
-- [ ] Is the niri-style scrolling layout (F3) worth pulling into the MVP?
+- [x] Pull layout modes (F3) into the MVP? Decided: the master-stack (tall) actions are P0 and ship in M1 (F3a); niri-style scrolling columns stay P2 (F3b).
 - [ ] Linux packaging: which formats at M3 (tarball, .deb, AUR, Flatpak)?
