@@ -96,6 +96,11 @@ pub enum Command {
     /// Points a browser tile at `url`; the shell loads it on `tile.updated`.
     #[serde(rename = "browser.open")]
     BrowserOpen(BrowserOpen),
+    /// The shell reports where a browser tile's page is now (after a link,
+    /// a redirect, back or forward) and its `<title>`, so `tile.get` and
+    /// restore see the live page. Unlike `browser.open` it asks for no load.
+    #[serde(rename = "browser.state")]
+    BrowserState(BrowserState),
     /// Shows `path` in a preview tile.
     #[serde(rename = "preview.open")]
     PreviewOpen(PreviewOpen),
@@ -192,6 +197,7 @@ pub const METHODS: &[&str] = &[
     "tile.focus",
     "tile.rename",
     "browser.open",
+    "browser.state",
     "preview.open",
     "preview.get",
     "layout.get",
@@ -519,6 +525,19 @@ pub struct BrowserOpen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
     pub url: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserState {
+    /// A browser tile; defaults to the focused tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// The page's current URL; absent leaves it unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// The page's `<title>`; absent or empty clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

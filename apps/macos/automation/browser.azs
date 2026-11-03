@@ -1,0 +1,80 @@
+# Browser tile (1.8) walkthrough, in-process (no OS input). Needs a static
+# server on 127.0.0.1:47831 serving automation/browser-site/ (run via
+# apps/macos/automation/browser.sh, which also does the relaunch check).
+
+log start
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"localhost:47831/a.html"}}}
+expect tiles 2
+expect focus 2
+until tile.title Page A 10000
+expect tile.inspectable yes
+expect tile.inspector yes
+until tile.core_url http://localhost:47831/a.html
+shot 01-page-a
+tile snapshot-into 01-page-a-web.png
+
+# A link click: the core hears about it via browser.state, no reload loop
+tile js document.getElementById('to-b').click()
+until tile.title Page B 5000
+until tile.core_url http://localhost:47831/b.html
+until tile.pending 0
+expect tile.back yes
+
+# ⌘[ / ⌘] back and forward, through the router (must let them through)
+tile key cmd+bracketleft
+until tile.title Page A 5000
+expect tile.forward yes
+tile key cmd+bracketright
+until tile.title Page B 5000
+
+# ⌘R reload
+tile key cmd+r
+until tile.loading no 5000
+expect tile.title Page B
+
+# ⌘L focuses the address bar; escape gives the page back
+tile key cmd+l
+expect tile.address_focused yes
+tile key escape
+expect tile.address_focused no
+
+# Typing an address without a scheme
+tile type localhost:47831/c.html
+until tile.title Page C 5000
+until tile.core_url http://localhost:47831/c.html
+
+# target=_blank opens in the same tile
+tile js document.getElementById('blank').click()
+until tile.title Page D 5000
+expect tiles 2
+
+# The app's own chords still work with the web view focused
+key alt+h
+expect focus 1
+key alt+l
+expect focus 2
+expect tile.title Page D
+
+# An agent's browser.open is loaded
+core {"method":"browser.open","params":{"url":"http://127.0.0.1:47831/a.html"}}
+until tile.title Page A 5000
+until tile.url http://127.0.0.1:47831/a.html
+
+# A download lands in the downloads folder with a banner (redirected into the
+# automation's out folder so the test never touches ~/Downloads)
+tile downloads-into downloads
+tile js document.getElementById('download').click()
+until tile.banner Saved azulejo-download-test.bin to downloads 8000
+expect tile.title Page A
+
+# A crashed page shows the reload banner
+tile crash
+expect tile.banner This page stopped working.
+shot 02-crash-banner
+
+# Leave it on page C for the relaunch check
+core {"method":"browser.open","params":{"url":"http://localhost:47831/c.html"}}
+until tile.title Page C 5000
+until tile.core_url http://localhost:47831/c.html
+wait 600
+quit

@@ -36,6 +36,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         installSignalHandlers()
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
         keys.install()
+        BrowserTileView.register(app: self)
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         core.onEvent = { [weak self] json in
