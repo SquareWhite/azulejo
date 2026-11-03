@@ -68,6 +68,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         sidebar.layer?.backgroundColor = nil
         [sidebarCard, sidebar, sidebarToggle, tabBar, search, tiles, attention, banner, hud, palette]
             .forEach(content.addSubview)
+        content.wantsLayer = true
         window.contentView = content
         window.delegate = self
         search.apply(keymap: app.core.keymap())
@@ -103,7 +104,14 @@ final class WindowController: NSObject, NSWindowDelegate {
         Perf.measure("apply.tiles") { tiles.apply(model) }
         Perf.measure("apply.attention") { attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames()) }
         let ws = model.workspace
-        window.title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
+        let title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
+        if window.title != title { window.title = title }
+        // AppKit lays the hidden title bar out again on its own (a new title,
+        // among others) and puts the traffic lights back at their default
+        // spot, behind the sidebar card. Put them back after every refresh,
+        // and once more after AppKit's own pass. `place` only moves what's off.
+        TrafficLights.place(in: window)
+        DispatchQueue.main.async { [weak window] in if let window { TrafficLights.place(in: window) } }
     }
 
     private func placeWindow(_ frame: FrameModel?) {
@@ -228,6 +236,17 @@ final class ChromeLayoutView: NSView {
     weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
     weak var palette: PaletteView?
+
+    // The content covers the whole window (full-size content view) and paints
+    // the window colour itself: with a transparent title bar, AppKit doesn't
+    // reliably draw the window's background under a layer-backed content
+    // view, and the gaps around the cards came out see-through.
+    override var wantsUpdateLayer: Bool { true }
+    override var isOpaque: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = Design.Color.window.cgColor
+    }
 
     /// The toolbar row along the top. Its empty space moves the window; the
     /// tabs, "+", the toggle and the search field take their own clicks.
