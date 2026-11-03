@@ -20,6 +20,7 @@ azulejo-api.workspace = true
 azulejo-config.workspace = true
 azulejo-engine.workspace = true
 azulejo-herdr.workspace = true
+azulejo-protocol.workspace = true
 serde_json.workspace = true
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "signal", "macros"] }

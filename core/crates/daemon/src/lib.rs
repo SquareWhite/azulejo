@@ -159,6 +159,10 @@ impl App {
             None => (Core::start(core_opts), None),
         };
         let core = Arc::new(core);
+        {
+            let config = config.clone();
+            core.set_commands(Arc::new(move || azulejo_config::catalogue(&config)));
+        }
 
         let mut app = App {
             core: Some(core.clone()),
@@ -329,6 +333,29 @@ mod tests {
         first.shutdown();
         assert!(!socket.exists(), "shutdown removes the socket");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn commands_list_follows_the_keymap() {
+        let app = App::start(Options {
+            config_path: None,
+            ..in_memory()
+        })
+        .unwrap();
+        let reply = app
+            .core()
+            .execute(azulejo_protocol::Command::CommandsList)
+            .unwrap()
+            .reply;
+        let azulejo_protocol::Reply::Commands { commands } = reply else {
+            panic!("{reply:?}")
+        };
+        let split = commands.iter().find(|e| e.id == "split_auto").unwrap();
+        assert!(
+            !split.chords.is_empty(),
+            "the default keymap binds split_auto"
+        );
+        app.shutdown();
     }
 
     #[test]

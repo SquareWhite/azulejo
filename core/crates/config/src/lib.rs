@@ -31,6 +31,7 @@
 //! ```
 
 mod action;
+mod catalogue;
 mod chord;
 mod diag;
 pub mod ghostty;
@@ -41,6 +42,7 @@ use std::path::{Path, PathBuf};
 use toml::de::{DeTable, DeValue};
 
 pub use action::{Action, PLANNED_METHODS, Target};
+pub use catalogue::{INDEXED_ENTRIES, INTERNAL_METHODS, catalogue};
 pub use chord::{Chord, ChordPattern, Key, Mods, Platform};
 pub use diag::{Diagnostic, Location, Severity, Source};
 pub use keymap::{Context, KeyOutcome, KeyRouter, Keymap, PrefixState};
