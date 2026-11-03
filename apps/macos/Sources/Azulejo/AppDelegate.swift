@@ -236,9 +236,11 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Automation: keyDowns the monitor has seen, and a way in when it can't.
     var keysSeen: Int { keys.seen }
+    var lastKeyOutcome: String { keys.lastOutcome }
     func routeDirectly(_ event: NSEvent) {
-        // Unbound chords go on to the focused tile, as AppKit would deliver them.
-        if !keys.handle(event) { event.window?.firstResponder?.keyDown(with: event) }
+        // Unbound chords go on as AppKit would deliver them: key equivalents,
+        // the menus, then the first responder (KeyDelivery).
+        if !keys.handle(event) { KeyDelivery.deliver(event, window: event.window ?? focusedController?.window) }
     }
 
     /// The controller for a session window, for automation.

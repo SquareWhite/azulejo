@@ -71,6 +71,11 @@ mac-layouts: mac
     apps/macos/dev.sh --reset
     out=.dev/out/layouts; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/layouts"; fi; apps/macos/dev.sh --automation apps/macos/automation/layouts.azs --out "$out"
 
+# Key and focus suite (2.11): chords and first responder across tiles, the ⌘K
+# menu, layouts, tabs, herdr changes and input methods; in-process, dev profile
+mac-focus: mac
+    apps/macos/automation/focus/focus.sh
+
 # Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 lint-linux:
     cargo clippy -p azulejo-linux --all-targets -- -D warnings
