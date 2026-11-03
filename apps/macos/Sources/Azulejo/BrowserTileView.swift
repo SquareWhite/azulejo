@@ -28,12 +28,16 @@ final class BrowserTileView: NSView, TileView {
 
     private weak var app: AppController?
     private let webView: WKWebView
-    private let toolbar = NSView()
+    /// The tile's top strip (D.6): back and forward, the address pill, reload.
+    /// It stands in for the tile header (TileOwnsChrome); right-click for
+    /// the inspector, copy URL and the rest.
+    private let toolbar = BrowserChrome()
     private let back = BrowserTileView.button("chevron.left", "Back (⌘[)")
     private let forward = BrowserTileView.button("chevron.right", "Forward (⌘])")
     private let reload = BrowserTileView.button("arrow.clockwise", "Reload (⌘R)")
-    private let more = BrowserTileView.button("ellipsis.circle", "More")
-    private let address = NSTextField()
+    private let pill = NSView()
+    private let pillIcon = NSImageView()
+    private let address = AddressField()
     private let progress = NSView()
     private let banner = BrowserBanner()
     private var observations: [NSKeyValueObservation] = []
@@ -47,7 +51,7 @@ final class BrowserTileView: NSView, TileView {
     private var reportScheduled = false
     private var focused = false
 
-    static let toolbarHeight: CGFloat = 30
+    static let toolbarHeight = Design.Space.browserChromeHeight
 
     /// Registers the browser tile kind. Called once at launch.
     static func register(app: AppController) {
@@ -67,7 +71,7 @@ final class BrowserTileView: NSView, TileView {
         super.init(frame: .zero)
 
         wantsLayer = true
-        layer?.cornerRadius = Design.Radius.tile
+        // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
         layer?.backgroundColor = Design.Color.tile.cgColor
 
@@ -78,19 +82,30 @@ final class BrowserTileView: NSView, TileView {
         webView.uiDelegate = self
 
         address.placeholderString = "Address or search (⌘L)"
-        address.bezelStyle = .roundedBezel
+        address.isBordered = false
+        address.drawsBackground = false
+        address.focusRingType = .none
         address.font = Design.Font.field
+        address.textColor = Design.Color.textSecondary
         address.lineBreakMode = .byTruncatingTail
         address.usesSingleLineMode = true
         address.cell?.isScrollable = true
         address.target = self
         address.action = #selector(addressEntered)
         address.delegate = self
+        address.onEditing = { [weak self] editing in self?.addressEditing(editing) }
+
+        pill.wantsLayer = true
+        pill.layer?.cornerRadius = Design.Radius.field
+        pillIcon.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        pillIcon.contentTintColor = Design.Color.textMuted
+        pill.addSubview(pillIcon)
+        pill.addSubview(address)
 
         back.target = self; back.action = #selector(goBack)
         forward.target = self; forward.action = #selector(goForward)
         reload.target = self; reload.action = #selector(reloadOrStop)
-        more.target = self; more.action = #selector(showMore(_:))
+        toolbar.onMenu = { [weak self] event in self?.showMore(event) }
 
         progress.wantsLayer = true
         progress.layer?.backgroundColor = Design.Color.accent.cgColor
@@ -98,8 +113,9 @@ final class BrowserTileView: NSView, TileView {
 
         banner.isHidden = true
 
-        [back, forward, reload, address, more].forEach(toolbar.addSubview)
+        [back, forward, pill, reload].forEach(toolbar.addSubview)
         [toolbar, webView, progress, banner].forEach(addSubview)
+        updateChromeColors()
 
         observe()
         refreshControls()
@@ -157,17 +173,92 @@ final class BrowserTileView: NSView, TileView {
         let w = bounds.width
         let h = Self.toolbarHeight
         toolbar.frame = NSRect(x: 0, y: 0, width: w, height: h)
-        var x: CGFloat = 6
-        for b in [back, forward, reload] {
-            b.frame = NSRect(x: x, y: 4, width: 24, height: 22)
-            x += 26
-        }
-        more.frame = NSRect(x: w - 30, y: 4, width: 24, height: 22)
-        address.frame = NSRect(x: x + 4, y: 4, width: max(40, w - x - 4 - 36), height: 22)
+        let button: CGFloat = 22, y = (h - button) / 2
+        back.frame = NSRect(x: 10, y: y, width: button, height: button)
+        forward.frame = NSRect(x: 10 + button + 4, y: y, width: button, height: button)
+        reload.frame = NSRect(x: w - 10 - button, y: y, width: button, height: button)
+        let fieldH = Design.Space.browserFieldHeight
+        let left = forward.frame.maxX + 10, right = reload.frame.minX - 10
+        pill.frame = NSRect(x: left, y: (h - fieldH) / 2, width: max(40, right - left), height: fieldH)
+        layoutPill()
         webView.frame = NSRect(x: 0, y: h, width: w, height: max(0, bounds.height - h))
         layoutProgress()
         let bh: CGFloat = 30
         banner.frame = NSRect(x: 8, y: h + 8, width: max(0, w - 16), height: bh)
+    }
+
+    /// Mockup: globe (or lock) and address centred in the pill; while
+    /// editing, the full URL starts at the left.
+    private func layoutPill() {
+        let pw = pill.bounds.width, ph = pill.bounds.height
+        let icon: CGFloat = 12, gap: CGFloat = 6, margin: CGFloat = 8
+        let textH = address.intrinsicContentSize.height
+        if isEditingAddress {
+            pillIcon.frame = NSRect(x: margin, y: (ph - icon) / 2, width: icon, height: icon)
+            address.frame = NSRect(x: margin + icon + gap, y: (ph - textH) / 2,
+                                   width: max(0, pw - 2 * margin - icon - gap), height: textH)
+            return
+        }
+        let shown = address.stringValue.isEmpty ? (address.placeholderString ?? "") : address.stringValue
+        let textW = (shown as NSString).size(withAttributes: [.font: Design.Font.field]).width + 6
+        let room = max(0, pw - 2 * margin - icon - gap)
+        let width = min(textW, room)
+        let x = max(margin, (pw - icon - gap - width) / 2)
+        pillIcon.frame = NSRect(x: x, y: (ph - icon) / 2, width: icon, height: icon)
+        address.frame = NSRect(x: x + icon + gap, y: (ph - textH) / 2, width: width, height: textH)
+    }
+
+    /// The address as shown when not editing: no scheme, no trailing slash.
+    private static func display(_ url: String) -> String {
+        var text = url
+        for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
+            text.removeFirst(scheme.count)
+        }
+        if text.hasSuffix("/"), text.dropLast().contains("/") == false { text.removeLast() }
+        return text
+    }
+
+    /// The URL the address bar stands for (full, with scheme).
+    private var currentURL: String { webView.url?.absoluteString ?? coreURL ?? "" }
+
+    /// Sets the address bar's text: the full URL while editing, else the
+    /// short form, with a lock for https.
+    private func showAddress(_ url: String) {
+        let secure = url.hasPrefix("https://")
+        pillIcon.image = NSImage(systemSymbolName: secure ? "lock.fill" : "globe",
+                                 accessibilityDescription: secure ? "Secure" : "Address")
+        address.stringValue = isEditingAddress ? url : Self.display(url)
+        address.alignment = isEditingAddress ? .left : .center
+        layoutPill()
+    }
+
+    /// `true` just before the address field takes focus (so the full URL is
+    /// what gets edited), `false` once editing ends.
+    private func addressEditing(_ editing: Bool) {
+        if editing {
+            if !currentURL.isEmpty { address.stringValue = currentURL }
+            address.alignment = .left
+            address.textColor = Design.Color.textPrimary
+        } else {
+            address.textColor = Design.Color.textSecondary
+        }
+        // After the field editor has taken (or let go of) the field.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.isEditingAddress { self.layoutPill() } else { self.showAddress(self.currentURL) }
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateChromeColors()
+    }
+
+    private func updateChromeColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            toolbar.layer?.backgroundColor = Design.Color.browserChrome.cgColor
+            pill.layer?.backgroundColor = Design.Color.browserField.cgColor
+        }
     }
 
     private func layoutProgress() {
@@ -228,7 +319,7 @@ final class BrowserTileView: NSView, TileView {
     func load(_ text: String) {
         guard let url = Self.normalise(text) else { return }
         banner.hide()
-        address.stringValue = url.absoluteString
+        showAddress(url.absoluteString)
         webView.load(URLRequest(url: url))
     }
 
@@ -261,7 +352,12 @@ final class BrowserTileView: NSView, TileView {
         if webView.isLoading { webView.stopLoading() } else { webView.reload() }
     }
 
-    @objc private func showMore(_ sender: NSButton) {
+    /// The chrome's right-click menu (the mockup's toolbar has no menu button).
+    private func showMore(_ event: NSEvent) {
+        NSMenu.popUpContextMenu(moreMenu(), with: event, for: toolbar)
+    }
+
+    private func moreMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Web Inspector", action: #selector(showInspector), keyEquivalent: "i")
             .keyEquivalentModifierMask = [.command, .option]
@@ -270,7 +366,7 @@ final class BrowserTileView: NSView, TileView {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Reload from Origin", action: #selector(reloadFromOrigin), keyEquivalent: "")
         menu.items.forEach { $0.target = self }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 2), in: sender)
+        return menu
     }
 
     /// Opens the Web Inspector. WebKit has no public call for it, so this uses
@@ -313,7 +409,7 @@ final class BrowserTileView: NSView, TileView {
     }
 
     private func navigated() {
-        if !isEditingAddress { address.stringValue = webView.url?.absoluteString ?? coreURL ?? "" }
+        if !isEditingAddress { showAddress(currentURL) }
         scheduleReport()
     }
 
@@ -401,6 +497,8 @@ final class BrowserTileView: NSView, TileView {
         let b = NSButton(image: image, target: nil, action: nil)
         b.bezelStyle = .accessoryBarAction
         b.isBordered = false
+        b.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        b.contentTintColor = Design.Color.textSecondary
         b.toolTip = tip
         return b
     }
@@ -712,6 +810,41 @@ extension BrowserTileView: AutomatableTile {
     private var lastScriptResult: String? {
         get { BrowserScriptResults.byTile[tileID] }
         set { BrowserScriptResults.byTile[tileID] = newValue }
+    }
+}
+
+extension BrowserTileView: TileOwnsChrome {}
+
+/// The browser's top strip; right-click shows the tile's menu.
+@MainActor
+private final class BrowserChrome: NSView {
+    var onMenu: (NSEvent) -> Void = { _ in }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func rightMouseDown(with event: NSEvent) { onMenu(event) }
+}
+
+/// The address pill's text field: says when editing starts and ends, so the
+/// pill can switch between the short centred form and the full URL.
+@MainActor
+final class AddressField: NSTextField {
+    var onEditing: (Bool) -> Void = { _ in }
+
+    override func becomeFirstResponder() -> Bool {
+        onEditing(true)
+        return super.becomeFirstResponder()
+    }
+
+    override func textDidEndEditing(_ notification: Notification) {
+        super.textDidEndEditing(notification)
+        onEditing(false)
     }
 }
 
