@@ -71,7 +71,6 @@ Add an entry to [dogfood-log.md](dogfood-log.md) (the template's at the top), or
 
 ## Known gaps (coming in M2)
 
-- No animations: layout changes snap.
 - No command palette, picker (`cmd+p`) or find (`cmd+f`) yet, though the chords are reserved.
 - No file browser tile.
 - No attention badges or agent-state dots (blocked / working / done).

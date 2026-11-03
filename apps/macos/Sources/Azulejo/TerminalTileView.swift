@@ -57,8 +57,12 @@ final class TerminalTileView: NSView, TileView {
     private let overlay = TerminalOverlay()
     private let runDir: URL
     /// Layout motion (ADR 0004): the last frame, covering the live surface
-    /// while the tile moves and the PTY redraws at its new size.
+    /// while the tile moves and the PTY redraws at its new size. `freeze` is
+    /// a plain background; `freezeImage` the frame itself, either filling it
+    /// (scale style) or at 1:1 where the container places it (crop, outline).
     private var freeze: NSView?
+    private var freezeImage: NSView?
+    private var freezeFills = true
     private var freezeBefore: IOSurfaceRef?
     /// PTY resizes are at most one per 50 ms while frozen (key repeat).
     private var lastSurfaceResize: CFTimeInterval = 0
@@ -138,7 +142,10 @@ final class TerminalTileView: NSView, TileView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         overlay.frame = bounds
-        freeze?.frame = bounds
+        if freezeFills {
+            freeze?.frame = bounds
+            freezeImage?.frame = bounds
+        }
         if freeze != nil { resizeSurfaceCoalesced() } else { applySurfaceSize() }
         if surface == nil {
             settle()
@@ -651,20 +658,52 @@ extension TerminalTileView: MotionAware {
     var surfaceResizes: Int { surfaceResizeCount }
 
     @discardableResult
-    func motionWillStart(freeze: Bool) -> Bool {
+    func motionWillStart(freeze: Bool, fill: Bool) -> Bool {
         if self.freeze != nil { return true }  // mid-motion: keep the first snapshot
         guard freeze, let surface, let image = surface.snapshot() else { return false }
+        let scale = window?.backingScaleFactor ?? 2
+        // Exactly the snapshot's own size: 1:1, never stretched.
+        let size = CGSize(width: CGFloat(IOSurfaceGetWidth(image)) / scale,
+                          height: CGFloat(IOSurfaceGetHeight(image)) / scale)
         let cover = NSView(frame: bounds)
         cover.wantsLayer = true
-        cover.layer?.contents = image
-        cover.layer?.contentsGravity = .resize
-        cover.layer?.contentsScale = window?.backingScaleFactor ?? 2
         cover.layer?.backgroundColor = layer?.backgroundColor
         cover.autoresizingMask = []
+        let picture = NSView(frame: fill ? bounds : CGRect(origin: .zero, size: size))
+        picture.wantsLayer = true
+        picture.layer?.contents = image
+        picture.layer?.contentsGravity = .resize
+        picture.layer?.contentsScale = scale
+        picture.autoresizingMask = []
         addSubview(cover, positioned: .above, relativeTo: surface)
+        addSubview(picture, positioned: .above, relativeTo: cover)
         self.freeze = cover
+        freezeImage = picture
+        freezeFills = fill
         freezeBefore = surface.presentedSurface
         return true
+    }
+
+    var snapshotFrame: CGRect? { freezeImage?.frame }
+
+    var snapshotContents: Any? { freezeImage?.layer?.contents }
+
+    func placeSnapshot(_ frame: CGRect, cover: CGRect) {
+        guard let freeze, let freezeImage, !freezeFills else { return }
+        freezeImage.frame = frame
+        freeze.frame = cover
+    }
+
+    func revealWhenFresh(clock: MotionClock) {
+        guard freeze != nil else { return }
+        clock.add { [weak self] _ in
+            guard let self, self.freeze != nil else { return false }
+            if self.liveFrameReady() {
+                self.unfreeze()
+                return false
+            }
+            return true
+        }
     }
 
     func motionDidEnd(clock: MotionClock) {
@@ -699,8 +738,11 @@ extension TerminalTileView: MotionAware {
     }
 
     private func unfreeze() {
+        freezeImage?.removeFromSuperview()
         freeze?.removeFromSuperview()
         freeze = nil
+        freezeImage = nil
+        freezeFills = true
         freezeBefore = nil
     }
 }

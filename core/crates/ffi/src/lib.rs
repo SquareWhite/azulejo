@@ -446,6 +446,7 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
         "enabled": a.enabled,
         "duration_ms": a.duration_ms,
         "curve": a.curve.name(),
+        "style": a.style.name(),
         "tab_switch": a.tab_switch.name(),
         "dim_inactive": a.dim_inactive,
         "reduce_motion": a.reduce_motion.name(),
@@ -686,6 +687,7 @@ mod tests {
             assert_eq!(animation["enabled"], true);
             assert_eq!(animation["duration_ms"], 200);
             assert_eq!(animation["curve"], "ease_out");
+            assert_eq!(animation["style"], "crop");
             assert_eq!(animation["tab_switch"], "fade");
             assert_eq!(animation["reduce_motion"], "system");
             azj_core_free(core);

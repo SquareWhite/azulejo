@@ -166,6 +166,8 @@ final class Automation {
             Motion.durationOverride = value == "default" ? nil : (Double(value) ?? 200) / 1000
         case "enabled":
             Motion.enabledOverride = value == "default" ? nil : value == "true"
+        case "style":
+            Motion.styleOverride = value == "default" ? nil : value
         case "reset":
             MotionStats.shared.reset()
         case "stats":
