@@ -540,7 +540,7 @@ fn run<P: HerdrPort>(
             }
             Msg::Internal(internal) => {
                 let surveyed = match &internal {
-                    Internal::Surveyed(m, _) | Internal::SurveyFailed(m) => Some(m.clone()),
+                    Internal::Surveyed(m, _, _) | Internal::SurveyFailed(m) => Some(m.clone()),
                     _ => None,
                 };
                 if let Internal::BindTerminal { tile, .. } | Internal::MarkEnded { tile } =

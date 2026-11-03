@@ -74,7 +74,7 @@ pub(crate) fn fixture() -> herdr::Survey {
 }
 
 fn survey(engine: &mut Engine, s: &herdr::Survey) -> Vec<Event> {
-    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone())))
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 0))
 }
 
 fn pane_of(session: &Session, tile: azulejo_model::TileId) -> String {
@@ -359,4 +359,56 @@ fn a_layout_that_disagrees_with_the_panes_falls_back() {
         shape(session, &session.windows[0].workspaces[0].tabs[0].root),
         "(w1:p1 | 0.50 w1:p2)"
     );
+}
+
+/// A survey requested before herdr streamed a pane's newer agent status
+/// can't put the older status back (or clear attention). A later survey can.
+#[test]
+fn a_survey_older_than_a_streamed_agent_status_keeps_the_streamed_one() {
+    use azulejo_model::AgentStatus;
+    let mut engine = Engine::new();
+    let mut s = fixture();
+    let set = |s: &mut herdr::Survey, status: herdr::AgentStatus| {
+        let p = s.panes.iter_mut().find(|p| p.pane_id.as_str() == "w1:p1").unwrap();
+        p.agent = Some("claude".into());
+        p.agent_status = status;
+    };
+    set(&mut s, herdr::AgentStatus::Working);
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_000));
+    let agent = |e: &Engine| {
+        e.session()
+            .tiles()
+            .find(|(_, t)| pane_of_tile(t) == Some("w1:p1"))
+            .and_then(|(_, t)| t.agent.clone())
+            .unwrap()
+    };
+    assert_eq!(agent(&engine).status, AgentStatus::Working);
+
+    // herdr streams "blocked" at 2,000 ms.
+    engine.apply_internal(Internal::AgentStatus {
+        machine: None,
+        pane_id: "w1:p1".into(),
+        agent: Some("claude".into()),
+        status: AgentStatus::Blocked,
+        at_ms: 2_000,
+    });
+    let a = agent(&engine);
+    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, true));
+
+    // A survey requested at 1,500 (its snapshot still says working) lands late.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_500));
+    let a = agent(&engine);
+    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, true), "stale survey won");
+
+    // One requested after the stream's report is believed.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s), 2_500));
+    let a = agent(&engine);
+    assert_eq!((a.status, a.attention), (AgentStatus::Working, false));
+}
+
+fn pane_of_tile(t: &azulejo_model::Tile) -> Option<&str> {
+    match &t.content {
+        TileContent::Terminal { herdr: Some(h), .. } => Some(h.pane_id.as_str()),
+        _ => None,
+    }
 }
