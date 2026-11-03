@@ -24,6 +24,10 @@
 //! [animation]
 //! enabled = true
 //! duration_ms = 200
+//!
+//! [herdr]
+//! session = "azulejo"    # herdr session for terminal tiles; "default" = herdr's own
+//! enabled = true         # false: terminal tiles stay unbound (no herdr)
 //! ```
 
 mod action;
@@ -67,10 +71,36 @@ impl Default for Animation {
     }
 }
 
+/// Which herdr session terminal tiles live in (ADR 0007).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HerdrConfig {
+    pub enabled: bool,
+    /// The session name. `None` means herdr's default session.
+    pub session: Option<String>,
+}
+
+impl HerdrConfig {
+    /// Azulejo's own named session, so it never shares a server with a herdr
+    /// TUI the user runs by hand.
+    pub const DEFAULT_SESSION: &str = "azulejo";
+    /// What `session = "default"` means: herdr's default session.
+    pub const HERDR_DEFAULT: &str = "default";
+}
+
+impl Default for HerdrConfig {
+    fn default() -> Self {
+        HerdrConfig {
+            enabled: true,
+            session: Some(Self::DEFAULT_SESSION.to_owned()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub keymap: Keymap,
     pub animation: Animation,
+    pub herdr: HerdrConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -95,6 +125,7 @@ impl Config {
             source: Source::DefaultKeymap,
         }];
         let mut animation = Animation::default();
+        let mut herdr = HerdrConfig::default();
 
         parse_layer(
             DEFAULT_KEYMAP,
@@ -119,6 +150,10 @@ impl Config {
                         parse_animation(sink, value, &mut animation);
                         true
                     }
+                    "herdr" => {
+                        parse_herdr(sink, value, &mut herdr);
+                        true
+                    }
                     _ => false,
                 },
             );
@@ -139,6 +174,7 @@ impl Config {
         Config {
             keymap,
             animation,
+            herdr,
             path,
             diagnostics,
         }
@@ -221,6 +257,38 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                 "`animation.duration_ms` must be a whole number",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `animation.{other}`")),
+        }
+    }
+}
+
+fn parse_herdr(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut HerdrConfig) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`herdr` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("enabled", DeValue::Boolean(b)) => out.enabled = *b,
+            ("enabled", _) => sink.error(value.span(), "`herdr.enabled` must be true or false"),
+            ("session", DeValue::String(name)) => {
+                let name = name.trim();
+                if name == HerdrConfig::HERDR_DEFAULT {
+                    out.session = None;
+                } else if !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                {
+                    out.session = Some(name.to_owned());
+                } else {
+                    sink.error(
+                        value.span(),
+                        "`herdr.session` must be \"default\" or a name made of letters, digits, `-`, `_` and `.`",
+                    );
+                }
+            }
+            ("session", _) => sink.error(value.span(), "`herdr.session` must be a string"),
+            (other, _) => sink.warn(key.span(), format!("unknown setting `herdr.{other}`")),
         }
     }
 }

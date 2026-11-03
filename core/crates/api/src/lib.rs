@@ -28,8 +28,8 @@ use std::path::PathBuf;
 
 pub use client::{Client, ClientError, RpcError};
 pub use dispatch::{
-    CommandReceiver, CommandSender, DispatchFuture, Dispatcher, Request, command_channel,
-    spawn_engine,
+    CommandReceiver, CommandSender, CoreDispatcher, DispatchFuture, Dispatcher, Request, WithInfo,
+    command_channel, spawn_engine,
 };
 pub use rpc::{SERVER_METHODS, handle_text};
 pub use server::{Server, ServerHandle};

@@ -5,9 +5,11 @@ use std::process::{Command, Output};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use azulejo_api::{Client, Server, ServerHandle, spawn_engine};
+use azulejo_api::{Client, Server, ServerHandle, WithInfo, spawn_engine};
 use azulejo_engine::Engine;
 use serde_json::{Value, json};
+
+const HERDR_SOCKET: &str = "/tmp/azj-cli-test-herdr.sock";
 
 struct App {
     _server: ServerHandle,
@@ -31,7 +33,12 @@ fn start() -> App {
     let _ = std::fs::remove_dir_all(&dir);
     let socket = dir.join("azulejo.sock");
     let (tx, _engine) = spawn_engine(Engine::new(), |_| {});
-    let server = Server::bind(&socket).unwrap().spawn(Arc::new(tx)).unwrap();
+    // Pretend the core's herdr session lives at HERDR_SOCKET.
+    let info = serde_json::Map::from_iter([("herdr_socket".to_owned(), json!(HERDR_SOCKET))]);
+    let server = Server::bind(&socket)
+        .unwrap()
+        .spawn(Arc::new(WithInfo::new(tx, info)))
+        .unwrap();
     App {
         _server: server,
         dir,
@@ -217,6 +224,27 @@ fn falls_back_to_the_herdr_pane() {
     let out = azj(
         &app.socket,
         &[("HERDR_PANE_ID", "w1:p1")],
+        &["--json", "tile", "get"],
+    );
+    assert_ne!(json_of(&out)["id"], first);
+
+    // The same pane ID in the core's herdr session is ours...
+    let out = azj(
+        &app.socket,
+        &[
+            ("HERDR_PANE_ID", "w7:p3"),
+            ("HERDR_SOCKET_PATH", HERDR_SOCKET),
+        ],
+        &["--json", "tile", "get"],
+    );
+    assert_eq!(json_of(&out)["id"], first);
+    // ...but in another herdr session it isn't.
+    let out = azj(
+        &app.socket,
+        &[
+            ("HERDR_PANE_ID", "w7:p3"),
+            ("HERDR_SOCKET_PATH", "/tmp/some-other-herdr.sock"),
+        ],
         &["--json", "tile", "get"],
     );
     assert_ne!(json_of(&out)["id"], first);

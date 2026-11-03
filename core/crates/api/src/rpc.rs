@@ -99,11 +99,13 @@ fn parse_call(value: Value) -> Result<Call, (Value, Error)> {
 
 async fn run(call: &Call, dispatcher: &dyn Dispatcher) -> Result<Value, Error> {
     match call.method.as_str() {
-        "core.version" => Ok(json!({
-            "type": "version",
-            "api_version": API_VERSION,
-            "version": env!("CARGO_PKG_VERSION"),
-        })),
+        "core.version" => {
+            let mut version = dispatcher.info();
+            version.insert("type".into(), "version".into());
+            version.insert("api_version".into(), API_VERSION.into());
+            version.insert("version".into(), env!("CARGO_PKG_VERSION").into());
+            Ok(Value::Object(version))
+        }
         "events.subscribe" => Err(Error::new(
             ErrorCode::Unsupported,
             "event streaming isn't available yet (PLAN step 2.8)",
@@ -267,6 +269,21 @@ mod tests {
         fn dispatch(&self, _: Command) -> DispatchFuture {
             Box::pin(async { Ok::<Reply, Error>(Reply::Ok) })
         }
+    }
+
+    #[tokio::test]
+    async fn version_carries_the_dispatchers_info() {
+        let info = Map::from_iter([("herdr_socket".to_owned(), Value::from("/tmp/herdr.sock"))]);
+        let dispatcher = crate::WithInfo::new(Broken, info);
+        let r = handle_text(
+            r#"{"jsonrpc":"2.0","id":1,"method":"core.version"}"#,
+            &dispatcher,
+        )
+        .await
+        .unwrap();
+        let r: Value = serde_json::from_str(&r).unwrap();
+        assert_eq!(r["result"]["herdr_socket"], "/tmp/herdr.sock");
+        assert_eq!(r["result"]["api_version"], 1);
     }
 
     #[tokio::test]

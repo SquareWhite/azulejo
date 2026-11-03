@@ -43,6 +43,10 @@ pub struct Env {
     /// `HERDR_WORKSPACE_ID`, to tell apart equal pane IDs in different herdr
     /// workspaces.
     pub herdr_workspace: Option<String>,
+    /// `HERDR_SOCKET_PATH`: which herdr session the pane belongs to. Compared
+    /// with the core's herdr session (`core.version`), so a pane ID from
+    /// another session is never mistaken for one of ours.
+    pub herdr_socket: Option<String>,
 }
 
 impl Env {
@@ -54,6 +58,7 @@ impl Env {
             workspace: var("AZULEJO_WORKSPACE_ID"),
             herdr_pane: var("HERDR_PANE_ID"),
             herdr_workspace: var("HERDR_WORKSPACE_ID"),
+            herdr_socket: var("HERDR_SOCKET_PATH"),
         }
     }
 }
@@ -324,7 +329,9 @@ fn fill_caller(
             info.tab = get("tab");
             info.window = get("window");
             info.workspace = info.workspace.or_else(|| get("workspace"));
-        } else if let Some(pane) = &env.herdr_pane {
+        } else if let Some(pane) = &env.herdr_pane
+            && same_herdr_session(env, client)
+        {
             let session = client
                 .call("session.get", None)
                 .map_err(|e| format!("can't look up herdr pane {pane}: {e}"))?;
@@ -351,6 +358,22 @@ fn fill_caller(
         }
     }
     Ok(filled)
+}
+
+/// Whether `azj` runs in a pane of the core's herdr session. Unknown on either
+/// side counts as the same, so older cores and plain shells keep working.
+fn same_herdr_session(env: &Env, client: &mut Client) -> bool {
+    let Some(ours) = &env.herdr_socket else {
+        return true;
+    };
+    let Ok(version) = client.call("core.version", None) else {
+        return true;
+    };
+    let Some(theirs) = version.get("herdr_socket").and_then(Value::as_str) else {
+        return true;
+    };
+    let canonical = |p: &str| std::fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(p));
+    canonical(ours) == canonical(theirs)
 }
 
 /// The param names `fill_caller` handles, with the ID kind each takes.

@@ -6,10 +6,12 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use azulejo_engine::Engine;
+use azulejo_engine::{Core, Engine};
 use azulejo_protocol::{Command, Error, ErrorCode, Event, Reply};
+use serde_json::{Map, Value};
 use tokio::sync::{mpsc, oneshot};
 
 /// What [`Dispatcher::dispatch`] returns.
@@ -18,6 +20,60 @@ pub type DispatchFuture = Pin<Box<dyn Future<Output = Result<Reply, Error>> + Se
 /// Runs a command somewhere and resolves to its reply.
 pub trait Dispatcher: Send + Sync + 'static {
     fn dispatch(&self, command: Command) -> DispatchFuture;
+
+    /// Extra fields for `core.version`, such as the herdr session's socket.
+    fn info(&self) -> Map<String, Value> {
+        Map::new()
+    }
+}
+
+/// A dispatcher plus fixed `core.version` fields.
+pub struct WithInfo<D> {
+    inner: D,
+    info: Map<String, Value>,
+}
+
+impl<D: Dispatcher> WithInfo<D> {
+    pub fn new(inner: D, info: Map<String, Value>) -> Self {
+        Self { inner, info }
+    }
+}
+
+impl<D: Dispatcher> Dispatcher for WithInfo<D> {
+    fn dispatch(&self, command: Command) -> DispatchFuture {
+        self.inner.dispatch(command)
+    }
+
+    fn info(&self) -> Map<String, Value> {
+        let mut info = self.inner.info();
+        info.extend(self.info.clone());
+        info
+    }
+}
+
+/// Runs commands on a running [`Core`]. `Core::execute` blocks until the
+/// core's thread answers, so each call runs on Tokio's blocking pool.
+#[derive(Clone)]
+pub struct CoreDispatcher {
+    core: Arc<Core>,
+}
+
+impl CoreDispatcher {
+    pub fn new(core: Arc<Core>) -> Self {
+        Self { core }
+    }
+}
+
+impl Dispatcher for CoreDispatcher {
+    fn dispatch(&self, command: Command) -> DispatchFuture {
+        let core = self.core.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || core.execute(command))
+                .await
+                .map_err(|_| core_gone())?
+                .map(|outcome| outcome.reply)
+        })
+    }
 }
 
 /// A command waiting for the engine, plus the way back to its caller.
@@ -131,6 +187,21 @@ mod tests {
 
         drop(tx);
         handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_running_core_answers() {
+        let core = Arc::new(Core::start(azulejo_engine::CoreOptions {
+            state_path: None,
+            ..Default::default()
+        }));
+        let dispatcher = WithInfo::new(
+            CoreDispatcher::new(core),
+            Map::from_iter([("herdr_session".to_owned(), Value::from("azulejo"))]),
+        );
+        let reply = dispatcher.dispatch(Command::Ping).await.unwrap();
+        assert!(matches!(reply, Reply::Pong { .. }));
+        assert_eq!(dispatcher.info()["herdr_session"], "azulejo");
     }
 
     #[tokio::test]

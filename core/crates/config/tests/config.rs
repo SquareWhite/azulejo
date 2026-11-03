@@ -216,6 +216,25 @@ fn stateless_actions_build_commands() {
     }
 }
 
+#[test]
+fn herdr_session_defaults_to_a_dedicated_one() {
+    let config = Config::defaults(MAC);
+    assert_eq!(config.herdr, azulejo_config::HerdrConfig::default());
+    assert_eq!(config.herdr.session.as_deref(), Some("azulejo"));
+
+    let config = user("[herdr]\nsession = \"default\"\n", MAC);
+    assert_eq!(config.herdr.session, None);
+    assert!(config.diagnostics.is_empty());
+
+    let config = user("[herdr]\nsession = \"work\"\nenabled = false\n", LINUX);
+    assert_eq!(config.herdr.session.as_deref(), Some("work"));
+    assert!(!config.herdr.enabled);
+
+    let config = user("[herdr]\nsession = \"a b/c\"\n", MAC);
+    assert_eq!(config.herdr.session.as_deref(), Some("azulejo"));
+    assert!(config.has_errors());
+}
+
 // ----- context -----
 
 #[test]
