@@ -250,6 +250,55 @@ All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock star
 
 ---
 
+## M2.5 — GUI polish to mockup (2 to 3 weeks)
+
+The designer's mockup is `docs/design/mockup-v1.png` (local capture), described region by region with sampled colours in [docs/design/README.md](docs/design/README.md). the maintainer's direction (Nov 3, 2026): get the basic functionality working first, then polish the GUI. This milestone is visual only; the functional items the mockup implies are listed under "Proposed from mockup" below and need the maintainer's decision before they're scheduled. Starts after G2, or earlier for steps that don't depend on unfinished M2 work.
+
+- [ ] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
+  **Done when** no view hard-codes a colour or radius.
+
+- [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
+  **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
+
+- [ ] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows a placeholder until its panel is decided), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
+  **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names.
+
+- [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
+  **Done when** tabs match the mockup and attention state shows on them.
+
+- [ ] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
+  **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
+
+- [ ] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
+  **Done when** it matches the mockup's browser tile.
+
+- [ ] **D.7 Preview header.** File icon, truncated file name, segmented control slot for Preview | Source (wired only if that proposal is accepted).
+  **Done when** it matches the mockup's preview tile.
+
+- [ ] **D.8 Search field.** The toolbar's "Jump to session or tile" field opens the picker (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord.
+  **Done when** clicking the field or pressing the chord opens the same picker.
+
+- [ ] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
+  **Done when** the maintainer and the designer sign off on the side-by-side.
+
+### Proposed from mockup — needs user decision
+
+The mockup implies functional work that isn't planned yet. Details and status per element are in [docs/design/README.md](docs/design/README.md#what-the-mockup-needs-against-the-plan).
+
+1. **Files panel in the sidebar** (Agents | Files), next to the existing files tile (2.5).
+2. **Several herdr servers at once**, grouped by machine in the sidebar with per-machine connection state and "+". Pulls F17 (P2, step 5.2) forward and extends it.
+3. **Git branch per workspace** in the sidebar: pull F26 (P2, step 5.3) forward.
+4. **Tile headers with the pane's title and cwd or command**: carry herdr's pane title and cwd into the model.
+5. **Preview | Source toggle** on preview tiles.
+6. **⌘K for the picker** and an always-visible search field (today `goto` is `cmd+p` in [docs/keybindings.md](docs/keybindings.md)).
+7. **Chrome theming** and a matching default terminal theme (One Dark) when the Ghostty config sets none.
+8. **Naming**: "session" in the UI vs "workspace" in code, docs and API.
+
+### Gate GD
+D.1–D.9 ticked; the side-by-side comparison signed off.
+
+---
+
 ## M3 — Linux MVP, all P0 (4 to 6 weeks)
 
 The core is done; this milestone is mostly shell work. Reuse `shared/webview/` and the core's HTML rendering everywhere.
