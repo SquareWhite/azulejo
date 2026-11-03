@@ -245,12 +245,20 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 - [ ] **2.11 Key and focus test suite.** XCUITest scenarios: shortcuts with a webview focused, IME composition in a terminal, focus after close and after zoom, palette over a browser.
   **Done when** 30+ scenarios pass in CI.
 
-- [ ] **2.12 Bismuth-style dynamic layouts** (F3a, extended). **Proposed, pending the maintainer's OK** ([ADR 0010](docs/adr/0010-dynamic-layouts.md), [research](docs/research/bismuth.md)). Each tab gets a layout kind: `manual` (today's split tree) or a dynamic layout over an ordered tile list: `tile` (masters 0–10, ratio, four orientations), `monocle`, `three_column`, then `spiral` and `quarter`. Layouts are pure functions to placements (`rects` with z-order) that the shells render and the 2.1 animations reuse. New tabs default to `tile`; adopted herdr tabs stay manual. Commands `layout.set/toggle/cycle/masters/master_ratio/move_order`, `layout.rotate` extended; `[layout]` config; layout files accept the new kinds (`tall` becomes an alias of `tile`); proposed `alt` keys listed in the ADR.
+- [ ] **2.12 Bismuth-style dynamic layouts** (F3a, extended). **Accepted Nov 3, 2026** ([ADR 0010](docs/adr/0010-dynamic-layouts.md), [research](docs/research/bismuth.md)). Each tab gets a layout kind: `manual` (today's split tree) or a dynamic layout over an ordered tile list: `tile` (masters 0–10, ratio, four orientations), `monocle` and `three_column`. Those three are the whole set: Spiral and Quarter were dropped, and Spread, Stair, Floating and Cascade aren't planned. Layouts are pure functions to placements (`rects` with z-order) that the shells render and the 2.1 animations reuse. New tabs default to `tile`; adopted herdr tabs stay manual. Commands `layout.set/toggle/cycle/masters/master_ratio/move_order`, `layout.rotate` extended; `[layout]` config; layout files accept the new kinds (`tall` becomes an alias of `tile`); `alt` keys as listed in the ADR.
   1. Core: model, `arrange` for Tile/Monocle/Three Column, freeze/convert, op mapping, protocol, schema, Python client, layout files, config, proptests.
   2. macOS shell: render from `rects` (z-order, hidden tiles), Monocle focus switching without PTY resizes, animations across kind switches, layout name + hint in the tab bar, keymap entries.
-  3. Spiral and Quarter.
   **Done when** the ADR 0010 proptests pass (10,000 sequences mixing kinds and switches); the maintainer's tall workflow (split chord, `alt+enter`, `alt+o`, `alt+shift+e`, resize) works keystroke-for-keystroke in a `tile` tab; cycling Tile → Monocle → Three Column → manual and back animates with exactly one PTY resize per changed terminal and none for Monocle focus switches; a layout file with `layout = "three_column"` opens as specified; `layout.export` round-trips a dynamic tab.
-  **Estimate:** 2 to 3 weeks for 1 and 2; 3 to 4 days for 3.
+  **Estimate:** 2 to 3 weeks.
+
+- [ ] **2.13 Several herdr servers, grouped by machine** (F17, pulled forward from P2 and extended; decided from the mockup). The core connects to more than one herdr server at once: the local one plus machines saved in herdr (`herdr machine`) or listed under `[[herdr.machines]]` in config, reached over herdr's SSH machine forwarding. Each machine has its own connection state (connected, reconnecting, offline) shown on its sidebar group; workspaces belong to a machine; "+" on a group creates a workspace on that machine. Remote terminal tiles attach through `herdr --machine … terminal attach` (or `--remote`, whichever 0.9.x supports for direct attach; check first). One machine dropping never blocks the others.
+  **Done when** the sidebar shows Local plus one remote machine side by side; killing the SSH link shows "Reconnecting…" on that group only and tiles reattach when it returns; a workspace created under the remote group runs its shells on that machine.
+
+- [ ] **2.14 Git branch per workspace** (F26, pulled forward from P2; decided from the mockup). The core derives each workspace's repo from its focused or first terminal's cwd (herdr reports pane cwd), reads the current branch (and detached/dirty state) without blocking (`git` with `--no-optional-locks`, watched via `.git/HEAD`), and the sidebar shows it right-aligned and truncated. Remote workspaces ask herdr or run `git` on that machine.
+  **Done when** switching branch in a tile updates the sidebar within 1 s, and a workspace outside a repo shows nothing.
+
+- [ ] **2.15 Tile headers and Preview | Source** (F28, F29; decided from the mockup). Every tile gets a header strip: kind icon, bold title, muted subtitle. Terminal: pane title (or the running command) and cwd from herdr; browser: page title and host; preview: file name and folder; files: root. Preview tiles get a Preview | Source toggle: Source shows the file as highlighted code through the core's existing renderer, and the choice is saved per tile.
+  **Done when** a terminal running `just dogfood` in `~/src/azulejo` shows "zsh — just dogfood" style headers that update as the command changes, and toggling a markdown preview to Source shows highlighted markdown and survives a relaunch.
 
 ### Gate G2
 All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock starts.
@@ -259,7 +267,7 @@ All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock star
 
 ## M2.5 — GUI polish to mockup (2 to 3 weeks)
 
-The designer's mockup is `docs/design/mockup-v1.png` (local capture), described region by region with sampled colours in [docs/design/README.md](docs/design/README.md). the maintainer's direction (Nov 3, 2026): get the basic functionality working first, then polish the GUI. This milestone is visual only; the functional items the mockup implies are listed under "Proposed from mockup" below and need the maintainer's decision before they're scheduled. Starts after G2, or earlier for steps that don't depend on unfinished M2 work.
+The designer's mockup is `docs/design/mockup-v1.png` (local capture), described region by region with sampled colours in [docs/design/README.md](docs/design/README.md). the maintainer's direction (Nov 3, 2026): get the basic functionality working first, then polish the GUI. This milestone is visual only. The functional items the mockup implies were decided on Nov 3, 2026 (see "Decided from the mockup" below): three moved into M2 as 2.13–2.15, and the rest stay here. Starts after G2, or earlier for steps that don't depend on unfinished M2 work.
 
 - [ ] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
   **Done when** no view hard-codes a colour or radius.
@@ -267,8 +275,8 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
 
-- [ ] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows a placeholder until its panel is decided), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
-  **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names.
+- [ ] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
+  **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names, and the Files panel navigates and opens files like the files tile.
 
 - [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
   **Done when** tabs match the mockup and attention state shows on them.
@@ -279,27 +287,27 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [ ] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
   **Done when** it matches the mockup's browser tile.
 
-- [ ] **D.7 Preview header.** File icon, truncated file name, segmented control slot for Preview | Source (wired only if that proposal is accepted).
+- [ ] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
   **Done when** it matches the mockup's preview tile.
 
-- [ ] **D.8 Search field.** The toolbar's "Jump to session or tile" field opens the picker (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord.
+- [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens the picker (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The picker's default chord moves from `cmd+p` to `cmd+k` (update `shared/config/keymap.default.toml` and [docs/keybindings.md](docs/keybindings.md)).
   **Done when** clicking the field or pressing the chord opens the same picker.
 
 - [ ] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
   **Done when** the maintainer and the designer sign off on the side-by-side.
 
-### Proposed from mockup — needs user decision
+### Decided from the mockup (Nov 3, 2026)
 
-The mockup implies functional work that isn't planned yet. Details and status per element are in [docs/design/README.md](docs/design/README.md#what-the-mockup-needs-against-the-plan).
+Details and status per element are in [docs/design/README.md](docs/design/README.md#what-the-mockup-needs-against-the-plan).
 
-1. **Files panel in the sidebar** (Agents | Files), next to the existing files tile (2.5).
-2. **Several herdr servers at once**, grouped by machine in the sidebar with per-machine connection state and "+". Pulls F17 (P2, step 5.2) forward and extends it.
-3. **Git branch per workspace** in the sidebar: pull F26 (P2, step 5.3) forward.
-4. **Tile headers with the pane's title and cwd or command**: carry herdr's pane title and cwd into the model.
-5. **Preview | Source toggle** on preview tiles.
-6. **⌘K for the picker** and an always-visible search field (today `goto` is `cmd+p` in [docs/keybindings.md](docs/keybindings.md)).
-7. **Chrome theming** and a matching default terminal theme (One Dark) when the Ghostty config sets none.
-8. **Naming**: "session" in the UI vs "workspace" in code, docs and API.
+1. **Files panel in the sidebar** (Agents | Files): M2.5, in D.3.
+2. **Several herdr servers at once**, grouped by machine: built before polish, as 2.13 (F17 → P1).
+3. **Git branch per workspace**: built before polish, as 2.14 (F26 → P1).
+4. **Tile headers with title and cwd or command**: built before polish, as 2.15 (F28).
+5. **Preview | Source toggle**: built before polish, as 2.15 (F29).
+6. **⌘K for the picker** and an always-visible search field: M2.5, in D.8.
+7. **Chrome theming** and a default terminal theme: M2.5, in D.1 (not decided separately; follows the design tokens).
+8. **Naming**: keep "workspace" in code, docs, API and UI; the designer relabels "session".
 
 ### Gate GD
 D.1–D.9 ticked; the side-by-side comparison signed off.
@@ -355,8 +363,8 @@ P1 parity on Linux; Linux success-metric clock starts.
 ## M5 — Later, P2
 
 - [ ] **5.1** Niri-style scrolling columns layout (F3b). Master-stack moved to M1 (1.1b).
-- [ ] **5.2** Remote herdr workspaces over SSH (F17), via herdr's machine forwarding.
-- [ ] **5.3** Sidebar with git branch, cwd and agent states (F26).
+- ~~**5.2** Remote herdr workspaces over SSH (F17)~~ Moved to M2 as 2.13.
+- ~~**5.3** Sidebar with git branch, cwd and agent states (F26)~~ Moved to M2 as 2.14 (agent states landed in 2.6).
 - [ ] **5.4** Flatpak with host access for herdr.
 
 ---

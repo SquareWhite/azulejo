@@ -1,6 +1,6 @@
 # 0010: Bismuth-style dynamic layouts per tab
 
-Status: **proposed** · Nov 3, 2026 · M2 (PLAN 2.12, pending the maintainer's OK) · research: [Bismuth notes](../research/bismuth.md)
+Status: **accepted** · Nov 3, 2026 · M2 (PLAN 2.12; accepted by the maintainer on Nov 3, 2026) · research: [Bismuth notes](../research/bismuth.md)
 
 ## Context
 
@@ -14,7 +14,7 @@ Azulejo today has a **binary split tree** per tab (`core/crates/model/src/layout
 
 The split tree has to stay. Tabs adopted from herdr mirror herdr's own split geometry exactly (ADR 0008, 0009), layout files can describe arbitrary trees (2.4), and some people tile by hand.
 
-## Decision (proposed)
+## Decision
 
 ### 1. A tab has a layout kind; "manual" is one of them
 
@@ -26,7 +26,7 @@ pub struct Tab {
 }
 
 pub struct TabLayout {
-    pub kind: LayoutKind,             // Manual | Tile | Monocle | ThreeColumn | Spiral | Quarter
+    pub kind: LayoutKind,             // Manual | Tile | Monocle | ThreeColumn
     pub previous: Option<LayoutKind>, // for toggle-back, as Bismuth's layout_store
     pub order: Vec<TileId>,           // authoritative for dynamic kinds
     pub weights: BTreeMap<TileId, f64>, // per-tile stack weight, default 1.0
@@ -38,8 +38,6 @@ pub struct LayoutParams {
     pub tile: TileParams,             // masters 0..=10 (default 1), ratio 0.2..=0.8 (0.5),
                                       // orientation Left|Top|Right|Bottom, masters_axis
     pub three_column: ThreeColumnParams, // masters 1..=10 (1), ratio 0.2..=0.75 (0.6)
-    pub spiral: SpiralParams,         // one ratio per depth, default 0.5
-    pub quarter: QuarterParams,       // v, left_h, right_h in 0.2..=0.8 (0.5)
 }
 ```
 
@@ -58,17 +56,15 @@ struct Placement { tile: TileId, rect: Rect /* unit square */, z: u16, visible: 
 - `z` and `visible` exist for overlapping kinds. **Monocle:** every tile gets the full rect; the focused tile is visible and on top, the rest hidden. Switching focus in Monocle changes z-order only, so **no PTY resizes** (ADR 0004) and the 2.1 animation layer can cross-fade or slide.
 - Core computes placements for **every** tab (manual ones via `root.rects()`) and sends them in `layout.changed` as `rects`. Shells render from `rects`; the animation code already animates frame → frame, so it needs no new model. `tree` stays in the event for manual tabs.
 
-Initial kinds, ported from Bismuth's maths:
+The kinds, ported from Bismuth's maths (the full set, as decided):
 
 | Kind | Behaviour | Parameters |
 | --- | --- | --- |
 | `tile` | Masters on one side, stack on the other; both split by weight. Rotates through left/top/right/bottom. Masters can sit stacked or side by side ("rotate part") | masters 0–10 (1), ratio 0.2–0.8 (0.5) |
 | `monocle` | All tiles full size, focused one shown; directional focus cycles the order | — |
 | `three_column` | Masters centred; left and right stacks; right stack gets `floor((n−m)/2)` | masters 1–10 (1), ratio 0.2–0.75 (0.6) |
-| `spiral` | Each tile halves the rest, turning clockwise | ratio per depth (0.5) |
-| `quarter` | 1–4 tiles in halves/quadrants, filled clockwise. Tiles 5+ share the last quadrant monocle-style (Bismuth floats them; Azulejo has no floating) | three splits 0.2–0.8 |
 
-Left out on purpose: **Spread** and **Stair** (overlapping cards hide most of each terminal), **Floating** (Azulejo has no floating tiles) and Cascade (not even wired up in Bismuth). The `z` field means they can be added later without a model change.
+Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **Spread** and **Stair** (overlapping cards hide most of each terminal), **Floating** (Azulejo has no floating tiles) and Cascade (not even wired up in Bismuth). The `z` field means they can be added later without a model change.
 
 ### 3. How existing operations behave in a dynamic tab
 
@@ -81,7 +77,7 @@ Left out on purpose: **Spread** and **Stair** (overlapping cards hide most of ea
 | Swap left/down/up/right | Tree swap with geometric neighbour | Swap the two tiles' positions in `order` (weights travel with tiles) |
 | Move left/down/up/right | Tree restructure | Same as swap, as in Bismuth |
 | Move to next/previous position (new) | — | Move one step in `order`, wrapping |
-| Resize left/down/up/right | Move nearest divider; flip to the opposite one at the edge | Same edge rule (both already match Bismuth), translated into parameters: master ratio, stack weights, three-column ratio, spiral ratio, quarter splits. Monocle ignores it |
+| Resize left/down/up/right | Move nearest divider; flip to the opposite one at the edge | Same edge rule (both already match Bismuth), translated into parameters: master ratio, stack weights, three-column ratio. Monocle ignores it |
 | Promote (`alt+enter`) | Swap with master | Move to the front of `order` |
 | Rotate (`alt+o`) | Master left ↔ top | Tile: left ↔ top, as today. Full four-way rotation and "rotate part" are separate actions |
 | Equalize | Even out the stack | Reset all weights to 1.0 (ratio unchanged) |
@@ -89,7 +85,7 @@ Left out on purpose: **Spread** and **Stair** (overlapping cards hide most of ea
 
 ### 4. Switching between manual and dynamic
 
-- **Dynamic → manual** ("freeze"): build a split tree from the current placements with a guillotine cut (find a full-span line, split, recurse). Tile, Three Column, Spiral and Quarter are all guillotine layouts, so the frozen tree reproduces the rects exactly; this is also how the derived `root` is computed. Monocle freezes to the Tile arrangement of the same order. If `manual` holds a tree with the same tile set, switching back restores that instead.
+- **Dynamic → manual** ("freeze"): build a split tree from the current placements with a guillotine cut (find a full-span line, split, recurse). Tile and Three Column are both guillotine layouts, so the frozen tree reproduces the rects exactly; this is also how the derived `root` is computed. Monocle freezes to the Tile arrangement of the same order. If `manual` holds a tree with the same tile set, switching back restores that instead.
 - **Manual → dynamic:** `order` comes from the existing `tall()` reading (master first, then the stack in reading order). If the tree is in canonical tall shape, Tile's ratio and orientation come from it, so a tall tab converts with no visible jump.
 - `layout.toggle {kind}` follows Bismuth: switch to `kind`, or back to `previous` if `kind` is already active. `layout.cycle` walks `[layout] cycle`.
 
@@ -101,7 +97,7 @@ Left out on purpose: **Spread** and **Stair** (overlapping cards hide most of ea
 
 ### 6. Layout files (2.4)
 
-- `layout = "tile" | "monocle" | "three_column" | "spiral" | "quarter"` makes a dynamic tab, with `masters`, `ratio` and `orientation` where they apply. Tile order is the order of `[[tile]]` entries.
+- `layout = "tile" | "monocle" | "three_column"` makes a dynamic tab, with `masters`, `ratio` and `orientation` where they apply. Tile order is the order of `[[tile]]` entries.
 - `layout = "tall"` becomes an alias for `tile` with one master. It already builds the same shape.
 - `columns`, `rows` and an explicit `root` stay manual.
 - `layout.export` writes a dynamic tab as its kind, parameters and tile order.
@@ -125,7 +121,7 @@ Left out on purpose: **Spread** and **Stair** (overlapping cards hide most of ea
   [layout]
   default = "tile"            # or "manual"
   insert = "end"              # "end" | "master" | "after_focused"
-  cycle = ["tile", "monocle", "three_column", "spiral"]   # Bismuth's defaults minus Spread/Stair
+  cycle = ["tile", "monocle", "three_column"]
   [layout.tile]
   masters = 1
   ratio = 0.5
@@ -172,8 +168,10 @@ Checked against `docs/keybindings.md`: none of these are owned by Hammerspoon (`
 - A plain split behaves differently in a dynamic tab (the layout decides where the tile goes). The reply says so, and `alt+shift+t` gets the old behaviour back for that tab.
 - Bismuth is archived, so there's no upstream to track; we port its maths once and own it.
 
-## Open questions for the maintainer
+## Decisions (Nov 3, 2026)
 
-1. **Default for new tabs:** dynamic Tile (recommended), or keep manual and opt in per tab?
-2. **Adopted herdr tabs:** stay manual so they match herdr exactly (recommended), or convert to Tile on adoption?
-3. **Layout set:** Tile, Monocle, Three Column, Spiral and Quarter. Do you want Spread and Stair too?
+the maintainer answered the open questions:
+
+1. **Default for new tabs:** dynamic Tile. `[layout] default = "tile"`.
+2. **Adopted herdr tabs:** stay manual, so they match herdr's own layout exactly.
+3. **Layout set:** Tile, Monocle and Three Column only. Spiral and Quarter are dropped; Spread, Stair, Floating and Cascade aren't planned. The `z` field still leaves room for more later.

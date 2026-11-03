@@ -2,7 +2,7 @@
 
 `mockup-v1.png` (local capture)
 
-`mockup-v1.png` is the designer's mockup the maintainer shared on Nov 3, 2026: 1440 × 900 at @1x, 297 KB. the maintainer's direction: "that's how I want the app to look like. Let's get the basic functionality working first, then we'll polish the GUI." The visual work is planned as **M2.5** in [PLAN.md](../../PLAN.md); the functional items it implies are listed at the end of this file and in PLAN under "Proposed from mockup".
+`mockup-v1.png` is the designer's mockup the maintainer shared on Nov 3, 2026: 1440 × 900 at @1x, 297 KB. the maintainer's direction: "that's how I want the app to look like. Let's get the basic functionality working first, then we'll polish the GUI." The visual work is planned as **M2.5** in [PLAN.md](../../PLAN.md); the functional items it implies were decided on Nov 3, 2026 (end of this file, and PLAN under "Decided from the mockup").
 
 Colours below were sampled from the PNG with PIL. Anti-aliased text gives approximate values; flat fills are exact. The palette matches Atom's One Dark closely, so where a sample is fuzzy the One Dark value is given.
 
@@ -90,40 +90,45 @@ Four tiles in the mockup: a terminal as the master on the left, a browser top-ri
 
 ## What the mockup needs, against the plan
 
-Status as of Nov 3, 2026. "Visual" means M2.5 only; "functional" means something the core or the shell can't do yet.
+Status as of Nov 3, 2026, after the maintainer's decisions. "Visual" means M2.5 only; "functional" means something the core or the shell can't do yet.
 
 | Mockup element | Plan / PRD item | Status | Kind |
 | --- | --- | --- | --- |
 | Hidden title bar, traffic lights in the sidebar card | — | M2.5 | visual |
 | Sidebar card with workspace list | 1.6 (basic sidebar) | done, needs restyle | visual |
 | Sidebar toggle button | `toggle_sidebar` (1.6) | done, needs restyle | visual |
-| **Agents \| Files** sidebar toggle | F10 is a *tile* (2.5, `c7121ce`); a sidebar Files panel isn't planned | **not yet planned** | functional |
-| Machine groups (Local, build-server, dev-server) | F17 remote herdr (P2, M5 step 5.2) | planned M5; the mockup implies **several herdr servers at once** in one window, which isn't planned | functional |
-| Per-machine connection state, "Reconnecting…" | `herdr.status` event (1.12) for the one connection | done for one server; per machine **not yet planned** | functional |
-| "+" per group | `workspace.create` (1.11) | done for the local server; "on machine X" **not yet planned** | functional |
-| Workspace row status icon | F16 / 2.6 (core `05a8c53`) | core done, shell badges in progress | functional + visual |
-| Git branch per workspace | F26 (P2, M5 step 5.3) | planned M5 | functional |
-| Dimmed rows while a machine reconnects | — | not yet planned (follows multi-machine) | visual |
+| **Agents \| Files** sidebar toggle | F10 tile (2.5, `c7121ce`); sidebar panel in M2.5 D.3 | decided: M2.5 | functional |
+| Machine groups (Local, build-server, dev-server) | F17 (now P1), PLAN 2.13 | decided: M2, before polish | functional |
+| Per-machine connection state, "Reconnecting…" | `herdr.status` (1.12); per machine in 2.13 | decided: M2 (2.13) | functional |
+| "+" per group | `workspace.create` (1.11); "on machine X" in 2.13 | decided: M2 (2.13) | functional |
+| Workspace row status icon | F16 / 2.6 (core `05a8c53`, shell `5cf85f5`) | done, needs restyle | functional + visual |
+| Git branch per workspace | F26 (now P1), PLAN 2.14 | decided: M2, before polish | functional |
+| Dimmed rows while a machine reconnects | 2.13, styled in M2.5 | follows 2.13 | visual |
 | Footer rollup counts | 2.6 workspace rollups | core done; footer UI new | visual |
-| Tab status icons | 2.6 tab indicator | in progress | visual |
+| Tab status icons | 2.6 tab indicator (`5cf85f5`) | done, needs restyle | visual |
 | "+" new tab | `tab.create` | done, needs restyle | visual |
-| **"Jump to session or tile ⌘K"** search field | 2.2 picker, bound to `cmd+p` in [keybindings.md](../keybindings.md) | picker in progress; **⌘K binding and an always-visible field are not yet planned** | functional (keymap) + visual |
-| Tile header: icon, title, "— cwd or command" | — (preview and files tiles have their own header strips) | **not yet planned**; needs pane title and cwd in the model (herdr reports both in its events) | functional |
+| **"Jump to session or tile ⌘K"** search field | 2.2 picker (`cc6f717`); ⌘K and the field in M2.5 D.8 | decided: M2.5 | functional (keymap) + visual |
+| Tile header: icon, title, "— cwd or command" | F28, PLAN 2.15 | decided: M2, before polish | functional |
 | Browser chrome (back, forward, URL, reload) | 1.8 (`8638e21`) | done, needs restyle | visual |
 | Preview tile header with file name | 1.9b (`72f2cb3`) | done, needs restyle | visual |
-| **Preview \| Source** toggle | — | **not yet planned** (the core can already highlight markdown as code) | functional |
+| **Preview \| Source** toggle | F29, PLAN 2.15 | decided: M2, before polish | functional |
 | Rounded tile cards with gutters | — | M2.5 | visual |
-| One Dark chrome palette, terminal theme to match | F25 mentions a theme in config | chrome theming **not yet planned**; terminals follow the Ghostty config, which is empty for the maintainer today | functional (theme) + visual |
+| One Dark chrome palette, terminal theme to match | M2.5 D.1 (design tokens) | decided: M2.5 | functional (theme) + visual |
 | Focus indicator | 1.6 focus ring, 2.1 ring animation | done; the mockup shows none, so **ask the designer** | visual |
-| "session" wording ("Jump to session or tile") | the code and docs say "workspace" | naming **to decide** | copy |
+| "session" wording ("Jump to session or tile") | keep "workspace" | decided: designer relabels | copy |
 
-### Functional items the mockup implies that aren't planned yet
+### Decisions on the functional items (Nov 3, 2026)
 
-1. A **Files panel in the sidebar** (Agents | Files), next to the files tile.
-2. **Several herdr servers at once**, grouped by machine in the sidebar, each with its own connection state and "+". Pulls F17 forward and goes beyond it (F17 is one remote server per workspace).
-3. **Git branch per workspace** in the sidebar (F26, planned for M5).
-4. **Tile headers** showing the pane's title and cwd or running command, which means carrying herdr's pane title and cwd into the model.
-5. **Preview | Source** toggle on preview tiles.
-6. **⌘K** for the picker, plus an always-visible search field in the toolbar (today `goto` is `cmd+p`).
-7. **Chrome theming**: design tokens for the app, and a default terminal theme that matches (One Dark) when the Ghostty config doesn't set one.
-8. **Naming**: "session" in the UI vs "workspace" in the code, docs and API.
+Built before GUI polish, in M2:
+
+- **Several herdr servers at once**, grouped by machine with per-machine connection state and "+": PLAN 2.13 (F17 → P1).
+- **Git branch per workspace** in the sidebar: PLAN 2.14 (F26 → P1).
+- **Tile headers** (title and cwd or running command) and the **Preview | Source** toggle: PLAN 2.15 (F28, F29).
+
+Left for M2.5 polish:
+
+- **Files panel in the sidebar** (Agents | Files): D.3.
+- **⌘K** for the picker and an always-visible search field: D.8.
+- **Chrome theming** and a matching default terminal theme: D.1.
+
+Naming: keep "workspace" everywhere; the designer relabels "session".

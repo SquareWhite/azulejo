@@ -65,7 +65,7 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | --- | --- | --- | --- |
 | F1 | Layout | Hierarchy of windows, workspaces, tabs and tiles; each tab is a tree of horizontal and vertical splits | P0 |
 | F2 | Layout | Keyboard actions to split, focus by direction, swap, move, resize, zoom and close tiles | P0 |
-| F3a | Layout | Master-stack ("tall") actions on the split tree: add a tile to the end of an evenly divided stack, promote a tile to master, rotate master left ↔ top, equalize the stack ([keybindings](keybindings.md#decisions)). Proposed extension: Bismuth-style dynamic layouts per tab ([ADR 0010](adr/0010-dynamic-layouts.md), PLAN 2.12) | P0 |
+| F3a | Layout | Master-stack ("tall") actions on the split tree: add a tile to the end of an evenly divided stack, promote a tile to master, rotate master left ↔ top, equalize the stack ([keybindings](keybindings.md#decisions)). Extended by Bismuth-style dynamic layouts per tab: Tile (masters and ratio), Monocle and Three Column over an ordered tile list, with the split tree kept as the `manual` kind; new tabs default to Tile, adopted herdr tabs stay manual ([ADR 0010](adr/0010-dynamic-layouts.md), PLAN 2.12, decided Nov 3, 2026) | P0 |
 | F3b | Layout | Niri-style scrolling columns layout mode | P2 |
 | F4 | Layout | Animated open, close, move and resize; terminals scale a snapshot during motion and resize the PTY once, at the start of the motion, so the redraw finishes under the snapshot ([ADR 0004](adr/0004-animation-resize-timing.md)); can be turned off | P1 |
 | F5 | Layout | Command palette for every action | P1 |
@@ -80,7 +80,7 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F14 | herdr | Closing a tile detaches by default; killing the herdr pane is an explicit choice | P0 |
 | F15 | herdr | Panes created or closed elsewhere (phone, CLI, agent) appear or disappear in the app within 1 second | P1 |
 | F16 | herdr | herdr agent state (blocked, working, done, idle) shown on tiles and in the sidebar | P1 |
-| F17 | herdr | Workspaces backed by a remote herdr server over SSH | P2 |
+| F17 | herdr | Several herdr servers at once, local and remote over SSH, grouped by machine in the sidebar with per-machine connection state (moved from P2 on Nov 3, 2026 after the design mockup; PLAN 2.13) | P1 |
 | F18 | API | Socket API to list, create, close, focus, move and resize windows, workspaces, tabs and tiles, and to point browser and preview tiles at a URL or path | P0 |
 | F19 | API | CLI covering the whole socket API, with JSON output; environment variables identify the calling tile and workspace | P0 |
 | F20 | API | Terminal operations: send text and keys, read the screen and scrollback (through herdr's `pane.read`) | P0 |
@@ -90,8 +90,10 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F24 | Session | Restore layout, browser URLs and preview paths on relaunch; terminal tiles reattach to their herdr panes | P0 |
 | F25a | Config | Every keybinding overridable from the TOML config, loaded at startup; per-platform defaults (`cmd` on macOS, Super on Linux) in [`keymap.default.toml`](../shared/config/keymap.default.toml) | P0 |
 | F25b | Config | TOML config for keybindings, theme and animation, reloaded on save; the same file works on both platforms | P1 |
-| F26 | Config | Sidebar per workspace showing git branch, working directory and agent states | P2 |
+| F26 | Config | Sidebar per workspace showing git branch, working directory and agent states (moved from P2 on Nov 3, 2026 after the design mockup; PLAN 2.14) | P1 |
 | F27 | Platform | Linux build (GTK4, Wayland and X11) with P0 parity, then P1 parity | P1 |
+| F28 | Tiles | Header strip on every tile: kind icon, title and subtitle (terminal: pane title or running command and cwd; browser: page title and host; preview: file name and folder; files: root) (PLAN 2.15) | P1 |
+| F29 | Tiles | Preview \| Source toggle on preview tiles; Source shows the file as highlighted code, saved per tile (PLAN 2.15) | P1 |
 
 ## Non-functional requirements
 
@@ -202,5 +204,6 @@ Success means Azulejo replaces the current terminal-plus-browser setup for daily
 - [ ] Does the CLI live inside the app bundle or ship as a separate Homebrew formula and Linux package?
 - [ ] Open source from day one, and under which license?
 - [x] Pull layout modes (F3) into the MVP? Decided: the master-stack (tall) actions are P0 and ship in M1 (F3a); niri-style scrolling columns stay P2 (F3b).
-- [ ] Bismuth-style dynamic layouts per tab (Tile with several masters, Monocle, Three Column, Spiral, Quarter; F3a extended)? Proposed in [ADR 0010](adr/0010-dynamic-layouts.md) as PLAN 2.12, with three questions for the maintainer: default for new tabs, adopted herdr tabs, and whether to include Spread and Stair.
+- [x] Bismuth-style dynamic layouts per tab? Decided: yes, Tile, Monocle and Three Column only; new tabs default to dynamic Tile; adopted herdr tabs stay manual ([ADR 0010](adr/0010-dynamic-layouts.md), PLAN 2.12).
+- [x] "Session" (design mockup) or "workspace"? Decided: keep "workspace" everywhere, UI included; the designer relabels.
 - [ ] Linux packaging: which formats at M3 (tarball, .deb, AUR, Flatpak)?
