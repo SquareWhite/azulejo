@@ -246,7 +246,13 @@ build() {
     say "running just build, test and lint first (--check)"
     (cd "$tree" && just build && just test && just lint)
   fi
-  (cd "$tree" && AZJ_RELEASE_SKIP_DMG=1 scripts/release/build-mac.sh)
+  if (( dirty )); then
+    (cd "$tree" && AZJ_RELEASE_SKIP_DMG=1 scripts/release/build-mac.sh)
+  else
+    (cd "$tree" && AZJ_RELEASE_SKIP_DMG=1 AZJ_BUILD_COMMIT="$commit" \
+      AZJ_BUILD_DESCRIBE="$(git -C "$root" describe --tags --always "$commit")" \
+      scripts/release/build-mac.sh)
+  fi
   mkdir -p "$builds_dir"
   local label=worktree
   if (( dirty )); then label=dirty; fi

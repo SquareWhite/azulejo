@@ -62,12 +62,14 @@ cp apps/macos/Resources/Info.plist "$app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 # Which commit this is, for `just dogfood --list` and bug reports. "-dirty"
-# means tracked files had uncommitted changes when it was built.
-commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-if [[ "$commit" != unknown && -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+# means tracked files had uncommitted changes when it was built. dogfood.sh
+# passes both in (its worktree links vendor/ghostty, which git sees as a change).
+commit="${AZJ_BUILD_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+if [[ -z "${AZJ_BUILD_COMMIT:-}" && "$commit" != unknown \
+  && -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
   commit="$commit-dirty"
 fi
-describe="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+describe="${AZJ_BUILD_DESCRIBE:-$(git describe --tags --always --dirty 2>/dev/null || echo unknown)}"
 plutil -replace AzulejoCommit -string "$commit" "$app/Contents/Info.plist"
 plutil -replace AzulejoDescribe -string "$describe" "$app/Contents/Info.plist"
 printf 'APPL????' > "$app/Contents/PkgInfo"
