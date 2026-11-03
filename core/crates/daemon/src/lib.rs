@@ -9,14 +9,19 @@
 //! environment it was started with. `[herdr] session = "NAME"` picks a named
 //! session instead.
 
+mod watch;
+
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use azulejo_api::{CoreDispatcher, Server, ServerHandle, WithInfo};
 use azulejo_config::{Config, HerdrConfig, Platform};
 use azulejo_engine::{Core, CoreOptions, LogFn, persist};
 use azulejo_herdr::{AttachCommand, ClientOptions, Herdr, Session as HerdrSession, TerminalId};
 use serde_json::{Map, Value};
+
+pub use watch::diagnostic;
+use watch::{ConfigWatch, SharedConfig};
 
 /// Which herdr session terminal tiles use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,7 +96,10 @@ impl HerdrInfo {
 pub struct App {
     core: Option<Arc<Core>>,
     server: Option<ServerHandle>,
-    config: Config,
+    /// Swapped whole when the file changes (F25b).
+    config: SharedConfig,
+    watch: Option<ConfigWatch>,
+    platform: Platform,
     herdr: Option<HerdrInfo>,
     socket: Option<PathBuf>,
     state_path: Option<PathBuf>,
@@ -159,15 +167,30 @@ impl App {
             None => (Core::start(core_opts), None),
         };
         let core = Arc::new(core);
+        let config: SharedConfig = Arc::new(RwLock::new(Arc::new(config)));
         {
             let config = config.clone();
-            core.set_commands(Arc::new(move || azulejo_config::catalogue(&config)));
+            core.set_commands(Arc::new(move || match config.read() {
+                Ok(c) => azulejo_config::catalogue(&c),
+                Err(_) => Vec::new(),
+            }));
         }
+        let watch = opts.config_path.as_deref().and_then(|path| {
+            watch::watch(
+                path,
+                opts.platform,
+                config.clone(),
+                Arc::downgrade(&core),
+                log.clone(),
+            )
+        });
 
         let mut app = App {
             core: Some(core.clone()),
             server: None,
             config,
+            watch,
+            platform: opts.platform,
             herdr: herdr_info,
             socket,
             state_path: opts.state_path,
@@ -192,8 +215,24 @@ impl App {
         self.core.as_ref().expect("core runs until shutdown")
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    /// The current config. Hold the `Arc` briefly: a reload swaps in a new one.
+    pub fn config(&self) -> Arc<Config> {
+        match self.config.read() {
+            Ok(c) => c.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Reads the config file again now (the `reload_config` action), as if
+    /// it had been saved, and tells listeners. `None` without a config file.
+    pub fn reload_config(&self) -> Option<azulejo_protocol::ConfigReloaded> {
+        let path = self.config().path.clone()?;
+        let log: LogFn = Arc::new(|line| eprintln!("azulejo: {line}"));
+        let event = watch::reload(&path, self.platform, &self.config, &log)?;
+        if let Some(core) = &self.core {
+            core.broadcast(azulejo_protocol::Event::ConfigReloaded(event.clone()));
+        }
+        Some(event)
     }
 
     pub fn herdr(&self) -> Option<&HerdrInfo> {
@@ -212,7 +251,7 @@ impl App {
         let mut info = Map::new();
         info.insert("socket".into(), path(self.socket.as_deref()));
         info.insert("state_path".into(), path(self.state_path.as_deref()));
-        info.insert("config_path".into(), path(self.config.path.as_deref()));
+        info.insert("config_path".into(), path(self.config().path.as_deref()));
         match &self.herdr {
             Some(h) => {
                 let session = h.session.name().unwrap_or(HerdrConfig::HERDR_DEFAULT);
@@ -236,6 +275,7 @@ impl App {
     }
 
     fn stop(&mut self) {
+        self.watch.take();
         if let Some(server) = self.server.take() {
             server.shutdown();
         }
@@ -335,13 +375,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    #[test]
-    fn commands_list_follows_the_keymap() {
-        let app = App::start(Options {
-            config_path: None,
-            ..in_memory()
-        })
-        .unwrap();
+    fn split_auto_chords(app: &App) -> Vec<String> {
         let reply = app
             .core()
             .execute(azulejo_protocol::Command::CommandsList)
@@ -350,11 +384,103 @@ mod tests {
         let azulejo_protocol::Reply::Commands { commands } = reply else {
             panic!("{reply:?}")
         };
-        let split = commands.iter().find(|e| e.id == "split_auto").unwrap();
-        assert!(
-            !split.chords.is_empty(),
-            "the default keymap binds split_auto"
+        commands
+            .into_iter()
+            .find(|e| e.id == "split_auto")
+            .unwrap()
+            .chords
+    }
+
+    fn next_reload(
+        events: &std::sync::mpsc::Receiver<azulejo_protocol::Event>,
+    ) -> azulejo_protocol::ConfigReloaded {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+            match events.recv_timeout(left) {
+                Ok(azulejo_protocol::Event::ConfigReloaded(r)) => return r,
+                Ok(_) => continue,
+                Err(_) => break,
+            }
+        }
+        panic!("no config.reloaded within 10 s")
+    }
+
+    #[test]
+    fn config_reloads_on_save_and_keeps_the_last_good_one() {
+        let dir = std::env::temp_dir().join(format!(
+            "azj-daemon-watch-{}-{:x}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, "[keys]\nsplit_auto = \"ctrl+alt+n\"\n").unwrap();
+        let app = App::start(Options {
+            config_path: Some(path.clone()),
+            platform: Platform::Macos,
+            ..in_memory()
+        })
+        .unwrap();
+        let events = app.core().subscribe();
+        assert_eq!(split_auto_chords(&app), ["ctrl+alt+n"]);
+        // FSEvents can replay the watch's own start; let it pass.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // A good edit applies.
+        std::fs::write(&path, "[keys]\nsplit_auto = \"ctrl+alt+m\"\n").unwrap();
+        let r = next_reload(&events);
+        assert!(r.applied, "{r:?}");
+        assert!(r.diagnostics.is_empty(), "{r:?}");
+        assert_eq!(split_auto_chords(&app), ["ctrl+alt+m"]);
+
+        // An editor-style save (write elsewhere, rename over) with a broken
+        // file keeps the previous config and says where the problem is.
+        let tmp = dir.join(".config.toml.swp");
+        std::fs::write(&tmp, "[keys\nsplit_auto = 1\n").unwrap();
+        std::fs::rename(&tmp, &path).unwrap();
+        let r = next_reload(&events);
+        assert!(!r.applied, "{r:?}");
+        let d = &r.diagnostics[0];
+        assert_eq!(d.severity, "error");
+        assert_eq!(d.line, Some(1), "{d:?}");
+        assert_eq!(
+            split_auto_chords(&app),
+            ["ctrl+alt+m"],
+            "previous config stays"
         );
+
+        // Fixing it applies again; the manual reload says the same.
+        std::fs::write(&path, "[keys]\nsplit_auto = \"ctrl+alt+k\"\n").unwrap();
+        assert!(next_reload(&events).applied);
+        assert_eq!(split_auto_chords(&app), ["ctrl+alt+k"]);
+        let manual = app.reload_config().unwrap();
+        assert!(manual.applied);
+        assert!(
+            next_reload(&events).applied,
+            "manual reloads are broadcast too"
+        );
+
+        // Changing the herdr session can't apply live; say so.
+        std::fs::write(&path, "[herdr]\nsession = \"elsewhere\"\n").unwrap();
+        let r = next_reload(&events);
+        assert!(r.applied);
+        assert!(
+            r.diagnostics.iter().any(|d| d.message.contains("restart")),
+            "{r:?}"
+        );
+
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn commands_list_follows_the_keymap() {
+        let app = App::start(in_memory()).unwrap();
+        let chords = split_auto_chords(&app);
+        assert!(!chords.is_empty(), "the default keymap binds split_auto");
         app.shutdown();
     }
 

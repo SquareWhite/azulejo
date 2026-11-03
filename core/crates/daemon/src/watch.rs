@@ -1,0 +1,196 @@
+//! Config hot reload (F25b): watch the config file, read it again on save,
+//! and tell every listener with `config.reloaded`.
+//!
+//! A file with errors never replaces a working config: the previous one
+//! stays and the event carries the diagnostics for the shell's banner.
+//! Warnings alone don't block a reload.
+
+use std::path::Path;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, RwLock, Weak};
+use std::thread;
+use std::time::Duration;
+
+use azulejo_config::{Config, Diagnostic, Platform, Severity, Source};
+use azulejo_engine::{Core, LogFn};
+use azulejo_protocol::{ConfigDiagnostic, ConfigReloaded, Event};
+use notify::{RecursiveMode, Watcher};
+
+/// The config everyone reads; swapped whole on reload.
+pub type SharedConfig = Arc<RwLock<Arc<Config>>>;
+
+/// Editors save in bursts (write, rename, chmod); wait this long for quiet.
+const SETTLE: Duration = Duration::from_millis(100);
+
+/// Watches until dropped.
+pub struct ConfigWatch {
+    _watcher: notify::RecommendedWatcher,
+    stop: Option<mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Drop for ConfigWatch {
+    fn drop(&mut self) {
+        // Dropping the sender ends the thread's wait.
+        self.stop.take();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// Starts watching `path`. Returns `None` (and logs) when its directory
+/// doesn't exist or can't be watched; the config then only changes on
+/// restart.
+pub fn watch(
+    path: &Path,
+    platform: Platform,
+    shared: SharedConfig,
+    core: Weak<Core>,
+    log: LogFn,
+) -> Option<ConfigWatch> {
+    let dir = path.parent()?.to_path_buf();
+    let name = path.file_name()?.to_owned();
+    let (tx, rx) = mpsc::channel::<()>();
+    let mut watcher =
+        match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(event) = res
+                && event
+                    .paths
+                    .iter()
+                    .any(|p| p.file_name() == Some(name.as_os_str()))
+            {
+                let _ = tx.send(());
+            }
+        }) {
+            Ok(w) => w,
+            Err(e) => {
+                log(format!("config: not watching for changes: {e}"));
+                return None;
+            }
+        };
+    // The directory, not the file: editors replace the file on save.
+    if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
+        log(format!(
+            "config: not watching {} for changes: {e}",
+            dir.display()
+        ));
+        return None;
+    }
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    let path = path.to_path_buf();
+    let thread = thread::Builder::new()
+        .name("azulejo-config-watch".into())
+        .spawn(move || run(&path, platform, &shared, &core, &log, &rx, &stop_rx))
+        .ok()?;
+    Some(ConfigWatch {
+        _watcher: watcher,
+        stop: Some(stop_tx),
+        thread: Some(thread),
+    })
+}
+
+fn run(
+    path: &Path,
+    platform: Platform,
+    shared: &SharedConfig,
+    core: &Weak<Core>,
+    log: &LogFn,
+    changes: &mpsc::Receiver<()>,
+    stop: &mpsc::Receiver<()>,
+) {
+    let mut last = std::fs::read_to_string(path).ok();
+    loop {
+        // Wake up for a change, or now and then to notice `stop`.
+        match changes.recv_timeout(Duration::from_millis(250)) {
+            Ok(()) => {}
+            Err(RecvTimeoutError::Timeout) => {
+                if matches!(stop.try_recv(), Err(mpsc::TryRecvError::Disconnected)) {
+                    return;
+                }
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        // Let the save settle, swallowing the rest of the burst.
+        while changes.recv_timeout(SETTLE).is_ok() {}
+        let text = std::fs::read_to_string(path).ok();
+        if text == last {
+            continue; // touched, not changed (or a replayed event)
+        }
+        last = text;
+        let Some(event) = reload(path, platform, shared, log) else {
+            continue;
+        };
+        match core.upgrade() {
+            Some(core) => core.broadcast(Event::ConfigReloaded(event)),
+            None => return,
+        }
+    }
+}
+
+/// Reads `path` again and swaps it in unless it has errors. `None` when the
+/// lock is poisoned (a panic elsewhere); nothing changes then.
+pub fn reload(
+    path: &Path,
+    platform: Platform,
+    shared: &SharedConfig,
+    log: &LogFn,
+) -> Option<ConfigReloaded> {
+    let fresh = azulejo_config::reload(path, platform);
+    let applied = !fresh.has_errors();
+    let mut diagnostics: Vec<ConfigDiagnostic> = fresh.diagnostics.iter().map(diagnostic).collect();
+    {
+        let mut current = shared.write().ok()?;
+        if applied && current.herdr != fresh.herdr {
+            diagnostics.push(ConfigDiagnostic {
+                severity: "warning".into(),
+                message: "`[herdr]` changes apply after Azulejo restarts".into(),
+                file: Some(path.display().to_string()),
+                line: None,
+                column: None,
+            });
+        }
+        if applied {
+            *current = Arc::new(fresh);
+        }
+    }
+    log(format!(
+        "config: {} {}{}",
+        if applied {
+            "reloaded"
+        } else {
+            "kept the previous config; errors in"
+        },
+        path.display(),
+        if diagnostics.is_empty() {
+            String::new()
+        } else {
+            format!(" ({} diagnostics)", diagnostics.len())
+        }
+    ));
+    Some(ConfigReloaded {
+        applied,
+        path: Some(path.display().to_string()),
+        diagnostics,
+    })
+}
+
+/// A config diagnostic as the protocol carries it.
+pub fn diagnostic(d: &Diagnostic) -> ConfigDiagnostic {
+    ConfigDiagnostic {
+        severity: match d.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+        }
+        .into(),
+        message: d.message.clone(),
+        file: match &d.source {
+            Source::DefaultKeymap => Some("keymap.default.toml".into()),
+            Source::User(Some(p)) | Source::Ghostty(p) => Some(p.display().to_string()),
+            Source::User(None) => None,
+        },
+        line: d.location.map(|l| l.line as u32),
+        column: d.location.map(|l| l.column as u32),
+    }
+}
