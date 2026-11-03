@@ -166,7 +166,7 @@ indirect enum LayoutNode: Decodable, Equatable {
                 let w = max(0, bounds.width - gap)
                 first.size.width = (w * r).rounded()
                 second.origin.x = bounds.minX + first.width + gap
-                second.size.width = bounds.maxX - second.minX
+                second.size.width = max(0, bounds.maxX - second.minX)
             case .vertical:
                 let h = max(0, bounds.height - gap)
                 let top = (h * r).rounded()

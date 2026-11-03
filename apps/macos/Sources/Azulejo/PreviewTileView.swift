@@ -331,7 +331,14 @@ final class PreviewTileView: NSView, TileView {
         config.suppressesIncrementalRendering = false
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = navigation
-        web.setValue(false, forKey: "drawsBackground")
+        // Transparent until the page paints (avoids a white flash in dark
+        // mode). Private, so only when WebKit still has it: an unknown KVC key
+        // raises NSUnknownKeyException and aborts the app.
+        if web.responds(to: NSSelectorFromString("_setDrawsBackground:"))
+            || web.responds(to: NSSelectorFromString("setDrawsBackground:"))
+        {
+            web.setValue(false, forKey: "drawsBackground")
+        }
         if Self.background {
             // Background runs (dev --bg, automation) keep the window behind
             // others; WebKit stops painting occluded windows, so screenshots of
