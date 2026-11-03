@@ -294,6 +294,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Automation: keyDowns the monitor has seen, and a way in when it can't.
     var keysSeen: Int { keys.seen }
     func routeDirectly(_ event: NSEvent) {
+        keys.markRoutedDirectly(event)
         // Unbound chords go on to the focused tile, as AppKit would deliver them.
         if !keys.handle(event) { event.window?.firstResponder?.keyDown(with: event) }
     }

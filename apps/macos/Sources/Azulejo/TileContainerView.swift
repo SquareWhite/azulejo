@@ -144,13 +144,29 @@ final class TileContainerView: NSView {
         }
 
         Perf.measure("tiles.focus") {
-            if let tab {
-                for (id, view) in views where visible.contains(id) {
-                    view.setFocused(id == tab.focused)
-                }
+            guard let tab else { return }
+            // Every refresh re-asserts focus, and a focused tile takes first
+            // responder. While something outside the tiles has the keyboard
+            // (the ⌘K menu's field, a rename sheet), a refresh from an event
+            // — a header or agent change — must not take it away mid-typing.
+            // A real focus change still goes through; closing the menu hands
+            // the keyboard back.
+            if keyboardOutsideTiles, previousFocus == tab.focused { return }
+            for (id, view) in views where visible.contains(id) {
+                view.setFocused(id == tab.focused)
             }
         }
         Perf.measure("tiles.dim") { applyDim(animate: animate) }
+    }
+
+    /// A text field outside the tiles (the ⌘K menu's search field) is being
+    /// typed in. Anything else — the window, the chrome — gives way to the
+    /// focused tile as before.
+    private var keyboardOutsideTiles: Bool {
+        guard let responder = window?.firstResponder as? NSView,
+              responder is NSTextView || responder is NSTextField
+        else { return false }
+        return !responder.isDescendant(of: self)
     }
 
     /// Tile IDs on screen: the zoomed tile alone, the focused one in a

@@ -310,7 +310,12 @@ final class TerminalTileView: NSView, TileView {
         surfaceTerminal = herdr.terminalId
         lastTerminal = herdr.terminalId
         Self.log("terminal \(Short.id(tileID)): \(mode) \(herdr.terminalId)")
-        if focused { window?.makeFirstResponder(view) }
+        // A surface that comes up (attach finished, reattach) takes the
+        // keyboard from its tile, but not from a field being typed in
+        // elsewhere — the ⌘K menu hands it back when it closes.
+        if focused, let window, !(window.firstResponder is NSText) || window.firstResponder === self {
+            window.makeFirstResponder(view)
+        }
         return true
     }
 
