@@ -1,4 +1,5 @@
 import AppKit
+import IOSurface
 import AzulejoCore
 import GhosttyKit
 
@@ -55,6 +56,13 @@ final class TerminalTileView: NSView, TileView {
     private var ghostRetries: [Date] = []
     private let overlay = TerminalOverlay()
     private let runDir: URL
+    /// Layout motion (ADR 0004): the last frame, covering the live surface
+    /// while the tile moves and the PTY redraws at its new size.
+    private var freeze: NSView?
+    private var freezeBefore: IOSurfaceRef?
+    /// PTY resizes are at most one per 50 ms while frozen (key repeat).
+    private var lastSurfaceResize: CFTimeInterval = 0
+    private var pendingSurfaceResize: DispatchWorkItem?
 
     private static var core: Core?
     private static var log: (String) -> Void = { _ in }
@@ -117,6 +125,7 @@ final class TerminalTileView: NSView, TileView {
 
     func tileWillClose() {
         closed = true
+        pendingSurfaceResize?.cancel()
         Self.live.remove(self)
         retryWork?.cancel()
         resizeWork?.cancel()
@@ -128,14 +137,43 @@ final class TerminalTileView: NSView, TileView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        surface?.frame = bounds
         overlay.frame = bounds
+        freeze?.frame = bounds
+        if freeze != nil { resizeSurfaceCoalesced() } else { applySurfaceSize() }
         if surface == nil {
             settle()
         } else if case .observing = phase {
             scheduleObserveResize()
         }
     }
+
+    /// The surface takes the tile's size (the PTY resize).
+    private func applySurfaceSize() {
+        pendingSurfaceResize = nil
+        guard let surface, surface.frame.size != bounds.size || surface.frame.origin != .zero else { return }
+        surface.frame = bounds
+        lastSurfaceResize = CACurrentMediaTime()
+    }
+
+    /// While frozen, resize at once unless the last resize was under 50 ms
+    /// ago; then once, 50 ms after it, to the latest size.
+    private func resizeSurfaceCoalesced() {
+        pendingSurfaceResize?.cancel()
+        let since = CACurrentMediaTime() - lastSurfaceResize
+        if since >= 0.05 { return applySurfaceSize() }
+        let work = DispatchWorkItem { [weak self] in self?.applySurfaceSize() }
+        pendingSurfaceResize = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (0.05 - since), execute: work)
+    }
+
+    fileprivate func flushSurfaceResize() {
+        if let work = pendingSurfaceResize {
+            work.cancel()
+            applySurfaceSize()
+        }
+    }
+
+    fileprivate var surfaceResizeCount: Int { surface?.resizeCount ?? 0 }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -251,7 +289,8 @@ final class TerminalTileView: NSView, TileView {
             phase = .waiting("the terminal surface didn't start")
             return false
         }
-        view.autoresizingMask = [.width, .height]
+        // Sized by setFrameSize, so motion controls when the PTY resizes.
+        view.autoresizingMask = []
         view.onExit = { [weak self, weak view] in
             guard let self, let view, view === self.surface else { return }
             self.surfaceExited(readOnly: readOnly)
@@ -606,6 +645,66 @@ extension Core {
 // MARK: - Overlay
 
 /// What a terminal tile shows over (or instead of) its surface.
+// MARK: - Layout motion
+
+extension TerminalTileView: MotionAware {
+    var surfaceResizes: Int { surfaceResizeCount }
+
+    @discardableResult
+    func motionWillStart(freeze: Bool) -> Bool {
+        if self.freeze != nil { return true }  // mid-motion: keep the first snapshot
+        guard freeze, let surface, let image = surface.snapshot() else { return false }
+        let cover = NSView(frame: bounds)
+        cover.wantsLayer = true
+        cover.layer?.contents = image
+        cover.layer?.contentsGravity = .resize
+        cover.layer?.contentsScale = window?.backingScaleFactor ?? 2
+        cover.layer?.backgroundColor = layer?.backgroundColor
+        cover.autoresizingMask = []
+        addSubview(cover, positioned: .above, relativeTo: surface)
+        self.freeze = cover
+        freezeBefore = surface.presentedSurface
+        return true
+    }
+
+    func motionDidEnd(clock: MotionClock) {
+        guard freeze != nil else { return }
+        flushSurfaceResize()
+        let deadline = CACurrentMediaTime() + 0.25
+        clock.add { [weak self] now in
+            guard let self, self.freeze != nil else { return false }
+            if self.liveFrameReady() || now > deadline {
+                self.unfreeze()
+                return false
+            }
+            return true
+        }
+    }
+
+    func motionCancelled() {
+        flushSurfaceResize()
+        unfreeze()
+    }
+
+    /// The live surface has drawn a new frame at its current pixel size.
+    private func liveFrameReady() -> Bool {
+        guard let surface, let current = surface.presentedSurface else { return surface == nil }
+        let px = surface.lastPixelSize
+        let sized = IOSurfaceGetWidth(current) == Int(px.width) && IOSurfaceGetHeight(current) == Int(px.height)
+        let fresh: Bool = {
+            guard let before = freezeBefore else { return true }
+            return !CFEqual(current, before) || IOSurfaceGetSeed(current) != IOSurfaceGetSeed(before)
+        }()
+        return sized && fresh
+    }
+
+    private func unfreeze() {
+        freeze?.removeFromSuperview()
+        freeze = nil
+        freezeBefore = nil
+    }
+}
+
 @MainActor
 final class TerminalOverlay: NSView {
     enum Action { case takeOver, respawn, close, retryNow }

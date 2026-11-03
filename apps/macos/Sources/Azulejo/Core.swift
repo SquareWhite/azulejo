@@ -98,6 +98,12 @@ final class Core {
     }
 
     /// Where the socket, state, config and herdr session live.
+    /// `[animation]` settings (`azj_core_animation`); follows config reloads.
+    func animation() -> [String: Any] {
+        if freed { return [:] }
+        return take(azj_core_animation(handle)) ?? [:]
+    }
+
     func info() -> [String: Any] {
         if freed { return [:] }
         return take(azj_core_info(handle)) ?? [:]

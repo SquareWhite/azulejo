@@ -660,6 +660,37 @@ fn animation_settings() {
 }
 
 #[test]
+fn animation_style_settings() {
+    use azulejo_config::{Curve, ReduceMotion, TabSwitch};
+    let defaults = user("", MAC);
+    assert_eq!(defaults.animation.curve, Curve::EaseOut);
+    assert_eq!(defaults.animation.tab_switch, TabSwitch::Fade);
+    assert!(!defaults.animation.dim_inactive);
+    assert_eq!(defaults.animation.reduce_motion, ReduceMotion::System);
+
+    let config = user(
+        "[animation]\ncurve = \"linear\"\ntab_switch = \"slide\"\ndim_inactive = true\nreduce_motion = \"ignore\"\n",
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+    assert_eq!(config.animation.curve, Curve::Linear);
+    assert_eq!(config.animation.tab_switch, TabSwitch::Slide);
+    assert!(config.animation.dim_inactive);
+    assert_eq!(config.animation.reduce_motion, ReduceMotion::Ignore);
+
+    // A bad value drops only that value; the default stays.
+    let bad = user(
+        "[animation]\ncurve = \"bouncy\"\ntab_switch = 3\ndim_inactive = \"yes\"\n",
+        MAC,
+    );
+    assert_eq!(errors(&bad).len(), 3);
+    assert_eq!(bad.animation.curve, Curve::EaseOut);
+    assert_eq!(bad.animation.tab_switch, TabSwitch::Fade);
+    assert!(!bad.animation.dim_inactive);
+    assert!(errors(&bad)[0].contains("\"ease_out\""));
+}
+
+#[test]
 fn reload_reads_the_file_and_tolerates_a_missing_one() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
