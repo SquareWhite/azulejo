@@ -157,7 +157,20 @@ fn sample_commands() -> Vec<Command> {
             tile: Some(tile),
             path: "plan.md".into(),
         }),
+        Command::PreviewGet(TileTarget { tile: Some(tile) }),
     ]
+}
+
+fn sample_preview(tile: TileId) -> PreviewContent {
+    PreviewContent {
+        tile,
+        path: "/src/plan.md".into(),
+        kind: PreviewKind::Markdown,
+        html: Some("<!doctype html><main id=\"azj-content\"></main>".into()),
+        language: None,
+        truncated: false,
+        revision: 3,
+    }
 }
 
 fn sample_events() -> Vec<Event> {
@@ -246,6 +259,7 @@ fn sample_events() -> Vec<Event> {
             tab: Some(tab),
             tile: Some(tile.id),
         }),
+        Event::PreviewUpdated(sample_preview(tile.id)),
     ]
 }
 
@@ -367,6 +381,12 @@ fn replies_round_trip() {
             }],
             truncated: true,
         },
+        Reply::Preview(sample_preview(tile.id)),
+        Reply::Preview(PreviewContent {
+            kind: PreviewKind::Pdf,
+            html: None,
+            ..sample_preview(tile.id)
+        }),
     ];
     for reply in replies {
         let json = serde_json::to_string(&reply).unwrap();

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use azulejo_model::{Frame, Session, TabId, Tile, TileId, WindowId, WorkspaceId};
 
-use crate::event::{LayoutState, TabInfo, WorkspaceInfo};
+use crate::event::{LayoutState, PreviewContent, TabInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -40,6 +40,8 @@ pub enum Reply {
     },
     /// Where a terminal's view sits after `terminal.scroll`.
     Scroll(ScrollState),
+    /// A preview tile's content, from `preview.get`.
+    Preview(PreviewContent),
     /// Lines that matched `terminal.search`.
     Matches {
         matches: Vec<SearchMatch>,

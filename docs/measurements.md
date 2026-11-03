@@ -66,3 +66,25 @@ All three use the same libghostty surface (a copy of the 0.3 spike in `scripts/l
 
 - **a vs b vs c through the real OS input path.** Run `scripts/latency/run-os-input.sh` when nobody is using the Mac. It brings windows to the front and posts real keystrokes for about 5 minutes, and asks for confirmation first. It's compiled and syntax-checked but **not run yet**. Results land in `scripts/latency/build/results-os/`.
 - **Controller mode** (`herdr terminal session control`) isn't needed: attach already meets the target.
+
+## 1.9a Preview rendering and file watching (core)
+
+Machine: macOS test environment, release build, 2026-11-03. Method: `cargo run --release -p azulejo-preview --example bench` renders each file 5 times after one warm-up render; numbers are wall time for `azulejo_preview::render` (read, classify, render, wrap in the page). Watcher latency comes from `cargo test -p azulejo-preview --test watch -- --nocapture`.
+
+| Input | Size | Median | Range |
+| --- | --- | --- | --- |
+| First render (loads syntaxes and theme CSS) | tiny | 18 ms | once per process |
+| Markdown, plan-sized (20 sections, tables, task lists, a Rust fence each) | 10 KB, 380 lines | 3.8 ms | 3.5–11 ms |
+| Markdown, the same repeated | 1.0 MB, 53k lines | 361 ms | 359–374 ms |
+| Rust source | 0.24 MB, 10k lines | 255 ms | 254–260 ms |
+
+| Watcher event (FSEvents, 50 ms debounce) | Latency |
+| --- | --- |
+| Plain write | ~70 ms |
+| Editor-style atomic save (write temp, rename over) | 62–72 ms |
+| Write after an atomic save | 68–70 ms |
+| Delete | 62–72 ms |
+
+- **Highlighting dominates.** Most of the 1 MB markdown time is syntect on its ~3,000 code fences; the 10k-line file is all syntect (pure-Rust `fancy-regex` engine). Files over 2 MB skip highlighting, and text over 5 MB is cut with a notice.
+- **The 200 ms target in step 1.9 holds for real plans:** a plan-sized file renders in ~4 ms, plus ~70 ms of watcher latency (mostly the 50 ms debounce). Large files render off the engine's thread, so they never block layout commands; they just update later.
+- **Not measured:** inotify on Linux, and webview time to display the HTML (shell side, step 1.9b).

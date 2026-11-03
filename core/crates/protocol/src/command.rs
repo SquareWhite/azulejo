@@ -99,6 +99,11 @@ pub enum Command {
     /// Shows `path` in a preview tile.
     #[serde(rename = "preview.open")]
     PreviewOpen(PreviewOpen),
+    /// A preview tile's rendered content; replies `preview`. Shells call it
+    /// when they create a preview view; later changes arrive as
+    /// `preview.updated` events.
+    #[serde(rename = "preview.get")]
+    PreviewGet(TileTarget),
 
     // ----- layout (F2) -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
@@ -188,6 +193,7 @@ pub const METHODS: &[&str] = &[
     "tile.rename",
     "browser.open",
     "preview.open",
+    "preview.get",
     "layout.get",
     "layout.split",
     "layout.focus",
