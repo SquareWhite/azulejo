@@ -6,9 +6,10 @@
 //! tab 3", name their method but leave building the command to the shell.
 
 use azulejo_protocol::{
-    Command, DEFAULT_RESIZE_STEP, Direction, LayoutFocus, LayoutMove, LayoutResize, LayoutSplit,
-    LayoutSplitAuto, LayoutSwap, LayoutZoom, TabCreate, TabTarget, TileClose, TileTarget,
-    WindowCreate, WorkspaceCreate, WorkspaceTarget,
+    Command, DEFAULT_MASTER_RATIO_STEP, DEFAULT_RESIZE_STEP, Direction, LayoutCycle, LayoutFocus,
+    LayoutKind, LayoutMasterRatio, LayoutMasters, LayoutMove, LayoutMoveOrder, LayoutResize,
+    LayoutRotate, LayoutSetKind, LayoutSplit, LayoutSplitAuto, LayoutSwap, LayoutZoom, TabCreate,
+    TabTarget, TileClose, TileTarget, WindowCreate, WorkspaceCreate, WorkspaceTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,6 +36,21 @@ pub enum Action {
     PromoteTile,
     RotateLayout,
     EqualizeLayout,
+    // Dynamic layouts (ADR 0010)
+    CycleLayoutNext,
+    CycleLayoutPrevious,
+    /// Switches to the kind, or back to the previous one if already on it.
+    ToggleLayout(LayoutKind),
+    IncreaseMasters,
+    DecreaseMasters,
+    GrowMasterArea,
+    ShrinkMasterArea,
+    MovePositionNext,
+    MovePositionPrevious,
+    /// Turns only the master area (masters side by side or stacked).
+    RotatePart,
+    RotateClockwise,
+    RotateAnticlockwise,
     // Workspaces
     NewWorkspace,
     /// 1-based position in the window.
@@ -120,6 +136,24 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("promote_tile", PromoteTile),
         ("rotate_layout", RotateLayout),
         ("equalize_layout", EqualizeLayout),
+        ("cycle_layout_next", CycleLayoutNext),
+        ("cycle_layout_previous", CycleLayoutPrevious),
+        ("toggle_layout_tile", ToggleLayout(LayoutKind::Tile)),
+        ("toggle_layout_monocle", ToggleLayout(LayoutKind::Monocle)),
+        (
+            "toggle_layout_three_column",
+            ToggleLayout(LayoutKind::ThreeColumn),
+        ),
+        ("toggle_layout_manual", ToggleLayout(LayoutKind::Manual)),
+        ("increase_masters", IncreaseMasters),
+        ("decrease_masters", DecreaseMasters),
+        ("grow_master_area", GrowMasterArea),
+        ("shrink_master_area", ShrinkMasterArea),
+        ("move_position_next", MovePositionNext),
+        ("move_position_previous", MovePositionPrevious),
+        ("rotate_part", RotatePart),
+        ("rotate_clockwise", RotateClockwise),
+        ("rotate_anticlockwise", RotateAnticlockwise),
         ("new_workspace", NewWorkspace),
         ("last_workspace", LastWorkspace),
         ("next_workspace", NextWorkspace),
@@ -211,8 +245,13 @@ impl Action {
             Split(_) => "layout.split",
             SplitAuto => "layout.split_auto",
             PromoteTile => "layout.promote",
-            RotateLayout => "layout.rotate",
+            RotateLayout | RotatePart | RotateClockwise | RotateAnticlockwise => "layout.rotate",
             EqualizeLayout => "layout.equalize",
+            CycleLayoutNext | CycleLayoutPrevious => "layout.cycle",
+            ToggleLayout(_) => "layout.toggle",
+            IncreaseMasters | DecreaseMasters => "layout.masters",
+            GrowMasterArea | ShrinkMasterArea => "layout.master_ratio",
+            MovePositionNext | MovePositionPrevious => "layout.move_order",
             NewWorkspace => "workspace.create",
             SwitchWorkspace(_) | LastWorkspace | NextWorkspace | PreviousWorkspace => {
                 "workspace.focus"
@@ -266,8 +305,50 @@ impl Action {
             }),
             SplitAuto => Command::LayoutSplitAuto(LayoutSplitAuto::default()),
             PromoteTile => Command::LayoutPromote(TileTarget::default()),
-            RotateLayout => Command::LayoutRotate(TabTarget::default()),
+            RotateLayout => Command::LayoutRotate(LayoutRotate::default()),
+            RotatePart => Command::LayoutRotate(LayoutRotate {
+                part: true,
+                ..LayoutRotate::default()
+            }),
+            RotateClockwise => Command::LayoutRotate(LayoutRotate {
+                reverse: Some(false),
+                ..LayoutRotate::default()
+            }),
+            RotateAnticlockwise => Command::LayoutRotate(LayoutRotate {
+                reverse: Some(true),
+                ..LayoutRotate::default()
+            }),
             EqualizeLayout => Command::LayoutEqualize(TabTarget::default()),
+            CycleLayoutNext => Command::LayoutCycle(LayoutCycle { tab: None, step: 1 }),
+            CycleLayoutPrevious => Command::LayoutCycle(LayoutCycle {
+                tab: None,
+                step: -1,
+            }),
+            ToggleLayout(kind) => Command::LayoutToggle(LayoutSetKind { tab: None, kind }),
+            IncreaseMasters => Command::LayoutMasters(LayoutMasters {
+                tab: None,
+                delta: 1,
+            }),
+            DecreaseMasters => Command::LayoutMasters(LayoutMasters {
+                tab: None,
+                delta: -1,
+            }),
+            GrowMasterArea => Command::LayoutMasterRatio(LayoutMasterRatio {
+                tab: None,
+                delta: DEFAULT_MASTER_RATIO_STEP,
+            }),
+            ShrinkMasterArea => Command::LayoutMasterRatio(LayoutMasterRatio {
+                tab: None,
+                delta: -DEFAULT_MASTER_RATIO_STEP,
+            }),
+            MovePositionNext => Command::LayoutMoveOrder(LayoutMoveOrder {
+                tile: None,
+                step: 1,
+            }),
+            MovePositionPrevious => Command::LayoutMoveOrder(LayoutMoveOrder {
+                tile: None,
+                step: -1,
+            }),
             NewWorkspace => Command::WorkspaceCreate(WorkspaceCreate::default()),
             CloseWorkspace => Command::WorkspaceClose(WorkspaceTarget::default()),
             NewTab => Command::TabCreate(TabCreate::default()),

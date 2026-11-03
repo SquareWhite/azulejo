@@ -64,6 +64,7 @@ enum Msg {
     Broadcast(Event),
     SetCommands(CommandsFn),
     SetOnExit(azulejo_model::OnExit),
+    SetLayoutPrefs(azulejo_model::LayoutPrefs),
     Shutdown(mpsc::Sender<()>),
 }
 
@@ -150,6 +151,13 @@ impl Core {
     /// otherwise (`[terminal] on_exit`). Close until this is called.
     pub fn set_on_exit(&self, on_exit: azulejo_model::OnExit) {
         let _ = self.tx.send(Msg::SetOnExit(on_exit));
+    }
+
+    /// The `[layout]` preferences: what new tabs start as, where new tiles go
+    /// in dynamic tabs, the layout cycle (ADR 0010). Manual tabs and the
+    /// model's defaults until this is called.
+    pub fn set_layout_prefs(&self, prefs: azulejo_model::LayoutPrefs) {
+        let _ = self.tx.send(Msg::SetLayoutPrefs(prefs));
     }
 
     /// Saves pending state and stops the core.
@@ -566,6 +574,17 @@ fn run<P: HerdrPort>(
             Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
             Msg::SetCommands(list) => commands = Some(list),
             Msg::SetOnExit(policy) => on_exit = policy,
+            Msg::SetLayoutPrefs(prefs) => {
+                let events = engine.set_layout_prefs(prefs);
+                if !events.is_empty() {
+                    if let Some(saver) = &saver {
+                        saver.schedule(engine.session().clone());
+                    }
+                    for event in events {
+                        listeners.retain(|l| l.send(event.clone()).is_ok());
+                    }
+                }
+            }
             Msg::Shutdown(done) => {
                 if let Some(saver) = &saver {
                     saver.flush();

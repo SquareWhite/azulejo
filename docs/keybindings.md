@@ -68,9 +68,17 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `split_auto` (tall rule) | `ctrl+cmd+t` | herdr `tall.py split` |
 | `split_down` | `ctrl+cmd+shift+t` | herdr |
 | `split_right` | `ctrl+cmd+v` | new direct chord for herdr's `prefix+v` |
-| `promote_tile` | `alt+enter` | herdr `tall.py promote` |
+| `promote_tile` | `alt+enter` | herdr `tall.py promote`; in a dynamic tab, moves the tile to the front of the order |
 | `rotate_layout` | `alt+o` | herdr `tall.py rotate` |
-| `equalize_layout` | `alt+shift+e` | herdr `tall.py equalize` |
+| `equalize_layout` | `alt+shift+e` | herdr `tall.py equalize`; in a dynamic tab, resets the stack sizes |
+| `cycle_layout_next/previous` | `alt+\` / `alt+shift+\` | Bismuth `Meta+\` / `Meta+\|` (ADR 0010) |
+| `toggle_layout_tile` | `alt+t` | Bismuth `Meta+T`; bash/zsh lose `alt+t` (transpose words) inside tiles |
+| `toggle_layout_monocle` | `alt+z` | Bismuth `Meta+M`; `alt+m` is Hammerspoon's and `alt+shift+m` is zoom |
+| `toggle_layout_manual` (freeze to a split tree, or restore it) | `alt+shift+t` | new |
+| `increase_masters` / `decrease_masters` | `alt+=` / `alt+-` | Bismuth `Meta+]` / `Meta+[` (`alt+]`/`alt+[` already cycle tiles) |
+| `grow_master_area` / `shrink_master_area` | `alt+shift+=` / `alt+shift+-` | unbound in Bismuth; resizing the master edge does the same |
+| `move_position_next/previous` | `alt+shift+]` / `alt+shift+[` | unbound in Bismuth |
+| `rotate_part` (several masters side by side ↔ stacked) | `alt+shift+o` | Bismuth `Meta+Shift+R` |
 | `close_tile` (detaches the herdr pane, F14) | `alt+w` | new: the `alt` twin of `cmd+w` |
 | `cycle_tile_next/previous` | `alt+]` / `alt+[` | new direct chord for `prefix+tab` |
 | `new_workspace` | `cmd+t` | herdr |
@@ -88,7 +96,9 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
-Rename, close workspace, kill the herdr pane, help and edit-scrollback are left to the palette and to prefix mode.
+Rename, close workspace, kill the herdr pane, help and edit-scrollback are left to the palette and to prefix mode. So are `toggle_layout_three_column`, `rotate_clockwise` and `rotate_anticlockwise` (four-way Tile rotation) and "Set layout…".
+
+New tabs start as a dynamic Tile layout (`[layout] default`, ADR 0010), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
 
 ### Linux defaults
 
@@ -96,7 +106,7 @@ Rename, close workspace, kill the herdr pane, help and edit-scrollback are left 
 
 | Azulejo action | Linux |
 | --- | --- |
-| tile actions (`alt+…`) | same as macOS |
+| tile and layout actions (`alt+…`) | same as macOS, including the dynamic-layout chords |
 | `split_auto` / `split_down` / `split_right` | `ctrl+super+t` / `ctrl+super+shift+t` / `ctrl+super+v` |
 | `new_workspace` / `new_tab` | `super+t` / `super+shift+t` |
 | `switch_workspace` 1–8, `last_workspace` | `super+1..8`, `super+9` and `alt+0` |

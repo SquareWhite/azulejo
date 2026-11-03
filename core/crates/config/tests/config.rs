@@ -844,3 +844,96 @@ fn actions_round_trip_through_their_names() {
     );
     assert_eq!(Action::from_name("nope", None), None);
 }
+
+#[test]
+fn layout_defaults_to_dynamic_tile_and_parses_overrides() {
+    use azulejo_protocol::{InsertAt, LayoutKind, Orientation};
+    let config = Config::defaults(MAC);
+    assert_eq!(config.layout.default, LayoutKind::Tile);
+    assert_eq!(config.layout.insert, InsertAt::End);
+    assert_eq!(
+        config.layout.cycle,
+        vec![
+            LayoutKind::Tile,
+            LayoutKind::Monocle,
+            LayoutKind::ThreeColumn
+        ]
+    );
+
+    let config = user(
+        r#"
+[layout]
+default = "manual"
+insert = "after_focused"
+cycle = ["tile", "monocle"]
+[layout.tile]
+masters = 2
+ratio = 0.6
+orientation = "top"
+[layout.three_column]
+masters = 3
+ratio = 0.5
+"#,
+        MAC,
+    );
+    assert!(errors(&config).is_empty(), "{:?}", errors(&config));
+    let l = &config.layout;
+    assert_eq!(l.default, LayoutKind::Manual);
+    assert_eq!(l.insert, InsertAt::AfterFocused);
+    assert_eq!(l.cycle, vec![LayoutKind::Tile, LayoutKind::Monocle]);
+    assert_eq!(l.params.tile.masters, 2);
+    assert_eq!(l.params.tile.ratio, 0.6);
+    assert_eq!(l.params.tile.orientation, Orientation::Top);
+    assert_eq!(l.params.three_column.masters, 3);
+    assert_eq!(l.params.three_column.ratio, 0.5);
+
+    // Bad values are errors and keep the defaults.
+    let config = user(
+        r#"
+[layout]
+default = "spiral"
+insert = "middle"
+cycle = []
+[layout.tile]
+masters = 11
+ratio = 0.95
+orientation = "diagonal"
+"#,
+        MAC,
+    );
+    assert_eq!(errors(&config).len(), 6, "{:?}", errors(&config));
+    assert_eq!(config.layout.default, LayoutKind::Tile);
+    assert_eq!(config.layout.params.tile.masters, 1);
+}
+
+#[test]
+fn dynamic_layout_chords_resolve() {
+    use azulejo_protocol::LayoutKind;
+    for platform in [MAC, LINUX] {
+        let config = Config::defaults(platform);
+        assert_eq!(
+            resolve(&config, "alt+backslash", None),
+            Some(Action::CycleLayoutNext)
+        );
+        assert_eq!(
+            resolve(&config, "alt+z", None),
+            Some(Action::ToggleLayout(LayoutKind::Monocle))
+        );
+        assert_eq!(
+            resolve(&config, "alt+shift+t", None),
+            Some(Action::ToggleLayout(LayoutKind::Manual))
+        );
+        assert_eq!(
+            resolve(&config, "alt+equal", None),
+            Some(Action::IncreaseMasters)
+        );
+        assert_eq!(
+            resolve(&config, "alt+shift+]", None),
+            Some(Action::MovePositionNext)
+        );
+        assert_eq!(
+            resolve(&config, "alt+shift+o", None),
+            Some(Action::RotatePart)
+        );
+    }
+}

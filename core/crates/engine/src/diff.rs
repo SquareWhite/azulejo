@@ -99,6 +99,7 @@ pub(crate) fn tab_info(tab: &Tab) -> TabInfo {
     TabInfo {
         id: tab.id,
         name: tab.name.clone(),
+        kind: tab.layout.kind,
     }
 }
 
@@ -177,7 +178,7 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
     }
     for (id, _, workspace, tab) in &a.tabs {
         if let Some(old) = b_tabs.get(id)
-            && old.name != tab.name
+            && (old.name != tab.name || old.layout.kind != tab.layout.kind)
         {
             events.push(Event::TabUpdated {
                 workspace: *workspace,
@@ -237,18 +238,16 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
         let changed = match b_tabs.get(id) {
             None => true,
             Some(old) => {
-                old.root != tab.root || old.focused != tab.focused || old.zoomed != tab.zoomed
+                old.root != tab.root
+                    || old.focused != tab.focused
+                    || old.zoomed != tab.zoomed
+                    || old.layout != tab.layout
             }
         };
         if changed {
-            events.push(Event::LayoutChanged(LayoutState {
-                window: *window,
-                workspace: *workspace,
-                tab: *id,
-                tree: tab.root.clone(),
-                focused: tab.focused,
-                zoomed: tab.zoomed,
-            }));
+            events.push(Event::LayoutChanged(LayoutState::of(
+                *window, *workspace, tab,
+            )));
         }
     }
 

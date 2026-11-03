@@ -89,7 +89,7 @@ impl Rect {
         self.y + self.height
     }
 
-    fn split(&self, axis: Axis, ratio: f64) -> (Rect, Rect) {
+    pub(crate) fn split(&self, axis: Axis, ratio: f64) -> (Rect, Rect) {
         match axis {
             Axis::Horizontal => {
                 let w = self.width * ratio;
@@ -312,43 +312,18 @@ impl Node {
     /// overlap `from` on the other axis; ties go to the largest overlap, then the
     /// closest centre.
     pub fn neighbour(&self, from: TileId, direction: Direction) -> Option<TileId> {
-        let rects = self.rects();
-        let cur = rects.iter().find(|(id, _)| *id == from)?.1;
-        rects
-            .iter()
-            .filter(|(id, _)| *id != from)
-            .filter_map(|(id, r)| {
-                let (distance, overlap, centre_offset) = match direction {
-                    Direction::Right if r.x >= cur.right() - EPS => (
-                        r.x - cur.right(),
-                        overlap(cur.y, cur.bottom(), r.y, r.bottom()),
-                        ((r.y + r.bottom()) - (cur.y + cur.bottom())).abs(),
-                    ),
-                    Direction::Left if r.right() <= cur.x + EPS => (
-                        cur.x - r.right(),
-                        overlap(cur.y, cur.bottom(), r.y, r.bottom()),
-                        ((r.y + r.bottom()) - (cur.y + cur.bottom())).abs(),
-                    ),
-                    Direction::Down if r.y >= cur.bottom() - EPS => (
-                        r.y - cur.bottom(),
-                        overlap(cur.x, cur.right(), r.x, r.right()),
-                        ((r.x + r.right()) - (cur.x + cur.right())).abs(),
-                    ),
-                    Direction::Up if r.bottom() <= cur.y + EPS => (
-                        cur.y - r.bottom(),
-                        overlap(cur.x, cur.right(), r.x, r.right()),
-                        ((r.x + r.right()) - (cur.x + cur.right())).abs(),
-                    ),
-                    _ => return None,
-                };
-                (overlap > EPS).then_some((*id, distance, overlap, centre_offset))
-            })
-            .min_by(|p, q| {
-                p.1.total_cmp(&q.1)
-                    .then(q.2.total_cmp(&p.2))
-                    .then(p.3.total_cmp(&q.3))
-            })
-            .map(|(id, ..)| id)
+        self.neighbour_recent(from, direction, &[])
+    }
+
+    /// [`Node::neighbour`], with ties between equally near tiles going to the
+    /// most recently focused (earliest in `recent`) first.
+    pub fn neighbour_recent(
+        &self,
+        from: TileId,
+        direction: Direction,
+        recent: &[TileId],
+    ) -> Option<TileId> {
+        crate::dynamic::neighbour_among(&self.rects(), from, direction, recent)
     }
 
     /// Moves `tile` one step in `direction`, changing the tree as little as
@@ -611,6 +586,23 @@ impl Node {
         }
     }
 
+    /// The tiles of the chain along `axis` rooted here, in order, or `None`
+    /// if it branches.
+    pub(crate) fn chain_tiles(&self, along: Axis) -> Option<Vec<TileId>> {
+        match self {
+            Node::Leaf { id } => Some(vec![*id]),
+            Node::Split { axis, a, b, .. } if *axis == along => match a.as_ref() {
+                Node::Leaf { id } => {
+                    let mut rest = b.chain_tiles(along)?;
+                    rest.insert(0, *id);
+                    Some(rest)
+                }
+                _ => None,
+            },
+            Node::Split { .. } => None,
+        }
+    }
+
     /// Length of the chain along `axis` rooted here, or `None` if it branches.
     fn chain_len(&self, along: Axis) -> Option<usize> {
         match self {
@@ -644,10 +636,6 @@ pub struct Tall {
     /// True for master on the left (tall proper), false when rotated. A lone
     /// tile counts as vertical.
     pub vertical: bool,
-}
-
-fn overlap(a0: f64, a1: f64, b0: f64, b1: f64) -> f64 {
-    (a1.min(b1) - a0.max(b0)).max(0.0)
 }
 
 #[cfg(test)]

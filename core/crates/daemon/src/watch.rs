@@ -132,11 +132,12 @@ fn run(
     }
 }
 
-/// Hands the core the settings it acts on itself (today `[terminal] on_exit`),
-/// from the config currently in force.
+/// Hands the core the settings it acts on itself (`[terminal] on_exit`,
+/// `[layout]`), from the config currently in force.
 pub fn push_settings(core: &Core, shared: &SharedConfig) {
     if let Ok(config) = shared.read() {
         core.set_on_exit(config.terminal.on_exit);
+        core.set_layout_prefs(config.layout.clone());
     }
 }
 

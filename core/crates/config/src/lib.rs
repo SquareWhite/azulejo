@@ -35,6 +35,18 @@
 //!
 //! [terminal]
 //! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
+//!
+//! [layout]               # dynamic layouts (ADR 0010)
+//! default = "tile"       # new tabs: "tile", "monocle", "three_column" or "manual"
+//! insert = "end"         # new tiles in dynamic tabs: "end", "master" or "after_focused"
+//! cycle = ["tile", "monocle", "three_column"]
+//! [layout.tile]
+//! masters = 1            # 0 to 10
+//! ratio = 0.5            # master area, 0.2 to 0.8
+//! orientation = "left"   # "left", "top", "right" or "bottom"
+//! [layout.three_column]
+//! masters = 1            # 1 to 10
+//! ratio = 0.6            # centre column, 0.2 to 0.75
 //! ```
 
 mod action;
@@ -46,7 +58,7 @@ mod keymap;
 
 use std::path::{Path, PathBuf};
 
-use azulejo_protocol::OnExit;
+use azulejo_protocol::{InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation};
 use toml::de::{DeTable, DeValue};
 
 pub use action::{Action, PLANNED_METHODS, Target};
@@ -161,10 +173,21 @@ pub struct TerminalConfig {
     pub on_exit: OnExit,
 }
 
+/// The `[layout]` defaults: what new tabs start as. Unlike the model's own
+/// default (manual, so a bare session behaves as before), new tabs default to
+/// dynamic Tile here (ADR 0010).
+pub fn default_layout() -> LayoutPrefs {
+    LayoutPrefs {
+        default: LayoutKind::Tile,
+        ..LayoutPrefs::default()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub keymap: Keymap,
     pub animation: Animation,
+    pub layout: LayoutPrefs,
     pub herdr: HerdrConfig,
     pub terminal: TerminalConfig,
     /// The file this came from, if any.
@@ -191,6 +214,7 @@ impl Config {
             source: Source::DefaultKeymap,
         }];
         let mut animation = Animation::default();
+        let mut layout = default_layout();
         let mut herdr = HerdrConfig::default();
         let mut terminal = TerminalConfig::default();
 
@@ -225,6 +249,10 @@ impl Config {
                         parse_terminal(sink, value, &mut terminal);
                         true
                     }
+                    "layout" => {
+                        parse_layout(sink, value, &mut layout);
+                        true
+                    }
                     _ => false,
                 },
             );
@@ -245,6 +273,7 @@ impl Config {
         Config {
             keymap,
             animation,
+            layout,
             herdr,
             terminal,
             path,
@@ -407,6 +436,146 @@ fn parse_terminal(
                 "`terminal.on_exit` must be \"close\" or \"keep\"",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `terminal.{other}`")),
+        }
+    }
+}
+
+fn layout_kind(
+    sink: &mut Sink<'_>,
+    value: &toml::Spanned<DeValue<'_>>,
+    what: &str,
+) -> Option<LayoutKind> {
+    let found = match value.get_ref() {
+        DeValue::String(s) => match s.as_ref() {
+            // `tall` is a layout-file alias; config names the kinds.
+            "tall" => None,
+            name => LayoutKind::parse(name),
+        },
+        _ => None,
+    };
+    if found.is_none() {
+        sink.error(
+            value.span(),
+            format!("`{what}` must be \"tile\", \"monocle\", \"three_column\" or \"manual\""),
+        );
+    }
+    found
+}
+
+fn number(value: &DeValue<'_>) -> Option<f64> {
+    match value {
+        DeValue::Float(f) => f.as_str().parse().ok(),
+        DeValue::Integer(i) => i64::from_str_radix(i.as_str(), i.radix())
+            .ok()
+            .map(|n| n as f64),
+        _ => None,
+    }
+}
+
+fn whole(value: &DeValue<'_>) -> Option<i64> {
+    match value {
+        DeValue::Integer(i) => i64::from_str_radix(i.as_str(), i.radix()).ok(),
+        _ => None,
+    }
+}
+
+fn parse_layout(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut LayoutPrefs) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`layout` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("default", _) => {
+                if let Some(kind) = layout_kind(sink, value, "layout.default") {
+                    out.default = kind;
+                }
+            }
+            ("insert", DeValue::String(s)) => match s.as_ref() {
+                "end" => out.insert = InsertAt::End,
+                "master" => out.insert = InsertAt::Master,
+                "after_focused" => out.insert = InsertAt::AfterFocused,
+                _ => sink.error(
+                    value.span(),
+                    "`layout.insert` must be \"end\", \"master\" or \"after_focused\"",
+                ),
+            },
+            ("insert", _) => sink.error(value.span(), "`layout.insert` must be a string"),
+            ("cycle", DeValue::Array(items)) => {
+                let mut cycle = Vec::new();
+                let mut ok = true;
+                for item in items.iter() {
+                    match layout_kind(sink, item, "layout.cycle") {
+                        Some(kind) if !cycle.contains(&kind) => cycle.push(kind),
+                        Some(_) => {}
+                        None => ok = false,
+                    }
+                }
+                if ok && cycle.is_empty() {
+                    sink.error(value.span(), "`layout.cycle` needs at least one kind");
+                } else if ok {
+                    out.cycle = cycle;
+                }
+            }
+            ("cycle", _) => sink.error(value.span(), "`layout.cycle` must be a list of kinds"),
+            ("tile", DeValue::Table(t)) => {
+                for (k, v) in t.iter() {
+                    match (k.get_ref().as_ref(), v.get_ref()) {
+                        ("masters", raw) => match whole(raw) {
+                            Some(m @ 0..=10) => out.params.tile.masters = m as u8,
+                            _ => sink.error(v.span(), "`layout.tile.masters` must be 0 to 10"),
+                        },
+                        ("ratio", raw) => match number(raw) {
+                            Some(r) if (0.2..=0.8).contains(&r) => out.params.tile.ratio = r,
+                            _ => sink.error(v.span(), "`layout.tile.ratio` must be 0.2 to 0.8"),
+                        },
+                        ("orientation", DeValue::String(o)) => match o.as_ref() {
+                            "left" => out.params.tile.orientation = Orientation::Left,
+                            "top" => out.params.tile.orientation = Orientation::Top,
+                            "right" => out.params.tile.orientation = Orientation::Right,
+                            "bottom" => out.params.tile.orientation = Orientation::Bottom,
+                            _ => sink.error(
+                                v.span(),
+                                "`layout.tile.orientation` must be \"left\", \"top\", \"right\" or \"bottom\"",
+                            ),
+                        },
+                        ("orientation", _) => sink.error(
+                            v.span(),
+                            "`layout.tile.orientation` must be a string",
+                        ),
+                        (other, _) => {
+                            sink.warn(k.span(), format!("unknown setting `layout.tile.{other}`"))
+                        }
+                    }
+                }
+            }
+            ("three_column", DeValue::Table(t)) => {
+                for (k, v) in t.iter() {
+                    match (k.get_ref().as_ref(), v.get_ref()) {
+                        ("masters", raw) => match whole(raw) {
+                            Some(m @ 1..=10) => out.params.three_column.masters = m as u8,
+                            _ => sink
+                                .error(v.span(), "`layout.three_column.masters` must be 1 to 10"),
+                        },
+                        ("ratio", raw) => match number(raw) {
+                            Some(r) if (0.2..=0.75).contains(&r) => {
+                                out.params.three_column.ratio = r
+                            }
+                            _ => sink
+                                .error(v.span(), "`layout.three_column.ratio` must be 0.2 to 0.75"),
+                        },
+                        (other, _) => sink.warn(
+                            k.span(),
+                            format!("unknown setting `layout.three_column.{other}`"),
+                        ),
+                    }
+                }
+            }
+            ("tile" | "three_column", _) => sink.error(
+                value.span(),
+                format!("`layout.{}` must be a table", key.get_ref().as_ref()),
+            ),
+            (other, _) => sink.warn(key.span(), format!("unknown setting `layout.{other}`")),
         }
     }
 }
