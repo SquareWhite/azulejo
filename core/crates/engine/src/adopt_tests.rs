@@ -420,3 +420,58 @@ fn pane_of_tile(t: &azulejo_model::Tile) -> Option<&str> {
         _ => None,
     }
 }
+
+/// A survey requested before herdr streamed a pane's new title and cwd can't
+/// put the older ones back in the header. A later survey can.
+#[test]
+fn a_survey_older_than_streamed_pane_info_keeps_the_streamed_info() {
+    let mut engine = Engine::new();
+    let mut s = fixture();
+    let set = |s: &mut herdr::Survey, title: &str, cwd: &str| {
+        let p = s
+            .panes
+            .iter_mut()
+            .find(|p| p.pane_id.as_str() == "w1:p1")
+            .unwrap();
+        p.terminal_title = Some(title.into());
+        p.foreground_cwd = Some(cwd.into());
+    };
+    set(&mut s, "old title", "/old");
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_000));
+    let meta = |e: &Engine| {
+        e.session()
+            .tiles()
+            .find(|(_, t)| pane_of_tile(t) == Some("w1:p1"))
+            .and_then(|(_, t)| t.pane.clone())
+            .unwrap()
+    };
+    assert_eq!(meta(&engine).title.as_deref(), Some("old title"));
+
+    // herdr streams the new title and cwd (stamped with the real clock, so
+    // after any survey requested at the fixed times below).
+    engine.apply_internal(Internal::PaneInfo {
+        machine: None,
+        pane_id: "w1:p1".into(),
+        title: Some("vim plan.md".into()),
+        cwd: Some("/new".into()),
+    });
+    assert_eq!(meta(&engine).title.as_deref(), Some("vim plan.md"));
+
+    // A survey requested earlier (its snapshot still has the old ones) lands late.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_500));
+    let m = meta(&engine);
+    assert_eq!(
+        (m.title.as_deref(), m.cwd.as_deref()),
+        (Some("vim plan.md"), Some("/new")),
+        "stale survey won"
+    );
+
+    // One requested after the stream's report is believed.
+    let later = crate::agent::now_ms() + 60_000;
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s), later));
+    let m = meta(&engine);
+    assert_eq!(
+        (m.title.as_deref(), m.cwd.as_deref()),
+        (Some("old title"), Some("/old"))
+    );
+}

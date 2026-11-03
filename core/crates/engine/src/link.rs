@@ -412,7 +412,21 @@ impl Engine {
                     agent::now_ms(),
                     fresher,
                 );
-                changed |= crate::meta::refresh_from_survey(&mut self.session, &machine, &survey);
+                // Likewise for titles and working directories.
+                let info = &mut self.info_reported;
+                info.retain(|(m, pane), _| {
+                    *m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
+                });
+                let fresher_info = |pane: &str| {
+                    info.get(&(machine.clone(), pane.to_string()))
+                        .is_some_and(|&at| at >= requested)
+                };
+                changed |= crate::meta::refresh_from_survey(
+                    &mut self.session,
+                    &machine,
+                    &survey,
+                    fresher_info,
+                );
                 if !changed {
                     return Vec::new();
                 }
@@ -431,6 +445,8 @@ impl Engine {
                 title,
                 cwd,
             } => {
+                self.info_reported
+                    .insert((machine.clone(), pane_id.clone()), agent::now_ms());
                 let before = self.session.clone();
                 if !crate::meta::apply_info(&mut self.session, &machine, &pane_id, title, cwd) {
                     return Vec::new();
@@ -444,6 +460,12 @@ impl Engine {
                 command,
                 cwd,
             } => {
+                // The survey only touches title and cwd; a polled cwd is
+                // newer than a survey requested before it.
+                if cwd.is_some() {
+                    self.info_reported
+                        .insert((machine.clone(), pane_id.clone()), agent::now_ms());
+                }
                 let before = self.session.clone();
                 if !crate::meta::apply_process(
                     &mut self.session,
