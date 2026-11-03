@@ -259,6 +259,14 @@ fn run<P: HerdrPort>(
                 }
             });
         }
+        // Agent status needs a subscription per pane; follow the bound ones.
+        let (agents, want) = tokio::sync::watch::channel(link::agent_panes(engine.session()));
+        {
+            let out = self_tx.clone();
+            runtime.spawn(follow_agents(port.clone(), want, move |item| {
+                let _ = out.send(Msg::Herdr(item));
+            }));
+        }
         // Adopt what herdr already runs first (ADR 0008); restoring waits for
         // that, so a fresh session's placeholder terminal doesn't create a
         // herdr workspace the user's own ones make unnecessary.
@@ -267,6 +275,8 @@ fn run<P: HerdrPort>(
             runtime,
             effects_tx,
             port,
+            agents,
+            creating: Default::default(),
             restored: false,
             survey: SurveyState::InFlight,
         }
@@ -290,8 +300,16 @@ fn run<P: HerdrPort>(
         listeners.retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
         if let Some(h) = herdr {
             for effect in link::effects(events, engine.session()) {
-                let _ = h.effects_tx.send(effect);
+                h.send(effect);
             }
+            let want = link::agent_panes(engine.session());
+            h.agents.send_if_modified(|panes| {
+                let changed = *panes != want;
+                if changed {
+                    *panes = want;
+                }
+                changed
+            });
         }
     };
 
@@ -407,7 +425,7 @@ fn run<P: HerdrPort>(
                 if let (Ok(_), Some(tile), Some(h)) = (&result, respawn, &herdr)
                     && let Some(effect) = link::respawn_effect(engine.session(), tile)
                 {
-                    let _ = h.effects_tx.send(effect);
+                    h.send(effect);
                 }
                 if let Ok(outcome) = &result {
                     publish(
@@ -422,6 +440,13 @@ fn run<P: HerdrPort>(
             }
             Msg::Internal(internal) => {
                 let surveyed = matches!(internal, Internal::Surveyed(_) | Internal::SurveyFailed);
+                if let (
+                    Internal::BindTerminal { tile, .. } | Internal::MarkEnded { tile },
+                    Some(h),
+                ) = (&internal, &herdr)
+                {
+                    h.creating.borrow_mut().remove(tile);
+                }
                 let events = engine.apply_internal(internal);
                 publish(&engine, &events, &herdr, &mut listeners, &mut previews);
                 if surveyed && let Some(h) = &mut herdr {
@@ -450,7 +475,7 @@ fn run<P: HerdrPort>(
                 }
                 if let Some(h) = &mut herdr {
                     for effect in reaction.effects {
-                        let _ = h.effects_tx.send(effect);
+                        h.send(effect);
                     }
                     if reaction.survey {
                         h.request_survey();
@@ -486,6 +511,11 @@ struct Herdr<P> {
     runtime: tokio::runtime::Runtime,
     effects_tx: tmpsc::UnboundedSender<Effect>,
     port: Arc<P>,
+    /// Tiles with a `CreateTerminal` on its way: a split right after launch
+    /// would otherwise get a second pane from the restore pass.
+    creating: std::cell::RefCell<std::collections::HashSet<azulejo_protocol::TileId>>,
+    /// The panes whose agent status to follow; see [`follow_agents`].
+    agents: tokio::sync::watch::Sender<Vec<String>>,
     /// Set once the first survey is in and restore work has been queued.
     restored: bool,
     survey: SurveyState,
@@ -502,6 +532,16 @@ enum SurveyState {
 }
 
 impl<P> Herdr<P> {
+    /// Queues herdr work, once per tile for pane creation.
+    fn send(&self, effect: Effect) {
+        if let Effect::CreateTerminal { tile, .. } = &effect
+            && !self.creating.borrow_mut().insert(*tile)
+        {
+            return;
+        }
+        let _ = self.effects_tx.send(effect);
+    }
+
     fn request_survey(&mut self) {
         self.survey = match self.survey {
             SurveyState::Idle => {
@@ -516,13 +556,63 @@ impl<P> Herdr<P> {
         if !self.restored {
             self.restored = true;
             for effect in link::restore_effects(engine.session()) {
-                let _ = self.effects_tx.send(effect);
+                self.send(effect);
             }
         }
         let again = self.survey == SurveyState::Again;
         self.survey = SurveyState::Idle;
         if again {
             self.request_survey();
+        }
+    }
+}
+
+/// Keeps one agent-status subscription open for the panes in `want`. When the
+/// set changes, the new subscription runs alongside the old one until herdr
+/// confirms it, so no status change falls in between. Only agent status
+/// events go to `out`; lifecycle and resync come from the main stream.
+async fn follow_agents<P: HerdrPort>(
+    port: Arc<P>,
+    mut want: tokio::sync::watch::Receiver<Vec<String>>,
+    out: impl Fn(StreamItem) + Send + 'static,
+) {
+    async fn next(rx: &mut Option<tmpsc::Receiver<StreamItem>>) -> Option<StreamItem> {
+        match rx {
+            Some(rx) => rx.recv().await,
+            None => std::future::pending().await,
+        }
+    }
+    let open = |panes: Vec<String>| (!panes.is_empty()).then(|| port.agent_events(panes));
+    let forward = |item: StreamItem| {
+        if let StreamItem::Event(azulejo_herdr::HerdrEvent::AgentStatusChanged { .. }) = item {
+            out(item);
+        }
+    };
+    let mut current = open(want.borrow_and_update().clone());
+    let mut pending: Option<tmpsc::Receiver<StreamItem>> = None;
+    loop {
+        tokio::select! {
+            changed = want.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                let panes = want.borrow_and_update().clone();
+                if current.is_none() || panes.is_empty() {
+                    current = open(panes);
+                    pending = None;
+                } else {
+                    pending = open(panes);
+                }
+            }
+            item = next(&mut current) => match item {
+                Some(item) => forward(item),
+                None => current = pending.take(),
+            },
+            item = next(&mut pending) => match item {
+                Some(StreamItem::Connected) => current = pending.take(),
+                Some(item) => forward(item),
+                None => pending = None,
+            },
         }
     }
 }

@@ -99,6 +99,43 @@ pub(crate) fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// What herdr says the agent in a terminal tile is doing (F16).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStatus {
+    Idle,
+    Working,
+    /// Waiting for the user, e.g. a permission prompt.
+    Blocked,
+    Done,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+impl AgentStatus {
+    /// Statuses that ask for a look: the agent waits, or it finished.
+    pub fn wants_attention(self) -> bool {
+        matches!(self, AgentStatus::Blocked | AgentStatus::Done)
+    }
+}
+
+/// The agent running in a terminal tile, from herdr's agent status (F11,
+/// F16). Absent when herdr knows of no agent there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentInfo {
+    /// The agent herdr detected or was told about, e.g. `claude`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub status: AgentStatus,
+    /// When `status` last changed, in milliseconds since the Unix epoch.
+    pub since_ms: u64,
+    /// The agent became blocked or finished and nobody has looked since:
+    /// focusing the tile, or `tile.seen`, clears it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub attention: bool,
+}
+
 /// One tile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Tile {
@@ -107,6 +144,9 @@ pub struct Tile {
     pub title: Option<String>,
     #[serde(flatten)]
     pub content: TileContent,
+    /// Terminal tiles only: the agent herdr reports in the pane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentInfo>,
 }
 
 impl Tile {
@@ -115,7 +155,13 @@ impl Tile {
             id: TileId::new(),
             title: None,
             content,
+            agent: None,
         }
+    }
+
+    /// Whether the tile's agent needs a look (F11).
+    pub fn needs_attention(&self) -> bool {
+        self.agent.as_ref().is_some_and(|a| a.attention)
     }
 
     pub fn kind(&self) -> TileKind {

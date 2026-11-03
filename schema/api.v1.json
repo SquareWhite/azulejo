@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "AgentInfo": {
+      "description": "The agent running in a terminal tile, from herdr's agent status (F11,\nF16). Absent when herdr knows of no agent there.",
+      "properties": {
+        "attention": {
+          "description": "The agent became blocked or finished and nobody has looked since:\nfocusing the tile, or `tile.seen`, clears it.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The agent herdr detected or was told about, e.g. `claude`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since_ms": {
+          "description": "When `status` last changed, in milliseconds since the Unix epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/AgentStatus"
+        }
+      },
+      "required": [
+        "status",
+        "since_ms"
+      ],
+      "type": "object"
+    },
     "AgentState": {
       "description": "What the agent in a terminal tile is doing, per herdr.",
       "oneOf": [
@@ -56,6 +86,25 @@
         "state"
       ],
       "type": "object"
+    },
+    "AgentStatus": {
+      "description": "What herdr says the agent in a terminal tile is doing (F16).",
+      "oneOf": [
+        {
+          "enum": [
+            "idle",
+            "working",
+            "done",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Waiting for the user, e.g. a permission prompt.",
+          "type": "string"
+        }
+      ]
     },
     "ApplyMode": {
       "description": "Where `layout.apply` puts a layout file's tabs.",
@@ -526,9 +575,27 @@
           "type": "object"
         },
         {
+          "description": "Focuses a tile; counts as looking at it, so its agent's attention\nclears (F11).",
           "properties": {
             "method": {
               "const": "tile.focus",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Clears a tile's agent attention without moving focus: shells send it\nwhen a focused tile's attention lights up while the user is looking.",
+          "properties": {
+            "method": {
+              "const": "tile.seen",
               "type": "string"
             },
             "params": {
@@ -1663,6 +1730,39 @@
             },
             "event": {
               "const": "tile.closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, or someone focused the tile (F11). Also visible as\n`tile.agent.attention` on `tile.updated`.",
+          "properties": {
+            "data": {
+              "properties": {
+                "attention": {
+                  "type": "boolean"
+                },
+                "tab": {
+                  "$ref": "#/$defs/TabId"
+                },
+                "tile": {
+                  "$ref": "#/$defs/TileId"
+                }
+              },
+              "required": [
+                "tab",
+                "tile",
+                "attention"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "tile.attention_changed",
               "type": "string"
             }
           },
@@ -3338,6 +3438,17 @@
         }
       ],
       "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Terminal tiles only: the agent herdr reports in the pane."
+        },
         "id": {
           "$ref": "#/$defs/TileId"
         },
@@ -3611,6 +3722,17 @@
         }
       ],
       "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Terminal tiles only: the agent herdr reports in the pane."
+        },
         "focused": {
           "description": "Whether this is the focused tile.",
           "type": "boolean"
@@ -3932,6 +4054,18 @@
     "WorkspaceInfo": {
       "description": "A workspace without its tabs.",
       "properties": {
+        "attention": {
+          "description": "Terminal tiles whose agent needs a look (F11).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "description": "Terminal tiles whose agent is blocked, for the sidebar (F16).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "cwd": {
           "type": [
             "string",
@@ -4025,6 +4159,18 @@
           "description": "The window's active workspace.",
           "type": "boolean"
         },
+        "attention": {
+          "description": "Terminal tiles whose agent needs a look (F11).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "description": "Terminal tiles whose agent is blocked, for the sidebar (F16).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "cwd": {
           "type": [
             "string",
@@ -4112,6 +4258,7 @@
     "tile.get",
     "tile.close",
     "tile.focus",
+    "tile.seen",
     "tile.rename",
     "browser.open",
     "browser.state",

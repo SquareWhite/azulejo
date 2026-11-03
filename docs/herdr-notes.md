@@ -92,7 +92,7 @@ Helpers in `scripts/herdr-probe/`:
 **Implication.**
 
 - No polling needed.
-- `pane.agent_status_changed` and `pane.scroll_changed` subscriptions **need a `pane_id` each**, so the adapter subscribes per terminal tile. `pane.updated` also carries `agent_status` for everything.
+- `pane.agent_status_changed` and `pane.scroll_changed` subscriptions **need a `pane_id` each**, so the adapter subscribes per terminal tile. `pane.updated` carries an `agent_status` field, but a reported status change (`pane report-agent`) doesn't fire it: only the per-pane subscription sees it (re-probed for ADR 0009). Shell exit sends only `pane_exited`; `workspace_closed` carries the whole workspace object.
 - 0.9.2+ reports `events_lost` when a reader falls behind; the adapter must resync with `session.snapshot`.
 
 ## 5. Notifications (F11)

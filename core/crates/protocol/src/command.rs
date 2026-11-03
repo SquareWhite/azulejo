@@ -89,8 +89,14 @@ pub enum Command {
     /// `kill` is set (F14).
     #[serde(rename = "tile.close")]
     TileClose(TileClose),
+    /// Focuses a tile; counts as looking at it, so its agent's attention
+    /// clears (F11).
     #[serde(rename = "tile.focus")]
     TileFocus(TileTarget),
+    /// Clears a tile's agent attention without moving focus: shells send it
+    /// when a focused tile's attention lights up while the user is looking.
+    #[serde(rename = "tile.seen")]
+    TileSeen(TileTarget),
     /// Sets or clears a tile's title.
     #[serde(rename = "tile.rename")]
     TileRename(TileRename),
@@ -225,6 +231,7 @@ pub const METHODS: &[&str] = &[
     "tile.get",
     "tile.close",
     "tile.focus",
+    "tile.seen",
     "tile.rename",
     "browser.open",
     "browser.state",

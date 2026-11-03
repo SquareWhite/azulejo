@@ -514,3 +514,30 @@ fn tall_commands_append_promote_rotate_and_equalize() {
         .unwrap();
     assert!(outcome.events.is_empty());
 }
+
+#[test]
+fn moving_focus_onto_a_tile_clears_its_agent_attention() {
+    use azulejo_model::{AgentInfo, AgentStatus};
+    let mut engine = Engine::new();
+    let first = engine.session().focused_tile().unwrap();
+    engine.handle(Command::LayoutSplit(LayoutSplit {
+        tile: None,
+        direction: Direction::Right,
+        content: None,
+    }));
+    engine.session.tile_mut(first).unwrap().agent = Some(AgentInfo {
+        name: Some("claude".into()),
+        status: AgentStatus::Blocked,
+        since_ms: 1,
+        attention: true,
+    });
+    // Unrelated commands leave it lit.
+    engine.handle(Command::LayoutEqualize(Default::default()));
+    assert!(engine.session().tile(first).unwrap().needs_attention());
+    let events = engine.handle(Command::LayoutFocus(azulejo_protocol::LayoutFocus {
+        direction: Direction::Left,
+    }));
+    assert!(!engine.session().tile(first).unwrap().needs_attention());
+    assert!(events.iter().any(|e| matches!(e,
+        Event::TileAttentionChanged { tile, attention: false, .. } if *tile == first)));
+}

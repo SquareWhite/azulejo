@@ -290,9 +290,11 @@ fn parse_event(kind: &str, data: Value) -> HerdrEvent {
             workspace_id: d.workspace_id,
             label: d.label,
         }),
-        "workspace_closed" => de::<WsIdData>(&data).map(|d| HerdrEvent::WorkspaceClosed {
-            workspace_id: d.workspace_id,
-        }),
+        // herdr 0.9.1 sends the whole workspace; accept a bare ID too.
+        "workspace_closed" => de::<WsIdData>(&data)
+            .map(|d| d.workspace_id)
+            .or_else(|| de::<WsData>(&data).map(|d| d.workspace.workspace_id))
+            .map(|workspace_id| HerdrEvent::WorkspaceClosed { workspace_id }),
         "workspace_focused" => de::<WsIdData>(&data).map(|d| HerdrEvent::WorkspaceFocused {
             workspace_id: d.workspace_id,
         }),
@@ -380,6 +382,18 @@ mod tests {
             Line::Event(HerdrEvent::TabClosed {
                 tab_id: "w1:t2".into(),
                 workspace_id: "w1".into()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_workspace_closed_with_the_whole_workspace() {
+        // Captured from herdr 0.9.1 after closing a workspace's last tab.
+        let line = r#"{"data":{"type":"workspace_closed","workspace":{"active_tab_id":"w2:t2","agent_status":"unknown","focused":false,"label":"b","number":2,"pane_count":1,"tab_count":1,"workspace_id":"w2"}},"event":"workspace_closed"}"#;
+        assert_eq!(
+            parse_line(line).unwrap(),
+            Line::Event(HerdrEvent::WorkspaceClosed {
+                workspace_id: "w2".into()
             })
         );
     }
