@@ -446,6 +446,13 @@ impl Engine {
                     "terminal I/O needs a core connected to herdr",
                 ));
             }
+            // Streams belong to a socket connection; the API server answers these.
+            Command::EventsSubscribe(_) | Command::EventsUnsubscribe(_) => {
+                return Err(Error::new(
+                    ErrorCode::Unsupported,
+                    "event streams are served by the API socket",
+                ));
+            }
         })
     }
 

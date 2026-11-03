@@ -1,5 +1,6 @@
 //! A small blocking client for the socket API.
 
+use std::collections::VecDeque;
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -54,6 +55,8 @@ pub struct Client {
     reader: BufReader<UnixStream>,
     writer: UnixStream,
     next_id: u64,
+    /// Notifications that arrived while waiting for a response.
+    notifications: VecDeque<Value>,
 }
 
 impl Client {
@@ -74,6 +77,7 @@ impl Client {
             reader: BufReader::new(stream.try_clone()?),
             writer: stream,
             next_id: 1,
+            notifications: VecDeque::new(),
         })
     }
 
@@ -94,12 +98,15 @@ impl Client {
         line.push('\n');
         self.writer.write_all(line.as_bytes())?;
 
-        let mut response = String::new();
-        if self.reader.read_line(&mut response)? == 0 {
-            return Err(ClientError::Protocol("server closed the connection".into()));
-        }
-        let mut response: Value = serde_json::from_str(&response)
-            .map_err(|e| ClientError::Protocol(format!("invalid JSON: {e}")))?;
+        let mut response = loop {
+            let message = self.read_message()?;
+            // Event notifications (no `id`) may arrive before the response.
+            if message.get("id").is_none() && message.get("method").is_some() {
+                self.notifications.push_back(message);
+                continue;
+            }
+            break message;
+        };
         if response.get("id") != Some(&json!(id)) {
             return Err(ClientError::Protocol(format!(
                 "expected a response to request {id}, got {response}"
@@ -123,5 +130,51 @@ impl Client {
             .get_mut("result")
             .map(Value::take)
             .ok_or_else(|| ClientError::Protocol("response has no `result`".into()))
+    }
+
+    /// Starts an event stream on this connection (`events.subscribe`) and
+    /// returns its subscription ID. Read events with
+    /// [`Client::next_notification`].
+    pub fn subscribe(&mut self, params: Option<Value>) -> Result<u64, ClientError> {
+        let result = self.call("events.subscribe", params)?;
+        result
+            .get("subscription")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ClientError::Protocol(format!("no subscription in {result}")))
+    }
+
+    /// The next notification (`{"jsonrpc":"2.0","method":"events.event",
+    /// "params":{…}}`), waiting at most `timeout` (`None` waits forever).
+    /// Returns `Ok(None)` on timeout.
+    pub fn next_notification(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<Value>, ClientError> {
+        if let Some(n) = self.notifications.pop_front() {
+            return Ok(Some(n));
+        }
+        self.writer.set_read_timeout(timeout)?;
+        let message = self.read_message();
+        self.writer.set_read_timeout(Some(TIMEOUT))?;
+        match message {
+            Ok(message) => Ok(Some(message)),
+            Err(ClientError::Io(e))
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn read_message(&mut self) -> Result<Value, ClientError> {
+        let mut line = String::new();
+        if self.reader.read_line(&mut line)? == 0 {
+            return Err(ClientError::Protocol("server closed the connection".into()));
+        }
+        serde_json::from_str(&line).map_err(|e| ClientError::Protocol(format!("invalid JSON: {e}")))
     }
 }

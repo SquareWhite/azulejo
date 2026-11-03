@@ -146,6 +146,12 @@ fn sample_commands() -> Vec<Command> {
             case_sensitive: true,
             lines: Some(2000),
         }),
+        Command::EventsSubscribe(EventsSubscribe {
+            filter: vec!["tile.".into(), "focus.changed".into()],
+            workspace: Some(workspace),
+            tile: Some(tile),
+        }),
+        Command::EventsUnsubscribe(EventsUnsubscribe { subscription: 3 }),
         Command::WindowList,
         Command::WorkspaceList(WorkspaceList {
             window: Some(window),
@@ -276,6 +282,12 @@ fn sample_events() -> Vec<Event> {
             connected: false,
             message: Some("connection refused".into()),
         },
+        Event::AgentStateChanged(AgentStateChange {
+            tile: tile.id,
+            state: AgentState::Blocked,
+            previous: Some(AgentState::Working),
+            agent: Some("claude".into()),
+        }),
     ]
 }
 
@@ -397,6 +409,7 @@ fn replies_round_trip() {
             }],
             truncated: true,
         },
+        Reply::Subscribed { subscription: 1 },
         Reply::Preview(sample_preview(tile.id)),
         Reply::Preview(PreviewContent {
             kind: PreviewKind::Pdf,
@@ -507,5 +520,45 @@ fn committed_schema_is_fresh() {
     assert!(
         committed == api_schema_text(),
         "schema/api.v1.json is stale: run `just schema` and commit the result"
+    );
+}
+
+#[test]
+fn notifications_round_trip_with_the_event_inline() {
+    let tile = TileId::new();
+    let n = Notification::Event(EventNotification {
+        subscription: 4,
+        event: Event::AgentStateChanged(AgentStateChange {
+            tile,
+            state: AgentState::Done,
+            previous: None,
+            agent: None,
+        }),
+    });
+    let json = serde_json::to_value(&n).unwrap();
+    assert_eq!(json["method"], "events.event");
+    assert_eq!(json["params"]["subscription"], 4);
+    assert_eq!(json["params"]["event"], "agent.state_changed");
+    assert_eq!(json["params"]["data"]["state"], "done");
+    assert_eq!(serde_json::from_value::<Notification>(json).unwrap(), n);
+
+    let lagged = Notification::Lagged(LaggedNotification {
+        subscription: 4,
+        dropped: 9,
+    });
+    let json = serde_json::to_value(&lagged).unwrap();
+    assert_eq!(json["method"], "events.lagged");
+    assert_eq!(json["params"]["dropped"], 9);
+    assert_eq!(
+        serde_json::from_value::<Notification>(json).unwrap(),
+        lagged
+    );
+}
+
+#[test]
+fn unknown_agent_states_parse_as_unknown() {
+    assert_eq!(
+        serde_json::from_str::<AgentState>("\"thinking\"").unwrap(),
+        AgentState::Unknown
     );
 }

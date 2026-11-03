@@ -6,7 +6,8 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::mpsc as std_mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use azulejo_engine::{Core, Engine};
@@ -24,6 +25,13 @@ pub trait Dispatcher: Send + Sync + 'static {
     /// Extra fields for `core.version`, such as the herdr session's socket.
     fn info(&self) -> Map<String, Value> {
         Map::new()
+    }
+
+    /// Every event from now on, for `events.subscribe`. The server asks once,
+    /// when it starts serving. `None` means this dispatcher has no events and
+    /// subscriptions stay silent.
+    fn events(&self) -> Option<std_mpsc::Receiver<Event>> {
+        None
     }
 }
 
@@ -49,6 +57,69 @@ impl<D: Dispatcher> Dispatcher for WithInfo<D> {
         info.extend(self.info.clone());
         info
     }
+
+    fn events(&self) -> Option<std_mpsc::Receiver<Event>> {
+        self.inner.events()
+    }
+}
+
+/// Fans a stream of event batches out to any number of listeners. Pair it
+/// with [`spawn_engine`] (pass [`EventFeed::sink`] as `on_events`) and
+/// [`WithEvents`] to serve events from an engine that isn't a [`Core`].
+#[derive(Clone, Default)]
+pub struct EventFeed {
+    listeners: Arc<Mutex<Vec<std_mpsc::Sender<Event>>>>,
+}
+
+impl EventFeed {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn subscribe(&self) -> std_mpsc::Receiver<Event> {
+        let (tx, rx) = std_mpsc::channel();
+        self.listeners.lock().expect("feed lock").push(tx);
+        rx
+    }
+
+    pub fn publish(&self, events: &[Event]) {
+        self.listeners
+            .lock()
+            .expect("feed lock")
+            .retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
+    }
+
+    /// An `on_events` callback for [`spawn_engine`].
+    pub fn sink(&self) -> impl FnMut(Vec<Event>) + Send + 'static {
+        let feed = self.clone();
+        move |events| feed.publish(&events)
+    }
+}
+
+/// A dispatcher whose events come from an [`EventFeed`].
+pub struct WithEvents<D> {
+    inner: D,
+    feed: EventFeed,
+}
+
+impl<D: Dispatcher> WithEvents<D> {
+    pub fn new(inner: D, feed: EventFeed) -> Self {
+        Self { inner, feed }
+    }
+}
+
+impl<D: Dispatcher> Dispatcher for WithEvents<D> {
+    fn dispatch(&self, command: Command) -> DispatchFuture {
+        self.inner.dispatch(command)
+    }
+
+    fn info(&self) -> Map<String, Value> {
+        self.inner.info()
+    }
+
+    fn events(&self) -> Option<std_mpsc::Receiver<Event>> {
+        Some(self.feed.subscribe())
+    }
 }
 
 /// Runs commands on a running [`Core`]. `Core::execute` blocks until the
@@ -73,6 +144,10 @@ impl Dispatcher for CoreDispatcher {
                 .map_err(|_| core_gone())?
                 .map(|outcome| outcome.reply)
         })
+    }
+
+    fn events(&self) -> Option<std_mpsc::Receiver<Event>> {
+        Some(self.core.subscribe())
     }
 }
 

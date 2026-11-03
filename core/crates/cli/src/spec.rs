@@ -67,13 +67,8 @@ impl Ty {
 
 /// Methods the server answers itself; they have no params and aren't in the
 /// protocol's `Command` enum.
-const SERVER_METHOD_DOCS: &[(&str, &str)] = &[
-    ("core.version", "The core's version and API version."),
-    (
-        "events.subscribe",
-        "Streams events. Not available yet (PLAN step 2.8).",
-    ),
-];
+const SERVER_METHOD_DOCS: &[(&str, &str)] =
+    &[("core.version", "The core's version and API version.")];
 
 /// Every method, in schema order, then the server's own methods.
 pub fn methods() -> Vec<MethodSpec> {

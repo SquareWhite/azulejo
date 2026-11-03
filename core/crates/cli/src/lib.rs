@@ -138,6 +138,20 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
             return exit::OK;
         }
         "call" => return raw_call(&args[1..], &socket, &globals, out, err),
+        // `azj events [--follow]` and `azj events subscribe` stream events.
+        "events"
+            if !globals.help
+                && args
+                    .get(1)
+                    .is_none_or(|a| a.starts_with('-') || a == "subscribe" || a == "follow") =>
+        {
+            let skip = if args.get(1).is_some_and(|a| !a.starts_with('-')) {
+                2
+            } else {
+                1
+            };
+            return follow_events(&args[skip..], &specs, &socket, &globals, out, err);
+        }
         _ => {}
     }
 
@@ -295,6 +309,82 @@ fn unreachable(err: &mut dyn Write, e: &ClientError) -> i32 {
     exit::UNREACHABLE
 }
 
+/// `azj events [--follow] [--filter NAME]… [--workspace ID] [--tile ID]
+/// [--count N] [--json]`: prints events as they happen, one per line, until
+/// interrupted (or until `--count` events). `--follow` is the default and only
+/// mode; it's accepted for familiarity.
+fn follow_events(
+    args: &[String],
+    specs: &[MethodSpec],
+    socket: &PathBuf,
+    globals: &Globals,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
+    let mut count: Option<u64> = None;
+    let mut rest = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--follow" | "-f" => {}
+            "--count" | "-n" => match iter.next().and_then(|n| n.parse().ok()) {
+                Some(n) => count = Some(n),
+                None => return usage_error(err, "--count needs a number"),
+            },
+            other => match other.strip_prefix("--count=").map(str::parse) {
+                Some(Ok(n)) => count = Some(n),
+                Some(Err(_)) => return usage_error(err, "--count needs a number"),
+                None => rest.push(arg.clone()),
+            },
+        }
+    }
+    let Some(spec) = specs.iter().find(|s| s.method == "events.subscribe") else {
+        return usage_error(err, "this azj doesn't know `events.subscribe`");
+    };
+    let params = match args::parse_params(spec, &rest) {
+        Ok(p) => p,
+        Err(e) => return usage_error(err, &e),
+    };
+    let mut client = match Client::connect(socket) {
+        Ok(c) => c,
+        Err(e) => return unreachable(err, &e),
+    };
+    let params = (!params.is_empty()).then_some(Value::Object(params));
+    let subscription = match client.subscribe(params) {
+        Ok(id) => id,
+        Err(ClientError::Rpc(e)) => {
+            let _ = writeln!(err, "azj: {e}");
+            return exit::API_ERROR;
+        }
+        Err(e) => return unreachable(err, &e),
+    };
+    let mut seen = 0;
+    while count.is_none_or(|n| seen < n) {
+        let message = match client.next_notification(None) {
+            Ok(Some(m)) => m,
+            Ok(None) => continue,
+            Err(e) => return unreachable(err, &e),
+        };
+        let params = &message["params"];
+        if params["subscription"] != subscription {
+            continue;
+        }
+        let line = if globals.json {
+            message.to_string()
+        } else {
+            output::event_line(&message)
+        };
+        if writeln!(out, "{line}").and_then(|_| out.flush()).is_err() {
+            // The reader went away (e.g. `| head`).
+            return exit::OK;
+        }
+        if message["method"] == "events.event" {
+            seen += 1;
+        }
+    }
+    exit::OK
+}
+
 /// `azj call <method> [json-params]`: the escape hatch.
 fn raw_call(
     args: &[String],
@@ -354,6 +444,8 @@ fn fill_caller(
         .filter(|p| !p.required && !params.contains_key(&p.name))
         .filter(|p| matches!(&p.ty, Ty::Id(prefix) if crate::caller_prefix(&p.name) == Some(prefix.as_str())))
         .filter(|p| !(spec.method == "tile.list" && p.name == "workspace"))
+        // A stream's workspace and tile are filters too.
+        .filter(|_| spec.method != "events.subscribe")
         .map(|p| p.name.as_str())
         .collect();
     if wants.is_empty() || (env.tile.is_none() && env.herdr_pane.is_none()) {

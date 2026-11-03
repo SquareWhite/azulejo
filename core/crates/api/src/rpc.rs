@@ -4,9 +4,13 @@ use azulejo_protocol::{API_VERSION, Command, Error, ErrorCode};
 use serde_json::{Map, Value, json};
 
 use crate::Dispatcher;
+use crate::events::Connection;
 
-/// Methods the server answers itself, without the engine.
-pub const SERVER_METHODS: &[&str] = &["core.version", "events.subscribe"];
+/// Methods the server answers itself that aren't protocol commands.
+/// (`events.subscribe` and `events.unsubscribe` are commands, so they're in
+/// the schema, but the server answers them too: streams belong to a
+/// connection.)
+pub const SERVER_METHODS: &[&str] = &["core.version"];
 
 /// One parsed request.
 struct Call {
@@ -18,7 +22,18 @@ struct Call {
 
 /// Handles one line of input: a request or a batch. Returns the response line
 /// (without its newline), or `None` when nothing needs answering.
+///
+/// Without a socket connection there's nowhere to stream to, so
+/// `events.subscribe` is refused here; the server uses [`handle_line`].
 pub async fn handle_text(text: &str, dispatcher: &dyn Dispatcher) -> Option<String> {
+    handle_line(text, dispatcher, None).await
+}
+
+pub(crate) async fn handle_line(
+    text: &str,
+    dispatcher: &dyn Dispatcher,
+    mut conn: Option<&mut Connection>,
+) -> Option<String> {
     let value: Value = match serde_json::from_str(text) {
         Ok(value) => value,
         Err(e) => {
@@ -34,24 +49,28 @@ pub async fn handle_text(text: &str, dispatcher: &dyn Dispatcher) -> Option<Stri
             }
             let mut responses = Vec::new();
             for item in batch {
-                if let Some(response) = handle_value(item, dispatcher).await {
+                if let Some(response) = handle_value(item, dispatcher, conn.as_deref_mut()).await {
                     responses.push(response);
                 }
             }
             (!responses.is_empty()).then(|| Value::Array(responses).to_string())
         }
-        value => handle_value(value, dispatcher)
+        value => handle_value(value, dispatcher, conn)
             .await
             .map(|response| response.to_string()),
     }
 }
 
-async fn handle_value(value: Value, dispatcher: &dyn Dispatcher) -> Option<Value> {
+async fn handle_value(
+    value: Value,
+    dispatcher: &dyn Dispatcher,
+    conn: Option<&mut Connection>,
+) -> Option<Value> {
     let call = match parse_call(value) {
         Ok(call) => call,
         Err((id, err)) => return Some(error_response(id, &err)),
     };
-    let result = run(&call, dispatcher).await;
+    let result = run(&call, dispatcher, conn).await;
     let id = call.id?;
     Some(match result {
         Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
@@ -97,7 +116,11 @@ fn parse_call(value: Value) -> Result<Call, (Value, Error)> {
     Ok(Call { id, method, params })
 }
 
-async fn run(call: &Call, dispatcher: &dyn Dispatcher) -> Result<Value, Error> {
+async fn run(
+    call: &Call,
+    dispatcher: &dyn Dispatcher,
+    conn: Option<&mut Connection>,
+) -> Result<Value, Error> {
     match call.method.as_str() {
         "core.version" => {
             let mut version = dispatcher.info();
@@ -106,10 +129,6 @@ async fn run(call: &Call, dispatcher: &dyn Dispatcher) -> Result<Value, Error> {
             version.insert("version".into(), env!("CARGO_PKG_VERSION").into());
             Ok(Value::Object(version))
         }
-        "events.subscribe" => Err(Error::new(
-            ErrorCode::Unsupported,
-            "event streaming isn't available yet (PLAN step 2.8)",
-        )),
         method => {
             let mut request = Map::new();
             request.insert("method".into(), Value::String(method.to_owned()));
@@ -118,7 +137,23 @@ async fn run(call: &Call, dispatcher: &dyn Dispatcher) -> Result<Value, Error> {
                 request.insert("params".into(), Value::Object(params.clone()));
             }
             let command = Command::from_json(&Value::Object(request).to_string())?;
-            let reply = dispatcher.dispatch(command).await?;
+            let reply = match (command, conn) {
+                (Command::EventsSubscribe(params), Some(conn)) => {
+                    let subscription = conn.subscribe(params, dispatcher).await?;
+                    azulejo_protocol::Reply::Subscribed { subscription }
+                }
+                (Command::EventsUnsubscribe(params), Some(conn)) => {
+                    conn.unsubscribe(params.subscription)?;
+                    azulejo_protocol::Reply::Ok
+                }
+                (Command::EventsSubscribe(_) | Command::EventsUnsubscribe(_), None) => {
+                    return Err(Error::new(
+                        ErrorCode::Unsupported,
+                        "event streams need a socket connection",
+                    ));
+                }
+                (command, _) => dispatcher.dispatch(command).await?,
+            };
             serde_json::to_value(reply).map_err(|e| {
                 Error::new(ErrorCode::Internal, format!("reply didn't serialise: {e}"))
             })
@@ -188,7 +223,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subscribe_is_unsupported_for_now() {
+    async fn subscribe_needs_a_connection() {
         let r = call(r#"{"jsonrpc":"2.0","id":1,"method":"events.subscribe"}"#)
             .await
             .unwrap();
