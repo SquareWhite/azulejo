@@ -65,7 +65,7 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | --- | --- | --- | --- |
 | F1 | Layout | Hierarchy of windows, workspaces, tabs and tiles; each tab is a tree of horizontal and vertical splits | P0 |
 | F2 | Layout | Keyboard actions to split, focus by direction, swap, move, resize, zoom and close tiles | P0 |
-| F3a | Layout | Master-stack ("tall") actions on the split tree: add a tile to the end of an evenly divided stack, promote a tile to master, rotate master left ↔ top, equalize the stack ([keybindings](keybindings.md#decisions)) | P0 |
+| F3a | Layout | Master-stack ("tall") actions on the split tree: add a tile to the end of an evenly divided stack, promote a tile to master, rotate master left ↔ top, equalize the stack ([keybindings](keybindings.md#decisions)). Proposed extension: Bismuth-style dynamic layouts per tab ([ADR 0010](adr/0010-dynamic-layouts.md), PLAN 2.12) | P0 |
 | F3b | Layout | Niri-style scrolling columns layout mode | P2 |
 | F4 | Layout | Animated open, close, move and resize; terminals scale a snapshot during motion and resize the PTY once, at the start of the motion, so the redraw finishes under the snapshot ([ADR 0004](adr/0004-animation-resize-timing.md)); can be turned off | P1 |
 | F5 | Layout | Command palette for every action | P1 |
@@ -202,4 +202,5 @@ Success means Azulejo replaces the current terminal-plus-browser setup for daily
 - [ ] Does the CLI live inside the app bundle or ship as a separate Homebrew formula and Linux package?
 - [ ] Open source from day one, and under which license?
 - [x] Pull layout modes (F3) into the MVP? Decided: the master-stack (tall) actions are P0 and ship in M1 (F3a); niri-style scrolling columns stay P2 (F3b).
+- [ ] Bismuth-style dynamic layouts per tab (Tile with several masters, Monocle, Three Column, Spiral, Quarter; F3a extended)? Proposed in [ADR 0010](adr/0010-dynamic-layouts.md) as PLAN 2.12, with three questions for the maintainer: default for new tabs, adopted herdr tabs, and whether to include Spread and Stair.
 - [ ] Linux packaging: which formats at M3 (tarball, .deb, AUR, Flatpak)?

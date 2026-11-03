@@ -245,6 +245,13 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 - [ ] **2.11 Key and focus test suite.** XCUITest scenarios: shortcuts with a webview focused, IME composition in a terminal, focus after close and after zoom, palette over a browser.
   **Done when** 30+ scenarios pass in CI.
 
+- [ ] **2.12 Bismuth-style dynamic layouts** (F3a, extended). **Proposed, pending the maintainer's OK** ([ADR 0010](docs/adr/0010-dynamic-layouts.md), [research](docs/research/bismuth.md)). Each tab gets a layout kind: `manual` (today's split tree) or a dynamic layout over an ordered tile list: `tile` (masters 0–10, ratio, four orientations), `monocle`, `three_column`, then `spiral` and `quarter`. Layouts are pure functions to placements (`rects` with z-order) that the shells render and the 2.1 animations reuse. New tabs default to `tile`; adopted herdr tabs stay manual. Commands `layout.set/toggle/cycle/masters/master_ratio/move_order`, `layout.rotate` extended; `[layout]` config; layout files accept the new kinds (`tall` becomes an alias of `tile`); proposed `alt` keys listed in the ADR.
+  1. Core: model, `arrange` for Tile/Monocle/Three Column, freeze/convert, op mapping, protocol, schema, Python client, layout files, config, proptests.
+  2. macOS shell: render from `rects` (z-order, hidden tiles), Monocle focus switching without PTY resizes, animations across kind switches, layout name + hint in the tab bar, keymap entries.
+  3. Spiral and Quarter.
+  **Done when** the ADR 0010 proptests pass (10,000 sequences mixing kinds and switches); the maintainer's tall workflow (split chord, `alt+enter`, `alt+o`, `alt+shift+e`, resize) works keystroke-for-keystroke in a `tile` tab; cycling Tile → Monocle → Three Column → manual and back animates with exactly one PTY resize per changed terminal and none for Monocle focus switches; a layout file with `layout = "three_column"` opens as specified; `layout.export` round-trips a dynamic tab.
+  **Estimate:** 2 to 3 weeks for 1 and 2; 3 to 4 days for 3.
+
 ### Gate G2
 All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock starts.
 
