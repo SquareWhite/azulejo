@@ -12,7 +12,8 @@ name = "azulejo_ffi"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-azulejo-engine.workspace = true
+azulejo-daemon.workspace = true
+azulejo-herdr.workspace = true
 azulejo-protocol.workspace = true
 serde_json.workspace = true
 
