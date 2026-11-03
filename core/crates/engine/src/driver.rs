@@ -57,6 +57,9 @@ enum Msg {
     Command(Command, mpsc::Sender<Result<Outcome, Error>>),
     Internal(Internal),
     Herdr(Machine, StreamItem),
+    /// A machine's agent-status subscription went live: read every pane's
+    /// agent status for what changed before herdr accepted it.
+    AgentsLive(Machine),
     /// Connect a herdr machine (ADR 0011). The port is the core's `P`.
     AddMachine(MachineInfo, Box<dyn std::any::Any + Send>),
     /// Show a machine without connecting it (`off`, or an error before
@@ -562,6 +565,11 @@ fn run<P: HerdrPort>(
                     herdr.survey_done(&machine, &engine);
                 }
             }
+            Msg::AgentsLive(machine) => {
+                if let Some(link) = herdr.links.get(&machine) {
+                    let _ = link.effects_tx.send(Effect::AgentStatuses);
+                }
+            }
             Msg::Herdr(machine, item) => {
                 if !herdr.links.contains_key(&machine) {
                     // A removed machine's stream, still draining.
@@ -818,11 +826,18 @@ impl<P: HerdrPort> Links<P> {
             tokio::sync::watch::channel(link::agent_panes(engine.session(), &machine));
         {
             let machine = machine.clone();
-            tasks.push(
-                runtime.spawn(follow_agents(port.clone(), want, move |item| {
+            let live_out = out.clone();
+            let live_machine = machine.clone();
+            tasks.push(runtime.spawn(follow_agents(
+                port.clone(),
+                want,
+                move |item| {
                     let _ = out.send(Msg::Herdr(machine.clone(), item));
-                })),
-            );
+                },
+                move || {
+                    let _ = live_out.send(Msg::AgentsLive(live_machine.clone()));
+                },
+            )));
         }
         // What runs in each bound pane, for tile headers (F28): polled, and
         // at once when herdr reports a pane changed.
@@ -1033,12 +1048,19 @@ impl<P: HerdrPort> Links<P> {
 
 /// Keeps one agent-status subscription open for the panes in `want`. When the
 /// set changes, the new subscription runs alongside the old one until herdr
-/// confirms it, so no status change falls in between. Only agent status
-/// events go to `out`; lifecycle and resync come from the main stream.
+/// confirms it. Only agent status events go to `out`; lifecycle and resync
+/// come from the main stream.
+///
+/// herdr streams only what happens after it accepts a subscription, and an
+/// event still in flight on the old subscription is lost when it's dropped.
+/// So `live` runs whenever a subscription goes live (first open, reconnect,
+/// resync, or taking over from the old one): the caller then reads every
+/// pane's status from herdr, which has the ones from before.
 async fn follow_agents<P: HerdrPort>(
     port: Arc<P>,
     mut want: tokio::sync::watch::Receiver<Vec<String>>,
     out: impl Fn(StreamItem) + Send + 'static,
+    live: impl Fn() + Send + 'static,
 ) {
     async fn next(rx: &mut Option<tmpsc::Receiver<StreamItem>>) -> Option<StreamItem> {
         match rx {
@@ -1069,11 +1091,15 @@ async fn follow_agents<P: HerdrPort>(
                 }
             }
             item = next(&mut current) => match item {
+                Some(StreamItem::Connected | StreamItem::Resync) => live(),
                 Some(item) => forward(item),
                 None => current = pending.take(),
             },
             item = next(&mut pending) => match item {
-                Some(StreamItem::Connected) => current = pending.take(),
+                Some(StreamItem::Connected) => {
+                    current = pending.take();
+                    live();
+                }
                 Some(item) => forward(item),
                 None => pending = None,
             },

@@ -248,6 +248,10 @@ pub enum Effect {
     },
     /// Read what herdr runs, to adopt tabs nobody here knows (ADR 0008).
     Survey,
+    /// Read every pane's agent status, and nothing else: herdr's agent
+    /// subscription just went live, and statuses that changed before herdr
+    /// accepted it never streamed.
+    AgentStatuses,
 }
 
 /// Results fed back to the engine. Not part of the public API.
@@ -288,6 +292,9 @@ pub enum Internal {
     /// survey was requested (ms since the epoch): streamed agent statuses
     /// that arrived after that are newer than whatever the survey says.
     Surveyed(Machine, Box<herdr::Survey>, u64),
+    /// A survey read only for its agent statuses ([`Effect::AgentStatuses`]):
+    /// adopts nothing, closes nothing. The `u64` is as for `Surveyed`.
+    AgentStatuses(Machine, Box<herdr::Survey>, u64),
     /// herdr's title and working directory for a pane (F28).
     PaneInfo {
         machine: Machine,
@@ -394,24 +401,7 @@ impl Engine {
                     None
                 };
                 let mut changed = adopt::adopt(&mut self.session, &machine, &survey, placeholder);
-                // A status streamed in after the survey was requested is
-                // newer than the survey's: keep it.
-                let reported = &mut self.agent_reported;
-                reported.retain(|(m, pane), _| {
-                    *m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
-                });
-                let fresher = |pane: &str| {
-                    reported
-                        .get(&(machine.clone(), pane.to_string()))
-                        .is_some_and(|&at| at >= requested)
-                };
-                changed |= agent::refresh(
-                    &mut self.session,
-                    &machine,
-                    &survey,
-                    agent::now_ms(),
-                    fresher,
-                );
+                changed |= self.refresh_agents(&machine, &survey, requested);
                 // Likewise for titles and working directories.
                 let info = &mut self.info_reported;
                 info.retain(|(m, pane), _| {
@@ -431,6 +421,13 @@ impl Engine {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                self.changes_since(&before)
+            }
+            Internal::AgentStatuses(machine, survey, requested) => {
+                let before = self.session.clone();
+                if !self.refresh_agents(&machine, &survey, requested) {
+                    return Vec::new();
+                }
                 self.changes_since(&before)
             }
             Internal::SurveyFailed(machine) => {
@@ -823,6 +820,29 @@ fn to_ref(machine: &Machine, t: &herdr::TerminalRef) -> HerdrRef {
     }
 }
 
+impl Engine {
+    /// Brings bound tiles' agent statuses in line with a survey requested at
+    /// `requested` (ms since the epoch). A status streamed in after that is
+    /// newer than the survey's, so those panes keep it.
+    fn refresh_agents(
+        &mut self,
+        machine: &Machine,
+        survey: &herdr::Survey,
+        requested: u64,
+    ) -> bool {
+        let reported = &mut self.agent_reported;
+        reported.retain(|(m, pane), _| {
+            m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
+        });
+        let fresher = |pane: &str| {
+            reported
+                .get(&(machine.clone(), pane.to_string()))
+                .is_some_and(|&at| at >= requested)
+        };
+        agent::refresh(&mut self.session, machine, survey, agent::now_ms(), fresher)
+    }
+}
+
 /// Runs effects one at a time, so a terminal never races its workspace's
 /// creation. `out` delivers results to the engine's thread; `log` reports
 /// herdr failures.
@@ -964,6 +984,17 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                         log(format!("herdr: reading its workspaces: {e}"));
                         out(Internal::SurveyFailed(machine.clone()));
                     }
+                }
+            }
+            Effect::AgentStatuses => {
+                let requested = agent::now_ms();
+                match port.survey().await {
+                    Ok(survey) => out(Internal::AgentStatuses(
+                        machine.clone(),
+                        Box::new(survey),
+                        requested,
+                    )),
+                    Err(e) => log(format!("herdr: reading agent statuses: {e}")),
                 }
             }
         }
