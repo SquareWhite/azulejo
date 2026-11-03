@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Generates the Python client's types and methods from the API schema.
+
+    scripts/codegen-python           # writes clients/python/src/azulejo/_generated.py
+    scripts/codegen-python --check   # exits 1 if that file is stale
+
+Reads schema/api.v1.json (itself generated from core/crates/protocol by
+`just schema`). Standard library only, deterministic output.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import keyword
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCHEMA = ROOT / "schema" / "api.v1.json"
+OUT = ROOT / "clients" / "python" / "src" / "azulejo" / "_generated.py"
+
+# Unions whose variants become their own TypedDicts, and the property that
+# tells them apart. Commands become methods instead.
+UNIONS = {
+    "Event": "event",
+    "Reply": "type",
+    "Notification": "method",
+    "Node": "type",
+    "TileContent": "kind",
+}
+# Params the client fills from the calling terminal tile, like `azj`: optional
+# IDs of these kinds. Not where they're filters.
+CALLER = {"tile": "TileId", "tab": "TabId", "workspace": "WorkspaceId", "window": "WindowId"}
+CALLER_EXCEPT = {("tile.list", "workspace"), ("events.subscribe", "workspace"), ("events.subscribe", "tile")}
+
+
+def pascal(text: str) -> str:
+    return "".join(p[:1].upper() + p[1:] for p in re.split(r"[^0-9A-Za-z]+", text) if p)
+
+
+def snake(text: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "_", text).strip("_")
+
+
+def py_name(name: str) -> str:
+    return name + "_" if keyword.iskeyword(name) else name
+
+
+def doc_lines(text: str | None, indent: str) -> list[str]:
+    if not text:
+        return []
+    lines = text.strip().replace('"""', "'''").splitlines()
+    if len(lines) == 1:
+        return [f'{indent}"""{lines[0]}"""']
+    return [f'{indent}"""{lines[0]}'] + [f"{indent}{l}".rstrip() for l in lines[1:]] + [f'{indent}"""']
+
+
+class Gen:
+    def __init__(self, schema: dict):
+        self.schema = schema
+        self.defs: dict = schema["$defs"]
+        self.blocks: list[str] = []  # emitted definitions, in order
+        self.done: set[str] = set()
+
+    # ----- types -----
+
+    def ref_name(self, node: dict) -> str | None:
+        ref = node.get("$ref")
+        return ref.rsplit("/", 1)[-1] if ref else None
+
+    def nullable_inner(self, node: dict) -> tuple[dict, bool]:
+        """Strips a null alternative: `anyOf: [X, null]` or `type: [t, null]`."""
+        any_of = node.get("anyOf")
+        if any_of and len(any_of) == 2 and {"type": "null"} in any_of:
+            inner = next(a for a in any_of if a != {"type": "null"})
+            merged = {k: v for k, v in node.items() if k != "anyOf"} | inner
+            return merged, True
+        t = node.get("type")
+        if isinstance(t, list) and "null" in t:
+            rest = [x for x in t if x != "null"]
+            return node | {"type": rest[0] if len(rest) == 1 else rest}, True
+        return node, False
+
+    def type_of(self, node: dict, hint: str) -> str:
+        """A Python annotation for a schema node. `hint` names inline objects."""
+        node, nullable = self.nullable_inner(node)
+        t = self._type_of(node, hint)
+        return f"{t} | None" if nullable else t
+
+    def _type_of(self, node: dict, hint: str) -> str:
+        if name := self.ref_name(node):
+            if len(node) > 1 and "properties" in node:
+                return self.object_type(node, hint)
+            self.define(name)
+            return name
+        if "const" in node:
+            return f"Literal[{json.dumps(node['const'])}]"
+        if "enum" in node:
+            return "Literal[" + ", ".join(json.dumps(v) for v in node["enum"]) + "]"
+        if "oneOf" in node or "anyOf" in node:
+            alts = node.get("oneOf") or node.get("anyOf")
+            return " | ".join(self.type_of(a, f"{hint}{i}") for i, a in enumerate(alts))
+        if "allOf" in node:
+            return self.object_type(node, hint)
+        t = node.get("type")
+        if t == "string":
+            return "str"
+        if t == "integer":
+            return "int"
+        if t == "number":
+            return "float"
+        if t == "boolean":
+            return "bool"
+        if t == "null":
+            return "None"
+        if t == "array":
+            return f"list[{self.type_of(node.get('items', {}), hint + 'Item')}]"
+        if t == "object" or "properties" in node:
+            if not node.get("properties"):
+                return "dict[str, Any]"
+            return self.object_type(node, hint)
+        return "Any"
+
+    def object_type(self, node: dict, name: str) -> str:
+        """Emits a TypedDict for an object node (merging `$ref`/`allOf`) and
+        returns its name."""
+        if name in self.done:
+            return name
+        self.done.add(name)
+        props, required = self.collect_props(node)
+        fields = []
+        for key in props:
+            ann = self.type_of(props[key], name + pascal(key))
+            fields.append((key, ann if key in required else f"NotRequired[{ann}]", props[key].get("description")))
+        self.emit_typeddict(name, fields, node.get("description"))
+        return name
+
+    def collect_props(self, node: dict) -> tuple[dict, set]:
+        props: dict = {}
+        required: set = set()
+        parts = [node]
+        if node.get("allOf"):
+            parts = node["allOf"] + [node]
+        for part in parts:
+            if (ref := self.ref_name(part)) is not None:
+                target = self.defs[ref]
+                if "oneOf" in target:
+                    # A union flattened in (EventNotification): keep it loose.
+                    props.setdefault("event", {"type": "string"})
+                    props.setdefault("data", {"type": "object"})
+                    required |= {"event", "data"}
+                else:
+                    p, r = self.collect_props(target)
+                    props |= p
+                    required |= r
+            for k, v in part.get("properties", {}).items():
+                props[k] = v
+            required |= set(part.get("required", []))
+        return props, required
+
+    def emit_typeddict(self, name: str, fields: list, description: str | None) -> None:
+        lines: list[str] = []
+        if any(not k.isidentifier() or keyword.iskeyword(k) for k, _, _ in fields):
+            body = ", ".join(f"{json.dumps(k)}: {a}" for k, a, _ in fields)
+            lines.append(f"{name} = TypedDict({json.dumps(name)}, {{{body}}})")
+            lines += [f"# {l}" for l in (description or "").strip().splitlines()]
+        else:
+            lines.append(f"class {name}(TypedDict):")
+            lines += doc_lines(description, "    ")
+            for key, ann, doc in fields:
+                lines.append(f"    {key}: {ann}")
+                lines += [f"    # {l}" for l in (doc or "").strip().splitlines()]
+            if not fields:
+                lines.append("    pass")
+        self.blocks.append("\n".join(lines))
+
+    def define(self, name: str) -> None:
+        if name in self.done:
+            return
+        node = self.defs[name]
+        if name in UNIONS:
+            self.done.add(name)
+            self.union(name, node, UNIONS[name])
+            return
+        if node.get("type") == "string" and "enum" not in node:
+            self.done.add(name)
+            self.blocks.append(f"{name} = str")
+            return
+        if "enum" in node or "oneOf" in node and all("const" in v for v in node["oneOf"]):
+            self.done.add(name)
+            values = node.get("enum") or [v["const"] for v in node["oneOf"]]
+            lines = [f"{name} = Literal[" + ", ".join(json.dumps(v) for v in values) + "]"]
+            lines += [f"# {l}" for l in (node.get("description") or "").strip().splitlines()]
+            self.blocks.append("\n".join(lines))
+            return
+        if "properties" in node or "allOf" in node:
+            self.object_type(node, name)
+            return
+        self.done.add(name)
+        self.blocks.append(f"{name} = {self._type_of(node, name)}")
+
+    def union(self, name: str, node: dict, tag: str) -> None:
+        variants = []
+        for v in node["oneOf"]:
+            props, _ = self.collect_props(v)
+            value = props[tag]["const"]
+            vname = pascal(value) + name
+            self.object_type(v, vname)
+            variants.append(vname)
+        lines = [f"{name} = Union["]
+        lines += [f"    {v}," for v in variants]
+        lines.append("]")
+        lines += [f"# {l}" for l in (node.get("description") or "").strip().splitlines()]
+        self.blocks.append("\n".join(lines))
+
+    # ----- methods -----
+
+    def commands(self) -> list[dict]:
+        out = []
+        for v in self.defs["Command"]["oneOf"]:
+            method = v["properties"]["method"]["const"]
+            params_node = v["properties"].get("params")
+            params: list[tuple[str, str, bool, str | None, str | None]] = []
+            if params_node:
+                target = self.defs[self.ref_name(params_node)]
+                props, required = self.collect_props(target)
+                for key, schema in props.items():
+                    inner, _ = self.nullable_inner(schema)
+                    id_kind = self.ref_name(inner)
+                    ann = self.type_of(schema, pascal(method) + pascal(key))
+                    params.append((key, ann, key in required, schema.get("description"), id_kind))
+            out.append({"method": method, "doc": v.get("description"), "params": params})
+        return out
+
+    def method_block(self, cmd: dict, is_async: bool) -> str:
+        name = py_name(snake(cmd["method"]))
+        req = [p for p in cmd["params"] if p[2]]
+        opt = [p for p in cmd["params"] if not p[2]]
+        args = ["self"]
+        args += [f"{py_name(k)}: {a}" for k, a, *_ in req]
+        if opt:
+            args.append("*")
+            args += [f"{py_name(k)}: {a.removesuffix(' | None')} | None = None" for k, a, *_ in opt]
+        sig = f"    {'async ' if is_async else ''}def {name}({', '.join(args)}) -> Reply:"
+        lines = [sig]
+        doc = (cmd["doc"] or "").strip()
+        param_docs = [f"{py_name(k)}: {d.strip().splitlines()[0]}" for k, _, _, d, _ in cmd["params"] if d]
+        full = f"`{cmd['method']}`." + (f" {doc}" if doc else "")
+        if param_docs:
+            full += "\n\n" + "\n".join(param_docs)
+        lines += doc_lines(full, "        ")
+        pairs = ", ".join(f"{json.dumps(k)}: {py_name(k)}" for k, *_ in cmd["params"])
+        call = f"self._call({json.dumps(cmd['method'])}, {{{pairs}}})"
+        lines.append(f"        return {'await ' if is_async else ''}{call}")
+        return "\n".join(lines)
+
+    # ----- module -----
+
+    def module(self) -> str:
+        for name in ["Event", "Reply", "Notification", "Error", "Session", "Tile", "Node", "TileContent"]:
+            self.define(name)
+        cmds = self.commands()
+        caller = {}
+        for cmd in cmds:
+            names = tuple(
+                k
+                for k, _, required, _, id_kind in cmd["params"]
+                if not required
+                and id_kind is not None
+                and CALLER.get(k) == id_kind
+                and (cmd["method"], k) not in CALLER_EXCEPT
+            )
+            if names:
+                caller[cmd["method"]] = names
+        digest = hashlib.sha256(SCHEMA.read_bytes()).hexdigest()
+        head = f'''# Generated by scripts/codegen-python from schema/api.v1.json. Do not edit.
+# Schema SHA-256: {digest}
+"""Types and methods for every API method, generated from the schema."""
+
+from __future__ import annotations
+
+from typing import Any, Literal, NotRequired, TypedDict, Union
+
+API_VERSION = {self.schema["version"]}
+SCHEMA_SHA256 = "{digest}"
+
+METHODS: tuple[str, ...] = (
+''' + "".join(f"    {json.dumps(c['method'])},\n" for c in cmds) + ''')
+
+# Optional ID params the client fills from the calling terminal tile.
+CALLER_PARAMS: dict[str, tuple[str, ...]] = {
+''' + "".join(f"    {json.dumps(m)}: ({', '.join(json.dumps(n) for n in names)},),\n" for m, names in caller.items()) + "}\n"
+        sync_methods = "\n\n".join(self.method_block(c, False) for c in cmds)
+        async_methods = "\n\n".join(self.method_block(c, True) for c in cmds)
+        tail = f'''
+
+class Methods:
+    """One method per API method. Subclasses provide `_call`."""
+
+    def _call(self, method: str, params: dict[str, Any]) -> Any:
+        raise NotImplementedError
+
+{sync_methods}
+
+
+class AsyncMethods:
+    """One coroutine per API method. Subclasses provide `_call`."""
+
+    async def _call(self, method: str, params: dict[str, Any]) -> Any:
+        raise NotImplementedError
+
+{async_methods}
+'''
+        return head + "\n\n" + "\n\n\n".join(self.blocks) + "\n\n" + tail
+
+
+def main() -> int:
+    text = Gen(json.loads(SCHEMA.read_text())).module()
+    if "--check" in sys.argv[1:]:
+        if not OUT.exists() or OUT.read_text() != text:
+            print(f"{OUT.relative_to(ROOT)} is stale: run scripts/codegen-python", file=sys.stderr)
+            return 1
+        return 0
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(text)
+    print(f"wrote {OUT.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

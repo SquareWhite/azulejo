@@ -25,6 +25,18 @@ e2e:
     cargo build -p azulejo-cli -p azulejo-daemon
     cargo test -p azulejo-daemon --test e2e -- --ignored --test-threads=1 --nocapture
 
+# Python client (clients/python): check the generated code, then pytest
+# against a headless azulejod (throwaway sockets; terminal tests use a
+# throwaway herdr session).
+python-test:
+    cargo build -p azulejo-daemon
+    scripts/codegen-python --check
+    cd clients/python && uv run --locked pytest -q
+
+# Regenerate the Python client from schema/api.v1.json
+python-codegen:
+    scripts/codegen-python
+
 # Build the macOS app into target/macos/Azulejo.app
 mac:
     apps/macos/bundle.sh
@@ -64,6 +76,7 @@ linux:
 # Regenerate schema/api.v1.json from the protocol crate. `just test` fails while it's stale.
 schema:
     cargo run -q -p azulejo-protocol --bin azj-schema schema/api.v1.json
+    scripts/codegen-python
 
 # Build GhosttyKit from vendor/ghostty
 ghostty:

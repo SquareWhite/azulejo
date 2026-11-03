@@ -33,6 +33,7 @@ scripts/*/build/
 
 # Python
 __pycache__/
+.pytest_cache/
 *.pyc
 .venv/
 clients/python/dist/
