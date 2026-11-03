@@ -36,4 +36,5 @@ jobs:
       - run: just build
       - run: just test
       - run: just lint
+      - run: just lint-linux
       - run: just linux

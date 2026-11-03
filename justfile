@@ -23,6 +23,10 @@ mac:
 mac-run: mac
     open target/macos/Azulejo.app
 
+# Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
+lint-linux:
+    cargo clippy -p azulejo-linux --all-targets -- -D warnings
+
 # Build the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 linux:
     cargo build -p azulejo-linux
