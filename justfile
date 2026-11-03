@@ -77,6 +77,18 @@ release-mac:
 release-notarize:
     scripts/release/notarize.sh
 
+# Build HEAD, swap it into /Applications, relaunch (--check, --dirty, --list, --rollback, --to <hash>, --no-launch)
+dogfood *args:
+    scripts/release/dogfood.sh {{args}}
+
+# Reinstall the build before the current one
+dogfood-rollback *args:
+    scripts/release/dogfood.sh --rollback {{args}}
+
+# Tests for `just dogfood` (temp dirs; never touches /Applications or a running Azulejo)
+test-dogfood:
+    scripts/release/test-dogfood.sh
+
 # Tests for the "Install Command-Line Tool" logic (temp dirs only)
 test-cli-installer:
     scripts/release/test-cli-installer.sh

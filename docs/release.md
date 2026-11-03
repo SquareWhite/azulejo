@@ -104,3 +104,8 @@ The menu item links `Contents/MacOS/azj` into:
 It asks first and replaces only a symlink, such as one pointing at an older Azulejo.app. It never replaces a regular file. `AZJ_CLI_INSTALL_DIR` overrides the target directory. `just test-cli-installer` tests the logic against temp directories.
 
 Whether the CLI should also ship as a Homebrew formula is still an open question in the PRD.
+
+## Dogfood builds
+
+For day-to-day use on this Mac, `just dogfood` builds HEAD in a separate worktree, quits Azulejo, swaps the app into `/Applications` and relaunches it, keeping the last three builds for `just dogfood --rollback`. It skips the `.dmg` (`AZJ_RELEASE_SKIP_DMG=1`) and signs the same way as `just release-mac`. Details: [dogfooding](dogfooding.md#updating). Tests: `just test-dogfood` (temp dirs only; `AZJ_TEST_DOGFOOD_BUILD=1` adds two real builds).
+

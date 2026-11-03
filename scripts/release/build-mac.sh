@@ -4,6 +4,7 @@
 #   scripts/release/build-mac.sh            # sign with a Developer ID if one is found, else ad-hoc
 #   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" scripts/release/build-mac.sh
 #   AZJ_REBUILD_GHOSTTY=1 scripts/release/build-mac.sh   # force a fresh ReleaseFast GhosttyKit
+#   AZJ_RELEASE_SKIP_DMG=1 scripts/release/build-mac.sh  # just the .app (scripts/release/dogfood.sh)
 #
 # Output: target/release-mac/{Azulejo.app, Azulejo-<version>.dmg, Azulejo-<version>.zip}
 #
@@ -60,6 +61,15 @@ cp "$root/target/release/azj" "$app/Contents/MacOS/azj"
 cp apps/macos/Resources/Info.plist "$app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
+# Which commit this is, for `just dogfood --list` and bug reports. "-dirty"
+# means tracked files had uncommitted changes when it was built.
+commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+if [[ "$commit" != unknown && -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+  commit="$commit-dirty"
+fi
+describe="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+plutil -replace AzulejoCommit -string "$commit" "$app/Contents/Info.plist"
+plutil -replace AzulejoDescribe -string "$describe" "$app/Contents/Info.plist"
 printf 'APPL????' > "$app/Contents/PkgInfo"
 # Ghostty's resources, where libghostty finds them from the executable:
 # Contents/Resources/terminfo/78/xterm-ghostty marks Contents/Resources/ghostty.
@@ -96,6 +106,11 @@ for exe in azj azj-observe; do
 done
 "${sign[@]}" --entitlements "$entitlements" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
+
+if [[ "${AZJ_RELEASE_SKIP_DMG:-0}" == 1 ]]; then
+  echo "==> $app"
+  exit 0
+fi
 
 # 6. .dmg (app + /Applications link) and .zip.
 dmg="$out/Azulejo-$version.dmg"

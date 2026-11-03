@@ -4,7 +4,7 @@ One week of real use on macOS with the frozen build `v0.1.0-dogfood.1`, before M
 
 ## Install
 
-1. The frozen build is in `dist/` at the repo root: `dist/Azulejo-0.1.0-dogfood.1.dmg` (and a `.zip`). To rebuild exactly that build: `git worktree add ../azulejo-dogfood v0.1.0-dogfood.1`, then `just release-mac` there (output in `target/release-mac/`).
+1. The first build is in `dist/` at the repo root: `dist/Azulejo-0.1.0-dogfood.1.dmg` (and a `.zip`). Or skip the `.dmg` entirely and run `just dogfood` (see [Updating](#updating)).
 2. Open the `.dmg` and drag Azulejo to Applications.
 3. The build is ad-hoc signed, not notarised, so Gatekeeper blocks the first launch. Either right-click Azulejo in Applications → **Open** → **Open**, or run once:
 
@@ -14,6 +14,23 @@ One week of real use on macOS with the frozen build `v0.1.0-dogfood.1`, before M
 
 4. In Azulejo's app menu, choose **Install Command-Line Tool…** It asks first, then links `azj` into `~/.local/bin` (or `/usr/local/bin`). Open a new terminal and try `azj help`.
 5. Hammerspoon: add `dev.azulejo.Azulejo` to `SWAP_CHORD_OWNERS` in `~/.hammerspoon/init.lua`, or `alt+shift+hjkl` moves the whole window instead of swapping tiles ([keybindings](keybindings.md)).
+
+## Updating
+
+After the first install, update with one command from the repo:
+
+```sh
+just dogfood              # build HEAD, quit Azulejo, swap it into /Applications, relaunch
+just dogfood --rollback   # back to the build before (again to go further back)
+just dogfood --list       # kept builds; * marks the installed one
+just dogfood --to <hash>  # reinstall a kept build by commit
+```
+
+- It builds the last commit in a separate worktree (`~/Library/Caches/Azulejo/dogfood-src`), so uncommitted changes in your checkout, including agents' work in progress, are left out. `--dirty` builds the checkout as it is; `--check` runs `just build test lint` first.
+- Quitting saves the layout, and herdr keeps every terminal and agent running, so an update costs a second or two of reattaching. If Azulejo doesn't quit within 10 s the script stops and changes nothing (`--force-kill` overrides).
+- The last three builds, plus the one installed, stay in `~/Library/Application Support/Azulejo/dogfood-builds/`. The `.dmg` build you started with is kept there too, so `--rollback` can get back to it.
+- Each build records its commit (`AzulejoCommit` in `Info.plist`). Mention it in bug reports: `just dogfood --list` shows it.
+- `azj` links into the bundle, so it updates with the app. Builds made on this Mac carry no quarantine flag, so there's no Gatekeeper prompt after the first install.
 
 ## What happens on first launch
 
