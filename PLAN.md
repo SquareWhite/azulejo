@@ -297,15 +297,17 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
   **Done when** no view hard-codes a colour or radius.
   **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: 1 pt accent outline at 45 %, pending designer confirmation (docs/design/README.md).
 
-- [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
+- [x] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
+  **Result:** 94663ec (merged 3da01cf): hidden title bar, lights at the card's top left, toolbar row 60 pt, empty toolbar space drags the window. Fixed in D.9: the content view now paints the window colour (the gaps around the cards were see-through), and the lights are re-placed after every refresh (a workspace rename or switch put them back behind the card). Open: in the full D.9 scene the lights still don't show in the capture ([compare-v1](docs/design/compare-v1.md), item 6).
 
 - [x] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
   **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names, and the Files panel navigates and opens files like the files tile.
   **Result:** `Sidebar.swift` styles the content of D.2's card: Agents | Files switch, machine groups (dot, or amber spinner + "Reconnecting…"; rows dimmed while a machine isn't connected), workspace rows (status icon, name, branch truncated on the right, selected fill, hover), "+" per group, footer counts. Files is a new core `files.panel` (a tree outside the layout; `files.open` from it lands beside the focused tile, which keeps focus); Esc hands the keyboard back, and refreshes don't take it (`KeepsKeyboard` in TileFocus). Remote workspaces' files aren't shown yet. `apps/macos/automation/sidebar.sh` checks it; screenshots compared with the mockup's left column. Open: the working icon (`progress.indicator`, D.1) draws rays where the mockup has a partial ring; "done" can't be simulated with `herdr pane report-agent`.
 
-- [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
+- [x] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
   **Done when** tabs match the mockup and attention state shows on them.
+  **Result:** 94663ec (merged 3da01cf): pill strip, state icon per tab (blocked, done, working, idle), selected fill, "+", ellipsis when short of room; the layout kind is in the tooltip.
 
 - [x] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
   **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
@@ -319,11 +321,13 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
   **Done when** it matches the mockup's preview tile.
   **Result:** left-aligned file name, Preview | Source pill on the right, Open and Reveal on hover; the page's dark palette now matches the mockup (body #252930).
 
-- [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
+- [x] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
   **Done when** clicking the field or pressing the chord opens the same menu.
+  **Result:** 94663ec (merged 3da01cf): the field shows the bound chord (⌘K) and opens quick open as a dropdown hanging from it, by click or chord.
 
-- [ ] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
+- [x] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
   **Done when** the maintainer and the designer sign off on the side-by-side.
+  **Result:** `apps/macos/automation/mockup.sh` builds the scene on its own dev instance (fixture repos, stand-in machines "build-server" and a disconnected "dev-server", a fixture web page, ADR and test output) and captures it at 1440 × 900: `docs/design/capture-v1.png` (local capture), side by side with the mockup and the remaining differences in [compare-v1.md](docs/design/compare-v1.md). The working icon is now the mockup's partial ring (`azulejo.ring`, drawn by the app; it turns while motion is on). Sign-off pending.
 
 ### Decided from the mockup (Nov 3, 2026)
 
@@ -340,6 +344,19 @@ Details and status per element are in [docs/design/README.md](docs/design/README
 
 ### Gate GD
 D.1–D.9 ticked; the side-by-side comparison signed off.
+
+**Status (Nov 3, 2026):** D.1–D.9 ticked; waiting for sign-off on [compare-v1.md](docs/design/compare-v1.md).
+
+**Pending the designer:**
+- The focus indicator (a 1 pt accent outline today; the mockup shows none) and whether the focused tile's body gets the mockup's lighter tint (terminals draw their own body from the Ghostty theme).
+- The agent badge in the tile corner ("claude · working"): keep, limit to blocked or finished, or drop.
+- Which state a workspace row shows when its tabs disagree (the mockup: working, with a blocked tab).
+- The default terminal font size when the user's Ghostty config sets none.
+- The mockup's wording: "session" becomes "workspace".
+
+**Open after D.9:**
+- The traffic lights don't show in the full scene's capture (compare-v1, item 6).
+- Crop motion: in a slowed split, a shrinking terminal's 1:1 snapshot draws past its tile's moving bottom edge into the new tile (about 15 pt, cut at the terminal view's final height). The tiles' on-screen frames are in step (logged by `capture`), so the tile frame's clip isn't applied to the snapshot. Setting `clipsToBounds` on the tile views didn't change it. Reproduce: `AZJ_DEV_NAME=x apps/macos/automation/anim.sh --slow`, captures `01-split-a-mid*.png`.
 
 ---
 

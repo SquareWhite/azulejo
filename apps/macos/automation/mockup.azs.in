@@ -1,0 +1,85 @@
+# The mockup's scene (PLAN D.9), built with fixture data. Run by
+# automation/mockup.sh, which fills in @FX@ (fixtures) and @REMOTE_*@ (the
+# stand-in machines' herdr sessions). Nothing here reaches a real machine.
+
+log mockup
+seen-visible off
+window-size 1440 900
+sidebar mode agents
+until machines Local=connected,build-server=connected,dev-server=connected 20000
+
+# Local: seven workspaces, as in the mockup. The first gets the tile scene;
+# each agent state is reported while its workspace is focused (herdr can't
+# report "done": those rows stay idle). Reports go twice: one sent right
+# after a pane binds can beat Azulejo's subscription to it.
+# The window opens on a local starter workspace: the scene replaces its tab.
+core {"method":"layout.apply","params":{"path":"@FX@/scene.toml","mode":"replace_tab"}}
+until tabs 3 8000
+core {"method":"workspace.rename","params":{"name":"azulejo"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/azulejo"}}
+wait 2500
+action switch_tab 2
+wait 600
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state blocked
+action switch_tab 1
+wait 600
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state working
+action switch_tab 2
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state blocked
+action switch_tab 1
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state working
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"sample-service"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/sample-service"}}
+wait 1800
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state blocked
+wait 500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state blocked
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"sample-app"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/sample-app"}}
+wait 800
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"sample-api"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/sample-api"}}
+wait 1800
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state working
+wait 500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent claude --state working
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"sample-project"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/sample-project"}}
+wait 1800
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent codex --state blocked
+wait 500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-mockup --agent codex --state blocked
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"sample-dashboard"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/sample-dashboard"}}
+wait 800
+
+action new_workspace
+core {"method":"workspace.rename","params":{"name":"config"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/repos/config"}}
+wait 1500
+
+# dev-server loses its link: Reconnecting…; build-server stays up.
+sh touch @SIDE@/ssh.dev-server.fail
+sh pkill -f '@REMOTE_T@ remote-api-bridge' || true
+until machines Local=connected,build-server=connected,dev-server=reconnecting 15000
+
+# The mockup's view: azulejo, tab "agents", the claude tile focused.
+sidebar select 1
+action switch_tab 1
+sidebar mode agents
+wait 2500
+expect chrome.lights 29,31
+capture 01-scene 0
+wait 1500
+shot 01-scene
+quit

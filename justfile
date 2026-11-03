@@ -81,6 +81,10 @@ mac-layouts: mac
 mac-focus: mac
     apps/macos/automation/focus/focus.sh
 
+# The designer mockup's scene with fixture data, captured for docs/design (D.9)
+mac-mockup: mac
+    apps/macos/automation/mockup.sh
+
 # Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 lint-linux:
     cargo clippy -p azulejo-linux --all-targets -- -D warnings

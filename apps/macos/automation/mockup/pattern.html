@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pattern 14, Alfama · azulejo</title>
+<style>
+  :root { --ink: #1c1e22; --muted: #5d6068; --blue: #1f4ea6; --ground: #d6d8dd; --bar: #cfd1d6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px -apple-system, "SF Pro Text", system-ui, sans-serif; color: var(--ink); background: var(--ground); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--bar); border-bottom: 1px solid #c3c5ca; }
+  header b { font-size: 15px; }
+  nav a { margin-left: 18px; color: var(--muted); text-decoration: none; }
+  nav a.on { color: var(--ink); font-weight: 600; }
+  main { padding: 18px 20px; }
+  h1 { display: inline; font-size: 21px; font-weight: 600; margin: 0 10px 0 0; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  svg { display: block; margin-top: 14px; width: 442px; height: 176px; }
+</style>
+</head>
+<body>
+<header><b>azulejo</b><nav><a class="on" href="#">Patterns</a><a href="#">Palettes</a><a href="#">Export</a></nav></header>
+<main>
+  <h1>Pattern 14, Alfama</h1><span class="meta">5 × 2 repeat · 2 colours</span>
+  <svg viewBox="0 0 440 176" xmlns="http://www.w3.org/2000/svg" aria-label="Blue and white tile pattern">
+    <defs>
+      <pattern id="tile" width="88" height="88" patternUnits="userSpaceOnUse">
+        <rect width="88" height="88" fill="#d9dbe0"/>
+        <circle cx="0" cy="0" r="22" fill="#1f4ea6"/>
+        <circle cx="88" cy="0" r="22" fill="#1f4ea6"/>
+        <circle cx="0" cy="88" r="22" fill="#1f4ea6"/>
+        <circle cx="88" cy="88" r="22" fill="#1f4ea6"/>
+        <path d="M44 10 L78 44 L44 78 L10 44 Z" fill="none" stroke="#1f4ea6" stroke-width="7"/>
+        <path d="M44 24 L64 44 L44 64 L24 44 Z" fill="#d9dbe0" stroke="#1f4ea6" stroke-width="4"/>
+        <circle cx="44" cy="44" r="10" fill="#1f4ea6"/>
+      </pattern>
+      <pattern id="alt" width="176" height="176" patternUnits="userSpaceOnUse">
+        <rect x="88" y="0" width="88" height="88" fill="#1f4ea6"/>
+        <rect x="0" y="88" width="88" height="88" fill="#1f4ea6"/>
+      </pattern>
+    </defs>
+    <rect width="440" height="176" fill="url(#tile)"/>
+    <rect width="440" height="176" fill="url(#alt)" opacity="0.92" style="mix-blend-mode: multiply"/>
+  </svg>
+</main>
+</body>
+</html>

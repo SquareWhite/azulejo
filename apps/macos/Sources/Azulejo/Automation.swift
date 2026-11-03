@@ -141,6 +141,17 @@ final class Automation {
         case "until": return until(arg)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
+        case "window-size":
+            // `window-size <width> <height>`: the focused window's content size
+            // in points (mockup comparisons capture at the mockup's size).
+            let bits = arg.split(separator: " ").compactMap { Double($0) }
+            if bits.count == 2, let window = app?.focusedController?.window {
+                window.setContentSize(NSSize(width: bits[0], height: bits[1]))
+                record("window-size \(Int(bits[0]))×\(Int(bits[1]))")
+            } else {
+                failures.append("line \(step): window-size \(arg): needs a width and a height")
+            }
+            delay = 0.3
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
@@ -276,6 +287,10 @@ final class Automation {
             self.renderPresentation("\(name)-app")
         }
         record("capture \(name) +\(Int(delay * 1000)) ms")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, let tiles = self.app?.focusedController?.tiles else { return }
+            self.record("  frames \(name): \(tiles.describeVisualFrames)")
+        }
     }
 
     /// The window's content as Core Animation is showing it right now

@@ -702,6 +702,14 @@ final class TileContainerView: NSView {
         }
     }
 
+    /// Automation: each tile's on-screen frame right now (mid-motion: the
+    /// presentation), as "x,y,w,h" by tile id suffix.
+    var describeVisualFrames: String {
+        visualFrames().sorted { $0.key < $1.key }.map { id, r in
+            "\(id.suffix(4))=\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"
+        }.joined(separator: " ")
+    }
+
     /// Where each on-screen tile appears right now: its presentation frame
     /// while it moves, else its frame.
     private func visualFrames() -> [String: CGRect] {

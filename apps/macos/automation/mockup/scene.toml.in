@@ -1,0 +1,36 @@
+# The mockup's "agents" workspace (docs/design/mockup-v1.png), for
+# automation/mockup.sh. @FX@ is the fixture folder, @REPO@ this checkout,
+# @PORT@ the fixture web server.
+
+name = "azulejo"
+
+[[tab]]
+name = "agents"
+[tab.root]
+split = "horizontal"
+sizes = [53, 47]
+[[tab.root.children]]
+title = "claude"
+cwd = "@REPO@"
+command = "clear; cat @FX@/claude.txt"
+focus = true
+[[tab.root.children]]
+split = "vertical"
+sizes = [50, 50]
+[[tab.root.children.children]]
+url = "http://localhost:@PORT@/patterns/14"
+[[tab.root.children.children]]
+split = "horizontal"
+sizes = [50, 50]
+children = [
+  { path = "@FX@/0009-pane-exit.md" },
+  { title = "zsh", cwd = "@REPO@", command = "clear; @FX@/just dogfood" },
+]
+
+[[tab]]
+name = "review"
+tile = [{ title = "claude", cwd = "@REPO@" }]
+
+[[tab]]
+name = "release"
+tile = [{ title = "claude", cwd = "@REPO@" }]
