@@ -40,3 +40,4 @@ clients/python/dist/
 # Local tooling
 .claude-last-session
 .claude/settings.local.json
+.dev/
