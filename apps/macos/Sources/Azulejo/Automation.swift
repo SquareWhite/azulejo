@@ -385,6 +385,7 @@ final class Automation {
         }
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(controller.chromeState()) { $1 }
         return s
     }
 
