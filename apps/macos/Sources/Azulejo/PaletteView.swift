@@ -29,16 +29,10 @@ struct PaletteItem {
         /// SF Symbol for the row's icon.
         var symbol: String {
             switch self {
-            case .command: return "command"
-            case .workspace: return "square.stack.3d.up"
-            case .tab: return "rectangle.topthird.inset.filled"
-            case .tile(let kind):
-                switch kind {
-                case .terminal: return "terminal"
-                case .browser: return "globe"
-                case .preview: return "doc.text"
-                case .files: return "folder"
-                }
+            case .command: return Design.Icon.command
+            case .workspace: return Design.Icon.workspace
+            case .tab: return Design.Icon.tab
+            case .tile(let kind): return Design.Icon.for(kind)
             }
         }
     }
@@ -123,7 +117,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         super.init(frame: frame)
         wantsLayer = true
         isHidden = true
-        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowColor = Design.Color.shadow.cgColor
         layer?.shadowOpacity = 0.35
         layer?.shadowRadius = 18
         layer?.shadowOffset = CGSize(width: 0, height: -6)
@@ -132,23 +126,23 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         backdrop.blendingMode = .withinWindow
         backdrop.state = .active
         backdrop.wantsLayer = true
-        backdrop.layer?.cornerRadius = 10
+        backdrop.layer?.cornerRadius = Design.Radius.palette
         backdrop.layer?.masksToBounds = true
-        backdrop.layer?.borderWidth = 1
-        backdrop.layer?.borderColor = NSColor.separatorColor.cgColor
+        backdrop.layer?.borderWidth = Design.Border.hairline
+        backdrop.layer?.borderColor = Design.Color.border.cgColor
         addSubview(backdrop)
 
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 15)
+        field.font = Design.Font.paletteField
         field.delegate = self
         field.cell?.isScrollable = true
         field.cell?.wraps = false
         addSubview(field)
 
-        promptLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        promptLabel.textColor = .secondaryLabelColor
+        promptLabel.font = Design.Font.palettePrompt
+        promptLabel.textColor = Design.Color.textSecondary
         addSubview(promptLabel)
 
         list.onClick = { [weak self] row in
@@ -381,7 +375,7 @@ final class PaletteListView: NSView {
         let h = PaletteView.rowHeight
         if rows.isEmpty {
             let text = NSAttributedString(string: "No matches", attributes: [
-                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor,
+                .font: Design.Font.paletteTitle, .foregroundColor: Design.Color.textMuted,
             ])
             text.draw(at: NSPoint(x: 12, y: (h - text.size().height) / 2))
             return
@@ -390,8 +384,9 @@ final class PaletteListView: NSView {
             let index = n + offset
             let rect = NSRect(x: 0, y: CGFloat(n) * h, width: bounds.width, height: h)
             if index == selected {
-                NSColor.selectedContentBackgroundColor.withAlphaComponent(0.35).setFill()
-                NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 1), xRadius: 6, yRadius: 6).fill()
+                Design.Color.selected.setFill()
+                NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 1),
+                             xRadius: Design.Radius.pill, yRadius: Design.Radius.pill).fill()
             }
             draw(row.item, match: row.match, in: rect)
         }
@@ -415,13 +410,13 @@ final class PaletteListView: NSView {
         let right = NSMutableAttributedString()
         // Kind tag first, so commands and places read apart at a glance.
         right.append(NSAttributedString(string: item.kind.label, attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.tertiaryLabelColor,
+            .font: Design.Font.paletteSection,
+            .foregroundColor: Design.Color.textMuted,
         ]))
         if let note = item.note {
             right.append(NSAttributedString(string: "   "))
             right.append(NSAttributedString(string: note, attributes: [
-                .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor,
+                .font: Design.Font.detail, .foregroundColor: Design.Color.textMuted,
             ]))
         }
         if !item.chords.isEmpty {
@@ -429,16 +424,16 @@ final class PaletteListView: NSView {
             right.append(NSAttributedString(
                 string: item.chords.prefix(2).map(PaletteFuzzy.prettyChord).joined(separator: "  "),
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .font: Design.Font.chord,
+                    .foregroundColor: Design.Color.textSecondary,
                 ]))
         }
         let rightSize = right.size()
         right.draw(at: NSPoint(x: rect.maxX - rightSize.width - 12, y: rect.midY - rightSize.height / 2))
 
-        let titleColor: NSColor = item.enabled ? .labelColor : .tertiaryLabelColor
+        let titleColor = item.enabled ? Design.Color.textPrimary : Design.Color.textMuted
         let text = NSMutableAttributedString(string: item.title, attributes: [
-            .font: NSFont.systemFont(ofSize: 13), .foregroundColor: titleColor,
+            .font: Design.Font.paletteTitle, .foregroundColor: titleColor,
         ])
         let highlighted = Set(match?.indices ?? [])
         if !highlighted.isEmpty {
@@ -446,14 +441,14 @@ final class PaletteListView: NSView {
                 let start = item.title.index(item.title.startIndex, offsetBy: i)
                 let range = NSRange(start...start, in: item.title)
                 text.addAttributes([
-                    .font: NSFont.systemFont(ofSize: 13, weight: .bold),
-                    .foregroundColor: item.enabled ? NSColor.controlAccentColor : titleColor,
+                    .font: Design.Font.paletteMatch,
+                    .foregroundColor: item.enabled ? Design.Color.accent : titleColor,
                 ], range: range)
             }
         }
         if !item.detail.isEmpty {
             text.append(NSAttributedString(string: "  " + item.detail, attributes: [
-                .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
+                .font: Design.Font.detail, .foregroundColor: Design.Color.textSecondary,
             ]))
         }
         let maxWidth = max(40, rect.maxX - rightSize.width - 24 - x)
@@ -467,7 +462,7 @@ final class PaletteListView: NSView {
     static func icon(_ kind: PaletteItem.Kind) -> NSImage? {
         if let cached = icons[kind.symbol] { return cached }
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
-            .applying(.init(paletteColors: [.secondaryLabelColor]))
+            .applying(.init(paletteColors: [Design.Color.textSecondary]))
         guard let image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.label)?
             .withSymbolConfiguration(config) else { return nil }
         icons[kind.symbol] = image

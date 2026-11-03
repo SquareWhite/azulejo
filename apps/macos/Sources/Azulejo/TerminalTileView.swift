@@ -94,8 +94,8 @@ final class TerminalTileView: NSView, TileView {
             .appendingPathComponent(tile.id, isDirectory: true)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
-        layer?.cornerRadius = 4
+        layer?.backgroundColor = Design.Color.tile.cgColor
+        layer?.cornerRadius = Design.Radius.terminal
         layer?.masksToBounds = true
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         overlay.onButton = { [weak self] action in self?.overlayAction(action) }
@@ -819,8 +819,8 @@ final class TerminalOverlay: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         NSLayoutConstraint.deactivate(constraints.filter { $0.firstItem === stack || $0.secondItem === stack })
         let title = NSTextField(labelWithString: content.title)
-        title.font = .systemFont(ofSize: content.style == .full ? 14 : 12, weight: .semibold)
-        title.textColor = .white
+        title.font = content.style == .full ? Design.Font.overlayTitle : Design.Font.overlayTitleSmall
+        title.textColor = Design.Color.textOnAccent
         actions = content.buttons.map(\.action)
         let buttons = content.buttons.enumerated().map { index, button in
             let b = NSButton(title: button.title, target: self, action: #selector(pressed(_:)))
@@ -831,13 +831,13 @@ final class TerminalOverlay: NSView {
         }
         switch content.style {
         case .full:
-            layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.92).cgColor
+            layer?.backgroundColor = Design.Color.overlay.cgColor
             stack.orientation = .vertical
             stack.addArrangedSubview(title)
             if let detail = content.detail {
                 let label = NSTextField(labelWithString: detail)
-                label.font = .systemFont(ofSize: 12)
-                label.textColor = NSColor(calibratedWhite: 0.75, alpha: 1)
+                label.font = Design.Font.overlayBody
+                label.textColor = Design.Color.overlayText
                 stack.addArrangedSubview(label)
             }
             if !buttons.isEmpty {
@@ -855,8 +855,8 @@ final class TerminalOverlay: NSView {
             layer?.backgroundColor = NSColor.clear.cgColor
             stack.orientation = .horizontal
             stack.wantsLayer = true
-            stack.layer?.backgroundColor = NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.05, alpha: 0.95).cgColor
-            stack.layer?.cornerRadius = 4
+            stack.layer?.backgroundColor = Design.Color.takeover.cgColor
+            stack.layer?.cornerRadius = Design.Radius.overlay
             stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 6)
             stack.addArrangedSubview(title)
             buttons.forEach { stack.addArrangedSubview($0) }

@@ -24,11 +24,11 @@ final class BannerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = Design.Radius.banner
         isHidden = true
 
-        icon.font = .systemFont(ofSize: 13, weight: .bold)
-        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        icon.font = Design.Font.bannerIcon
+        text.font = Design.Font.bannerText
         text.maximumNumberOfLines = Self.maxLines
         text.lineBreakMode = .byWordWrapping
         text.cell?.truncatesLastVisibleLine = true
@@ -36,7 +36,7 @@ final class BannerView: NSView {
         close.bezelStyle = .inline
         close.isBordered = false
         close.title = "✕"
-        close.font = .systemFont(ofSize: 12, weight: .semibold)
+        close.font = Design.Font.bannerClose
         close.target = self
         close.action = #selector(dismiss)
         close.refusesFirstResponder = true
@@ -92,12 +92,12 @@ final class BannerView: NSView {
         message = lines.joined(separator: "\n")
         text.stringValue = message
         toolTip = path
-        let tint: NSColor = errors ? .systemRed : .systemYellow
+        let tint = errors ? Design.Color.error : Design.Color.warning
         icon.stringValue = errors ? "⚠︎" : "ⓘ"
         icon.textColor = tint
         layer?.backgroundColor = tint.withAlphaComponent(0.16).blended(
-            withFraction: 0.75, of: .windowBackgroundColor)?.cgColor
-        layer?.borderWidth = 1
+            withFraction: 0.75, of: Design.Color.window)?.cgColor
+        layer?.borderWidth = Design.Border.hairline
         layer?.borderColor = tint.withAlphaComponent(0.5).cgColor
         isHidden = false
         superview?.needsLayout = true

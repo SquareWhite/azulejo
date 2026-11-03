@@ -75,10 +75,10 @@ final class PlaceholderTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.backgroundColor = Self.color(for: tile.kind).cgColor
-        label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
-        label.textColor = .white
+        layer?.cornerRadius = Design.Radius.tile
+        layer?.backgroundColor = Design.Color.placeholder(tile.kind).cgColor
+        label.font = Design.Font.tileLabel
+        label.textColor = Design.Color.textOnAccent
         label.alignment = .center
         label.maximumNumberOfLines = 4
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -127,15 +127,6 @@ final class PlaceholderTileView: NSView, TileView {
         case .files: if let root = model.root { lines.append(root) }
         }
         label.stringValue = lines.joined(separator: "\n")
-    }
-
-    private static func color(for kind: TileKind) -> NSColor {
-        switch kind {
-        case .terminal: NSColor(calibratedRed: 0.16, green: 0.19, blue: 0.24, alpha: 1)
-        case .browser: NSColor(calibratedRed: 0.13, green: 0.32, blue: 0.48, alpha: 1)
-        case .preview: NSColor(calibratedRed: 0.36, green: 0.25, blue: 0.47, alpha: 1)
-        case .files: NSColor(calibratedRed: 0.20, green: 0.38, blue: 0.27, alpha: 1)
-        }
     }
 }
 

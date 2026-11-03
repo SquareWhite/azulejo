@@ -208,10 +208,10 @@ final class HUDView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        layer?.cornerRadius = Design.Radius.hud
+        layer?.backgroundColor = Design.Color.hud.cgColor
+        label.textColor = Design.Color.textOnAccent
+        label.font = Design.Font.hud
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([

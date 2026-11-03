@@ -15,7 +15,7 @@ protocol TileHeaderAccessory {
 /// change (ADR 0004). Everything a tile view does is forwarded.
 @MainActor
 class TileFrame: NSView, TileView {
-    static let headerHeight: CGFloat = 28
+    static let headerHeight = Design.Space.headerHeight
 
     let content: any TileView
     let header: TileHeaderView
@@ -33,7 +33,7 @@ class TileFrame: NSView, TileView {
         header = TileHeaderView(kind: content.kind)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = Design.Radius.tile
         layer?.masksToBounds = true
         if let accessory = (content as? TileHeaderAccessory)?.headerAccessory {
             header.setAccessory(accessory)
@@ -64,7 +64,7 @@ class TileFrame: NSView, TileView {
 
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            layer?.backgroundColor = Design.Color.tile.cgColor
         }
     }
 
@@ -165,7 +165,7 @@ final class TileHeaderView: NSView {
         wantsLayer = true
         icon.image = NSImage(systemSymbolName: Self.symbol(kind), accessibilityDescription: kind.rawValue)
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        icon.contentTintColor = .secondaryLabelColor
+        icon.contentTintColor = Design.Color.textSecondary
         label.lineBreakMode = .byTruncatingMiddle
         label.maximumNumberOfLines = 1
         label.cell?.truncatesLastVisibleLine = true
@@ -199,13 +199,13 @@ final class TileHeaderView: NSView {
 
     private func render() {
         let text = NSMutableAttributedString(string: titleText, attributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: focused ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            .font: Design.Font.headerTitle,
+            .foregroundColor: focused ? Design.Color.textPrimary : Design.Color.textSecondary,
         ])
         if !subtitleText.isEmpty {
             text.append(NSAttributedString(string: " — \(subtitleText)", attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
-                .foregroundColor: NSColor.tertiaryLabelColor,
+                .font: Design.Font.headerSubtitle,
+                .foregroundColor: Design.Color.textMuted,
             ]))
         }
         label.attributedStringValue = text
@@ -222,7 +222,7 @@ final class TileHeaderView: NSView {
             accessory.frame = NSRect(x: right - w, y: (h - size.height) / 2, width: w, height: size.height)
             right -= w + 6
         }
-        let x: CGFloat = 29
+        let x = Design.Space.headerTitleX
         let labelHeight = label.intrinsicContentSize.height
         label.frame = NSRect(x: x, y: (h - labelHeight) / 2, width: max(right - x, 0), height: labelHeight)
     }
@@ -235,16 +235,9 @@ final class TileHeaderView: NSView {
 
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            layer?.backgroundColor = Design.Color.sidebar.cgColor
         }
     }
 
-    private static func symbol(_ kind: TileKind) -> String {
-        switch kind {
-        case .terminal: "terminal"
-        case .browser: "globe"
-        case .preview: "doc.text"
-        case .files: "folder"
-        }
-    }
+    private static func symbol(_ kind: TileKind) -> String { Design.Icon.for(kind) }
 }

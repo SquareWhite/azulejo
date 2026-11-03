@@ -67,9 +67,9 @@ final class BrowserTileView: NSView, TileView {
         super.init(frame: .zero)
 
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = Design.Radius.tile
         layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.tile.cgColor
 
         webView.isInspectable = true
         webView.allowsBackForwardNavigationGestures = true
@@ -79,7 +79,7 @@ final class BrowserTileView: NSView, TileView {
 
         address.placeholderString = "Address or search (⌘L)"
         address.bezelStyle = .roundedBezel
-        address.font = .systemFont(ofSize: 12)
+        address.font = Design.Font.field
         address.lineBreakMode = .byTruncatingTail
         address.usesSingleLineMode = true
         address.cell?.isScrollable = true
@@ -93,7 +93,7 @@ final class BrowserTileView: NSView, TileView {
         more.target = self; more.action = #selector(showMore(_:))
 
         progress.wantsLayer = true
-        progress.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        progress.layer?.backgroundColor = Design.Color.accent.cgColor
         progress.isHidden = true
 
         banner.isHidden = true
@@ -590,8 +590,8 @@ final class BrowserBanner: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 6
-        label.font = .systemFont(ofSize: 12)
+        layer?.cornerRadius = Design.Radius.toast
+        label.font = Design.Font.field
         label.lineBreakMode = .byTruncatingTail
         button.bezelStyle = .rounded
         button.controlSize = .small
@@ -609,11 +609,11 @@ final class BrowserBanner: NSView {
     func show(_ text: String, style: Style, action: (String, () -> Void)?) {
         hideWork?.cancel()
         label.stringValue = text
-        label.textColor = style == .error ? .white : .labelColor
-        layer?.backgroundColor = (style == .error ? NSColor.systemRed : NSColor.controlBackgroundColor)
+        label.textColor = style == .error ? Design.Color.textOnAccent : Design.Color.textPrimary
+        layer?.backgroundColor = (style == .error ? Design.Color.error : Design.Color.control)
             .withAlphaComponent(0.95).cgColor
-        layer?.borderWidth = style == .error ? 0 : 1
-        layer?.borderColor = NSColor.separatorColor.cgColor
+        layer?.borderWidth = style == .error ? 0 : Design.Border.hairline
+        layer?.borderColor = Design.Color.border.cgColor
         self.action = action?.1
         button.title = action?.0 ?? ""
         button.isHidden = action == nil

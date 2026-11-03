@@ -88,6 +88,25 @@ Four tiles in the mockup: a terminal as the master on the left, a browser top-ri
 | `accent.orange` | `#d19a66` | reconnecting |
 | `accent.red` | `#e06c75` (One Dark, not sampled) | errors, inline code |
 
+## Tokens in code (D.1)
+
+The values above live in [`shared/design/tokens.json`](../../shared/design/tokens.json), the single source for both shells. The macOS shell reads them through `Design.swift`, which `scripts/design-tokens` (or `just design-tokens`) generates; `just lint` fails while it's stale. No view sets a colour, font or corner radius directly any more.
+
+- **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Each has a dark and a light value; the light ones are provisional.
+- **Radii and spacing** are the values shipping today, not yet the mockup's. D.5 moves them to the mockup targets in the JSON: gutter 4 → 8 pt, tile radius 6 → 10 pt, sidebar width 168 → 230 pt.
+- **Status icons** (`Design.Status`): working `progress.indicator`, blocked `exclamationmark.circle.fill`, done `checkmark.circle`, idle `circle.dashed`, off and connecting `circle.dotted`, reconnecting `arrow.triangle.2.circlepath`, error `exclamationmark.triangle.fill`, connected `circle.fill`, each with its status colour.
+- **Blocked is yellow**, as in the mockup, where the shell used red before. Red is for errors only.
+
+### Focus indicator (pending designer confirmation)
+
+The mockup doesn't show focus. Until the designer decides, the focused tile gets:
+
+- a 1 pt outline in the accent blue at 45 % opacity (`Design.Color.focus`, `Design.Border.focus`), drawn just outside the tile and sliding between tiles as before;
+- its header title at full brightness (`textPrimary`); other tiles' header titles use `textSecondary`;
+- an orange outline instead while the tile is zoomed (`Design.Color.zoom`).
+
+Changing any of these is a one-line edit in `tokens.json`.
+
 ## What the mockup needs, against the plan
 
 Status as of Nov 3, 2026, after the maintainer's decisions. "Visual" means M2.5 only; "functional" means something the core or the shell can't do yet.
@@ -114,7 +133,7 @@ Status as of Nov 3, 2026, after the maintainer's decisions. "Visual" means M2.5 
 | **Preview \| Source** toggle | F29, PLAN 2.15 | decided: M2, before polish | functional |
 | Rounded tile cards with gutters | — | M2.5 | visual |
 | One Dark chrome palette, terminal theme to match | M2.5 D.1 (design tokens) | decided: M2.5 | functional (theme) + visual |
-| Focus indicator | 1.6 focus ring, 2.1 ring animation | done; the mockup shows none, so **ask the designer** | visual |
+| Focus indicator | 1.6 focus ring, 2.1 ring animation, D.1 subtle default | done; the mockup shows none, so **ask the designer** (default described above) | visual |
 | "session" wording ("Jump to session or tile") | keep "workspace" | decided: designer relabels | copy |
 
 ### Decisions on the functional items (Nov 3, 2026)

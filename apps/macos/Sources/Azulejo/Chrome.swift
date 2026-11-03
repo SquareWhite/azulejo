@@ -10,7 +10,7 @@ import AppKit
 /// visuals; the mockup's styling comes with M2.5.
 @MainActor
 final class SidebarView: NSView {
-    static let width: CGFloat = 168
+    static let width = Design.Space.sidebarWidth
     var onSelect: ((String) -> Void)?
     /// "+" on a machine group: create a workspace on that machine.
     var onAdd: ((String) -> Void)?
@@ -20,7 +20,7 @@ final class SidebarView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.sidebar.cgColor
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 2
@@ -157,24 +157,24 @@ final class MachineHeader: NSView {
     init(title: String) {
         summary = title
         super.init(frame: .zero)
-        build(title: title, dot: nil, state: nil, stateColor: .secondaryLabelColor)
+        build(title: title, dot: nil, state: nil, stateColor: Design.Color.textMuted)
     }
 
     init(group: SidebarView.Group) {
         let machine = group.machine
         let (dot, state): (NSColor, String?) = switch machine?.state {
-        case .connected: (.systemGreen, nil)
-        case .connecting: (.systemYellow, "Connecting…")
-        case .reconnecting: (.systemOrange, "Reconnecting…")
-        case .error: (.systemRed, "Needs attention")
-        case .off: (.tertiaryLabelColor, "Off")
-        case nil: (.tertiaryLabelColor, "Not in herdr")
+        case .connected: (Design.Status.connected.color, nil)
+        case .connecting: (Design.Status.connecting.color, "Connecting…")
+        case .reconnecting: (Design.Status.reconnecting.color, "Reconnecting…")
+        case .error: (Design.Status.error.color, "Needs attention")
+        case .off: (Design.Status.off.color, "Off")
+        case nil: (Design.Status.off.color, "Not in herdr")
         }
         let title = machine?.label ?? "machine \(group.id.prefix(8))"
         summary = [title, "●", state].compactMap { $0 }.joined(separator: " ")
         super.init(frame: .zero)
         build(title: title, dot: dot, state: state,
-              stateColor: machine?.state == .error ? .systemRed : .secondaryLabelColor)
+              stateColor: machine.map { $0.state == .off ? Design.Color.textMuted : dot } ?? Design.Color.textMuted)
         toolTip = machine?.message
     }
 
@@ -188,20 +188,20 @@ final class MachineHeader: NSView {
         row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
         let name = NSTextField(labelWithString: title)
-        name.font = .systemFont(ofSize: 10, weight: .semibold)
-        name.textColor = .secondaryLabelColor
+        name.font = Design.Font.groupLabel
+        name.textColor = Design.Color.textMuted
         name.lineBreakMode = .byTruncatingTail
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         row.addArrangedSubview(name)
         if let dot {
             let mark = NSTextField(labelWithString: "●")
-            mark.font = .systemFont(ofSize: 8)
+            mark.font = Design.Font.dot
             mark.textColor = dot
             row.addArrangedSubview(mark)
         }
         if let state {
             let text = NSTextField(labelWithString: state)
-            text.font = .systemFont(ofSize: 10)
+            text.font = Design.Font.caption
             text.textColor = stateColor
             text.lineBreakMode = .byTruncatingTail
             text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -212,8 +212,8 @@ final class MachineHeader: NSView {
         row.addArrangedSubview(spacer)
         add.title = "+"
         add.isBordered = false
-        add.font = .systemFont(ofSize: 13, weight: .regular)
-        add.contentTintColor = .secondaryLabelColor
+        add.font = Design.Font.addButton
+        add.contentTintColor = Design.Color.textMuted
         add.refusesFirstResponder = true
         add.target = self
         add.action = #selector(addClicked)
@@ -235,7 +235,7 @@ final class MachineHeader: NSView {
 /// The active workspace's tabs, across the top.
 @MainActor
 final class TabBarView: NSView {
-    static let height: CGFloat = 30
+    static let height = Design.Space.tabBarHeight
     var onSelect: ((String) -> Void)?
     private let stack = NSStackView()
     private var shown: [String] = []
@@ -243,7 +243,7 @@ final class TabBarView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.window.cgColor
         stack.orientation = .horizontal
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6)
@@ -305,8 +305,8 @@ final class RowButton: NSButton {
         self.title = title
         isBordered = false
         alignment = .left
-        font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
-        contentTintColor = selected ? .labelColor : .secondaryLabelColor
+        font = selected ? Design.Font.rowSelected : Design.Font.row
+        contentTintColor = selected ? Design.Color.textPrimary : Design.Color.textSecondary
         if marker != nil || detail != nil {
             let style = NSMutableParagraphStyle()
             style.lineBreakMode = .byTruncatingTail
@@ -314,15 +314,15 @@ final class RowButton: NSButton {
                 style.tabStops = [NSTextTab(textAlignment: .right, location: max(detailWidth - 16, 40))]
             }
             let text = NSMutableAttributedString(string: title, attributes: [
-                .font: font ?? .systemFont(ofSize: 12),
-                .foregroundColor: selected ? NSColor.labelColor : NSColor.secondaryLabelColor,
+                .font: font ?? Design.Font.row,
+                .foregroundColor: selected ? Design.Color.textPrimary : Design.Color.textSecondary,
                 .paragraphStyle: style,
             ])
             if let marker { text.append(marker) }
             if let detail {
                 text.append(NSAttributedString(string: "\t" + Self.shorten(detail, to: 16), attributes: [
-                    .font: NSFont.systemFont(ofSize: 11),
-                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .font: Design.Font.detail,
+                    .foregroundColor: Design.Color.textMuted,
                     .paragraphStyle: style,
                 ]))
                 toolTip = detail
@@ -330,14 +330,13 @@ final class RowButton: NSButton {
             attributedTitle = text
         }
         wantsLayer = true
-        layer?.cornerRadius = 5
-        layer?.backgroundColor = selected
-            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.25).cgColor : nil
+        layer?.cornerRadius = Design.Radius.row
+        layer?.backgroundColor = selected ? Design.Color.selected.cgColor : nil
         target = self
         action = #selector(clicked)
         refusesFirstResponder = true
         setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        heightAnchor.constraint(equalToConstant: 22).isActive = true
+        heightAnchor.constraint(equalToConstant: Design.Space.rowHeight).isActive = true
     }
 
     @available(*, unavailable)

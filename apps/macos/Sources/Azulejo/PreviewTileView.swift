@@ -75,9 +75,9 @@ final class PreviewTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = Design.Radius.tile
         layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.tile.cgColor
 
         // The controls live in the tile's header strip (TileFrame, F28/F29).
         header.onOpen = { [weak self] in self?.openInDefaultApp() }
@@ -94,8 +94,8 @@ final class PreviewTileView: NSView, TileView {
         ])
 
         placeholder.alignment = .center
-        placeholder.textColor = .secondaryLabelColor
-        placeholder.font = .systemFont(ofSize: 13)
+        placeholder.textColor = Design.Color.textSecondary
+        placeholder.font = Design.Font.body
         placeholder.translatesAutoresizingMaskIntoConstraints = false
 
         Self.live[tileID] = WeakPreview(self)
@@ -112,7 +112,9 @@ final class PreviewTileView: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Design.Color.tile.cgColor
+        }
     }
 
     // MARK: TileView
@@ -475,11 +477,11 @@ private final class PreviewHeader: NSView {
     init() {
         stack = NSStackView(views: [detail, mode, open, reveal])
         super.init(frame: .zero)
-        detail.font = .systemFont(ofSize: 10)
-        detail.textColor = .tertiaryLabelColor
+        detail.font = Design.Font.caption
+        detail.textColor = Design.Color.textMuted
         detail.lineBreakMode = .byTruncatingTail
         mode.controlSize = .mini
-        mode.font = .systemFont(ofSize: 10)
+        mode.font = Design.Font.caption
         mode.selectedSegment = 0
         mode.target = self
         mode.action = #selector(modeChanged)

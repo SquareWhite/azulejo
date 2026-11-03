@@ -14,6 +14,11 @@ test:
 lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
+    scripts/design-tokens --check
+
+# Regenerate the macOS shell's Design.swift from shared/design/tokens.json
+design-tokens:
+    scripts/design-tokens
 
 # herdr adapter and engine integration tests against a real herdr in throwaway sessions
 test-herdr:

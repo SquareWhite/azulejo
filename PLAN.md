@@ -293,8 +293,9 @@ All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock star
 
 The designer's mockup is `docs/design/mockup-v1.png` (local capture), described region by region with sampled colours in [docs/design/README.md](docs/design/README.md). the maintainer's direction (Nov 3, 2026): get the basic functionality working first, then polish the GUI. This milestone is visual only. The functional items the mockup implies were decided on Nov 3, 2026 (see "Decided from the mockup" below): three moved into M2 as 2.13–2.15, and the rest stay here. Starts after G2, or earlier for steps that don't depend on unfinished M2 work.
 
-- [ ] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
+- [x] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
   **Done when** no view hard-codes a colour or radius.
+  **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: 1 pt accent outline at 45 %, pending designer confirmation (docs/design/README.md).
 
 - [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.

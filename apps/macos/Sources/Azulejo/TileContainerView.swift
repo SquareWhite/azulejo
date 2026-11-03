@@ -12,8 +12,8 @@ import QuartzCore
 /// holding a key never queues up motion.
 @MainActor
 final class TileContainerView: NSView {
-    static let gap: CGFloat = 4
-    static let inset: CGFloat = 4
+    static let gap = Design.Space.gutter
+    static let inset = Design.Space.tileInset
     private static let motionKey = "azj.motion"
 
     private var views: [String: any TileView] = [:]
@@ -43,7 +43,7 @@ final class TileContainerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.window.cgColor
         addSubview(ring)
         ring.layer?.zPosition = 2  // over moving tiles and outline ghosts
         clock.onChange = { [weak self] in self?.wake() }
@@ -202,7 +202,7 @@ final class TileContainerView: NSView {
         for (id, frame) in frames { views[id]?.frame = frame }
         if let tab, let focused = frames[tab.focused], visibleTiles.count > 1 || tab.zoomed != nil {
             ring.isHidden = false
-            ring.frame = focused.insetBy(dx: -2, dy: -2)
+            ring.frame = focused.insetBy(dx: -Design.Border.focus, dy: -Design.Border.focus)
             ring.zoomed = tab.zoomed != nil
         } else {
             ring.isHidden = true
@@ -504,10 +504,10 @@ final class TileContainerView: NSView {
     private func outline(at frame: CGRect) -> CALayer {
         let ghost = CALayer()
         ghost.frame = frame
-        ghost.cornerRadius = 4
-        ghost.borderWidth = 1
-        ghost.borderColor = NSColor.tertiaryLabelColor.cgColor
-        ghost.backgroundColor = NSColor(calibratedWhite: 0.5, alpha: 0.10).cgColor
+        ghost.cornerRadius = Design.Radius.ghost
+        ghost.borderWidth = Design.Border.hairline
+        ghost.borderColor = Design.Color.textMuted.cgColor
+        ghost.backgroundColor = Design.Color.ghostFill.cgColor
         ghost.zPosition = 0.5
         return ghost
     }
@@ -791,7 +791,8 @@ extension LayoutNode {
     }
 }
 
-/// The accent border around the focused tile. A layer border, so moving and
+/// The border around the focused tile (`Design.Color.focus`, `Design.Border.focus`;
+/// pending designer confirmation, see docs/design/README.md). A layer border, so moving and
 /// resizing it is cheap and stays crisp.
 @MainActor
 final class FocusRingView: NSView {
@@ -801,8 +802,8 @@ final class FocusRingView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         isHidden = true
-        layer?.cornerRadius = 7
-        layer?.borderWidth = 2
+        layer?.cornerRadius = Design.Radius.tile + Design.Border.focus
+        layer?.borderWidth = Design.Border.focus
     }
 
     @available(*, unavailable)
@@ -811,7 +812,7 @@ final class FocusRingView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.borderColor = (zoomed ? NSColor.systemOrange : NSColor.controlAccentColor).cgColor
+        layer?.borderColor = (zoomed ? Design.Color.zoom : Design.Color.focus).cgColor
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

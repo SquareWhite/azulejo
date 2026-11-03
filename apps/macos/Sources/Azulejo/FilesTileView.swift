@@ -82,9 +82,9 @@ final class FilesTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = Design.Radius.tile
         layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.tile.cgColor
 
         // The root and the buttons live in the tile's header strip (TileFrame).
         header.onToggleHidden = { [weak self] in self?.toggleHidden() }
@@ -92,7 +92,7 @@ final class FilesTileView: NSView, TileView {
 
         filter.translatesAutoresizingMaskIntoConstraints = false
         filter.controlSize = .small
-        filter.font = .systemFont(ofSize: 12)
+        filter.font = Design.Font.field
         filter.placeholderString = "Filter loaded files"
         filter.sendsSearchStringImmediately = true
         filter.target = self
@@ -147,7 +147,9 @@ final class FilesTileView: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Design.Color.tile.cgColor
+        }
     }
 
     // MARK: TileView
@@ -753,10 +755,10 @@ private final class FileCell: NSTableCellView {
         identifier = Self.id
         imageView = icon
         textField = name
-        name.font = .systemFont(ofSize: 12)
+        name.font = Design.Font.row
         name.lineBreakMode = .byTruncatingMiddle
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        badge.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
+        badge.font = Design.Font.gitBadge
         badge.alignment = .right
         badge.setContentHuggingPriority(.required, for: .horizontal)
         for v in [icon, name, badge] {
@@ -789,19 +791,19 @@ private final class FileCell: NSTableCellView {
         if let color, git != nil {
             name.textColor = color
         } else {
-            name.textColor = node.hidden || node.ignored ? .tertiaryLabelColor : .labelColor
+            name.textColor = node.hidden || node.ignored ? Design.Color.textMuted : Design.Color.textPrimary
         }
         toolTip = node.symlink ? "\(node.path) (symlink)" : node.path
     }
 
     private static func badge(_ git: String?) -> (String, NSColor?) {
         switch git {
-        case "modified": ("M", .systemOrange)
-        case "added": ("A", .systemGreen)
-        case "untracked": ("U", .systemGreen)
-        case "deleted": ("D", .systemRed)
-        case "renamed": ("R", .systemBlue)
-        case "conflicted": ("!", .systemPurple)
+        case "modified": ("M", Design.Color.gitModified)
+        case "added": ("A", Design.Color.gitAdded)
+        case "untracked": ("U", Design.Color.gitAdded)
+        case "deleted": ("D", Design.Color.gitDeleted)
+        case "renamed": ("R", Design.Color.gitRenamed)
+        case "conflicted": ("!", Design.Color.gitConflicted)
         default: ("", nil)
         }
     }
@@ -819,12 +821,12 @@ private final class FilesHeader: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = .secondaryLabelColor
+        label.font = Design.Font.monoDetail
+        label.textColor = Design.Color.textSecondary
         label.lineBreakMode = .byTruncatingHead
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        detail.font = .systemFont(ofSize: 10)
-        detail.textColor = .tertiaryLabelColor
+        detail.font = Design.Font.caption
+        detail.textColor = Design.Color.textMuted
         for (button, symbol, tip) in [
             (hiddenButton, "eye.slash", "Show hidden and ignored files (.)"),
             (find, "line.3.horizontal.decrease", "Filter (/)"),
