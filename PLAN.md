@@ -124,6 +124,9 @@ Checks that need the Mac free (no meeting, real input, windows in front) or a to
 - [ ] **Terminal tile, by hand (1.7):** copy/paste (left alone to keep the clipboard untouched), real mouse and scroll, IME, Claude Code's interactive key path, a screenshot of the "Session ended" overlay, and title/cwd from herdr events. htop hung in a plain PTY on this Mac during 1.7, outside the app too; recheck.
 - [ ] **Browser tile, by hand (1.8):** open the Web Inspector window (only its availability was checked), real keys, and the first-download Downloads-folder privacy prompt on a signed build.
 - [ ] **Preview tile (1.9):** light mode, and narrowing the webview's file access for files outside the home folder (today the page gets read access to `/` for e.g. `/tmp`; scripts are limited to `preview.js` and network is blocked by CSP).
+- [ ] **Notarised install (1.14):** with a Developer ID certificate and notary profile, `just release-mac` and `just release-notarize`, then install the .dmg on a clean Mac and run `azj` from a fresh terminal.
+- [ ] **Real sleep/wake (1.12):** close the lid for a minute with 6 terminal tiles open, then check they reattach within 2 s (1.12 simulated wake through the debug hook).
+- [ ] **NFRs with the Mac free (1.13):** `scripts/nfr/latency.sh` with the window in front (background windows get throttled by WindowServer; whole rounds went to ~320 ms for both the app and the spike), on the release build; memory of Ghostty.app with 4 splits next to `scripts/nfr/memory.sh`; cold start on macOS 14.
 - [ ] **Sharing the user's herdr (ADR 0008):** with the Mac free, open an adopted pane in Azulejo while the herdr TUI shows the same pane, and note what the TUI draws (Azulejo sets the pane size while attached). Also check the environment leak in panes when the server was started from a terminal.
 
 ---
@@ -175,21 +178,31 @@ Rule for every step: core first (logic + unit tests + API method + CLI subcomman
   **Done when** editing `plan.md` in another tile updates the preview within 200 ms, and a PNG, MP4 and PDF all preview.
   Result: core in `39d6032`, shell in `72f2cb3`. A save reaches the screen in a median 72.5 ms (p95 75.4 ms, 20 edits, all swapped in place); PNG, MP4 and PDF preview through QLPreviewView. `apps/macos/automation/preview.sh` repeats markdown, live reload, code, image, PDF and a missing file in-process (QuickLook kinds are checked with a window capture, since in-app snapshots can't see its out-of-process view). Repeated file notifications for an unchanged file no longer re-publish (stabilisation pass).
 
-- [ ] **1.10 Terminal ops API** (F20). `tile.send_text`, `tile.send_keys`, `tile.read {source: visible|recent|scrollback}` mapped to herdr `pane.*`. Scrollback lives only in herdr ([ADR 0005](docs/adr/0005-scrollback-and-passthrough.md)): keyboard scroll via `pane.scroll`, find via `pane.read` / `pane.copy_search`; mouse wheel already works through attach.
+- [x] **1.10 Terminal ops API** (F20). `tile.send_text`, `tile.send_keys`, `tile.read {source: visible|recent|scrollback}` mapped to herdr `pane.*`. Scrollback lives only in herdr ([ADR 0005](docs/adr/0005-scrollback-and-passthrough.md)): keyboard scroll via `pane.scroll`, find via `pane.read` / `pane.copy_search`; mouse wheel already works through attach.
   **Done when** an agent in tile A can drive and read tile B via `azj`.
+  Result: core in `7203c5d` (`terminal.send_text`, `send_keys`, `read`, `scroll`, plus `terminal.search` in the core over `recent-unwrapped`), with a live test against a real pane. Checked in the app during 1.13: a script run inside tile A sent `echo hello-from-$AZULEJO_TILE_ID` to tile B with `azj terminal send-text` and read it back with `azj terminal read`. `terminal.edit_scrollback` stays planned.
 
-- [ ] **1.11 Remaining structure API** (F18, F19). Window, workspace and tab list/create/close/focus/rename; tile create/close/focus/move/resize for all kinds; `browser.open`.
+- [x] **1.11 Remaining structure API** (F18, F19). Window, workspace and tab list/create/close/focus/rename; tile create/close/focus/move/resize for all kinds; `browser.open`.
   **Done when** a script can build the "scripted layouts" use case end to end with `azj` only.
+  Result: `7203c5d` adds `window.list`, `workspace.list`, `tab.list`, `tile.rename`, `browser.open`, `preview.open`; tiles are created through `layout.split`, `layout.split_auto` and `tab.create`. `just e2e` builds a workspace of tall terminals plus a browser with `azj` only, and the 1.13 scripts build 2-workspace layouts with terminals, a browser and a preview the same way.
 
-- [ ] **1.12 Session restore** (F24). Relaunch restores windows, layout, URLs and preview paths; terminal tiles reattach. If a herdr pane is gone, show "session ended" with Respawn and Close. Reattach on wake (`NSWorkspace.didWakeNotification`).
+- [x] **1.12 Session restore** (F24). Relaunch restores windows, layout, URLs and preview paths; terminal tiles reattach. If a herdr pane is gone, show "session ended" with Respawn and Close. Reattach on wake (`NSWorkspace.didWakeNotification`).
   Core side in place: on connect the core first surveys herdr and adopts unknown tabs, then re-resolves every bound tile; on a fresh session the placeholder workspace is dropped when adoption found the user's workspaces (ADR 0008). Tiles closed here are remembered in `Session.detached_herdr`, so they don't come back on relaunch. Shell work: show adopted workspaces and tabs, and an "attach herdr pane" palette action to bring a detached pane back.
   **Done when** quit/relaunch and sleep/wake both reattach within 2 s with no lost sessions.
+  Result: done in `4883794` (core `terminal.respawn` rebinding the same tile, `window.set_sidebar`, `herdr.status` events) and `ce43a2b` (restore, wake health checks, four reattach bugs fixed). `apps/macos/automation/restore.sh`, 6 terminals: relaunch ~280 ms, kill -9 + relaunch ~290 ms, wake 62–259 ms, herdr restart ~750 ms, all with the same herdr terminals and a ticker still counting; re-run at HEAD in 1.13 with the same results. Wake is simulated through the debug hook (a real sleep is under Deferred checks). The "attach herdr pane" palette action waits for the palette (2.2).
 
 - [ ] **1.13 NFR pass.** Measure cold start, memory with 4 terminal tiles, input latency (re-run 0.4 on the real app), reconnect time. Record in `docs/measurements.md`; fix whatever misses.
   **Done when** every NFR row has a measured number and all P0-relevant targets pass.
+  Status: every row measured ([measurements](docs/measurements.md#113-nfr-pass-macos), scripts in `scripts/nfr/`); **one target misses**, so not ticked.
+  - Cold start: pass. Release, 8 tiles restored: first frame 248 ms median, 265 ms p95. The first launch after re-signing pays ~400 ms once.
+  - Input latency: pass against the libghostty spike (18.8 vs 18.9 ms median on the same pane). Standalone Ghostty.app is still deferred.
+  - Memory: **fail**, 195 MB with 4 terminals. A bare libghostty surface alone is 150 MB (90 MB of Metal), so the floor is libghostty's renderer. Follow-ups: measure Ghostty.app with 4 splits, compare the Xcode metallib build, revisit the target.
+  - herdr reconnect, stability (WebContent and QuickLook killed, terminals untouched) and socket permissions: pass.
+  - Animation and the per-workspace automation switch: M2 (F4, F21).
 
-- [ ] **1.14 Packaging.** Developer ID signing and notarisation via `just release-mac`; `azj` inside the bundle plus an "Install command-line tool" action (until the CLI open question is settled).
+- [x] **1.14 Packaging.** Developer ID signing and notarisation via `just release-mac`; `azj` inside the bundle plus an "Install command-line tool" action (until the CLI open question is settled).
   **Done when** a notarised .dmg installs on a clean Mac and `azj` works from a fresh terminal.
+  Result: partly met in `1c7ddfd`. `just release-mac` builds the app with `azj` and `azj-observe` inside, hardened runtime, a .dmg and a .zip; "Install Command-Line Tool…" links `azj` into `~/.local/bin` or `/usr/local/bin` after asking (`just test-cli-installer`). `9076e4e` bundles Ghostty's resources. The build is ad-hoc signed: notarisation (`just release-notarize`) waits for a Developer ID certificate and a notary keychain profile from the maintainer ([docs/release.md](docs/release.md)). The clean-Mac install check is under Deferred checks.
 
 ### Gate G1
 All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR table measured.
