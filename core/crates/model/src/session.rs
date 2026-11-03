@@ -73,6 +73,9 @@ pub struct Window {
     /// Last known screen frame, in points; restored on relaunch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<Frame>,
+    /// The workspace sidebar is hidden; restored on relaunch.
+    #[serde(default, skip_serializing_if = "crate::tile::is_false")]
+    pub sidebar_hidden: bool,
 }
 
 /// A window's frame on screen, in points, origin top left of the main display.
@@ -334,6 +337,7 @@ impl Session {
             active_workspace: ws.id,
             workspaces: vec![ws],
             frame: None,
+            sidebar_hidden: false,
         };
         let ids = (window.id, window.active_workspace);
         self.windows.push(window);
@@ -357,6 +361,12 @@ impl Session {
     }
 
     /// Records where the shell put a window.
+    pub fn set_window_sidebar(&mut self, id: WindowId, visible: bool) -> Result<(), ModelError> {
+        let index = self.window_index(id)?;
+        self.windows[index].sidebar_hidden = !visible;
+        Ok(())
+    }
+
     pub fn set_window_frame(&mut self, id: WindowId, frame: Frame) -> Result<(), ModelError> {
         let valid = [frame.x, frame.y, frame.width, frame.height]
             .iter()

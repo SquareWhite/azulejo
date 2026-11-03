@@ -156,6 +156,23 @@
           "type": "object"
         },
         {
+          "description": "Shows or hides a window's workspace sidebar (restored on relaunch).",
+          "properties": {
+            "method": {
+              "const": "window.set_sidebar",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WindowSetSidebar"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Every window; replies `windows`.",
           "properties": {
             "method": {
@@ -733,6 +750,23 @@
           "type": "object"
         },
         {
+          "description": "Gives an ended terminal tile a fresh herdr pane, keeping the tile's id\nand place. The new pane gets its own herdr tab and the tile's cwd.",
+          "properties": {
+            "method": {
+              "const": "terminal.respawn",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "method": {
               "const": "terminal.send_text",
@@ -984,6 +1018,7 @@
           "type": "object"
         },
         {
+          "description": "Frame or sidebar changed.",
           "properties": {
             "data": {
               "properties": {
@@ -996,6 +1031,10 @@
                       "type": "null"
                     }
                   ]
+                },
+                "sidebar_hidden": {
+                  "default": false,
+                  "type": "boolean"
                 },
                 "window": {
                   "$ref": "#/$defs/WindowId"
@@ -1382,6 +1421,37 @@
             },
             "event": {
               "const": "preview.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The core's link to herdr came up or dropped. After `connected: true`,\nshells reattach terminal tiles that gave up waiting. Not saved.",
+          "properties": {
+            "data": {
+              "properties": {
+                "connected": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "connected"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "herdr.status",
               "type": "string"
             }
           },
@@ -3032,6 +3102,10 @@
         "id": {
           "$ref": "#/$defs/WindowId"
         },
+        "sidebar_hidden": {
+          "description": "The workspace sidebar is hidden; restored on relaunch.",
+          "type": "boolean"
+        },
         "workspaces": {
           "items": {
             "$ref": "#/$defs/Workspace"
@@ -3080,6 +3154,21 @@
       "required": [
         "window",
         "frame"
+      ],
+      "type": "object"
+    },
+    "WindowSetSidebar": {
+      "properties": {
+        "visible": {
+          "type": "boolean"
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        }
+      },
+      "required": [
+        "window",
+        "visible"
       ],
       "type": "object"
     },
@@ -3389,6 +3478,7 @@
     "window.close",
     "window.focus",
     "window.set_frame",
+    "window.set_sidebar",
     "window.list",
     "workspace.list",
     "workspace.create",
@@ -3424,6 +3514,7 @@
     "layout.rotate",
     "layout.equalize",
     "terminal.bind",
+    "terminal.respawn",
     "terminal.send_text",
     "terminal.send_keys",
     "terminal.read",

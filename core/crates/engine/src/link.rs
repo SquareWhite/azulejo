@@ -324,6 +324,11 @@ fn herdr_workspace(session: &Session, workspace: WorkspaceId) -> Option<String> 
         .and_then(|w| w.herdr_workspace.clone())
 }
 
+/// Work to give a respawned tile (`terminal.respawn`) a fresh pane.
+pub fn respawn_effect(session: &Session, tile: TileId) -> Option<Effect> {
+    create_effect(session, session.tile(tile).ok()?)
+}
+
 fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
     let TileContent::Terminal {
         cwd,

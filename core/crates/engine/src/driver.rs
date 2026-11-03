@@ -337,8 +337,23 @@ fn run<P: HerdrPort>(
                     },
                 }
             }
+            Msg::Command(Command::TerminalRespawn(_), reply) if herdr.is_none() => {
+                let _ = reply.send(Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "this core isn't connected to herdr",
+                )));
+            }
             Msg::Command(command, reply) => {
+                let respawn = match &command {
+                    Command::TerminalRespawn(p) => engine.session().target(p.tile).ok(),
+                    _ => None,
+                };
                 let result = engine.execute(command);
+                if let (Ok(_), Some(tile), Some(h)) = (&result, respawn, &herdr)
+                    && let Some(effect) = link::respawn_effect(engine.session(), tile)
+                {
+                    let _ = h.effects_tx.send(effect);
+                }
                 if let Ok(outcome) = &result {
                     publish(
                         &engine,
@@ -359,6 +374,20 @@ fn run<P: HerdrPort>(
                 }
             }
             Msg::Herdr(item) => {
+                let status = match &item {
+                    StreamItem::Connected | StreamItem::Resync => Some(Event::HerdrStatus {
+                        connected: true,
+                        message: None,
+                    }),
+                    StreamItem::Disconnected(why) => Some(Event::HerdrStatus {
+                        connected: false,
+                        message: Some(why.clone()),
+                    }),
+                    StreamItem::Event(_) => None,
+                };
+                if let Some(event) = status {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
                 let reaction = link::reconcile(&item, engine.session());
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);

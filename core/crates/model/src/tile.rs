@@ -86,7 +86,7 @@ impl TileContent {
     }
 }
 
-fn is_false(b: &bool) -> bool {
+pub(crate) fn is_false(b: &bool) -> bool {
     !*b
 }
 

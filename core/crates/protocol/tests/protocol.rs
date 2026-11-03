@@ -30,6 +30,10 @@ fn sample_commands() -> Vec<Command> {
                 height: 600.0,
             },
         }),
+        Command::WindowSetSidebar(WindowSetSidebar {
+            window,
+            visible: false,
+        }),
         Command::WorkspaceCreate(WorkspaceCreate {
             window: Some(window),
             name: Some("api".into()),
@@ -118,6 +122,7 @@ fn sample_commands() -> Vec<Command> {
             tile,
             herdr: herdr.clone(),
         }),
+        Command::TerminalRespawn(TileTarget { tile: Some(tile) }),
         Command::TerminalSendText(TerminalSendText {
             tile: None,
             text: "ls\n".into(),
@@ -205,6 +210,7 @@ fn sample_events() -> Vec<Event> {
         Event::WindowUpdated {
             window,
             frame: None,
+            sidebar_hidden: true,
         },
         Event::WorkspaceCreated {
             window,
@@ -266,6 +272,10 @@ fn sample_events() -> Vec<Event> {
             tile: Some(tile.id),
         }),
         Event::PreviewUpdated(sample_preview(tile.id)),
+        Event::HerdrStatus {
+            connected: false,
+            message: Some("connection refused".into()),
+        },
     ]
 }
 

@@ -432,3 +432,77 @@ fn adopts_what_herdr_already_runs_without_changing_it() {
     assert_eq!(h.structure(), before, "herdr unchanged after relaunch");
     core.shutdown();
 }
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn respawn_rebinds_an_ended_tile_in_place() {
+    use azulejo_protocol::TileTarget;
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), herdr.client.clone());
+    core.execute(Command::LayoutSplit(LayoutSplit {
+        tile: None,
+        direction: Direction::Right,
+        content: None,
+    }))
+    .unwrap();
+    let session = wait_until(&core, Duration::from_secs(10), |s| {
+        bound_terminals(s).len() == 2 && all_bound(s)
+    });
+    let tree = session.windows[0].workspaces[0].tabs[0].root.clone();
+    let tiles = bound_terminals(&session);
+    let ended = |s: &Session, tile: TileId| {
+        bound_terminals(s)
+            .iter()
+            .any(|(id, _, e)| *id == tile && *e)
+    };
+    let fresh = |s: &Session, tile: TileId, old: &HerdrRef| {
+        bound_terminals(s)
+            .iter()
+            .any(|(id, h, e)| *id == tile && !e && h.as_ref().is_some_and(|h| h != old))
+    };
+
+    // 1. One pane ends; its workspace lives on. Respawn binds a new pane.
+    let (second, old) = (tiles[1].0, tiles[1].1.clone().unwrap());
+    herdr.kill(&old.pane_id);
+    wait_until(&core, Duration::from_secs(5), |s| ended(s, second));
+    core.execute(Command::TerminalRespawn(TileTarget { tile: Some(second) }))
+        .unwrap();
+    let after = wait_until(&core, Duration::from_secs(10), |s| fresh(s, second, &old));
+    let new = bound_terminals(&after)[1].1.clone().unwrap();
+    assert!(
+        herdr
+            .panes()
+            .iter()
+            .any(|p| p.terminal_id.as_str() == new.terminal_id),
+        "respawned pane runs in herdr"
+    );
+    assert_ne!(new.tab_id, tiles[0].1.as_ref().unwrap().tab_id, "own tab");
+    assert_eq!(
+        after.windows[0].workspaces[0].tabs[0].root, tree,
+        "same place"
+    );
+
+    // 2. Every pane ends, so herdr drops the workspace. Respawn makes a new one.
+    let first_old = tiles[0].1.clone().unwrap();
+    herdr.kill(&first_old.pane_id);
+    herdr.kill(&new.pane_id);
+    wait_until(&core, Duration::from_secs(5), |s| {
+        ended(s, tiles[0].0) && ended(s, second)
+    });
+    core.execute(Command::TerminalRespawn(TileTarget {
+        tile: Some(tiles[0].0),
+    }))
+    .unwrap();
+    let last = wait_until(&core, Duration::from_secs(10), |s| {
+        fresh(s, tiles[0].0, &first_old)
+    });
+    let r = bound_terminals(&last)[0].1.clone().unwrap();
+    assert!(
+        herdr
+            .panes()
+            .iter()
+            .any(|p| p.terminal_id.as_str() == r.terminal_id)
+    );
+    core.shutdown();
+}

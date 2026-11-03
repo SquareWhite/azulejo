@@ -37,6 +37,9 @@ pub enum Command {
     /// Records a window's frame after the user moves or resizes it.
     #[serde(rename = "window.set_frame")]
     WindowSetFrame(WindowSetFrame),
+    /// Shows or hides a window's workspace sidebar (restored on relaunch).
+    #[serde(rename = "window.set_sidebar")]
+    WindowSetSidebar(WindowSetSidebar),
     /// Every window; replies `windows`.
     #[serde(rename = "window.list")]
     WindowList,
@@ -152,6 +155,10 @@ pub enum Command {
     /// Records the herdr pane a terminal tile views. Sent by the herdr adapter.
     #[serde(rename = "terminal.bind")]
     TerminalBind(TerminalBind),
+    /// Gives an ended terminal tile a fresh herdr pane, keeping the tile's id
+    /// and place. The new pane gets its own herdr tab and the tile's cwd.
+    #[serde(rename = "terminal.respawn")]
+    TerminalRespawn(TileTarget),
     #[serde(rename = "terminal.send_text")]
     TerminalSendText(TerminalSendText),
     #[serde(rename = "terminal.send_keys")]
@@ -177,6 +184,7 @@ pub const METHODS: &[&str] = &[
     "window.close",
     "window.focus",
     "window.set_frame",
+    "window.set_sidebar",
     "window.list",
     "workspace.list",
     "workspace.create",
@@ -212,6 +220,7 @@ pub const METHODS: &[&str] = &[
     "layout.rotate",
     "layout.equalize",
     "terminal.bind",
+    "terminal.respawn",
     "terminal.send_text",
     "terminal.send_keys",
     "terminal.read",
@@ -285,6 +294,12 @@ pub struct WindowTarget {
 pub struct WindowSetFrame {
     pub window: WindowId,
     pub frame: Frame,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WindowSetSidebar {
+    pub window: WindowId,
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

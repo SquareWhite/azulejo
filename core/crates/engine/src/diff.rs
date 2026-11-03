@@ -112,11 +112,12 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
     // Updated.
     for (id, window) in &a.windows {
         if let Some(old) = b_windows.get(id)
-            && old.frame != window.frame
+            && (old.frame != window.frame || old.sidebar_hidden != window.sidebar_hidden)
         {
             events.push(Event::WindowUpdated {
                 window: *id,
                 frame: window.frame,
+                sidebar_hidden: window.sidebar_hidden,
             });
         }
     }
