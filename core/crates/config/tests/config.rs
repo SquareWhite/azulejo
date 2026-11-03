@@ -153,6 +153,69 @@ fn every_default_action_maps_to_a_protocol_method_or_shell_action() {
     }
 }
 
+/// Actions that act on whatever is focused must build their command in the
+/// keymap; only ones that need session state, a prompt or the shell may not.
+#[test]
+fn stateless_actions_build_commands() {
+    use Action::*;
+    let needs_shell_or_state = |a: Action| {
+        matches!(
+            a,
+            ResizeMode
+                | CommandPalette
+                | Goto
+                | Find
+                | OpenConfig
+                | ReloadConfig
+                | ToggleSidebar
+                | EnterPrefix
+                | EditScrollback
+                | RenameTile
+                | RenameWorkspace
+                | RenameTab
+                | CycleTileNext
+                | CycleTilePrevious
+                | SwitchWorkspace(_)
+                | LastWorkspace
+                | NextWorkspace
+                | PreviousWorkspace
+                | SwitchTab(_)
+                | LastTab
+                | NextTab
+                | PreviousTab
+                | CloseWindow
+        )
+    };
+    for platform in Platform::ALL {
+        let config = user("[prefix]\nenabled = true\n", platform);
+        let keymap = &config.keymap;
+        let actions = [
+            None,
+            Some(TileKind::Terminal),
+            Some(TileKind::Browser),
+            Some(TileKind::Preview),
+            Some(TileKind::Files),
+        ]
+        .into_iter()
+        .flat_map(|t| keymap.bindings(t).collect::<Vec<_>>())
+        .chain(keymap.prefix_bindings())
+        .map(|(_, a)| a);
+        for action in actions {
+            if needs_shell_or_state(action) {
+                continue;
+            }
+            let command = action
+                .command()
+                .unwrap_or_else(|| panic!("{action:?} should build a command"));
+            assert!(
+                METHODS.contains(&command.method()),
+                "{action:?} → {} isn't a protocol method",
+                command.method()
+            );
+        }
+    }
+}
+
 // ----- context -----
 
 #[test]

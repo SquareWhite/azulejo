@@ -7,8 +7,8 @@
 
 use azulejo_protocol::{
     Command, DEFAULT_RESIZE_STEP, Direction, LayoutFocus, LayoutMove, LayoutResize, LayoutSplit,
-    LayoutSwap, LayoutZoom, TabCreate, TabTarget, TileClose, WindowCreate, WorkspaceCreate,
-    WorkspaceTarget,
+    LayoutSplitAuto, LayoutSwap, LayoutZoom, TabCreate, TabTarget, TileClose, TileTarget,
+    WindowCreate, WorkspaceCreate, WorkspaceTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -158,14 +158,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
 /// Methods the protocol doesn't have yet but the keymap already binds. Each is
 /// planned for M1 or later; [`Action::target`] names them so the shell can
 /// grey the action out until the core supports it.
-pub const PLANNED_METHODS: &[&str] = &[
-    "layout.split_auto",
-    "layout.promote",
-    "layout.rotate",
-    "layout.equalize",
-    "tile.rename",
-    "terminal.edit_scrollback",
-];
+pub const PLANNED_METHODS: &[&str] = &["tile.rename", "terminal.edit_scrollback"];
 
 impl Action {
     /// The config-file name (`switch_tab` for `SwitchTab(3)`; see [`Action::index`]).
@@ -257,6 +250,10 @@ impl Action {
                 direction,
                 content: None,
             }),
+            SplitAuto => Command::LayoutSplitAuto(LayoutSplitAuto::default()),
+            PromoteTile => Command::LayoutPromote(TileTarget::default()),
+            RotateLayout => Command::LayoutRotate(TabTarget::default()),
+            EqualizeLayout => Command::LayoutEqualize(TabTarget::default()),
             NewWorkspace => Command::WorkspaceCreate(WorkspaceCreate::default()),
             CloseWorkspace => Command::WorkspaceClose(WorkspaceTarget::default()),
             NewTab => Command::TabCreate(TabCreate::default()),
