@@ -1,18 +1,23 @@
 diff --git a/build.zig b/build.zig
-index 85a91fb..38879ad 100644
+index 85a91fb..461f357 100644
 --- a/build.zig
 +++ b/build.zig
-@@ -225,6 +225,14 @@ pub fn build(b: *std.Build) !void {
+@@ -225,6 +225,19 @@ pub fn build(b: *std.Build) !void {
  
          // We shouldn't have this guard but we don't currently
          // build on macOS this way ironically so we need to fix that.
 +        // azulejo: AZJ_RUNTIME_METAL=1 also installs the macOS static lib
-+        // directly, since we can't wrap it with `xcodebuild -create-xcframework`.
++        // directly, since we can't wrap it with `xcodebuild -create-xcframework`,
++        // plus the resources the app bundle needs.
 +        if (config.target.result.os.tag.isDarwin() and
 +            b.graph.environ_map.get("AZJ_RUNTIME_METAL") != null)
 +        {
 +            lib_shared.installHeader();
 +            lib_static.install("libghostty.a");
++
++            // The embedding app ships Ghostty's resources (themes, terminfo,
++            // shell integration) like the xcframework build does.
++            resources.install();
 +        }
          if (!config.target.result.os.tag.isDarwin()) {
              lib_shared.installHeader(); // Only need one header

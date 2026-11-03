@@ -6,11 +6,25 @@ cd "$(dirname "$0")"
 root="$(cd ../.. && pwd)"
 out="$root/target/macos"
 
-# libghostty (terminal tiles). Built once from vendor/ghostty; rebuild with
-# scripts/build-ghostty.sh after bumping the submodule.
-if [[ ! -f "$root/vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty.a" ]]; then
+# libghostty (terminal tiles) and its resources. Built once from
+# vendor/ghostty; rebuild with scripts/build-ghostty.sh after bumping the
+# submodule.
+share="$root/vendor/ghostty/zig-out/share"
+if [[ ! -f "$root/vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty.a" \
+  || ! -d "$share/ghostty/themes" || ! -e "$share/terminfo/78/xterm-ghostty" ]]; then
   "$root/scripts/build-ghostty.sh"
 fi
+
+# Ghostty's resources go where libghostty looks for them: it climbs from the
+# executable to Contents/Resources/terminfo/78/xterm-ghostty and then uses
+# Contents/Resources/ghostty (themes, shell integration).
+add_ghostty_resources() {
+  local res="$1/Contents/Resources"
+  mkdir -p "$res"
+  rm -rf "$res/ghostty" "$res/terminfo"
+  cp -R "$share/ghostty" "$res/ghostty"
+  cp -R "$share/terminfo" "$res/terminfo"
+}
 
 if xcodebuild -version >/dev/null 2>&1; then
   xcodegen generate --quiet
@@ -19,6 +33,8 @@ if xcodebuild -version >/dev/null 2>&1; then
   rm -rf "$out/Azulejo.app"
   cp -R "$out/DerivedData/Build/Products/Debug/Azulejo.app" "$out/Azulejo.app"
   cp "$out/DerivedData/Build/Products/Debug/azj-observe" "$out/Azulejo.app/Contents/MacOS/azj-observe"
+  add_ghostty_resources "$out/Azulejo.app"
+  codesign --force --sign - "$out/Azulejo.app" >/dev/null 2>&1
 else
   echo "Full Xcode not found; building with SwiftPM." >&2
   (cd "$root" && cargo build -p azulejo-ffi)
@@ -42,6 +58,7 @@ else
   cp "$bindir/Azulejo" "$app/Contents/MacOS/Azulejo"
   cp "$bindir/AzjObserve" "$app/Contents/MacOS/azj-observe"
   cp Resources/Info.plist "$app/Contents/Info.plist"
+  add_ghostty_resources "$app"
   codesign --force --sign - "$app" >/dev/null 2>&1
 fi
 echo "$out/Azulejo.app"

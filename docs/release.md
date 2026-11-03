@@ -53,6 +53,12 @@ DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" just release-mac
 | `Contents/MacOS/Azulejo` | The app, with the Rust core and libghostty statically linked |
 | `Contents/MacOS/azj` | The CLI. "Install Command-Line Tool…" links it onto your PATH |
 | `Contents/MacOS/azj-observe` | Decoder for read-only (observed) terminal tiles |
+| `Contents/Resources/ghostty` | Ghostty's themes and shell integration |
+| `Contents/Resources/terminfo` | Compiled `xterm-ghostty` terminfo |
+
+libghostty finds the resources on its own: it climbs up from the executable to `Contents/Resources/terminfo/78/xterm-ghostty` and uses `Contents/Resources/ghostty` next to it. A `GHOSTTY_RESOURCES_DIR` in the app's environment takes priority. Without them, a named `theme =` in the Ghostty config fails with `theme "…" not found`. The dev build (`just mac`) bundles them too.
+
+With the resources found, libghostty starts each tile's child (`herdr terminal attach`) with `TERM=xterm-ghostty` and `TERMINFO` pointing into the bundle; without them it falls back to `xterm-256color`. That only affects the attach client. Programs inside a pane see the `TERM` herdr sets, `xterm-256color`.
 
 `azulejod` isn't shipped. The app embeds the core, and the headless daemon is a development and test tool (`just e2e`).
 

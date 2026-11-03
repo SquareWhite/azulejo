@@ -33,7 +33,9 @@ cargo build --release -p azulejo-ffi -p azulejo-cli
 # 2. GhosttyKit. scripts/build-ghostty.sh builds ReleaseFast by default; it is
 #    only rebuilt here when missing or when asked, because it takes minutes.
 ghostty="$root/vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty.a"
-if [[ ! -f "$ghostty" || "${AZJ_REBUILD_GHOSTTY:-0}" == 1 ]]; then
+share="$root/vendor/ghostty/zig-out/share"
+if [[ ! -f "$ghostty" || ! -d "$share/ghostty/themes" || ! -e "$share/terminfo/78/xterm-ghostty" \
+  || "${AZJ_REBUILD_GHOSTTY:-0}" == 1 ]]; then
   OPTIMIZE=ReleaseFast scripts/build-ghostty.sh
 fi
 
@@ -59,6 +61,10 @@ cp apps/macos/Resources/Info.plist "$app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 printf 'APPL????' > "$app/Contents/PkgInfo"
+# Ghostty's resources, where libghostty finds them from the executable:
+# Contents/Resources/terminfo/78/xterm-ghostty marks Contents/Resources/ghostty.
+cp -R "$share/ghostty" "$app/Contents/Resources/ghostty"
+cp -R "$share/terminfo" "$app/Contents/Resources/terminfo"
 
 # 5. Sign. Developer ID if given or found, otherwise ad-hoc (runs locally,
 #    can't be notarised, Gatekeeper rejects it on other Macs).

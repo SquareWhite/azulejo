@@ -7,7 +7,9 @@
 # AZJ_RUNTIME_METAL=1 (vendor patch: shaders compile at runtime and the
 # static lib is installed directly) and assemble the xcframework by hand.
 #
-# Output: vendor/ghostty/macos/GhosttyKit.xcframework
+# Output: vendor/ghostty/macos/GhosttyKit.xcframework, plus Ghostty's
+# resources (themes, terminfo, shell integration) in vendor/ghostty/zig-out/share
+# for the app bundle: Contents/Resources/{ghostty,terminfo}.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,12 +41,15 @@ else
   AZJ_RUNTIME_METAL=1 zig build -Doptimize="$OPTIMIZE" \
     -Demit-xcframework=false -Demit-macos-app=false
 
-  rm -rf "$OUT"
-  slice="$OUT/macos-arm64"
+  # Assemble next to the old one and swap it in, so a dev build linking the
+  # old framework at the same moment never sees a half-written one.
+  tmp="$OUT.tmp"
+  rm -rf "$tmp"
+  slice="$tmp/macos-arm64"
   mkdir -p "$slice/Headers"
   cp zig-out/lib/libghostty.a "$slice/libghostty.a"
   cp include/ghostty.h include/module.modulemap "$slice/Headers/"
-  cat >"$OUT/Info.plist" <<'PLIST'
+  cat >"$tmp/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -75,6 +80,15 @@ else
 </dict>
 </plist>
 PLIST
+  rm -rf "$OUT.old"
+  [[ -d "$OUT" ]] && mv "$OUT" "$OUT.old"
+  mv "$tmp" "$OUT"
+  rm -rf "$OUT.old"
 fi
 
+for sentinel in share/ghostty/themes share/ghostty/shell-integration share/terminfo/78/xterm-ghostty; do
+  [[ -e "zig-out/$sentinel" ]] || { echo "error: zig-out/$sentinel missing after the build" >&2; exit 1; }
+done
+
 echo "==> $OUT"
+echo "==> $GHOSTTY/zig-out/share/{ghostty,terminfo}"
