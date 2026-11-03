@@ -58,6 +58,21 @@ needs no Screen Recording permission. See the comment at the top of
 `Automation.swift` for the commands. Results land in `<out>/automation.log`
 and `<out>/result`.
 
+## Tile headers and branches (F26, F28, F29; PLAN 2.14, 2.15)
+
+`TileViews.make` wraps every tile view in a `TileFrame`: a 28 pt header strip
+(kind icon, bold title, muted subtitle) above the tile's own view. The text is
+the core's `tile.header`, so every shell says the same; header-only changes
+don't reach the tile view (a terminal doesn't re-settle on every command). A
+tile view that wants controls in the strip conforms to `TileHeaderAccessory`
+(preview: syntax, Preview | Source, Open, Reveal; files: filter, hidden). The
+frame forwards `TileView`, `MotionAware` and `AutomatableTile`, adding
+`tile.header.title` / `tile.header.subtitle` to automation state.
+
+The sidebar shows each workspace's branch from `workspace.git`.
+`apps/macos/automation/headers.sh` checks headers, a branch switch in a tile
+and the preview toggle across a relaunch, on dev instance `hdr`.
+
 ## Layout motion (F4, PLAN 2.1)
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall

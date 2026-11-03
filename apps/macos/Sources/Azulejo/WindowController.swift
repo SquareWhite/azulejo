@@ -99,6 +99,8 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     /// Automation: the sidebar's and tab bar's attention markers.
     var sidebarMarkers: [String] { sidebar.markers }
+    /// Automation: each sidebar row's branch (F26).
+    var sidebarBranches: [String] { sidebar.branches }
     var tabMarkers: [String] { tabBar.markers }
 
     /// Re-lays out the chrome (palette or banner changed size).

@@ -20,7 +20,8 @@ use crate::files::{self as file_tiles, Files, Handled};
 use crate::link::{self, Effect, HerdrPort, Internal};
 use crate::persist::{self, Loaded, Saver};
 use crate::preview::{self, Previews};
-use crate::{Engine, Outcome, terminal};
+use crate::repos::{self, Repos};
+use crate::{Engine, Outcome, meta, terminal};
 
 /// Called with a log line. Defaults to stderr.
 pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
@@ -59,6 +60,8 @@ enum Msg {
     ),
     /// File tile work finished off this thread.
     Files(file_tiles::Delivery),
+    /// Workspace repository work finished off this thread (F26).
+    Repos(repos::Delivery),
     Subscribe(mpsc::Sender<Event>),
     /// An event from outside the engine (a config reload) for every listener.
     Broadcast(Event),
@@ -245,6 +248,18 @@ fn run<P: HerdrPort>(
     };
     files.sync(engine.session());
 
+    // Workspaces' git branches (F26): find, watch and read off this thread.
+    let mut repos = {
+        let out = self_tx.clone();
+        Repos::new(
+            Arc::new(move |delivery| {
+                let _ = out.send(Msg::Repos(delivery));
+            }),
+            opts.log.clone(),
+        )
+    };
+    repos.sync(engine.session());
+
     // herdr: a worker for effects and a forwarder for herdr's events.
     let mut herdr = port.map(|port| {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -289,6 +304,20 @@ fn run<P: HerdrPort>(
                 let _ = out.send(Msg::Herdr(item));
             }));
         }
+        // What runs in each bound pane, for tile headers (F28): polled, and
+        // at once when herdr reports a pane changed.
+        let processes = Arc::new(tokio::sync::Notify::new());
+        {
+            let out = self_tx.clone();
+            runtime.spawn(meta::follow_processes(
+                port.clone(),
+                agents.subscribe(),
+                processes.clone(),
+                move |internal| {
+                    let _ = out.send(Msg::Internal(internal));
+                },
+            ));
+        }
         // Adopt what herdr already runs first (ADR 0008); restoring waits for
         // that, so a fresh session's placeholder terminal doesn't create a
         // herdr workspace the user's own ones make unnecessary.
@@ -298,6 +327,7 @@ fn run<P: HerdrPort>(
             effects_tx,
             port,
             agents,
+            processes,
             creating: Default::default(),
             restored: false,
             survey: SurveyState::InFlight,
@@ -313,12 +343,14 @@ fn run<P: HerdrPort>(
                    herdr: &Option<Herdr<P>>,
                    listeners: &mut Vec<mpsc::Sender<Event>>,
                    previews: &mut Previews,
-                   files: &mut Files| {
+                   files: &mut Files,
+                   repos: &mut Repos| {
         if events.is_empty() {
             return;
         }
         previews.sync(engine.session());
         files.sync(engine.session());
+        repos.sync(engine.session());
         if let Some(saver) = &saver {
             saver.schedule(engine.session().clone());
         }
@@ -388,8 +420,13 @@ fn run<P: HerdrPort>(
                         // Not rendered yet: render now, off this thread.
                         None => {
                             let revision = previews.revision();
+                            let mode = engine
+                                .session()
+                                .tile(id)
+                                .map(|t| t.preview_mode)
+                                .unwrap_or_default();
                             std::thread::spawn(move || {
-                                let rendered = azulejo_preview::render(&path);
+                                let rendered = preview::render(&path, mode);
                                 let content = preview::content(id, &path, rendered, revision);
                                 let _ = reply.send(Ok(Outcome {
                                     reply: Reply::Preview(content),
@@ -454,6 +491,7 @@ fn run<P: HerdrPort>(
                         &mut listeners,
                         &mut previews,
                         &mut files,
+                        &mut repos,
                     );
                     Ok(outcome)
                 });
@@ -490,6 +528,7 @@ fn run<P: HerdrPort>(
                         &mut listeners,
                         &mut previews,
                         &mut files,
+                        &mut repos,
                     );
                 }
                 let _ = reply.send(result);
@@ -511,6 +550,7 @@ fn run<P: HerdrPort>(
                     &mut listeners,
                     &mut previews,
                     &mut files,
+                    &mut repos,
                 );
                 if surveyed && let Some(h) = &mut herdr {
                     h.survey_done(&engine);
@@ -531,6 +571,11 @@ fn run<P: HerdrPort>(
                 if let Some(event) = status {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
+                if let (StreamItem::Event(azulejo_herdr::HerdrEvent::PaneUpdated(_)), Some(h)) =
+                    (&item, &herdr)
+                {
+                    h.processes.notify_one();
+                }
                 let reaction = link::reconcile(&item, engine.session(), on_exit);
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
@@ -541,6 +586,7 @@ fn run<P: HerdrPort>(
                         &mut listeners,
                         &mut previews,
                         &mut files,
+                        &mut repos,
                     );
                 }
                 if let Some(h) = &mut herdr {
@@ -562,6 +608,20 @@ fn run<P: HerdrPort>(
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
             }
+            Msg::Repos(delivery) => {
+                if let Some(internal) = repos.accept(delivery) {
+                    let events = engine.apply_internal(internal);
+                    publish(
+                        &engine,
+                        &events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                        &mut files,
+                        &mut repos,
+                    );
+                }
+            }
             Msg::Subscribe(listener) => listeners.push(listener),
             Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
             Msg::SetCommands(list) => commands = Some(list),
@@ -577,6 +637,7 @@ fn run<P: HerdrPort>(
     }
     drop(previews);
     drop(files);
+    drop(repos);
     // Stop herdr work before the saver goes; panes keep running in herdr.
     if let Some(h) = herdr.take() {
         h.runtime.shutdown_background();
@@ -593,6 +654,8 @@ struct Herdr<P> {
     creating: std::cell::RefCell<std::collections::HashSet<azulejo_protocol::TileId>>,
     /// The panes whose agent status to follow; see [`follow_agents`].
     agents: tokio::sync::watch::Sender<Vec<String>>,
+    /// Asks the process poller to look now (see [`meta::follow_processes`]).
+    processes: Arc<tokio::sync::Notify>,
     /// Set once the first survey is in and restore work has been queued.
     restored: bool,
     survey: SurveyState,

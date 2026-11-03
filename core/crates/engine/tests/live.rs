@@ -161,6 +161,19 @@ fn wait_until(core: &Core, timeout: Duration, ok: impl Fn(&Session) -> bool) -> 
     }
 }
 
+/// The session without what herdr reports live (pane titles, cwd, the
+/// running command, headers, branches): what a relaunch must restore exactly.
+fn structural(mut session: Session) -> Session {
+    for ws in session.windows.iter_mut().flat_map(|w| &mut w.workspaces) {
+        ws.git = None;
+        for tile in ws.tabs.iter_mut().flat_map(|t| &mut t.tiles) {
+            tile.pane = None;
+            tile.header = None;
+        }
+    }
+    session
+}
+
 fn all_bound(session: &Session) -> bool {
     bound_terminals(session)
         .iter()
@@ -221,10 +234,17 @@ fn terminals_get_panes_survive_restart_and_follow_herdr() {
     std::mem::forget(core);
     let core = Core::start_with_herdr(opts(&state), herdr.client.clone());
     let restored = core.session().unwrap();
-    assert_eq!(restored, before, "layout restored exactly");
+    assert_eq!(
+        structural(restored),
+        structural(before.clone()),
+        "layout restored exactly"
+    );
     // Reresolving finds the same panes, so nothing changes.
     std::thread::sleep(Duration::from_millis(500));
-    assert_eq!(core.session().unwrap(), before);
+    assert_eq!(
+        structural(core.session().unwrap()),
+        structural(before.clone())
+    );
     assert_eq!(herdr.panes().len(), 2, "no extra panes on restore");
 
     // 3. A pane closed elsewhere takes its tile with it (F15).
@@ -454,7 +474,10 @@ fn adopts_what_herdr_already_runs_without_changing_it() {
     core.shutdown();
     let core = Core::start_with_herdr(opts(&state), h.client.clone());
     std::thread::sleep(Duration::from_millis(800));
-    assert_eq!(core.session().unwrap(), session);
+    assert_eq!(
+        structural(core.session().unwrap()),
+        structural(session.clone())
+    );
     assert_eq!(h.structure(), before, "herdr unchanged after relaunch");
     core.shutdown();
 }
@@ -726,5 +749,152 @@ fn a_shell_that_exits_closes_its_tile_and_leaves_nothing_in_herdr() {
         )
     });
     assert_eq!(bound_terminals(&after).len(), 2);
+    core.shutdown();
+}
+
+fn git_in(dir: &std::path::Path, args: &[&str]) {
+    let ok = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "init.defaultBranch=main",
+        ])
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+fn branch_of(session: &Session) -> Option<String> {
+    session.windows[0].workspaces[0]
+        .git
+        .as_ref()
+        .and_then(|g| g.branch.clone())
+}
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn the_workspace_branch_follows_the_terminal_and_checkouts_in_it() {
+    use azulejo_protocol::TerminalSendText;
+    let h = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    git_in(repo.path(), &["init", "-q"]);
+    std::fs::write(repo.path().join("a.txt"), "a\n").unwrap();
+    git_in(repo.path(), &["add", "a.txt"]);
+    git_in(repo.path(), &["commit", "-q", "-m", "one"]);
+    let plain = tempfile::tempdir().unwrap();
+
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    let session = wait_until(&core, Duration::from_secs(10), all_bound);
+    let tile = session.focused_tile().unwrap();
+    let send = |text: String| {
+        core.execute(Command::TerminalSendText(TerminalSendText {
+            tile: Some(tile),
+            text,
+        }))
+        .unwrap();
+    };
+
+    // cd into the repository: the workspace picks its branch up.
+    send(format!("cd {}\n", repo.path().display()));
+    wait_until(&core, Duration::from_secs(5), |s| {
+        branch_of(s).as_deref() == Some("main")
+    });
+
+    // Switching branch in the tile reaches the sidebar within a second.
+    let events = core.subscribe();
+    let started = Instant::now();
+    send("git -c init.defaultBranch=main checkout -q -b feature/headers\n".into());
+    wait_for_event(&events, |e| {
+        matches!(e, Event::WorkspaceGit { git: Some(g), .. }
+            if g.branch.as_deref() == Some("feature/headers"))
+    });
+    let took = started.elapsed();
+    eprintln!("checkout in a tile → workspace.git: {took:?}");
+    assert!(took < Duration::from_secs(1), "took {took:?}");
+
+    // Leaving the repository clears it.
+    send(format!("cd {}\n", plain.path().display()));
+    wait_until(&core, Duration::from_secs(5), |s| {
+        s.windows[0].workspaces[0].git.is_none()
+    });
+    core.shutdown();
+}
+
+/// What a tile's header says, as `(title, subtitle)`.
+fn header_of(session: &Session, tile: TileId) -> (String, Option<String>) {
+    let h = session
+        .tile(tile)
+        .ok()
+        .and_then(|t| t.header.clone())
+        .unwrap_or_default();
+    (h.title, h.subtitle)
+}
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn terminal_headers_follow_titles_and_running_commands() {
+    use azulejo_protocol::{TerminalSendText, TileHeader};
+    let h = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let work_path = work.path().canonicalize().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    let session = wait_until(&core, Duration::from_secs(10), all_bound);
+    let tile = session.focused_tile().unwrap();
+    let events = core.subscribe();
+    let send = |text: &str| {
+        core.execute(Command::TerminalSendText(TerminalSendText {
+            tile: Some(tile),
+            text: text.into(),
+        }))
+        .unwrap();
+    };
+
+    // An OSC 2 title from the shell reaches the tile (herdr's pane_updated).
+    send(&format!(
+        "cd {} && printf '\\033]2;azj-title-7\\007'\n",
+        work_path.display()
+    ));
+    let started = Instant::now();
+    wait_for_event(&events, |e| {
+        matches!(e, Event::TileUpdated { tile: t, .. }
+            if t.id == tile && t.pane.as_ref().and_then(|m| m.title.as_deref()) == Some("azj-title-7"))
+    });
+    eprintln!("OSC 2 title → tile.updated: {:?}", started.elapsed());
+
+    // At the prompt, the subtitle is where the shell is.
+    // The title is the shell's name once the poller has seen it.
+    let s = wait_until(&core, Duration::from_secs(5), |s| {
+        let (title, sub) = header_of(s, tile);
+        title != "terminal"
+            && sub.as_deref().is_some_and(|sub| {
+                work_path.ends_with(sub.trim_start_matches("~/"))
+                    || sub == work_path.display().to_string()
+            })
+    });
+    let (shell, _) = header_of(&s, tile);
+    assert!(!shell.is_empty(), "shell: {shell:?}");
+
+    // A running command replaces it, then the prompt comes back.
+    send("sleep 2\n");
+    let started = Instant::now();
+    wait_until(&core, Duration::from_secs(5), |s| {
+        header_of(s, tile).1.as_deref() == Some("sleep 2")
+    });
+    eprintln!("command start → header: {:?}", started.elapsed());
+    let s = wait_until(&core, Duration::from_secs(8), |s| {
+        header_of(s, tile).1.as_deref() != Some("sleep 2")
+    });
+    let TileHeader { title, .. } = s.tile(tile).unwrap().header.clone().unwrap();
+    assert_eq!(title, shell, "the shell name stays");
     core.shutdown();
 }

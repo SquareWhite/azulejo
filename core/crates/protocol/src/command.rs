@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use azulejo_model::{
-    Direction, Frame, HerdrRef, TabId, TileContent, TileId, WindowId, WorkspaceId,
+    Direction, Frame, HerdrRef, PreviewMode, TabId, TileContent, TileId, WindowId, WorkspaceId,
 };
 
 use crate::error::{Error, ErrorCode};
@@ -56,6 +56,10 @@ pub enum Command {
     WorkspaceFocus(WorkspaceTarget),
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRename),
+    /// Sets the folder whose git branch the sidebar shows; without `path` the
+    /// core follows the focused terminal's working directory again (F26).
+    #[serde(rename = "workspace.set_repo")]
+    WorkspaceSetRepo(WorkspaceSetRepo),
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMove),
     /// Records the herdr workspace backing a workspace. Sent by the herdr adapter.
@@ -118,6 +122,10 @@ pub enum Command {
     /// `preview.updated` events.
     #[serde(rename = "preview.get")]
     PreviewGet(TileTarget),
+    /// Shows a preview tile's file rendered or as highlighted source (F29);
+    /// without `mode` it toggles. Saved per tile.
+    #[serde(rename = "preview.set_mode")]
+    PreviewSetMode(PreviewSetMode),
 
     // ----- file browser tiles (F10) -----
     /// Lists one folder of a files tile (its root when `dir` is absent);
@@ -248,6 +256,7 @@ pub const METHODS: &[&str] = &[
     "workspace.close",
     "workspace.focus",
     "workspace.rename",
+    "workspace.set_repo",
     "workspace.move",
     "workspace.bind",
     "tab.list",
@@ -266,6 +275,7 @@ pub const METHODS: &[&str] = &[
     "browser.state",
     "preview.open",
     "preview.get",
+    "preview.set_mode",
     "files.list",
     "files.expand",
     "files.collapse",
@@ -395,6 +405,17 @@ pub struct WorkspaceRename {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceId>,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceSetRepo {
+    /// Defaults to the focused workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<WorkspaceId>,
+    /// A folder inside the repository; absent or empty follows the focused
+    /// terminal again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -623,6 +644,16 @@ pub struct BrowserState {
     /// The page's `<title>`; absent or empty clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PreviewSetMode {
+    /// A preview tile; defaults to the focused tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// Absent toggles between rendered and source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<PreviewMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

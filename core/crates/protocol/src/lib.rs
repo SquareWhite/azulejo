@@ -19,8 +19,8 @@ mod schema;
 mod stream;
 
 pub use azulejo_model::{
-    Axis, Direction, Focus, Frame, HerdrRef, Node, OnExit, Session, TabId, Tile, TileContent,
-    TileId, TileKind, WindowId, WorkspaceId,
+    Axis, Direction, Focus, Frame, GitInfo, HerdrRef, Node, OnExit, PaneMeta, PreviewMode, Session,
+    TabId, Tile, TileContent, TileHeader, TileId, TileKind, WindowId, WorkspaceId,
 };
 pub use command::*;
 pub use error::{Error, ErrorCode};

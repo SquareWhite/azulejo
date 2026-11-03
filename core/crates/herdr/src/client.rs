@@ -15,9 +15,9 @@ use crate::error::{Error, Result};
 use crate::event::Subscription;
 use crate::stream::EventStream;
 use crate::types::{
-    EnsuredWorkspace, PaneId, PaneInfo, ReadResult, ReadSource, Resolved, ServerInfo, Snapshot,
-    Survey, TabId, TabLayout, TerminalId, TerminalRef, TerminalSpec, WorkspaceId, WorkspaceInfo,
-    WorkspaceSpec,
+    EnsuredWorkspace, PaneId, PaneInfo, ProcessInfo, ReadResult, ReadSource, Resolved, ServerInfo,
+    Snapshot, Survey, TabId, TabLayout, TerminalId, TerminalRef, TerminalSpec, WorkspaceId,
+    WorkspaceInfo, WorkspaceSpec,
 };
 use crate::wire::{self, method};
 
@@ -389,6 +389,15 @@ impl Client {
             )
             .await?;
         wire::field(&r, "pane")
+    }
+
+    /// What runs in a pane: its shell and the foreground process group. herdr
+    /// sends no event when the foreground process changes; poll this.
+    pub async fn process_info(&self, pane: &PaneId) -> Result<ProcessInfo> {
+        let r = self
+            .call(method::PANE_PROCESS_INFO, json!({ "pane_id": pane }))
+            .await?;
+        wire::field(&r, "process_info")
     }
 
     // ---- events ------------------------------------------------------------

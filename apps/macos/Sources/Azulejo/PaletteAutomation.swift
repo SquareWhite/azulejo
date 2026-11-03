@@ -116,6 +116,7 @@ enum ShellAutomation {
             markers.map { $0.isEmpty ? "-" : $0.replacingOccurrences(of: " ", with: "") }.joined(separator: "|")
         }
         s["sidebar.markers"] = compact(controller.sidebarMarkers)
+        s["sidebar.branches"] = controller.sidebarBranches.map { $0.isEmpty ? "-" : $0 }.joined(separator: "|")
         s["tab.markers"] = compact(controller.tabMarkers)
         s["dock"] = NSApp.dockTile.badgeLabel ?? "none"
         // Which tile the badges belong to: the focused tile's short id.

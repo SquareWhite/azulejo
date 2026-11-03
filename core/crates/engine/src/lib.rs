@@ -10,11 +10,15 @@ mod driver;
 mod files;
 pub mod layout_file;
 pub mod link;
+mod meta;
 pub mod persist;
 mod preview;
+mod repos;
 pub mod terminal;
 
-use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId, WorkspaceId};
+use azulejo_model::{
+    HerdrRef, ModelError, PreviewMode, Session, Tile, TileContent, TileId, WorkspaceId,
+};
 use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
     TileInfo, WindowSummary, WorkspaceSummary,
@@ -56,6 +60,7 @@ impl Engine {
         session
             .create_tab(workspace, Tile::new(TileContent::terminal()), None)
             .expect("new workspace exists");
+        meta::refresh_headers(&mut session);
         Self {
             session,
             placeholder: Some(workspace),
@@ -63,7 +68,8 @@ impl Engine {
     }
 
     /// Starts from a saved session.
-    pub fn with_session(session: Session) -> Self {
+    pub fn with_session(mut session: Session) -> Self {
+        meta::refresh_headers(&mut session);
         Self {
             session,
             placeholder: None,
@@ -93,6 +99,7 @@ impl Engine {
         {
             agent::clear_attention(&mut self.session, tile);
         }
+        meta::refresh_headers(&mut self.session);
         let mut events = diff(&before, &self.session, kill);
         self.remember_detached(&events);
         if force_layout && let Reply::Layout(state) = &reply {
@@ -214,6 +221,12 @@ impl Engine {
             }
             Command::WorkspaceRename(p) => {
                 s.rename_workspace(p.workspace.or(focus.workspace).ok_or_else(nothing)?, p.name)?;
+                Reply::Ok
+            }
+            Command::WorkspaceSetRepo(p) => {
+                let id = p.workspace.or(focus.workspace).ok_or_else(nothing)?;
+                let repo = p.path.map(|p| files::expand_home(&p).display().to_string());
+                s.set_workspace_repo(id, repo)?;
                 Reply::Ok
             }
             Command::WorkspaceMove(p) => {
@@ -339,6 +352,18 @@ impl Engine {
                     TileContent::Preview { path } => *path = Some(p.path),
                     other => return Err(wrong_kind(id, other, "preview")),
                 }
+                Reply::Ok
+            }
+            Command::PreviewSetMode(p) => {
+                let id = s.target(p.tile)?;
+                let tile = s.tile_mut(id)?;
+                if !matches!(tile.content, TileContent::Preview { .. }) {
+                    return Err(wrong_kind(id, &tile.content, "preview"));
+                }
+                tile.preview_mode = p.mode.unwrap_or(match tile.preview_mode {
+                    PreviewMode::Rendered => PreviewMode::Source,
+                    PreviewMode::Source => PreviewMode::Rendered,
+                });
                 Reply::Ok
             }
             // Rendering reads files; `Core` answers this off the engine.

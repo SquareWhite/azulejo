@@ -3,7 +3,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use azulejo_model::{Focus, Frame, Node, TabId, Tile, TileId, WindowId, WorkspaceId};
+use azulejo_model::{
+    Focus, Frame, GitInfo, Node, PreviewMode, TabId, Tile, TileId, WindowId, WorkspaceId,
+};
 
 /// Something that changed in the core.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -38,6 +40,15 @@ pub enum Event {
     WorkspaceUpdated {
         window: WindowId,
         workspace: WorkspaceInfo,
+    },
+    /// A workspace's repository or branch changed, or it left a repository
+    /// (`git` absent): the sidebar shows the branch (F26). Also visible as
+    /// `git` on `workspace.updated`.
+    #[serde(rename = "workspace.git")]
+    WorkspaceGit {
+        workspace: WorkspaceId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        git: Option<GitInfo>,
     },
     /// A window's workspaces changed order.
     #[serde(rename = "workspace.reordered")]
@@ -196,6 +207,9 @@ pub struct PreviewContent {
     /// Only the start of a very large file was rendered.
     #[serde(default)]
     pub truncated: bool,
+    /// Rendered, or the file's source highlighted as code (F29).
+    #[serde(default, skip_serializing_if = "PreviewMode::is_rendered")]
+    pub mode: PreviewMode,
     /// Counts renders of this tile in this run, so a shell can drop stale
     /// updates.
     pub revision: u64,
@@ -228,6 +242,13 @@ pub struct WorkspaceInfo {
     /// Terminal tiles whose agent needs a look (F11).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub attention: u32,
+    /// The folder whose branch it shows, when the user set one
+    /// (`workspace.set_repo`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Its repository and branch (F26).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitInfo>,
 }
 
 fn is_zero(n: &u32) -> bool {

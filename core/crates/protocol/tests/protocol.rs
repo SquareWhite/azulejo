@@ -47,6 +47,10 @@ fn sample_commands() -> Vec<Command> {
             workspace: None,
             name: "web".into(),
         }),
+        Command::WorkspaceSetRepo(WorkspaceSetRepo {
+            workspace: Some(workspace),
+            path: Some("/src/shop".into()),
+        }),
         Command::WorkspaceMove(WorkspaceMove {
             workspace: Some(workspace),
             index: 2,
@@ -176,6 +180,10 @@ fn sample_commands() -> Vec<Command> {
             path: "plan.md".into(),
         }),
         Command::PreviewGet(TileTarget { tile: Some(tile) }),
+        Command::PreviewSetMode(PreviewSetMode {
+            tile: Some(tile),
+            mode: Some(PreviewMode::Source),
+        }),
         Command::FilesList(FilesDir {
             tile: Some(tile),
             dir: None,
@@ -234,6 +242,7 @@ fn sample_preview(tile: TileId) -> PreviewContent {
         html: Some("<!doctype html><main id=\"azj-content\"></main>".into()),
         language: None,
         truncated: false,
+        mode: PreviewMode::Source,
         revision: 3,
     }
 }
@@ -261,6 +270,13 @@ fn sample_events() -> Vec<Event> {
         herdr_workspace: Some("w1".into()),
         blocked: 1,
         attention: 2,
+        repo: Some("/src/shop".into()),
+        git: Some(GitInfo {
+            repo: "/src/shop".into(),
+            branch: Some("main".into()),
+            detached: false,
+            dirty: true,
+        }),
     };
     vec![
         Event::WindowCreated { window },
@@ -275,6 +291,10 @@ fn sample_events() -> Vec<Event> {
             workspace: info.clone(),
         },
         Event::WorkspaceClosed { window, workspace },
+        Event::WorkspaceGit {
+            workspace,
+            git: info.git.clone(),
+        },
         Event::WorkspaceUpdated {
             window,
             workspace: info,
@@ -496,6 +516,8 @@ fn replies_round_trip() {
                     herdr_workspace: Some("w2".into()),
                     blocked: 0,
                     attention: 0,
+                    repo: None,
+                    git: None,
                 },
             }],
         },
