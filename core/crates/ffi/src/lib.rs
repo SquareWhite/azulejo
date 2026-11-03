@@ -1,4 +1,13 @@
 //! C ABI for the macOS shell. Commands and events cross as JSON strings.
+//!
+//! Threading rules:
+//! - A core handle is not thread-safe. Call every `azj_core_*` function on one
+//!   thread (the shell's main thread).
+//! - Today the callback runs synchronously inside `azj_core_send`, on the caller's
+//!   thread. Once the herdr adapter and API server exist, events will also arrive
+//!   from background threads, so shells must not assume the main thread: hop to it
+//!   (`DispatchQueue.main` in Swift) before touching UI.
+//! - The event JSON pointer is only valid during the callback; copy it.
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
@@ -6,6 +15,7 @@ use azulejo_engine::Engine;
 use azulejo_protocol::Command;
 
 /// Called once per event with a NUL-terminated JSON string, valid only for the call.
+/// May run on any thread; see the crate docs for the threading rules.
 pub type AzjEventCallback = extern "C" fn(context: *mut c_void, event_json: *const c_char);
 
 /// Opaque handle to a running core.
@@ -99,11 +109,23 @@ mod tests {
                 0
             );
             assert_eq!(azj_core_send(core, c"not json".as_ptr()), -1);
+            assert_eq!(
+                azj_core_send(
+                    core,
+                    c"{\"method\":\"layout.split\",\"params\":{\"direction\":\"right\"}}".as_ptr()
+                ),
+                0
+            );
             azj_core_free(core);
         }
+        let received = RECEIVED.lock().unwrap();
         assert_eq!(
-            RECEIVED.lock().unwrap()[0],
+            received[0],
             r#"{"event":"core.pong","data":{"api_version":1}}"#
+        );
+        assert_eq!(
+            received[1],
+            r#"{"event":"layout.changed","data":{"tree":{"type":"split","axis":"horizontal","ratio":0.5,"a":{"type":"leaf","id":"t1"},"b":{"type":"leaf","id":"t2"}},"focused":"t2"}}"#
         );
     }
 }

@@ -12,10 +12,17 @@ final class Core {
         let context = Unmanaged.passUnretained(self).toOpaque()
         azj_core_set_event_callback(handle, { context, json in
             guard let context, let json else { return }
+            // The JSON pointer dies when the callback returns, so copy it first.
             let text = String(cString: json)
-            // The core calls back synchronously from `send`, which runs on the main actor.
-            MainActor.assumeIsolated {
+            let deliver: @MainActor @Sendable () -> Void = {
                 Unmanaged<Core>.fromOpaque(context).takeUnretainedValue().onEvent?(text)
+            }
+            // Today the core calls back inside `send`, on the main thread. Later the
+            // herdr adapter and API server will call back from their own threads.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(deliver)
+            } else {
+                DispatchQueue.main.async(execute: deliver)
             }
         }, context)
     }
