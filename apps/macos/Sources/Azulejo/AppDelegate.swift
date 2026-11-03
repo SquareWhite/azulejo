@@ -24,11 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
-        // Spike (step 0.6): seed a few splits so there's something to look at.
+        // No seed splits: the core now runs against the user's own herdr
+        // session (ADR 0008), where every split is a real herdr tab.
         core.send(#"{"method":"layout.get"}"#)
-        split("right")
-        split("down")
-        split("right")
 
         // ⌘D splits right, ⌘⇧D splits down. A placeholder for the real key router.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
