@@ -57,6 +57,26 @@
       ],
       "type": "object"
     },
+    "ApplyMode": {
+      "description": "Where `layout.apply` puts a layout file's tabs.",
+      "oneOf": [
+        {
+          "const": "new_workspace",
+          "description": "A new workspace named after the file, in the focused window.",
+          "type": "string"
+        },
+        {
+          "const": "new_tab",
+          "description": "Extra tabs in `workspace` (the focused one by default).",
+          "type": "string"
+        },
+        {
+          "const": "replace_tab",
+          "description": "The file's tabs take the place of the workspace's active tab, which\ncloses. Its terminals detach; their herdr panes keep running.",
+          "type": "string"
+        }
+      ]
+    },
     "Axis": {
       "description": "How a split lays out its two children: `horizontal` puts them side by side,\n`vertical` stacks them.",
       "enum": [
@@ -939,8 +959,190 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "description": "Opens a project layout file's tabs and tiles; replies `created` with\nthe workspace and first tab.",
+          "properties": {
+            "method": {
+              "const": "layout.apply",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutApply"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tab or workspace as layout-file TOML; replies `layout_file`.",
+          "properties": {
+            "method": {
+              "const": "layout.export",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutExport"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Every action the palette offers, with its current key chords;\nreplies `commands`.",
+          "properties": {
+            "method": {
+              "const": "commands.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "CommandEntry": {
+      "description": "One entry in the command palette.",
+      "properties": {
+        "action": {
+          "description": "Keymap action name, when the entry is a keymap action. With `index`\nfor indexed actions (`switch_tab` + 3).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "description": "`tile`, `layout`, `tab`, `workspace`, `window`, `terminal`, `browser`,\n`preview` or `app`.",
+          "type": "string"
+        },
+        "chords": {
+          "description": "Current bindings on this platform, in config syntax (`cmd+d`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable id: the keymap action name (`split_right`, `switch_tab_3`), or\nthe method name for commands no key is bound to (`browser.open`).",
+          "type": "string"
+        },
+        "index": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "method": {
+          "description": "The protocol method it sends, if any; `None` for shell-only actions\n(palette, sidebar, find…).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_tile": {
+          "default": false,
+          "description": "Acts on the focused tile, so the palette greys it out without one.",
+          "type": "boolean"
+        },
+        "planned": {
+          "default": false,
+          "description": "Not supported yet; shown greyed out.",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Needs input before it can run (a URL, a path, a name): the palette\nprompts for `prompt` first.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "category"
+      ],
+      "type": "object"
+    },
+    "ConfigDiagnostic": {
+      "description": "A problem in the config file, for the shell's banner.",
+      "properties": {
+        "column": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "description": "`error` or `warning`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ConfigReloaded": {
+      "description": "Payload of `config.reloaded`.",
+      "properties": {
+        "applied": {
+          "description": "False when the new file had errors: the previous config stays.",
+          "type": "boolean"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/ConfigDiagnostic"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "applied"
+      ],
+      "type": "object"
     },
     "Created": {
       "description": "IDs of what a command created; only the relevant fields are set.",
@@ -1568,6 +1770,23 @@
             "data"
           ],
           "type": "object"
+        },
+        {
+          "description": "The config file changed on disk and was read again (F25b). When it has\nerrors the previous config stays and `applied` is false. Not saved.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/ConfigReloaded"
+            },
+            "event": {
+              "const": "config.reloaded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1753,6 +1972,81 @@
         "subscription",
         "dropped"
       ],
+      "type": "object"
+    },
+    "LayoutApply": {
+      "properties": {
+        "base_dir": {
+          "description": "What relative `cwd` and `path` values in the file resolve against.\nDefaults to the file's directory, or the workspace's cwd for `toml`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/ApplyMode",
+          "default": "new_workspace"
+        },
+        "path": {
+          "description": "A layout file (`.azulejo.toml`). Give exactly one of `path` and `toml`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toml": {
+          "description": "The layout file's text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For `new_tab` and `replace_tab`; the focused workspace by default."
+        }
+      },
+      "type": "object"
+    },
+    "LayoutExport": {
+      "properties": {
+        "path": {
+          "description": "Also write the file here. Paths in it are made relative to its\ndirectory where they're inside it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Export one tab. Without it, the whole workspace."
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The workspace to export; the focused one by default."
+        }
+      },
       "type": "object"
     },
     "LayoutFocus": {
@@ -2431,6 +2725,50 @@
             "subscription"
           ],
           "type": "object"
+        },
+        {
+          "description": "A layout file, from `layout.export`.",
+          "properties": {
+            "path": {
+              "description": "Where it was written, if `path` was given.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "toml": {
+              "type": "string"
+            },
+            "type": {
+              "const": "layout_file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "toml"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The command palette's entries, from `commands.list`.",
+          "properties": {
+            "commands": {
+              "items": {
+                "$ref": "#/$defs/CommandEntry"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "commands",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "commands"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2889,7 +3227,7 @@
         {
           "properties": {
             "command": {
-              "description": "Command to run instead of the user's shell.",
+              "description": "Command typed into the pane's shell once it starts. One element is\nsent as a shell line (`npm run dev`); more are an argv, quoted for\nthe shell. herdr has no way to replace the shell, so the shell stays\nwhen the command exits.",
               "items": {
                 "type": "string"
               },
@@ -2908,6 +3246,13 @@
             "ended": {
               "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
               "type": "boolean"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Extra environment for a new pane, on top of `AZULEJO_*`.",
+              "type": "object"
             },
             "herdr": {
               "anyOf": [
@@ -3034,7 +3379,7 @@
         {
           "properties": {
             "command": {
-              "description": "Command to run instead of the user's shell.",
+              "description": "Command typed into the pane's shell once it starts. One element is\nsent as a shell line (`npm run dev`); more are an argv, quoted for\nthe shell. herdr has no way to replace the shell, so the shell stays\nwhen the command exits.",
               "items": {
                 "type": "string"
               },
@@ -3053,6 +3398,13 @@
             "ended": {
               "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
               "type": "boolean"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Extra environment for a new pane, on top of `AZULEJO_*`.",
+              "type": "object"
             },
             "herdr": {
               "anyOf": [
@@ -3148,7 +3500,7 @@
         {
           "properties": {
             "command": {
-              "description": "Command to run instead of the user's shell.",
+              "description": "Command typed into the pane's shell once it starts. One element is\nsent as a shell line (`npm run dev`); more are an argv, quoted for\nthe shell. herdr has no way to replace the shell, so the shell stays\nwhen the command exits.",
               "items": {
                 "type": "string"
               },
@@ -3167,6 +3519,13 @@
             "ended": {
               "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
               "type": "boolean"
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Extra environment for a new pane, on top of `AZULEJO_*`.",
+              "type": "object"
             },
             "herdr": {
               "anyOf": [
@@ -3777,7 +4136,10 @@
     "terminal.scroll",
     "terminal.search",
     "events.subscribe",
-    "events.unsubscribe"
+    "events.unsubscribe",
+    "layout.apply",
+    "layout.export",
+    "commands.list"
   ],
   "title": "Azulejo API",
   "version": 1

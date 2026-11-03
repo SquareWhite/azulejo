@@ -53,6 +53,17 @@ pub enum Reply {
     Subscribed {
         subscription: u64,
     },
+    /// A layout file, from `layout.export`.
+    LayoutFile {
+        toml: String,
+        /// Where it was written, if `path` was given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
+    /// The command palette's entries, from `commands.list`.
+    Commands {
+        commands: Vec<crate::project::CommandEntry>,
+    },
 }
 
 /// A window without its workspaces' contents.

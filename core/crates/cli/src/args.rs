@@ -226,6 +226,11 @@ pub fn parse_params(spec: &MethodSpec, args: &[String]) -> Result<Map<String, Va
     }
 
     assign_positionals(spec, &mut out, positionals)?;
+    // `azj layout apply` alone opens the working directory's layout file
+    // (made absolute by the caller like any path).
+    if spec.method == "layout.apply" && !out.contains_key("path") && !out.contains_key("toml") {
+        out.insert("path".into(), Value::String(".".into()));
+    }
 
     if let Some(missing) = spec
         .params
@@ -377,7 +382,9 @@ fn assign_positionals(
         [only] if positional_ty(only) => Some(*only),
         [] => match unset(&|p| matches!(p.ty, Ty::String)).as_slice() {
             [only] => Some(*only),
-            _ => None,
+            // Among several optional strings, a lone `path` still takes a
+            // bare argument (`azj layout apply ./proj`).
+            several => several.iter().find(|p| p.name == "path").copied(),
         },
         _ => None,
     };

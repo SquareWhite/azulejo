@@ -1,5 +1,7 @@
 //! Tiles and what they show.
 
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,9 +37,15 @@ pub enum TileContent {
         /// Working directory for a new pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
-        /// Command to run instead of the user's shell.
+        /// Command typed into the pane's shell once it starts. One element is
+        /// sent as a shell line (`npm run dev`); more are an argv, quoted for
+        /// the shell. herdr has no way to replace the shell, so the shell stays
+        /// when the command exits.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         command: Option<Vec<String>>,
+        /// Extra environment for a new pane, on top of `AZULEJO_*`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        env: BTreeMap<String, String>,
         /// Set once the herdr adapter has created or adopted a pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         herdr: Option<HerdrRef>,
@@ -80,6 +88,7 @@ impl TileContent {
         TileContent::Terminal {
             cwd: None,
             command: None,
+            env: BTreeMap::new(),
             herdr: None,
             ended: false,
         }

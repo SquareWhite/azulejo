@@ -6,6 +6,7 @@
 pub mod adopt;
 mod diff;
 mod driver;
+pub mod layout_file;
 pub mod link;
 pub mod persist;
 mod preview;
@@ -18,7 +19,7 @@ use azulejo_protocol::{
 };
 
 pub use diff::diff;
-pub use driver::{Core, CoreOptions, LogFn};
+pub use driver::{CommandsFn, Core, CoreOptions, LogFn};
 pub use link::{Effect, HerdrPort, Internal};
 
 /// The result of a successful command.
@@ -434,6 +435,18 @@ impl Engine {
                     other => return Err(wrong_kind(id, other, "terminal")),
                 }
                 Reply::Ok
+            }
+            Command::LayoutApply(p) => layout_file::apply(s, focus, p)?,
+            Command::LayoutExport(p) => Reply::LayoutFile {
+                toml: layout_file::export(s, focus, &p)?,
+                path: p.path,
+            },
+            // The palette's entries come from the config, which `Core` holds.
+            Command::CommandsList => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "the command list needs a running core with a config",
+                ));
             }
             // The engine can't do I/O; `Core` runs these against herdr.
             Command::TerminalSendText(_)

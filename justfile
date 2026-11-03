@@ -19,6 +19,7 @@ lint:
 test-herdr:
     cargo test -p azulejo-herdr --test live -- --ignored --test-threads=1
     cargo test -p azulejo-engine --test live -- --ignored --test-threads=1
+    cargo test -p azulejo-engine --test live_layout -- --ignored --test-threads=1
 
 # Headless end to end: azulejod + azj against a real herdr in a throwaway session
 e2e:

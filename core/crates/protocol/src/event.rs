@@ -101,6 +101,11 @@ pub enum Event {
     /// Not saved.
     #[serde(rename = "agent.state_changed")]
     AgentStateChanged(AgentStateChange),
+
+    /// The config file changed on disk and was read again (F25b). When it has
+    /// errors the previous config stays and `applied` is false. Not saved.
+    #[serde(rename = "config.reloaded")]
+    ConfigReloaded(crate::project::ConfigReloaded),
 }
 
 /// What the agent in a terminal tile is doing, per herdr.
