@@ -38,12 +38,12 @@ mac-run: mac
 mac-dev *args: mac
     apps/macos/dev.sh {{args}}
 
-# Run azj against the dev app's socket
+# Run azj against the dev app's socket (AZJ_DEV_NAME=<name> picks an instance)
 azj-dev *args:
     cargo build -q -p azulejo-cli
-    AZULEJO_SOCKET="{{justfile_directory()}}/.dev/run/azulejo.sock" target/debug/azj {{args}}
+    env "$(apps/macos/dev.sh --env)" target/debug/azj {{args}}
 
-# Quit the dev app, stop and delete its herdr session (azj-dev), wipe .dev state
+# Quit the dev app, stop and delete its herdr session (azj-dev[-<AZJ_DEV_NAME>]), wipe its .dev state
 dev-reset:
     apps/macos/dev.sh --reset
 
@@ -51,7 +51,7 @@ dev-reset:
 # (resets the dev profile first so it starts from one tile)
 mac-automation: mac
     apps/macos/dev.sh --reset
-    apps/macos/dev.sh --automation apps/macos/automation/keys.azs --out .dev/out/keys
+    out=.dev/out/keys; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/keys"; fi; apps/macos/dev.sh --automation apps/macos/automation/keys.azs --out "$out"
 
 # Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 lint-linux:

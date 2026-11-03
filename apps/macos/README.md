@@ -28,6 +28,12 @@ apps/macos/dev.sh --stop
 just dev-reset          # quit, stop + delete the azj-dev herdr session, wipe .dev state
 ```
 
+Several instances can run side by side (one per agent or experiment):
+`AZJ_DEV_NAME=<name>` moves everything to `.dev/<name>/` and uses herdr session
+`azj-dev-<name>`. Every recipe above honours it, e.g.
+`AZJ_DEV_NAME=term just mac-dev --bg`, `AZJ_DEV_NAME=term just azj-dev tile list`,
+`AZJ_DEV_NAME=term just dev-reset`. Names are letters, digits, `-` and `_`.
+
 Two guards keep it off your real herdr session: `dev.sh` refuses
 `AZJ_DEV_SESSION=default` (or a dev config pointing at it), and the app itself,
 launched with `AZULEJO_PROFILE=dev`, refuses to boot unless its core options

@@ -13,13 +13,22 @@
 #   --out DIR       where automation writes screenshots and its log (default .dev/out)
 #   --wait          wait for the app to exit
 #
+# AZJ_DEV_NAME=<name> runs a separate instance: everything under .dev/<name>/ and
+# herdr session `azj-dev-<name>`, so several agents can test side by side.
+# Without it the profile lives directly in .dev/ with session `azj-dev`.
 # AZJ_DEV_SESSION overrides the herdr session name; "default" is refused.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-dev="$root/.dev"
+name="${AZJ_DEV_NAME:-}"
+case "$name" in
+  "") dev="$root/.dev"; default_session="azj-dev" ;;
+  config | state | run | logs | out) echo "dev.sh: AZJ_DEV_NAME=$name clashes with a .dev/ folder" >&2; exit 2 ;;
+  *[!A-Za-z0-9_-]*) echo "dev.sh: AZJ_DEV_NAME may only use letters, digits, - and _" >&2; exit 2 ;;
+  *) dev="$root/.dev/$name"; default_session="azj-dev-$name" ;;
+esac
 app="$root/target/macos/Azulejo.app"
-session="${AZJ_DEV_SESSION:-azj-dev}"
+session="${AZJ_DEV_SESSION:-$default_session}"
 config="$dev/config/azulejo/config.toml"
 state="$dev/state/state.json"
 socket="$dev/run/azulejo.sock"
@@ -76,7 +85,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --env) echo "AZULEJO_SOCKET=$socket"; exit 0 ;;
-    -h | --help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "dev.sh: unknown argument $1" >&2; exit 2 ;;
   esac
   shift
