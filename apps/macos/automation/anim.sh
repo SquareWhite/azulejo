@@ -50,6 +50,9 @@ if [[ "$mode" == "--slow" ]]; then
   step 04-zoom alt+shift+m
   step 05-unzoom alt+shift+m
   step 06-rotate alt+o
+  step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
+  step 06c-monocle alt+backslash               # tile -> monocle
+  step 06d-three-column alt+backslash          # monocle -> three column
   step 07-focus alt+k
   step 08-close alt+w
   emit "wait 1200" "anim stats slow-stats"
