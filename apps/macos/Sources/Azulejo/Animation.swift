@@ -204,10 +204,13 @@ protocol MotionAware: AnyObject {
     /// Height of a strip above the content (a tile header, F28) that 1:1
     /// snapshots sit below.
     var headerInset: CGFloat { get }
+    /// Margin left of the content (a terminal's padding in its card, D.5).
+    var contentLeft: CGFloat { get }
 }
 
 extension MotionAware {
     var headerInset: CGFloat { 0 }
+    var contentLeft: CGFloat { 0 }
 }
 
 /// One per-frame callback list, driven by the container's display link.

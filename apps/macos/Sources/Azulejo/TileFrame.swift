@@ -7,8 +7,21 @@ protocol TileHeaderAccessory {
     var headerAccessory: NSView? { get }
 }
 
-/// Every tile in the container: a header strip (kind icon, bold title, muted
-/// subtitle — what the core's `tile.header` says) above the tile's own view.
+/// A header accessory that shows extra controls while the pointer is over the
+/// header strip (the preview tile's Open and Reveal).
+@MainActor
+protocol HeaderHoverAware {
+    func headerHover(_ inside: Bool)
+}
+
+/// A tile view whose own toolbar is its top strip (the browser's chrome, D.6):
+/// the frame hides its header strip for it.
+@MainActor
+protocol TileOwnsChrome {}
+
+/// Every tile in the container: a card (D.5) with a header strip (kind icon,
+/// bold title, muted subtitle — what the core's `tile.header` says) above the
+/// tile's own view.
 ///
 /// The container only ever sets this view's frame; it sizes the content below
 /// the header in one go, so a terminal's PTY still resizes once per layout
@@ -23,6 +36,16 @@ class TileFrame: NSView, TileView {
     var kind: TileKind { content.kind }
     var keyContext: String { content.keyContext }
 
+    /// Tiles with their own chrome (the browser): no header strip.
+    private let ownsChrome: Bool
+    /// Margin round a terminal's text (`Design.Space.tileContentPad`); other
+    /// kinds fill the card edge to edge.
+    private let pad: CGFloat
+    /// Rounds the card's corners without masking the content (D.5): the
+    /// window colour drawn over the four corners. Rounded masking of a layer
+    /// tree that holds a Metal surface or a web view costs an offscreen pass.
+    let corners = CornerCapLayer()
+
     /// Wraps `content`; tiles that take part in motion get a frame that does too.
     static func wrap(_ content: any TileView) -> TileFrame {
         content is MotionAware ? MotionTileFrame(content) : TileFrame(content)
@@ -31,17 +54,21 @@ class TileFrame: NSView, TileView {
     init(_ content: any TileView) {
         self.content = content
         header = TileHeaderView(kind: content.kind)
+        ownsChrome = content is TileOwnsChrome
+        pad = content.kind == .terminal ? Design.Space.tileContentPad : 0
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Design.Radius.tile
-        layer?.masksToBounds = true
         if let accessory = (content as? TileHeaderAccessory)?.headerAccessory {
             header.setAccessory(accessory)
         }
+        header.isHidden = ownsChrome
         // The header stays above the content, so a terminal's 1:1 motion
-        // snapshot (crop style) can't cover it mid-motion.
+        // snapshot (crop style) can't cover it mid-motion; the corner caps sit
+        // over both.
         addSubview(content)
         addSubview(header)
+        corners.zPosition = 100
+        layer?.addSublayer(corners)
         updateColors()
     }
 
@@ -52,9 +79,18 @@ class TileFrame: NSView, TileView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let h = min(Self.headerHeight, max(newSize.height, 0))
+        let h = ownsChrome ? 0 : min(Self.headerHeight, max(newSize.height, 0))
         header.frame = NSRect(x: 0, y: newSize.height - h, width: newSize.width, height: h)
-        content.frame = NSRect(x: 0, y: 0, width: newSize.width, height: max(newSize.height - h, 0))
+        let body = max(newSize.height - h, 0)
+        let p = min(pad, newSize.width / 4, body / 4)
+        // Terminals: the margin at the sides and bottom, half of it under the
+        // header.
+        content.frame = NSRect(x: p, y: p, width: max(newSize.width - 2 * p, 0),
+                               height: max(body - p - p / 2, 0))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        corners.frame = CGRect(origin: .zero, size: newSize)
+        CATransaction.commit()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -62,11 +98,56 @@ class TileFrame: NSView, TileView {
         updateColors()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateColors()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateColors()
+    }
+
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.tile.cgColor
+            // A terminal's margin shows the terminal's own background, so it
+            // reads as part of the terminal whatever the user's Ghostty theme.
+            let body = content.kind == .terminal
+                ? (TerminalRuntime.shared?.background ?? Design.Color.tile) : Design.Color.tile
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = body.cgColor
+            CATransaction.commit()
+            corners.update(fill: Design.Color.window.cgColor, radius: Design.Radius.tile,
+                           scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
         }
     }
+
+    // MARK: Corners in motion
+
+    /// Crop motion animates this frame's bounds (a clip over 1:1 content);
+    /// the caps follow the visible rect from `from` to `to` (bounds
+    /// coordinates) with the motion's timing.
+    func animateCorners(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: CGPoint(x: from.midX, y: from.midY))
+        position.toValue = NSValue(point: CGPoint(x: to.midX, y: to.midY))
+        let size = CABasicAnimation(keyPath: "bounds.size")
+        size.fromValue = NSValue(size: from.size)
+        size.toValue = NSValue(size: to.size)
+        let group = CAAnimationGroup()
+        group.animations = [position, size]
+        if holdAtEnd {
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+        }
+        Motion.configure(group, duration: duration)
+        corners.add(group, forKey: Self.cornerMotionKey)
+    }
+
+    func stopCornerMotion() { corners.removeAnimation(forKey: Self.cornerMotionKey) }
+
+    private static let cornerMotionKey = "azj.corners"
 
     // MARK: TileView
 
@@ -108,7 +189,7 @@ class TileFrame: NSView, TileView {
 
 /// A frame around a tile that freezes behind a snapshot while it moves. The
 /// container speaks in this frame's coordinates; the snapshot lives in the
-/// content's, below the header.
+/// content's, below the header and inside a terminal's margin.
 @MainActor
 final class MotionTileFrame: TileFrame, MotionAware {
     private var aware: MotionAware { content as! MotionAware }
@@ -129,7 +210,8 @@ final class MotionTileFrame: TileFrame, MotionAware {
     func motionDidEnd(clock: MotionClock) { aware.motionDidEnd(clock: clock) }
     func motionCancelled() { aware.motionCancelled() }
     var surfaceResizes: Int { aware.surfaceResizes }
-    var headerInset: CGFloat { header.frame.height }
+    var headerInset: CGFloat { bounds.height - content.frame.maxY }
+    var contentLeft: CGFloat { content.frame.minX }
 }
 
 extension TileFrame: AutomatableTile {
@@ -144,33 +226,44 @@ extension TileFrame: AutomatableTile {
         var state = (content as? AutomatableTile)?.automationState() ?? [:]
         state["tile.header.title"] = header.titleText
         state["tile.header.subtitle"] = header.subtitleText
+        state["tile.header.focused"] = header.focused ? "yes" : "no"
         return state
     }
 }
 
 /// The strip across the top of a tile: icon, bold title, " — " and a muted
-/// subtitle (truncated in the middle), then the tile's own controls.
+/// subtitle (truncated in the middle), then the tile's own controls. Centred
+/// like the mockup's terminal tiles; left-aligned when the tile puts controls
+/// on the right (preview, files). The focused tile's strip is a shade lighter
+/// (as the mockup's focused tile is), with a hairline underneath.
 @MainActor
 final class TileHeaderView: NSView {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
+    private let hairline = CALayer()
     private var accessory: NSView?
     private(set) var titleText = ""
     private(set) var subtitleText = ""
 
-    var focused = false { didSet { if focused != oldValue { render() } } }
+    var focused = false {
+        didSet {
+            guard focused != oldValue else { return }
+            render()
+            updateColors()
+        }
+    }
 
     init(kind: TileKind) {
         super.init(frame: .zero)
         wantsLayer = true
         icon.image = NSImage(systemSymbolName: Self.symbol(kind), accessibilityDescription: kind.rawValue)
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        icon.contentTintColor = Design.Color.textSecondary
         label.lineBreakMode = .byTruncatingMiddle
         label.maximumNumberOfLines = 1
         label.cell?.truncatesLastVisibleLine = true
         addSubview(icon)
         addSubview(label)
+        layer?.addSublayer(hairline)
         updateColors()
     }
 
@@ -209,22 +302,36 @@ final class TileHeaderView: NSView {
             ]))
         }
         label.attributedStringValue = text
+        needsLayout = true
     }
 
     override func layout() {
         super.layout()
         let h = bounds.height
-        icon.frame = NSRect(x: 9, y: (h - 14) / 2, width: 14, height: 14)
-        var right = bounds.width - 6
+        let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
+        var right = bounds.width - margin
         if let accessory {
             let size = accessory.fittingSize
             let w = min(size.width, max(bounds.width * 0.6, 0))
             accessory.frame = NSRect(x: right - w, y: (h - size.height) / 2, width: w, height: size.height)
-            right -= w + 6
+            right -= w + spacing
         }
-        let x = Design.Space.headerTitleX
-        let labelHeight = label.intrinsicContentSize.height
-        label.frame = NSRect(x: x, y: (h - labelHeight) / 2, width: max(right - x, 0), height: labelHeight)
+        // Measured from the text itself: a truncating label's intrinsic width
+        // follows its current frame, so a strip that grew kept the "…".
+        let natural = label.attributedStringValue.size()
+        let labelHeight = ceil(natural.height)
+        let room = max(right - margin - iconSize - spacing, 0)
+        let labelWidth = min(ceil(natural.width) + 4, room)
+        // Centred over the whole strip unless controls sit on the right.
+        let group = iconSize + spacing + labelWidth
+        let left = accessory == nil ? max(margin, (bounds.width - group) / 2) : margin
+        icon.frame = NSRect(x: left, y: (h - iconSize) / 2, width: iconSize, height: iconSize)
+        label.frame = NSRect(x: left + iconSize + spacing, y: (h - labelHeight) / 2,
+                             width: labelWidth, height: labelHeight)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        hairline.frame = CGRect(x: 0, y: 0, width: bounds.width, height: 1 / max(window?.backingScaleFactor ?? 2, 1))
+        CATransaction.commit()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -233,11 +340,167 @@ final class TileHeaderView: NSView {
         render()
     }
 
+    // MARK: Hover
+
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        guard accessory is HeaderHoverAware else { return }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hover(true) }
+    override func mouseExited(with event: NSEvent) { hover(false) }
+
+    /// Shows or hides the accessory's hover controls.
+    func hover(_ inside: Bool) {
+        guard let aware = accessory as? HeaderHoverAware else { return }
+        aware.headerHover(inside)
+        needsLayout = true
+    }
+
     private func updateColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.sidebar.cgColor
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = (focused ? Design.Color.headerFocused : Design.Color.header).cgColor
+            hairline.backgroundColor = Design.Color.headerHairline.cgColor
+            CATransaction.commit()
         }
+        icon.contentTintColor = focused ? Design.Color.textSecondary : Design.Color.textMuted
     }
 
     private static func symbol(_ kind: TileKind) -> String { Design.Icon.for(kind) }
+}
+
+/// A small two-way segmented pill (the mockup's Preview | Source): a track
+/// with the selected segment filled.
+@MainActor
+final class PillToggle: NSView {
+    var onChange: (Int) -> Void = { _ in }
+    var selectedSegment = 0 { didSet { if selectedSegment != oldValue { restyle() } } }
+    private let buttons: [NSButton]
+    private let fill = CALayer()
+
+    init(labels: [String]) {
+        buttons = labels.map { NSButton(title: $0, target: nil, action: nil) }
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = Design.Radius.pill
+        fill.cornerRadius = Design.Radius.pill - 2
+        layer?.addSublayer(fill)
+        for (i, button) in buttons.enumerated() {
+            button.isBordered = false
+            button.tag = i
+            button.target = self
+            button.action = #selector(clicked(_:))
+            addSubview(button)
+        }
+        restyle()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    private static let height: CGFloat = 20, inset: CGFloat = 2, padding: CGFloat = 8
+
+    private func width(_ button: NSButton) -> CGFloat {
+        ceil((button.title as NSString).size(withAttributes: [.font: Design.Font.caption]).width) + 2 * Self.padding
+    }
+
+    override var fittingSize: NSSize {
+        NSSize(width: buttons.map(width).reduce(0, +) + 2 * Self.inset, height: Self.height)
+    }
+
+    override var intrinsicContentSize: NSSize { fittingSize }
+
+    override func layout() {
+        super.layout()
+        var x = Self.inset
+        let h = bounds.height - 2 * Self.inset
+        for button in buttons {
+            let w = width(button)
+            button.frame = NSRect(x: x, y: Self.inset, width: w, height: h)
+            x += w
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if buttons.indices.contains(selectedSegment) { fill.frame = buttons[selectedSegment].frame }
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        restyle()
+    }
+
+    private func restyle() {
+        for (i, button) in buttons.enumerated() {
+            button.attributedTitle = NSAttributedString(string: button.title, attributes: [
+                .font: Design.Font.caption,
+                .foregroundColor: i == selectedSegment ? Design.Color.textPrimary : Design.Color.textMuted,
+            ])
+        }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer?.backgroundColor = Design.Color.previewToggleTrack.cgColor
+            fill.backgroundColor = Design.Color.previewToggleSelected.cgColor
+            CATransaction.commit()
+        }
+        needsLayout = true
+    }
+
+    @objc private func clicked(_ sender: NSButton) {
+        guard sender.tag != selectedSegment else { return }
+        selectedSegment = sender.tag
+        onChange(sender.tag)
+    }
+}
+
+/// The window colour over a card's four corners, clear in between: a
+/// nine-slice image, so it's one cheap layer at any size and its corners keep
+/// their radius while the frame animates.
+final class CornerCapLayer: CALayer {
+    private var drawn: (fill: CGColor, radius: CGFloat, scale: CGFloat)?
+
+    override init() {
+        super.init()
+        contentsGravity = .resize
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(fill: CGColor, radius: CGFloat, scale: CGFloat) {
+        if let drawn, drawn.fill == fill, drawn.radius == radius, drawn.scale == scale { return }
+        drawn = (fill, radius, scale)
+        let side = Int(((2 * radius + 2) * scale).rounded(.up))
+        guard radius > 0, let space = CGColorSpace(name: CGColorSpace.sRGB), let ctx = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { contents = nil; return }
+        let rect = CGRect(x: 0, y: 0, width: side, height: side)
+        let r = radius * scale
+        ctx.setFillColor(fill)
+        ctx.fill(rect)
+        ctx.setBlendMode(.clear)
+        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil))
+        ctx.fillPath()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        contents = ctx.makeImage()
+        contentsScale = scale
+        let unit = 1 / CGFloat(side)
+        let edge = r * unit
+        contentsCenter = CGRect(x: edge, y: edge, width: max(1 - 2 * edge, unit), height: max(1 - 2 * edge, unit))
+        CATransaction.commit()
+    }
 }

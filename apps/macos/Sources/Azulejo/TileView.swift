@@ -75,7 +75,6 @@ final class PlaceholderTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Design.Radius.tile
         layer?.backgroundColor = Design.Color.placeholder(tile.kind).cgColor
         label.font = Design.Font.tileLabel
         label.textColor = Design.Color.textOnAccent

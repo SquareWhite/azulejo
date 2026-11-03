@@ -94,8 +94,8 @@ final class TerminalTileView: NSView, TileView {
             .appendingPathComponent(tile.id, isDirectory: true)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Design.Color.tile.cgColor
-        layer?.cornerRadius = Design.Radius.terminal
+        layer?.backgroundColor = (TerminalRuntime.shared?.background ?? Design.Color.tile).cgColor
+        // Rectangular clip (cheap): the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         overlay.onButton = { [weak self] action in self?.overlayAction(action) }

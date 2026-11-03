@@ -306,14 +306,17 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
   **Done when** tabs match the mockup and attention state shows on them.
 
-- [ ] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
+- [x] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
   **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
+  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Focus indicator still pending the designer. Mid-motion screenshots of the caps are a deferred check (screen locked).
 
-- [ ] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
+- [x] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
   **Done when** it matches the mockup's browser tile.
+  **Result:** 36 pt chrome replaces the header strip; centred host + path with globe (lock for https), full URL while editing; the old ⋯ menu moved to right-click.
 
-- [ ] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
+- [x] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
   **Done when** it matches the mockup's preview tile.
+  **Result:** left-aligned file name, Preview | Source pill on the right, Open and Reveal on hover; the page's dark palette now matches the mockup (body #252930).
 
 - [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
   **Done when** clicking the field or pressing the chord opens the same menu.

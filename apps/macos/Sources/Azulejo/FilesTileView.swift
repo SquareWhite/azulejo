@@ -82,7 +82,7 @@ final class FilesTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Design.Radius.tile
+        // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
         layer?.backgroundColor = Design.Color.tile.cgColor
 

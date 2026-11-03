@@ -71,6 +71,20 @@ enum Design {
         static let shadow = dynamic("shadow", dark: 0x000000ff, light: 0x000000ff)
         /// tile outlines during the outline animation style
         static let ghostFill = dynamic("ghostFill", dark: 0x8080801a, light: 0x8080801a)
+        /// tile header strip of unfocused tiles (mockup: bottom-row tiles)
+        static let header = dynamic("header", dark: 0x202329ff, light: 0xeef0f3ff)
+        /// tile header strip of the focused tile (mockup: the claude tile)
+        static let headerFocused = dynamic("headerFocused", dark: 0x21252bff, light: 0xf6f7f9ff)
+        /// line under a tile's header strip
+        static let headerHairline = dynamic("headerHairline", dark: 0x181a1fff, light: 0x0000001a)
+        /// browser tile toolbar (back, forward, address, reload)
+        static let browserChrome = dynamic("browserChrome", dark: 0x202329ff, light: 0xe9ebeeff)
+        /// browser address pill
+        static let browserField = dynamic("browserField", dark: 0x252930ff, light: 0xffffffff)
+        /// Preview | Source track
+        static let previewToggleTrack = dynamic("previewToggleTrack", dark: 0x2c3036ff, light: 0xe2e5e9ff)
+        /// Preview | Source selected segment
+        static let previewToggleSelected = dynamic("previewToggleSelected", dark: 0x3a3f4bff, light: 0xffffffff)
         /// placeholder tile bodies before a tile kind's view exists
         static let kindTerminal = dynamic("kindTerminal", dark: 0x29303dff, light: 0x29303dff)
         static let kindBrowser = dynamic("kindBrowser", dark: 0x21527aff, light: 0x21527aff)
@@ -119,8 +133,8 @@ enum Design {
     enum Radius {
         static let window: CGFloat = 12
         static let card: CGFloat = 12
-        static let tile: CGFloat = 6
-        static let focus: CGFloat = 7
+        static let tile: CGFloat = 10
+        static let focus: CGFloat = 11
         static let terminal: CGFloat = 4
         static let overlay: CGFloat = 4
         static let ghost: CGFloat = 4
@@ -147,8 +161,11 @@ enum Design {
 
     /// Spacing and fixed sizes, in points.
     enum Space {
-        static let gutter: CGFloat = 4
-        static let tileInset: CGFloat = 4
+        static let gutter: CGFloat = 8
+        static let tileInset: CGFloat = 0
+        static let tileContentPad: CGFloat = 8
+        static let browserChromeHeight: CGFloat = 36
+        static let browserFieldHeight: CGFloat = 24
         static let cardPadding: CGFloat = 10
         static let headerHeight: CGFloat = 28
         static let headerTitleX: CGFloat = 29

@@ -264,3 +264,19 @@ Work before the first frame (`setup_median_ms`) is about 5 ms. It runs before th
 ### Deferred
 
 Re-run `apps/macos/automation/anim.sh` with the screen unlocked on a quiet machine, so the display link fires. Target: ≤ 3 missed ticks in ≥ 5 of 6 runs. Any drop that remains now lists its cause in `anim-stats.json` (`drops`).
+
+## Tile cards (D.5): crop stress with the screen on
+
+Nov 3, 2026, Apple Silicon, 120 Hz built-in display, screen unlocked (display link firing), other agents' builds running. `apps/macos/automation/anim.sh`, crop style, one run, on the D.5–D.7 branch: cards with corner caps (window-colour nine-slice over the corners, no rounded `masksToBounds`), header strips with a hairline, 8 pt terminal margin.
+
+| Measure | Result |
+| --- | --- |
+| Animations | 55 |
+| Display-link ticks | 469 |
+| Dropped ticks | 0 (median, p99 and max interval 8.33 ms) |
+| PTY resizes expected / actual | 115 / 115 |
+| Main-thread passes while moving | 2,858; 3 over half a frame, 0 over a frame; max 6.25 ms, p99 1.1 ms |
+| Refreshes while moving | 0 |
+| Setup before the first frame | 5.3 ms median, 20.3 ms max |
+
+One run, not six, so the ≥ 5-of-6 target above stays open. The inner tile views no longer round and mask their own corners (terminal radius 4, tile radius 6 before), so no layer in a tile is masked with a radius now; crop motion's clip is rectangular. GPU-side offscreen passes can't be counted without Instruments (full Xcode).
