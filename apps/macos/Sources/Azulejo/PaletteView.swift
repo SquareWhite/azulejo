@@ -100,6 +100,8 @@ final class PaletteView: NSView, NSTextFieldDelegate {
     /// Runs the chosen item, with the prompt's input for two-step items.
     var onRun: ((PaletteItem, String?) -> Void)?
     var onClose: (() -> Void)?
+    /// Opened or closed (the toolbar search field highlights while open).
+    var onShownChange: ((Bool) -> Void)?
 
     let field = NSTextField()
     private let promptLabel = NSTextField(labelWithString: "")
@@ -169,6 +171,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         field.stringValue = query
         field.placeholderString = Self.placeholder
         isHidden = false
+        onShownChange?(true)
         refilter()
         window?.makeFirstResponder(field)
         field.currentEditor()?.moveToEndOfDocument(nil)
@@ -180,6 +183,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         isOpen = false
         promptItem = nil
         isHidden = true
+        onShownChange?(false)
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
         onClose?()

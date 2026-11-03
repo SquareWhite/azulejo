@@ -76,6 +76,31 @@ enum Design {
         static let kindBrowser = dynamic("kindBrowser", dark: 0x21527aff, light: 0x21527aff)
         static let kindPreview = dynamic("kindPreview", dark: 0x5c4078ff, light: 0x5c4078ff)
         static let kindFiles = dynamic("kindFiles", dark: 0x336145ff, light: 0x336145ff)
+        /// the tab strip's pill container in the toolbar
+        static let tabStrip = dynamic("tabStrip", dark: 0x24262cff, light: 0xe4e7ebff)
+        /// hairline around the tab strip
+        static let tabStripBorder = dynamic("tabStripBorder", dark: 0x2f3036ff, light: 0x0000000f)
+        /// the selected tab's fill
+        static let tabSelected = dynamic("tabSelected", dark: 0x3a3f4bff, light: 0xffffffff)
+        /// unselected tab names
+        static let tabText = dynamic("tabText", dark: 0x9da5b4ff, light: 0x57606aff)
+        /// the selected tab's name
+        static let tabTextSelected = dynamic("tabTextSelected", dark: 0xd7dae0ff, light: 0x24292fff)
+        /// the tab strip's +
+        static let tabAdd = dynamic("tabAdd", dark: 0x6c717aff, light: 0x8c959fff)
+        /// toolbar search field
+        static let searchField = dynamic("searchField", dark: 0x27292eff, light: 0xffffffff)
+        /// toolbar search field hairline
+        static let searchBorder = dynamic("searchBorder", dark: 0x33353aff, light: 0x0000001a)
+        /// search field hairline while quick open is open
+        static let searchBorderActive = dynamic("searchBorderActive", dark: 0x61afef80, light: 0x2f7fd880)
+        /// search placeholder and magnifier
+        static let searchText = dynamic("searchText", dark: 0x7f848eff, light: 0x8c959fff)
+        /// the search field's key badge (⌘K)
+        static let searchBadge = dynamic("searchBadge", dark: 0x34363aff, light: 0xe9ebeeff)
+        static let searchBadgeText = dynamic("searchBadgeText", dark: 0xabb2bfff, light: 0x57606aff)
+        /// sidebar toggle next to the traffic lights
+        static let titlebarIcon = dynamic("titlebarIcon", dark: 0x7f848eff, light: 0x8c959fff)
 
         private static func dynamic(_ name: String, dark: UInt32, light: UInt32) -> NSColor {
             let darkColor = rgba(dark), lightColor = rgba(light)
@@ -107,6 +132,10 @@ enum Design {
         static let hud: CGFloat = 8
         static let badge: CGFloat = 9
         static let palette: CGFloat = 10
+        static let tabStrip: CGFloat = 11
+        static let tab: CGFloat = 8
+        static let searchField: CGFloat = 8
+        static let searchBadge: CGFloat = 4
     }
 
     /// Border widths, in points.
@@ -123,7 +152,25 @@ enum Design {
         static let cardPadding: CGFloat = 10
         static let headerHeight: CGFloat = 28
         static let headerTitleX: CGFloat = 29
-        static let tabBarHeight: CGFloat = 30
+        static let toolbarHeight: CGFloat = 60
+        static let windowInset: CGFloat = 8
+        static let titlebarZone: CGFloat = 40
+        static let titlebarLightsX: CGFloat = 22
+        static let titlebarLightsY: CGFloat = 24
+        static let titlebarToggleInset: CGFloat = 29
+        static let toolbarGap: CGFloat = 14
+        static let tabStripHeight: CGFloat = 36
+        static let tabStripPadding: CGFloat = 4
+        static let tabHeight: CGFloat = 28
+        static let tabPaddingX: CGFloat = 10
+        static let tabSpacing: CGFloat = 4
+        static let tabIconGap: CGFloat = 7
+        static let tabMinWidth: CGFloat = 64
+        static let tabMaxWidth: CGFloat = 180
+        static let searchWidth: CGFloat = 280
+        static let searchMinWidth: CGFloat = 170
+        static let searchHeight: CGFloat = 30
+        static let searchBadgeHeight: CGFloat = 16
         static let rowHeight: CGFloat = 22
         static let sidebarWidth: CGFloat = 168
     }
@@ -159,6 +206,10 @@ enum Design {
         nonisolated(unsafe) static let gitBadge: NSFont = .monospacedSystemFont(ofSize: 10, weight: .semibold)
         nonisolated(unsafe) static let monoDetail: NSFont = .monospacedSystemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let tileLabel: NSFont = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        nonisolated(unsafe) static let tab: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let tabSelected: NSFont = .systemFont(ofSize: 13, weight: .medium)
+        nonisolated(unsafe) static let search: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let searchBadge: NSFont = .systemFont(ofSize: 11, weight: .regular)
     }
 
     /// Agent and machine states, each with an SF Symbol and a colour.

@@ -1,0 +1,78 @@
+# Window chrome (D.2), tab strip (D.4) and toolbar search field (D.8):
+# traffic lights in the sidebar card, clicks reaching the toolbar's controls
+# under the transparent title bar, tab state icons, "+", the ⌘K badge and the
+# quick-open dropdown hanging from the search field.
+#   apps/macos/automation/toolbar.sh
+
+log toolbar
+seen-visible off
+until tiles 1 8000
+wait 800
+
+# D.2: lights level with the toolbar row, inside the card; every control
+# under the (transparent, taller) title bar takes its own clicks, and empty
+# toolbar space reaches the chrome view (which drags the window).
+expect chrome.lights 29,31
+expect chrome.hit.close _NSThemeCloseWidget
+expect chrome.hit.tab1 TabButton
+expect chrome.hit.add NSButton
+expect chrome.hit.search ToolbarSearchView
+expect chrome.hit.toggle SidebarToggleButton
+expect chrome.hit.toolbar ChromeLayoutView
+expect chrome.fits yes
+expect search.chord ⌘K
+expect tab.statuses idle
+capture 01-one-tab 0
+wait 400
+
+# D.4: "+" adds a tab; state icons follow the agents in each tab.
+action new_tab
+until tabs 2 5000
+action new_tab
+until tabs 3 5000
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
+until tab.statuses idle,idle,working 5000
+action switch_tab 1
+until tab 1 3000
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state blocked
+until tab.statuses blocked,idle,working 5000
+expect chrome.fits yes
+expect chrome.hit.tab1 TabButton
+capture 02-three-tabs 0
+wait 400
+
+# D.8: ⌘K opens quick open as a dropdown from the search field, which lights
+# up; Escape closes it and the field goes quiet again.
+key cmd+k
+until palette all 3000
+expect palette.anchor search
+expect search.active yes
+capture 03-quick-open 0
+wait 400
+key escape
+until palette closed 3000
+expect search.active no
+expect palette.anchor -
+
+# The sidebar hidden: lights stay put, the toggle follows them, the tabs
+# move left and still take clicks.
+action toggle_sidebar
+until sidebar hidden 3000
+wait 300
+expect chrome.lights 29,31
+expect chrome.hit.toggle SidebarToggleButton
+expect chrome.hit.tab1 TabButton
+expect chrome.hit.toolbar ChromeLayoutView
+capture 04-sidebar-hidden 0
+wait 400
+action toggle_sidebar
+until sidebar visible 3000
+wait 300
+expect chrome.lights 29,31
+quit
