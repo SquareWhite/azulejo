@@ -14,12 +14,15 @@ import AppKit
 ///                                  tile's herdr pane), `{pane:N}` (Nth tile in
 ///                                  reading order), `{window}` (window number)
 ///                                  and `{out}` (automation output) are filled in
+///     machine-add LABEL            what "+" on that sidebar machine group does
 ///
 /// Keys: `palette` (closed / commands / goto / prompt:<id>), `palette.top`,
 /// `palette.count`, `palette.selected`, `banner` (first line or `none`),
 /// `badges` (`ABCD=blocked!,…` or `none`), `agents` (each tile's agent in
 /// reading order: `blocked!,none`), `sidebar.markers` / `tab.markers` (`●2|-`),
-/// `tab.label`, `dock`.
+/// `tab.label`, `dock`, `sidebar.machines` (group headers: `Local ●|dev-server ●
+/// Reconnecting…`), `machines` (`Local=connected,dev-server=reconnecting`),
+/// `workspace.machine` (the active workspace's machine label).
 @MainActor
 enum ShellAutomation {
     static func run(_ verb: String, _ arg: String, app: AppController?) -> String? {
@@ -53,6 +56,11 @@ enum ShellAutomation {
             app.scheduleRefresh()
         case "sh":
             return shell(arg)
+        case "machine-add":
+            guard let machine = app.machines.first(where: { $0.label == arg || $0.id == arg }) else {
+                return "no machine \(arg)"
+            }
+            app.newWorkspace(on: machine.id, window: controller.windowID)
         default:
             return "unknown verb \(verb)"
         }
@@ -116,6 +124,11 @@ enum ShellAutomation {
             markers.map { $0.isEmpty ? "-" : $0.replacingOccurrences(of: " ", with: "") }.joined(separator: "|")
         }
         s["sidebar.markers"] = compact(controller.sidebarMarkers)
+        s["sidebar.machines"] = controller.sidebarMachines.joined(separator: "|")
+        s["machines"] = app.machines.map { "\($0.label)=\($0.state.rawValue)" }.joined(separator: ",")
+        if let ws = app.session?.window(controller.windowID)?.workspace {
+            s["workspace.machine"] = app.machines.first { $0.id == ws.machineID }?.label ?? ws.machineID
+        }
         s["tab.markers"] = compact(controller.tabMarkers)
         s["dock"] = NSApp.dockTile.badgeLabel ?? "none"
         // Which tile the badges belong to: the focused tile's short id.

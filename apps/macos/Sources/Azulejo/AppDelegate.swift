@@ -8,6 +8,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     let core: Core
     let env: LaunchEnvironment
     private(set) var session: SessionModel?
+    /// herdr machines for the sidebar's groups (`machines.list`, ADR 0011).
+    private(set) var machines: [MachineModel] = []
     private var controllers: [String: WindowController] = [:]
     private var keys: KeyRouter!
     private var refreshScheduled = false
@@ -131,6 +133,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         return result
     }
 
+    /// "+" on a sidebar machine group (ADR 0011): a workspace on that machine
+    /// with a first terminal, ready to type in.
+    func newWorkspace(on machine: String, window: String) {
+        guard case .success(let reply) = send([
+            "method": "workspace.create", "params": ["window": window, "machine": machine],
+        ]), let workspace = reply["workspace"] as? String else { return }
+        send(["method": "tab.create", "params": ["workspace": workspace]])
+    }
+
     func scheduleRefresh() {
         guard !refreshScheduled else { return }
         refreshScheduled = true
@@ -143,6 +154,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Fetches the session and brings every window up to date.
     func refresh() {
         guard let new = core.fetch("session.get", field: "session", as: SessionModel.self) else { return }
+        machines = core.fetch("machines.list", field: "machines", as: [MachineModel].self) ?? machines
         recordHistory(old: session, new: new)
         session = new
         let ids = Set(new.windows.map(\.id))
