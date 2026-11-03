@@ -43,6 +43,11 @@ enum MainMenu {
             std("About Azulejo", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
             .separator(),
             item("Settings…", "open_config"),
+            {
+                let i = std("Install Command-Line Tool…", #selector(InstallCLIAction.install(_:)), "")
+                i.target = InstallCLIAction.shared
+                return i
+            }(),
             .separator(),
             std("Hide Azulejo", #selector(NSApplication.hide(_:)), "h"),
             std("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),

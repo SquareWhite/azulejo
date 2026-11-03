@@ -68,3 +68,15 @@ schema:
 # Build GhosttyKit from vendor/ghostty
 ghostty:
     scripts/build-ghostty.sh
+
+# Release build into target/release-mac (.app, .dmg, .zip); Developer ID if found, else ad-hoc
+release-mac:
+    scripts/release/build-mac.sh
+
+# Notarise + staple the release .dmg (uploads to Apple; needs AZJ_NOTARIZE=1, AZJ_NOTARY_PROFILE)
+release-notarize:
+    scripts/release/notarize.sh
+
+# Tests for the "Install Command-Line Tool" logic (temp dirs only)
+test-cli-installer:
+    scripts/release/test-cli-installer.sh
