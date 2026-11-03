@@ -25,6 +25,7 @@ pub(crate) mod method {
     pub const PANE_SEND_KEYS: &str = "pane.send_keys";
     pub const PANE_READ: &str = "pane.read";
     pub const PANE_SCROLL: &str = "pane.scroll";
+    pub const LAYOUT_EXPORT: &str = "layout.export";
     pub const EVENTS_SUBSCRIBE: &str = "events.subscribe";
 }
 

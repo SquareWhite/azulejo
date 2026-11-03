@@ -11,8 +11,8 @@ use crate::env::clean_process_env;
 use crate::error::{Error, Result};
 use crate::types::ServerInfo;
 
-/// Which herdr session to talk to. Azulejo uses a named session so it never
-/// shares a server with a herdr TUI the user runs by hand.
+/// Which herdr session to talk to. Azulejo uses herdr's default session by
+/// default, shared with the user's own herdr TUI (ADR 0008).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Session(Option<String>);
 
@@ -106,7 +106,8 @@ impl Herdr {
     }
 
     /// Return a client for `session`'s server, starting the server first if
-    /// it isn't running. The server is detached from Azulejo (own process
+    /// it isn't running. A running server is used as it is, never restarted:
+    /// restarting herdr kills every process in it. The server is detached from Azulejo (own process
     /// group), so it outlives the app: that's what keeps sessions alive.
     pub async fn ensure_server(
         &self,
