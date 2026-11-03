@@ -255,8 +255,9 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
   **Done when** the package installs with `uv`, and examples for every use case in the PRD run.
   **Result:** done in `bf68d6e`. `azulejo` package (sync + asyncio), generated from the schema with a freshness check; three examples run in `just python-test`. Tested on Python 3.13 only.
 
-- [ ] **2.11 Key and focus test suite.** XCUITest scenarios: shortcuts with a webview focused, IME composition in a terminal, focus after close and after zoom, palette over a browser.
+- [x] **2.11 Key and focus test suite.** XCUITest scenarios: shortcuts with a webview focused, IME composition in a terminal, focus after close and after zoom, palette over a browser.
   **Done when** 30+ scenarios pass in CI.
+  **Result:** 38 scenarios in `apps/macos/automation/focus/` (`just mac-focus`), each asserting the router's verdict (`key.last`) and where first responder lands (`responder`, `responder.focused`): terminal typing, ctrl keys, ctrl+b, ⌘C/⌘V through the Edit menu (private pasteboard), input-method composition, ⌘K over terminal/browser/preview, page inputs, the address bar, files tree and filter, close in manual/Tile/Monocle, zoom, tabs, workspaces, herdr-adopted panes, shell exit, take-over and the config banner. XCUITest needs full Xcode, so it runs on the in-process automation (`delivery direct` routes keys as a key window would); each `log === Sxx` block maps to one XCUITest case later. Bugs it found and fixed: a refresh while ⌘K was open moved first responder back to the tile (typing went into the terminal); terminal tiles had no input-method support (no composition, no preedit) and app chords fired mid-composition; ⌘T made a workspace with no tab, so nothing held first responder. Runs locally only (no CI runner with a GUI session yet). Merged with the perf branch: its ⌘K focus fix (`7fe4c20`) and this one (`4a906fe`) are now one rule in `TileFocus.swift`: a tile doesn't take the keyboard from a visible text field outside the tiles, except when the focused tile actually changes.
 
 - [x] **2.12 Bismuth-style dynamic layouts** (F3a, extended). **Result:** done in `d1803cb` (core) and `358c2ef` (macOS), merged with the crop animations and ⌘K quick open. 10,000-sequence proptests across kinds and switches pass; `layouts.azs` covers Tile, masters, rotate part, Monocle focus with no PTY resize, Three Column and freeze/toggle; the layout commands appear in the ⌘K menu ("Set layout…"). Crop-style slow captures of master-count and Three Column changes show no stretching. Departures from the ADR: the Mac shell draws the derived tree (identical rects, checked by a model invariant) rather than `rects`; directional focus prefers the most recent tile in manual tabs too. Under load from parallel agents the crop stress dropped 1–6 single ticks per 55 motions (pre-merge main 0–3), PTY resize counts exact every run — recheck on a quiet machine (Deferred checks). **Accepted Nov 3, 2026** ([ADR 0010](docs/adr/0010-dynamic-layouts.md), [research](docs/research/bismuth.md)). Each tab gets a layout kind: `manual` (today's split tree) or a dynamic layout over an ordered tile list: `tile` (masters 0–10, ratio, four orientations), `monocle` and `three_column`. Those three are the whole set: Spiral and Quarter were dropped, and Spread, Stair, Floating and Cascade aren't planned. Layouts are pure functions to placements (`rects` with z-order) that the shells render and the 2.1 animations reuse. New tabs default to `tile`; adopted herdr tabs stay manual. Commands `layout.set/toggle/cycle/masters/master_ratio/move_order`, `layout.rotate` extended; `[layout]` config; layout files accept the new kinds (`tall` becomes an alias of `tile`); `alt` keys as listed in the ADR.
   1. Core: model, `arrange` for Tile/Monocle/Three Column, freeze/convert, op mapping, protocol, schema, Python client, layout files, config, proptests.
@@ -276,6 +277,15 @@ All P0 boxes ticked; one week of daily use on macOS with issues logged; NFR tabl
 
 ### Gate G2
 All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock starts.
+
+**M2 status (Nov 3, 2026):** every M2 step is done (2.1–2.8, 2.10–2.15); 2.9 was dropped. The Deferred checks that matter for G2, because they touch daily use:
+
+- Crop stress with the screen on and the machine quiet (display-link ticks, not only run-loop passes).
+- Real SSH machines (2.13) and git branches for remote workspaces.
+- Terminal tile by hand: copy/paste, mouse and scroll, real IME, Claude Code's interactive key path.
+- Real sleep/wake and the NFR runs with the Mac free (latency in front, memory vs Ghostty.app).
+- Sharing a pane with the herdr TUI (ADR 0008).
+- Flaky: `terminal_headers_follow_titles_and_running_commands` (engine live test) timed out once waiting for the OSC 2 title in a full `just test-herdr` run; 8/8 on its own.
 
 ---
 

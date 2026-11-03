@@ -130,7 +130,7 @@ final class BrowserTileView: NSView, TileView {
 
     func setFocused(_ focused: Bool) {
         self.focused = focused
-        guard focused, let window else { return }
+        guard focused, let window, TileFocus.canTake(in: window) else { return }
         if isEditingAddress { return }
         if webView.url == nil && coreURL == nil {
             focusAddress()

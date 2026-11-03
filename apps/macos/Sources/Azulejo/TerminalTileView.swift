@@ -122,7 +122,7 @@ final class TerminalTileView: NSView, TileView {
 
     func setFocused(_ focused: Bool) {
         self.focused = focused
-        guard focused, let window else { return }
+        guard focused, let window, TileFocus.canTake(in: window) else { return }
         let target: NSView = surface ?? self
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
@@ -311,11 +311,8 @@ final class TerminalTileView: NSView, TileView {
         lastTerminal = herdr.terminalId
         Self.log("terminal \(Short.id(tileID)): \(mode) \(herdr.terminalId)")
         // A surface that comes up (attach finished, reattach) takes the
-        // keyboard from its tile, but not from a field being typed in
-        // elsewhere — the ⌘K menu hands it back when it closes.
-        if focused, let window, !(window.firstResponder is NSText) || window.firstResponder === self {
-            window.makeFirstResponder(view)
-        }
+        // keyboard from its tile, but not from the ⌘K field (TileFocus).
+        if focused, let window, TileFocus.canTake(in: window) { window.makeFirstResponder(view) }
         return true
     }
 
@@ -628,7 +625,7 @@ final class TerminalTileView: NSView, TileView {
         }
     }
 
-    fileprivate func debugPress(_ name: String) {
+    func debugPress(_ name: String) {
         let action: TerminalOverlay.Action? = switch name {
         case "takeover": .takeOver
         case "respawn": .respawn
