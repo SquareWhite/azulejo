@@ -241,6 +241,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func windowResignedKey(_ controller: WindowController) {
         keys.reset()
+        controller.palette.close()
         controller.setStatus(nil)
     }
 
@@ -320,8 +321,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             rename(name, in: controller)
         case "open_config":
             openConfig(in: controller)
-        case "command_palette": controller.flash("Command palette lands in step 2.2")
-        case "goto": controller.flash("Go to lands with the palette (2.2)")
+        case "command_palette": openPalette(.commands, in: controller)
+        case "goto": openPalette(.goto, in: controller)
         case "find": controller.flash("Find lands with the terminal tile (1.7)")
         case "edit_scrollback": controller.flash("Edit scrollback isn't wired yet")
         case "reload_config":

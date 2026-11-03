@@ -1,0 +1,107 @@
+# Command palette (⌘⇧P), picker (⌘P) and the config reload banner, in-process
+# on a dev instance (no OS input):  apps/macos/automation/chrome.sh
+# Fresh dev state: one window, one workspace, one tab, one terminal tile.
+
+log palette
+expect palette closed
+key cmd+shift+p
+expect palette commands
+shot 10-palette-open
+palette type split right
+expect palette.top Split right
+shot 11-palette-split-right
+key enter
+until tiles 2
+expect palette closed
+
+# Typing through real key events goes to the search field, not the keymap
+# (r/o/t aren't bound, but alt+h would be: it must not move focus here).
+key cmd+shift+p
+key r
+key o
+key t
+expect palette.top Rotate layout
+key alt+h
+expect palette commands
+expect focus 2
+key escape
+expect palette closed
+
+# Recently run commands come first on an empty query.
+key cmd+shift+p
+expect palette.top Split right
+# ⌘⇧P again closes it.
+key cmd+shift+p
+expect palette closed
+
+# Arrow keys move the selection.
+key cmd+shift+p
+palette type focus tile
+key down
+key down
+key up
+log selected after down, down, up
+key escape
+
+# Two-step command: rename the tab inline.
+key cmd+shift+p
+palette type rename tab
+expect palette.top Rename tab…
+key enter
+expect palette prompt:rename_tab
+shot 12-palette-prompt
+palette type Agents
+key enter
+expect palette closed
+until tab.label Agents
+
+# Method-only command with a prompt: save the layout.
+key cmd+shift+p
+palette type save layout
+expect palette.top Save layout as…
+key enter
+expect palette prompt:layout.export
+palette type {out}/exported.toml
+key enter
+expect palette closed
+
+# Picker: jump to another workspace by name.
+core {"method":"workspace.create","params":{"name":"Docs"}}
+until workspaces 2
+key cmd+1
+until workspace 1
+key cmd+p
+expect palette goto
+palette type docs
+expect palette.top Docs
+shot 13-picker
+key enter
+until workspace 2
+expect palette closed
+key cmd+1
+until workspace 1
+
+# --- config reload banner (F25b) ---
+sh cp {config} {config}.orig
+sh printf '\n[keys]\nthis is not toml =\n' >> {config}
+until banner Config not applied; keeping the previous one. 4000
+shot 14-banner-error
+# The old config stays: ⌘⇧P still opens the palette.
+key cmd+shift+p
+expect palette commands
+key escape
+# Fixed with a new binding: banner goes, the palette moves to ⌘K.
+sh cp {config}.orig {config}
+sh printf '\n[keys]\ncommand_palette = "cmd+k"\n' >> {config}
+until banner none 4000
+key cmd+k
+expect palette commands
+key escape
+# A warning (duplicate binding) shows the banner without blocking.
+sh cp {config}.orig {config}
+sh printf '\n[keys]\nzoom_tile = "cmd+k"\ncommand_palette = "cmd+k"\n' >> {config}
+wait 800
+log banner after duplicate binding
+shot 15-banner-warning
+sh cp {config}.orig {config}
+until banner none 4000

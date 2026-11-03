@@ -42,6 +42,20 @@ final class KeyRouter {
             return resizeMode(chord, in: controller)
         }
 
+        // The palette takes navigation keys; typing goes to its search field.
+        // Only its own toggles (⌘⇧P, ⌘P) still run as actions.
+        if controller.palette.isOpen {
+            if controller.palette.handle(chord: chord) { return true }
+            let outcome = app.core.key(chord: chord, tile: nil)
+            if outcome["outcome"] as? String == "action",
+               let name = outcome["action"] as? String, name == "command_palette" || name == "goto" {
+                app.perform(outcome, in: controller)
+                return true
+            }
+            app.core.resetKeys()
+            return false
+        }
+
         let outcome = app.core.key(chord: chord, tile: controller.keyContext)
         app.log("key \(chord) → \(Self.describe(outcome))")
         switch outcome["outcome"] as? String {

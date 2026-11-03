@@ -235,7 +235,7 @@ enum AttentionTracker {
             let visible = assumeVisible
                 || (NSApp.isActive && controller.window.isKeyWindow
                     && controller.window.occlusionState.contains(.visible))
-            guard visible else { continue }
+            guard visible, !controller.palette.isOpen else { continue }
             still.insert(tile.id)
             if !pending.contains(tile.id) {
                 send(["method": "tile.seen", "params": ["tile": tile.id]])

@@ -12,6 +12,7 @@ import AppKit
 ///     action move_tile_left  run a keymap action by name (menu path), for
 ///                            actions with no default chord
 ///     wait 300               milliseconds
+///     palette … / seen-visible … / sh …   see `ShellAutomation`
 ///     shot name              PNG of the window's content → <out>/name.png
 ///     expect tiles 3         assert on the focused window's state; keys:
 ///                            windows workspaces workspace tabs tab tiles
@@ -80,6 +81,11 @@ final class Automation {
         notes.removeAll()
         switch parts[0] {
         case "key": press(arg)
+        case "palette", "seen-visible", "sh":
+            if let problem = ShellAutomation.run(parts[0], arg, app: app) {
+                failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
+            }
+            record("\(parts[0]) \(arg)")
         case "action":
             let bits = arg.split(separator: " ").map(String.init)
             app?.perform(action: bits[0], index: bits.count > 1 ? Int(bits[1]) : nil)
@@ -303,6 +309,7 @@ final class Automation {
         if let tile = controller.tiles.focusedView as? AutomatableTile {
             s.merge(tile.automationState()) { $1 }
         }
+        s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         return s
     }
 

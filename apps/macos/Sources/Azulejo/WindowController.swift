@@ -10,6 +10,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     private let sidebar = SidebarView()
     private let tabBar = TabBarView()
     private let hud = HUDView()
+    let palette = PaletteView()
     let banner = BannerView()
     let attention = AttentionOverlayView()
     private let content = ChromeLayoutView()
@@ -45,7 +46,8 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.hud = hud
         content.attention = attention
         content.banner = banner
-        [sidebar, tabBar, tiles, attention, banner, hud].forEach(content.addSubview)
+        content.palette = palette
+        [sidebar, tabBar, tiles, attention, banner, hud, palette].forEach(content.addSubview)
         window.contentView = content
         window.delegate = self
 
@@ -99,7 +101,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarMarkers: [String] { sidebar.markers }
     var tabMarkers: [String] { tabBar.markers }
 
-    /// Re-lays out the chrome (the banner changed size).
+    /// Re-lays out the chrome (palette or banner changed size).
     func layoutChrome() {
         content.needsLayout = true
         content.layoutSubtreeIfNeeded()
@@ -155,6 +157,7 @@ final class ChromeLayoutView: NSView {
     weak var hud: NSView?
     weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
+    weak var palette: PaletteView?
 
     override func layout() {
         super.layout()
@@ -176,6 +179,11 @@ final class ChromeLayoutView: NSView {
             let width = min(rest.width - 24, 760)
             let height = banner.preferredHeight(width: width)
             banner.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 10, width: width, height: height)
+        }
+        if let palette, !palette.isHidden {
+            let width = max(280, min(rest.width - 32, 640))
+            let height = min(palette.preferredHeight, rest.height - 24)
+            palette.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 12, width: width, height: height)
         }
         if let hud {
             let size = hud.fittingSize
