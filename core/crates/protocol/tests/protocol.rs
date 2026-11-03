@@ -176,6 +176,35 @@ fn sample_commands() -> Vec<Command> {
             path: "plan.md".into(),
         }),
         Command::PreviewGet(TileTarget { tile: Some(tile) }),
+        Command::FilesList(FilesDir {
+            tile: Some(tile),
+            dir: None,
+        }),
+        Command::FilesExpand(FilesDir {
+            tile: None,
+            dir: Some("src".into()),
+        }),
+        Command::FilesCollapse(FilesDir {
+            tile: Some(tile),
+            dir: Some("/src/shop/src".into()),
+        }),
+        Command::FilesSetRoot(FilesSetRoot {
+            tile: Some(tile),
+            root: "~/src/shop".into(),
+        }),
+        Command::FilesReveal(FilesReveal {
+            tile: None,
+            path: "src/main.rs".into(),
+        }),
+        Command::FilesToggleHidden(FilesToggleHidden {
+            tile: Some(tile),
+            show: Some(true),
+        }),
+        Command::FilesOpen(FilesOpen {
+            tile: Some(tile),
+            path: "README.md".into(),
+            target: FilesOpenTarget::Terminal,
+        }),
         Command::LayoutApply(LayoutApply {
             path: Some("/src/shop/.azulejo.toml".into()),
             mode: ApplyMode::ReplaceTab,
@@ -301,6 +330,25 @@ fn sample_events() -> Vec<Event> {
             tile: Some(tile.id),
         }),
         Event::PreviewUpdated(sample_preview(tile.id)),
+        Event::FilesChanged(FilesChanged {
+            tile: tile.id,
+            dirs: vec!["/src/shop".into(), "/src/shop/src".into()],
+        }),
+        Event::FilesRevealed(FilesRevealed {
+            tile: tile.id,
+            path: "/src/shop/src/main.rs".into(),
+            dirs: vec!["/src/shop".into(), "/src/shop/src".into()],
+        }),
+        Event::FilesGit(FilesGit {
+            tile: tile.id,
+            work_tree: "/src/shop".into(),
+            paths: [
+                ("/src/shop/src".to_owned(), FileGitState::Modified),
+                ("/src/shop/src/main.rs".to_owned(), FileGitState::Modified),
+                ("/src/shop/notes".to_owned(), FileGitState::Untracked),
+            ]
+            .into(),
+        }),
         Event::HerdrStatus {
             connected: false,
             message: Some("connection refused".into()),
@@ -384,6 +432,33 @@ fn replies_round_trip() {
         Reply::Text {
             text: "$ ls".into(),
         },
+        Reply::Files(FilesListing {
+            tile: tile.id,
+            root: "/src/shop".into(),
+            dir: "/src/shop".into(),
+            show_hidden: true,
+            entries: vec![
+                FileEntry {
+                    name: "src".into(),
+                    path: "/src/shop/src".into(),
+                    dir: true,
+                    symlink: false,
+                    hidden: false,
+                    ignored: false,
+                    git: Some(FileGitState::Modified),
+                },
+                FileEntry {
+                    name: ".env".into(),
+                    path: "/src/shop/.env".into(),
+                    dir: false,
+                    symlink: false,
+                    hidden: true,
+                    ignored: true,
+                    git: None,
+                },
+            ],
+            truncated: false,
+        }),
         Reply::Layout(LayoutState {
             window: WindowId::new(),
             workspace: WorkspaceId::new(),

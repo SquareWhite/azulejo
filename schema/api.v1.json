@@ -694,6 +694,125 @@
           "type": "object"
         },
         {
+          "description": "Lists one folder of a files tile (its root when `dir` is absent);\nreplies `files`. Doesn't watch it: see `files.expand`.",
+          "properties": {
+            "method": {
+              "const": "files.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesDir"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Lists a folder and watches it from now on: changes arrive as\n`files.changed`. Shells send it when the user opens a folder.",
+          "properties": {
+            "method": {
+              "const": "files.expand",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesDir"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stops watching a folder and the folders open below it.",
+          "properties": {
+            "method": {
+              "const": "files.collapse",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesDir"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Points a files tile at another folder.",
+          "properties": {
+            "method": {
+              "const": "files.set_root",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesSetRoot"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Opens the folders down to `path` and asks shells to select it\n(`files.revealed`).",
+          "properties": {
+            "method": {
+              "const": "files.reveal",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesReveal"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Shows or hides hidden and gitignored entries; toggles when `show` is\nabsent. Shells list their open folders again on `files.changed`.",
+          "properties": {
+            "method": {
+              "const": "files.toggle_hidden",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesToggleHidden"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Opens a path from a files tile in a preview tile (the tab's first one,\nor a new one to the right) or in a new terminal below it; replies\n`created` with the tile.",
+          "properties": {
+            "method": {
+              "const": "files.open",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesOpen"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
           "properties": {
             "method": {
@@ -1824,6 +1943,57 @@
           "type": "object"
         },
         {
+          "description": "Folders a files tile has open changed on disk, or hidden entries were\ntoggled: list them again. Not saved.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/FilesChanged"
+            },
+            "event": {
+              "const": "files.changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`files.reveal` opened the folders down to an entry: shells expand them\nand select it. Not saved.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/FilesRevealed"
+            },
+            "event": {
+              "const": "files.revealed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Git status for a files tile's work tree, after it opens and after\nchanges. Not saved.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/FilesGit"
+            },
+            "event": {
+              "const": "files.git",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The core's link to herdr came up or dropped. After `connected: true`,\nshells reattach terminal tiles that gave up waiting. Not saved.",
           "properties": {
             "data": {
@@ -1959,6 +2129,299 @@
       "required": [
         "subscription"
       ],
+      "type": "object"
+    },
+    "FileEntry": {
+      "description": "One entry of a listed folder.",
+      "properties": {
+        "dir": {
+          "description": "A folder, or a symlink to one.",
+          "type": "boolean"
+        },
+        "git": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileGitState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hidden": {
+          "description": "Starts with a dot. Only listed when hidden entries are shown.",
+          "type": "boolean"
+        },
+        "ignored": {
+          "description": "Excluded by gitignore rules. Only listed when hidden entries are shown.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute.",
+          "type": "string"
+        },
+        "symlink": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "dir"
+      ],
+      "type": "object"
+    },
+    "FileGitState": {
+      "description": "A path's git state, for a badge. Folders take the strongest state of the\nchanges beneath them.",
+      "enum": [
+        "modified",
+        "added",
+        "deleted",
+        "renamed",
+        "untracked",
+        "conflicted"
+      ],
+      "type": "string"
+    },
+    "FilesChanged": {
+      "description": "Payload of `files.changed`.",
+      "properties": {
+        "dirs": {
+          "description": "Folders whose entries changed: list them again. Absolute, resolved.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        }
+      },
+      "required": [
+        "tile",
+        "dirs"
+      ],
+      "type": "object"
+    },
+    "FilesDir": {
+      "description": "A folder of a files tile.",
+      "properties": {
+        "dir": {
+          "description": "Absolute, or relative to the tile's root; the root when absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A files tile; defaults to the focused tile."
+        }
+      },
+      "type": "object"
+    },
+    "FilesGit": {
+      "description": "Payload of `files.git`: the git state of every changed path in the\ntile's work tree (and the folders above them). Replaces the previous one.",
+      "properties": {
+        "paths": {
+          "additionalProperties": {
+            "$ref": "#/$defs/FileGitState"
+          },
+          "type": "object"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        },
+        "work_tree": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tile",
+        "work_tree",
+        "paths"
+      ],
+      "type": "object"
+    },
+    "FilesListing": {
+      "description": "A folder's entries, from `files.list` or `files.expand`.",
+      "properties": {
+        "dir": {
+          "description": "The listed folder, absolute and resolved.",
+          "type": "string"
+        },
+        "entries": {
+          "description": "Folders first, then natural name order (`a2` before `a10`).",
+          "items": {
+            "$ref": "#/$defs/FileEntry"
+          },
+          "type": "array"
+        },
+        "root": {
+          "description": "The tile's root, absolute and resolved (symlinks followed).",
+          "type": "string"
+        },
+        "show_hidden": {
+          "type": "boolean"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        },
+        "truncated": {
+          "description": "The folder had more entries than a listing returns; the rest are cut.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tile",
+        "root",
+        "dir",
+        "show_hidden",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "FilesOpen": {
+      "properties": {
+        "path": {
+          "description": "Absolute, or relative to the tile's root.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/FilesOpenTarget",
+          "default": "preview"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The files tile the path comes from; defaults to the focused tile."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "FilesOpenTarget": {
+      "description": "Where `files.open` shows a path.",
+      "oneOf": [
+        {
+          "const": "preview",
+          "description": "The tab's first preview tile shows it; without one, a new preview tile\nopens to the right of the files tile. Focus stays in the files tile.",
+          "type": "string"
+        },
+        {
+          "const": "terminal",
+          "description": "A new terminal tile below the files tile, in the folder (a file's\nfolder for a file). It takes focus.",
+          "type": "string"
+        }
+      ]
+    },
+    "FilesReveal": {
+      "properties": {
+        "path": {
+          "description": "A file or folder under the tile's root: absolute or relative to it.",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "FilesRevealed": {
+      "description": "Payload of `files.revealed`.",
+      "properties": {
+        "dirs": {
+          "description": "The folders to expand, root first.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "The entry to select. Absolute, resolved.",
+          "type": "string"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        }
+      },
+      "required": [
+        "tile",
+        "path",
+        "dirs"
+      ],
+      "type": "object"
+    },
+    "FilesSetRoot": {
+      "properties": {
+        "root": {
+          "description": "The folder to show; `~` expands to the home folder.",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    },
+    "FilesToggleHidden": {
+      "properties": {
+        "show": {
+          "description": "Show (true) or hide (false) hidden and ignored entries; toggles when\nabsent.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
       "type": "object"
     },
     "Focus": {
@@ -2789,6 +3252,20 @@
           "properties": {
             "type": {
               "const": "preview",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/FilesListing",
+          "description": "A folder of a files tile, from `files.list` or `files.expand`.",
+          "properties": {
+            "type": {
+              "const": "files",
               "type": "string"
             }
           },
@@ -4312,6 +4789,13 @@
     "browser.state",
     "preview.open",
     "preview.get",
+    "files.list",
+    "files.expand",
+    "files.collapse",
+    "files.set_root",
+    "files.reveal",
+    "files.toggle_hidden",
+    "files.open",
     "layout.get",
     "layout.split",
     "layout.focus",

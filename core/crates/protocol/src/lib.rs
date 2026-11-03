@@ -12,6 +12,7 @@
 mod command;
 mod error;
 mod event;
+mod files;
 mod project;
 mod reply;
 mod schema;
@@ -24,6 +25,7 @@ pub use azulejo_model::{
 pub use command::*;
 pub use error::{Error, ErrorCode};
 pub use event::*;
+pub use files::*;
 pub use project::*;
 pub use reply::*;
 pub use schema::{api_schema, api_schema_text};

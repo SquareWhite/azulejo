@@ -38,9 +38,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         keys.install()
         BrowserTileView.register(app: self)
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
+        FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         core.onEvent = { [weak self] json in
             PreviewTileView.route(json)
+            FilesTileView.route(json)
             TerminalTileView.route(json)
             self?.scheduleRefresh()
         }

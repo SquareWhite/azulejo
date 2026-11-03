@@ -97,6 +97,19 @@ pub enum Event {
     #[serde(rename = "preview.updated")]
     PreviewUpdated(PreviewContent),
 
+    /// Folders a files tile has open changed on disk, or hidden entries were
+    /// toggled: list them again. Not saved.
+    #[serde(rename = "files.changed")]
+    FilesChanged(crate::files::FilesChanged),
+    /// `files.reveal` opened the folders down to an entry: shells expand them
+    /// and select it. Not saved.
+    #[serde(rename = "files.revealed")]
+    FilesRevealed(crate::files::FilesRevealed),
+    /// Git status for a files tile's work tree, after it opens and after
+    /// changes. Not saved.
+    #[serde(rename = "files.git")]
+    FilesGit(crate::files::FilesGit),
+
     /// The core's link to herdr came up or dropped. After `connected: true`,
     /// shells reattach terminal tiles that gave up waiting. Not saved.
     #[serde(rename = "herdr.status")]
