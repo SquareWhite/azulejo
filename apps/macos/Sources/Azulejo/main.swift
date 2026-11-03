@@ -57,6 +57,7 @@ func fail(_ message: String) -> Never {
     exit(2)
 }
 
+MainActor.assumeIsolated { Startup.mark("main") }
 let launch = LaunchEnvironment.current()
 if let problem = launch.devProfileProblem() { fail(problem) }
 
@@ -73,6 +74,7 @@ let delegate: AppController = MainActor.assumeIsolated {
         core.shutdown()
         fail("dev profile ended up on herdr's default session; refusing")
     }
+    Startup.mark("core")
     return AppController(core: core, env: launch)
 }
 app.delegate = delegate
