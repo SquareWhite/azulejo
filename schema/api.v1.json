@@ -1192,6 +1192,19 @@
             "method"
           ],
           "type": "object"
+        },
+        {
+          "description": "Local plus herdr's saved machines and their connection state;\nreplies `machines`.",
+          "properties": {
+            "method": {
+              "const": "machines.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -2025,6 +2038,56 @@
           "type": "object"
         },
         {
+          "description": "A herdr machine appeared, changed state or label (ADR 0011). Not\nsaved.",
+          "properties": {
+            "data": {
+              "properties": {
+                "machine": {
+                  "$ref": "#/$defs/MachineInfo"
+                }
+              },
+              "required": [
+                "machine"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "machine.status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A herdr machine left herdr's list (removed there, or hidden in\nconfig). Its workspaces stay, unconnected. Not saved.",
+          "properties": {
+            "data": {
+              "properties": {
+                "machine": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "machine"
+              ],
+              "type": "object"
+            },
+            "event": {
+              "const": "machine.removed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The agent in a terminal tile changed state, as herdr reports it (F16).\nNot saved.",
           "properties": {
             "data": {
@@ -2501,6 +2564,13 @@
     "HerdrRef": {
       "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes. The tab ID matters because closing a herdr\ntab reports only the tab, and herdr keeps pane and tab IDs (but not the\nprocess) across a server restart.",
       "properties": {
+        "machine": {
+          "description": "The herdr machine the pane runs on: `None` for Local, else herdr's\nsaved-machine ID (ADR 0011). herdr IDs are only unique per server.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "pane_id": {
           "type": "string"
         },
@@ -2828,6 +2898,65 @@
         }
       },
       "type": "object"
+    },
+    "MachineInfo": {
+      "description": "A herdr machine and how Azulejo's link to it is doing.",
+      "properties": {
+        "id": {
+          "description": "`\"local\"`, or herdr's saved-machine ID (what `Workspace.machine` holds).",
+          "type": "string"
+        },
+        "label": {
+          "description": "What the sidebar shows: \"Local\", or the label saved in herdr.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Why it's reconnecting or needs attention, when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/MachineState"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "state"
+      ],
+      "type": "object"
+    },
+    "MachineState": {
+      "oneOf": [
+        {
+          "enum": [
+            "connected"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "connecting",
+          "description": "Not up yet since Azulejo started.",
+          "type": "string"
+        },
+        {
+          "const": "reconnecting",
+          "description": "The link dropped; retrying with backoff.",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "description": "Retrying won't help (password prompt, host key, no herdr there):\nthe user fixes it in herdr, e.g. `herdr machine reconnect <label>`.",
+          "type": "string"
+        },
+        {
+          "const": "off",
+          "description": "Not connected on purpose: disabled in herdr or `connect = false`.",
+          "type": "string"
+        }
+      ]
     },
     "Node": {
       "description": "One node of a layout tree.",
@@ -3359,6 +3488,26 @@
           "required": [
             "type",
             "commands"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "herdr machines, Local first, from `machines.list`.",
+          "properties": {
+            "machines": {
+              "items": {
+                "$ref": "#/$defs/MachineInfo"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "machines",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "machines"
           ],
           "type": "object"
         }
@@ -4512,6 +4661,13 @@
         "id": {
           "$ref": "#/$defs/WorkspaceId"
         },
+        "machine": {
+          "description": "The herdr machine its terminals run on: `None` for Local, else\nherdr's saved-machine ID (ADR 0011).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -4547,6 +4703,13 @@
     "WorkspaceCreate": {
       "properties": {
         "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "description": "The herdr machine its terminals run on: `\"local\"` (the default), or a\nmachine's ID or label from `machines.list` (ADR 0011).",
           "type": [
             "string",
             "null"
@@ -4818,7 +4981,8 @@
     "events.unsubscribe",
     "layout.apply",
     "layout.export",
-    "commands.list"
+    "commands.list",
+    "machines.list"
   ],
   "title": "Azulejo API",
   "version": 1

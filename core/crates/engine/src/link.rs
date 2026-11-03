@@ -5,6 +5,11 @@
 //! come back as [`Internal`] commands applied on the engine's thread.
 //! [`reconcile`] does the same for events herdr sends us.
 //!
+//! Every herdr machine (Local and herdr's saved machines, ADR 0011) has its
+//! own worker and event stream; herdr IDs are only unique per server, so
+//! every match between a tile and herdr compares the machine first. A
+//! machine is `None` for Local, else herdr's saved-machine ID.
+//!
 //! herdr workspaces are created on demand, with the first terminal that needs
 //! one: herdr always gives a new workspace a first pane, and that pane becomes
 //! the terminal. Creating workspaces eagerly would leave a stray pane that
@@ -164,7 +169,7 @@ impl HerdrPort for herdr::Client {
     }
 
     fn socket(&self) -> Option<std::path::PathBuf> {
-        Some(self.socket_path().to_path_buf())
+        self.socket_path().map(std::path::Path::to_path_buf)
     }
 
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem> {
@@ -198,7 +203,10 @@ fn forward(mut stream: herdr::EventStream) -> mpsc::Receiver<herdr::StreamItem> 
     rx
 }
 
-/// herdr work the engine asks for.
+/// A herdr machine: `None` for Local, else herdr's saved-machine ID.
+pub type Machine = Option<String>;
+
+/// herdr work the engine asks for, on one machine's worker.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Give a terminal tile a herdr pane (and its workspace one if needed).
@@ -249,19 +257,21 @@ pub enum Internal {
     /// A herdr workspace closed: its tiles go and the binding is dropped, so
     /// a later workspace reusing the ID isn't mistaken for it.
     HerdrWorkspaceClosed {
+        machine: Machine,
         herdr: String,
     },
     /// herdr reported the agent in a pane (F16).
     AgentStatus {
+        machine: Machine,
         pane_id: String,
         agent: Option<String>,
         status: AgentStatus,
         at_ms: u64,
     },
-    /// What herdr runs; adopt what's new.
-    Surveyed(Box<herdr::Survey>),
+    /// What a machine's herdr runs; adopt what's new.
+    Surveyed(Machine, Box<herdr::Survey>),
     /// The survey failed (logged); nothing to adopt this time.
-    SurveyFailed,
+    SurveyFailed(Machine),
 }
 
 impl Engine {
@@ -303,20 +313,21 @@ impl Engine {
                 }
                 diff(&before, &self.session, false)
             }
-            Internal::HerdrWorkspaceClosed { herdr } => {
+            Internal::HerdrWorkspaceClosed { machine, herdr } => {
                 let before = self.session.clone();
-                close_herdr_workspace(&mut self.session, &herdr);
+                close_herdr_workspace(&mut self.session, &machine, &herdr);
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
                 diff(&before, &self.session, false)
             }
             Internal::AgentStatus {
+                machine,
                 pane_id,
                 agent,
                 status,
                 at_ms,
             } => {
                 let before = self.session.clone();
-                let tiles: Vec<TileId> = bound_tiles(&self.session)
+                let tiles: Vec<TileId> = bound_tiles(&self.session, &machine)
                     .filter(|(_, _, h)| h.pane_id == pane_id)
                     .map(|(_, id, _)| id)
                     .collect();
@@ -331,27 +342,36 @@ impl Engine {
                 }
                 diff(&before, &self.session, false)
             }
-            Internal::Surveyed(survey) => {
+            Internal::Surveyed(machine, survey) => {
                 let before = self.session.clone();
-                let placeholder = self.placeholder.take();
-                let mut changed = adopt::adopt(&mut self.session, &survey, placeholder);
-                changed |= agent::refresh(&mut self.session, &survey, agent::now_ms());
+                // Only Local's survey may drop the first-launch placeholder
+                // (ADR 0008).
+                let placeholder = if machine.is_none() {
+                    self.placeholder.take()
+                } else {
+                    None
+                };
+                let mut changed = adopt::adopt(&mut self.session, &machine, &survey, placeholder);
+                changed |= agent::refresh(&mut self.session, &machine, &survey, agent::now_ms());
                 if !changed {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
                 diff(&before, &self.session, false)
             }
-            Internal::SurveyFailed => {
-                self.placeholder = None;
+            Internal::SurveyFailed(machine) => {
+                if machine.is_none() {
+                    self.placeholder = None;
+                }
                 Vec::new()
             }
         }
     }
 }
 
-/// herdr work implied by `events`, given the session after them.
-pub fn effects(events: &[Event], session: &Session) -> Vec<Effect> {
+/// herdr work implied by `events`, given the session after them, with the
+/// machine each piece is for.
+pub fn effects(events: &[Event], session: &Session) -> Vec<(Machine, Effect)> {
     let mut out = Vec::new();
     for event in events {
         match event {
@@ -369,9 +389,12 @@ pub fn effects(events: &[Event], session: &Session) -> Vec<Effect> {
                     ..
                 } = &tile.content
                 {
-                    out.push(Effect::KillTerminal {
-                        pane_id: h.pane_id.clone(),
-                    });
+                    out.push((
+                        h.machine.clone(),
+                        Effect::KillTerminal {
+                            pane_id: h.pane_id.clone(),
+                        },
+                    ));
                 }
             }
             _ => {}
@@ -380,9 +403,9 @@ pub fn effects(events: &[Event], session: &Session) -> Vec<Effect> {
     out
 }
 
-/// Work to bring every terminal tile in line with herdr: on startup, and
-/// after the event stream lost events.
-pub fn restore_effects(session: &Session) -> Vec<Effect> {
+/// Work to bring `machine`'s terminal tiles in line with herdr: when it
+/// connects, and after its event stream lost events.
+pub fn restore_effects(session: &Session, machine: &Machine) -> Vec<Effect> {
     session
         .tiles()
         .filter_map(|(path, tile)| match &tile.content {
@@ -390,32 +413,35 @@ pub fn restore_effects(session: &Session) -> Vec<Effect> {
                 herdr: Some(stored),
                 ended: false,
                 ..
-            } => {
+            } if stored.machine == *machine => {
                 let (_, workspace, _) = session.ids_at(path);
                 Some(Effect::Reresolve {
                     tile: tile.id,
                     stored: stored.clone(),
-                    herdr_workspace: herdr_workspace(session, workspace),
+                    // A workspace binding only means something on the
+                    // workspace's own machine.
+                    herdr_workspace: session
+                        .workspace(workspace)
+                        .ok()
+                        .filter(|w| w.machine == *machine)
+                        .and_then(|w| w.herdr_workspace.clone()),
                 })
             }
-            _ => create_effect(session, tile),
+            TileContent::Terminal { herdr: Some(_), .. } => None,
+            _ => create_effect(session, tile)
+                .filter(|(m, _)| m == machine)
+                .map(|(_, e)| e),
         })
         .collect()
 }
 
-fn herdr_workspace(session: &Session, workspace: WorkspaceId) -> Option<String> {
-    session
-        .workspace(workspace)
-        .ok()
-        .and_then(|w| w.herdr_workspace.clone())
-}
-
 /// Work to give a respawned tile (`terminal.respawn`) a fresh pane.
-pub fn respawn_effect(session: &Session, tile: TileId) -> Option<Effect> {
+pub fn respawn_effect(session: &Session, tile: TileId) -> Option<(Machine, Effect)> {
     create_effect(session, session.tile(tile).ok()?)
 }
 
-fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
+/// A new pane for an unbound terminal tile, on its workspace's machine.
+fn create_effect(session: &Session, tile: &Tile) -> Option<(Machine, Effect)> {
     let TileContent::Terminal {
         cwd,
         command,
@@ -430,18 +456,21 @@ fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
     let path = session.locate(tile.id).ok()?;
     let (_, workspace_id, _) = session.ids_at(path);
     let workspace = session.workspace(workspace_id).ok()?;
-    Some(Effect::CreateTerminal {
-        tile: tile.id,
-        workspace: workspace_id,
-        herdr_workspace: workspace.herdr_workspace.clone(),
-        workspace_name: workspace.name.clone(),
-        cwd: cwd.clone().or_else(|| workspace.cwd.clone()),
-        label: tile.title.clone(),
-        env: env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        command: command
-            .as_deref()
-            .and_then(crate::layout_file::command_line),
-    })
+    Some((
+        workspace.machine.clone(),
+        Effect::CreateTerminal {
+            tile: tile.id,
+            workspace: workspace_id,
+            herdr_workspace: workspace.herdr_workspace.clone(),
+            workspace_name: workspace.name.clone(),
+            cwd: cwd.clone().or_else(|| workspace.cwd.clone()),
+            label: tile.title.clone(),
+            env: env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            command: command
+                .as_deref()
+                .and_then(crate::layout_file::command_line),
+        },
+    ))
 }
 
 /// What to do about something herdr reported.
@@ -462,10 +491,17 @@ pub struct Reaction {
 /// - New workspaces, tabs and panes nobody here knows ask for a survey, which
 ///   adopts them (ADR 0008; split-off panes land beside their sibling).
 /// - Agent status updates the tile's agent (F16).
-pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: OnExit) -> Reaction {
+///
+/// Everything here is about `machine`'s herdr only.
+pub fn reconcile(
+    machine: &Machine,
+    item: &herdr::StreamItem,
+    session: &Session,
+    default_on_exit: OnExit,
+) -> Reaction {
     use herdr::HerdrEvent as E;
     let mut reaction = Reaction::default();
-    let bound = || bound_tiles(session);
+    let bound = || bound_tiles(session, machine);
     let close_where = |reaction: &mut Reaction, pred: &dyn Fn(&HerdrRef) -> bool| {
         for (_, tile, h) in bound() {
             if pred(h) {
@@ -477,7 +513,7 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: O
         // Events before the stream came up are lost (herdr doesn't replay),
         // so check everything then too, not only after a reconnect.
         herdr::StreamItem::Connected | herdr::StreamItem::Resync => {
-            reaction.effects = restore_effects(session)
+            reaction.effects = restore_effects(session, machine)
                 .into_iter()
                 .filter(|e| matches!(e, Effect::Reresolve { .. }))
                 .collect();
@@ -525,6 +561,7 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: O
             }
             E::WorkspaceClosed { workspace_id } => {
                 reaction.internals.push(Internal::HerdrWorkspaceClosed {
+                    machine: machine.clone(),
                     herdr: workspace_id.0.clone(),
                 });
             }
@@ -534,6 +571,7 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: O
                 status,
                 ..
             } => reaction.internals.push(Internal::AgentStatus {
+                machine: machine.clone(),
                 pane_id: pane_id.0.clone(),
                 agent: agent.clone(),
                 status: agent::from_herdr(*status),
@@ -550,7 +588,7 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: O
                     {
                         reaction.internals.push(Internal::BindTerminal {
                             tile,
-                            herdr: to_ref(&pane.terminal_ref()),
+                            herdr: to_ref(machine, &pane.terminal_ref()),
                         });
                     }
                 }
@@ -562,25 +600,27 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: O
     reaction
 }
 
-/// Terminal tiles bound to a live pane: path, tile and pane.
-fn bound_tiles(
-    session: &Session,
-) -> impl Iterator<Item = (azulejo_model::TilePath, TileId, &HerdrRef)> {
+/// Terminal tiles bound to a live pane on `machine`: path, tile and pane.
+fn bound_tiles<'a>(
+    session: &'a Session,
+    machine: &'a Machine,
+) -> impl Iterator<Item = (azulejo_model::TilePath, TileId, &'a HerdrRef)> {
     session
         .tiles()
-        .filter_map(|(path, tile)| match &tile.content {
+        .filter_map(move |(path, tile)| match &tile.content {
             TileContent::Terminal {
                 herdr: Some(h),
                 ended: false,
                 ..
-            } => Some((path, tile.id, h)),
+            } if h.machine == *machine => Some((path, tile.id, h)),
             _ => None,
         })
 }
 
-/// The panes whose agent status the core follows: every bound pane, sorted.
-pub fn agent_panes(session: &Session) -> Vec<String> {
-    let mut panes: Vec<String> = bound_tiles(session)
+/// The panes on `machine` whose agent status the core follows: every bound
+/// pane, sorted.
+pub fn agent_panes(session: &Session, machine: &Machine) -> Vec<String> {
+    let mut panes: Vec<String> = bound_tiles(session, machine)
         .map(|(_, _, h)| h.pane_id.clone())
         .collect();
     panes.sort_unstable();
@@ -592,16 +632,16 @@ pub fn agent_panes(session: &Session) -> Vec<String> {
 /// binding. An Azulejo workspace left without tabs closes too, unless it's its
 /// window's last; herdr deletes a workspace with its last tab, so mirroring
 /// that keeps the two in step.
-fn close_herdr_workspace(session: &mut Session, herdr: &str) {
+fn close_herdr_workspace(session: &mut Session, machine: &Machine, herdr: &str) {
     let bound: Vec<WorkspaceId> = session
         .windows
         .iter()
         .flat_map(|w| &w.workspaces)
-        .filter(|w| w.herdr_workspace.as_deref() == Some(herdr))
+        .filter(|w| w.machine == *machine && w.herdr_workspace.as_deref() == Some(herdr))
         .map(|w| w.id)
         .collect();
     for id in bound {
-        let tiles: Vec<TileId> = bound_tiles(session)
+        let tiles: Vec<TileId> = bound_tiles(session, machine)
             .filter(|(path, _, _)| session.ids_at(*path).1 == id)
             .map(|(_, tile, _)| tile)
             .collect();
@@ -623,11 +663,12 @@ fn close_herdr_workspace(session: &mut Session, herdr: &str) {
     }
 }
 
-fn to_ref(t: &herdr::TerminalRef) -> HerdrRef {
+fn to_ref(machine: &Machine, t: &herdr::TerminalRef) -> HerdrRef {
     HerdrRef {
         pane_id: t.pane_id.0.clone(),
         terminal_id: t.terminal_id.0.clone(),
         tab_id: t.tab_id.0.clone(),
+        machine: machine.clone(),
     }
 }
 
@@ -635,6 +676,7 @@ fn to_ref(t: &herdr::TerminalRef) -> HerdrRef {
 /// creation. `out` delivers results to the engine's thread; `log` reports
 /// herdr failures.
 pub(crate) async fn run_worker<P: HerdrPort>(
+    machine: Machine,
     port: Arc<P>,
     mut effects: mpsc::UnboundedReceiver<Effect>,
     api_socket: String,
@@ -720,7 +762,7 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                         }
                         out(Internal::BindTerminal {
                             tile,
-                            herdr: to_ref(&t),
+                            herdr: to_ref(&machine, &t),
                         })
                     }
                     Err(e) => {
@@ -752,7 +794,7 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     Ok(herdr::Resolved::Moved(p) | herdr::Resolved::Respawned(p)) => {
                         out(Internal::BindTerminal {
                             tile,
-                            herdr: to_ref(&p.terminal_ref()),
+                            herdr: to_ref(&machine, &p.terminal_ref()),
                         });
                     }
                     Ok(herdr::Resolved::Gone) => out(Internal::MarkEnded { tile }),
@@ -760,10 +802,10 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 }
             }
             Effect::Survey => match port.survey().await {
-                Ok(survey) => out(Internal::Surveyed(Box::new(survey))),
+                Ok(survey) => out(Internal::Surveyed(machine.clone(), Box::new(survey))),
                 Err(e) => {
                     log(format!("herdr: reading its workspaces: {e}"));
-                    out(Internal::SurveyFailed);
+                    out(Internal::SurveyFailed(machine.clone()));
                 }
             },
         }

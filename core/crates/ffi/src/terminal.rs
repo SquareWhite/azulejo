@@ -7,13 +7,17 @@
 //! (libghostty's macOS `login` wrapper loses it), so the command writes its
 //! status and stderr to files the shell names; when the child is gone the
 //! shell reads them back through `azj_core_attach_exit`.
+//!
+//! A tile on one of herdr's saved machines (its `HerdrRef.machine`, ADR 0011)
+//! runs the same thing through `ssh -tt`; ssh exits 255 when it can't reach
+//! the machine, which reads as "herdr unreachable": the tile waits for the
+//! machine to come back.
 
 use std::ffi::c_char;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use azulejo_daemon::HerdrInfo;
-use azulejo_herdr::{AttachExit, Backoff, Client, ClientOptions, PaneId, TerminalId};
+use azulejo_daemon::TerminalTarget;
+use azulejo_herdr::{AttachExit, SSH_FAILED, TerminalId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,6 +38,9 @@ enum Mode {
 struct CommandRequest {
     mode: Mode,
     terminal_id: String,
+    /// The tile's `HerdrRef.machine`: absent or `"local"` for Local.
+    #[serde(default)]
+    machine: Option<String>,
     #[serde(default)]
     pane_id: Option<String>,
     #[serde(default)]
@@ -52,6 +59,9 @@ struct CommandRequest {
 #[derive(Debug, Deserialize)]
 struct ExitRequest {
     terminal_id: String,
+    /// As in the command request.
+    #[serde(default)]
+    machine: Option<String>,
     /// The exit status, if the shell found one.
     #[serde(default)]
     status: Option<i32>,
@@ -63,13 +73,15 @@ struct ExitRequest {
 ///
 /// `{"mode":"attach"|"takeover"|"observe","terminal_id":"term_…",
 ///   "pane_id":"w1:p1","cols":120,"rows":40,"stderr_file":"/…/err",
-///   "status_file":"/…/status","decoder":"/…/azj-observe"}`
+///   "status_file":"/…/status","decoder":"/…/azj-observe","machine":"…"}`
 ///
-/// (`pane_id`, `cols`, `rows` and `decoder` are for observe.) Returns
+/// (`pane_id`, `cols`, `rows` and `decoder` are for observe; `machine` is
+/// the tile's `HerdrRef.machine`, absent for Local.) Returns
 /// `{"ok":true,"command":"…","argv":[…]}`, where `command` is one shell
 /// command line (libghostty runs its command through a shell) and `argv` the
 /// herdr invocation inside it, or `{"ok":false,"error":{"code","message"}}`
-/// with code `unavailable` when the core runs without herdr. The command
+/// with code `unavailable` when the core runs without herdr or doesn't know
+/// the machine. The command
 /// drops inherited `HERDR_*`, `CLAUDE*` and `AZULEJO_*` variables, so the
 /// attach client can't follow the user's own herdr socket. Free with
 /// `azj_string_free`; NULL only on a bad handle.
@@ -92,15 +104,23 @@ pub unsafe extern "C" fn azj_core_terminal_command(
         Ok(request) => request,
         Err(e) => return out(failure("invalid_params", &e)),
     };
-    let Some(herdr) = app.herdr() else {
-        return out(failure("unavailable", "the core runs without herdr"));
+    let Some(target) = app.terminal_target(request.machine.as_deref()) else {
+        return out(failure(
+            "unavailable",
+            &match &request.machine {
+                Some(m) if m != azulejo_protocol::LOCAL_MACHINE => {
+                    format!("herdr machine {m} isn't connected")
+                }
+                _ => "the core runs without herdr".to_owned(),
+            },
+        ));
     };
     let inherited: Vec<String> = std::env::vars_os()
         .filter_map(|(k, _)| k.into_string().ok())
         .collect();
     let terminfo = bundle_terminfo();
     out(
-        match terminal_command(herdr, &request, &inherited, terminfo.as_deref()) {
+        match terminal_command(&target, &request, &inherited, terminfo.as_deref()) {
             Ok((command, argv)) => json!({"ok": true, "command": command, "argv": argv}),
             Err(message) => failure("invalid_params", &message),
         },
@@ -108,8 +128,8 @@ pub unsafe extern "C" fn azj_core_terminal_command(
 }
 
 /// Reads why a terminal tile's child ended. `request_json`:
-/// `{"terminal_id":"term_…","status":1,"stderr":"…"}` (status null when the
-/// shell found none). When stderr doesn't say, asks herdr whether the
+/// `{"terminal_id":"term_…","status":1,"stderr":"…","machine":"…"}` (status
+/// null when the shell found none; machine as for the command). When stderr doesn't say, asks herdr whether the
 /// terminal still exists. Returns `{"exit":"detached"|"taken_over"|
 /// "already_attached"|"terminal_gone"|"server_stopping"|"failed",
 /// "message":"…"}`. Blocks for at most a couple of seconds. Free with
@@ -133,13 +153,20 @@ pub unsafe extern "C" fn azj_core_attach_exit(
         Ok(request) => request,
         Err(e) => return out(failure("invalid_params", &e)),
     };
-    let exit = diagnose(app.herdr(), &request);
+    let exit = diagnose(
+        app.terminal_target(request.machine.as_deref()).as_ref(),
+        &request,
+    );
     out(exit_json(&exit))
 }
 
-fn diagnose(herdr: Option<&HerdrInfo>, request: &ExitRequest) -> AttachExit {
+fn diagnose(target: Option<&TerminalTarget>, request: &ExitRequest) -> AttachExit {
+    // ssh couldn't reach the machine: like a herdr that went away, wait.
+    if target.is_some_and(TerminalTarget::is_remote) && request.status == Some(SSH_FAILED) {
+        return AttachExit::ServerStopping;
+    }
     let exit = AttachExit::classify(request.status, request.stderr.as_deref());
-    let (Some(herdr), AttachExit::Failed { .. }) = (herdr, &exit) else {
+    let (Some(target), AttachExit::Failed { .. }) = (target, &exit) else {
         return exit;
     };
     // stderr didn't say (or the status went missing): ask herdr.
@@ -149,17 +176,7 @@ fn diagnose(herdr: Option<&HerdrInfo>, request: &ExitRequest) -> AttachExit {
     else {
         return exit;
     };
-    let client = Client::new(
-        &herdr.socket,
-        ClientOptions {
-            request_timeout: Duration::from_secs(2),
-            connect: Backoff {
-                initial: Duration::from_millis(50),
-                max: Duration::from_millis(200),
-                give_up_after: Duration::from_millis(500),
-            },
-        },
-    );
+    let client = target.diagnose_client();
     let terminal = TerminalId(request.terminal_id.clone());
     if request.status == Some(1) {
         // herdr's own refusals exit 1; with the terminal still there, another
@@ -195,7 +212,7 @@ fn exit_json(exit: &AttachExit) -> Value {
 /// `inherited` is the app's environment variable names; `terminfo` the
 /// bundle's own terminfo directory, when it ships one.
 fn terminal_command(
-    herdr: &HerdrInfo,
+    target: &TerminalTarget,
     request: &CommandRequest,
     inherited: &[String],
     terminfo: Option<&Path>,
@@ -208,7 +225,7 @@ fn terminal_command(
     let status = path_str(&request.status_file)?;
     let (script, mut words, attach) = match request.mode {
         Mode::Attach | Mode::Takeover => {
-            let attach = herdr.attach(terminal, matches!(request.mode, Mode::Takeover));
+            let attach = target.attach(terminal, matches!(request.mode, Mode::Takeover));
             (ATTACH_SCRIPT, vec![err, status], attach)
         }
         Mode::Observe => {
@@ -225,9 +242,7 @@ fn terminal_command(
             // Never zero: herdr rejects it, and a hidden tile still has a size.
             let cols = request.cols.unwrap_or(80).max(2);
             let rows = request.rows.unwrap_or(24).max(1);
-            let attach = herdr
-                .herdr
-                .observe(&herdr.session, &PaneId(pane.to_owned()), cols, rows);
+            let attach = target.observe(pane, cols, rows);
             (OBSERVE_SCRIPT, vec![err, status, decoder], attach)
         }
     };
@@ -318,20 +333,38 @@ fn quote(word: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use azulejo_herdr::{Herdr, Session};
+    use azulejo_daemon::HerdrInfo;
+    use azulejo_herdr::{Herdr, MachineProfile, RemoteMachine, Session, Ssh};
 
-    fn info() -> HerdrInfo {
-        HerdrInfo {
+    fn info() -> TerminalTarget {
+        TerminalTarget::Local(HerdrInfo {
             herdr: Herdr::with_path("/opt/bin/herdr"),
             session: Session::named("azj dev"),
             socket: "/tmp/herdr.sock".into(),
-        }
+        })
+    }
+
+    fn remote() -> TerminalTarget {
+        TerminalTarget::Remote(RemoteMachine::new(
+            MachineProfile {
+                id: "0123456789abcdef0123456789abcdef".into(),
+                label: "dev-server".into(),
+                target: "user@dev-server".into(),
+                session: "default".into(),
+                enabled: true,
+            },
+            Ssh {
+                program: "/usr/bin/ssh".into(),
+                control_dir: "/tmp/azj-501-ssh".into(),
+            },
+        ))
     }
 
     fn request(mode: Mode) -> CommandRequest {
         CommandRequest {
             mode,
             terminal_id: "term_1".into(),
+            machine: None,
             pane_id: Some("w1:p2".into()),
             cols: Some(100),
             rows: Some(30),
@@ -479,6 +512,7 @@ mod tests {
     fn exits_without_herdr_classify_from_stderr_only() {
         let req = ExitRequest {
             terminal_id: "term_1".into(),
+            machine: None,
             status: Some(1),
             stderr: Some("herdr: server shut down: terminal attach taken over".into()),
         };
@@ -486,6 +520,7 @@ mod tests {
         assert_eq!(exit_json(&AttachExit::TakenOver)["exit"], "taken_over");
         let unknown = ExitRequest {
             terminal_id: "term_1".into(),
+            machine: None,
             status: None,
             stderr: None,
         };
@@ -493,5 +528,40 @@ mod tests {
             diagnose(None, &unknown),
             AttachExit::Failed { .. }
         ));
+    }
+
+    #[test]
+    fn a_remote_tile_attaches_over_ssh_and_reads_255_as_unreachable() {
+        let (line, argv) =
+            terminal_command(&remote(), &request(Mode::Takeover), &[], None).unwrap();
+        assert_eq!(argv[0], "/usr/bin/ssh");
+        let target = argv.iter().position(|a| a == "user@dev-server").unwrap();
+        assert_eq!(argv[target - 1], "-tt");
+        assert!(
+            argv.last()
+                .unwrap()
+                .ends_with("terminal attach term_1 --takeover")
+        );
+        // Still wrapped: status and stderr files, inherited herdr vars dropped.
+        assert!(line.starts_with("/usr/bin/env"));
+        assert!(line.contains("/usr/bin/ssh"));
+        let unreachable = ExitRequest {
+            terminal_id: "term_1".into(),
+            machine: Some("0123456789abcdef0123456789abcdef".into()),
+            status: Some(SSH_FAILED),
+            stderr: Some("ssh: connect to host dev-server port 22: Operation timed out".into()),
+        };
+        assert_eq!(
+            diagnose(Some(&remote()), &unreachable),
+            AttachExit::ServerStopping
+        );
+        let (_, observe) = terminal_command(&remote(), &request(Mode::Observe), &[], None).unwrap();
+        assert!(observe.iter().any(|a| a == "-T"));
+        assert!(
+            observe
+                .last()
+                .unwrap()
+                .ends_with("terminal session observe w1:p2 --cols 100 --rows 30")
+        );
     }
 }

@@ -108,6 +108,7 @@ fn closing_a_bound_terminal_carries_its_pane_and_kill_flag() {
         pane_id: "w1:p1".into(),
         terminal_id: "term_1".into(),
         tab_id: "w1:t1".into(),
+        machine: None,
     };
     let bound = engine
         .execute(Command::TerminalBind(TerminalBind {
@@ -166,6 +167,7 @@ fn bind_rejects_non_terminals() {
                 pane_id: "p".into(),
                 terminal_id: "t".into(),
                 tab_id: "t1".into(),
+                machine: None,
             },
         }))
         .unwrap_err();

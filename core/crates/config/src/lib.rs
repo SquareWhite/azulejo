@@ -138,11 +138,46 @@ pub struct HerdrConfig {
     /// The session name. `None`, the default, means herdr's default session:
     /// the one the user's own `herdr` TUI and phone use.
     pub session: Option<String>,
+    /// Connect herdr's saved machines too (ADR 0011). `None` means the
+    /// default: on with herdr's default session, off with a named one, so an
+    /// isolated setup (tests, dev profiles) never reaches real machines.
+    pub machines: Option<bool>,
+    /// Per machine, by herdr label or ID: presentation only.
+    pub machine: std::collections::BTreeMap<String, MachinePrefs>,
+    /// Tests and dev profiles: read the machine list from this file (the
+    /// JSON `herdr machine list --json` prints) instead of herdr.
+    pub machines_file: Option<PathBuf>,
+    /// Tests and dev profiles: run this instead of `ssh`.
+    pub ssh: Option<PathBuf>,
+}
+
+/// What Azulejo does with one of herdr's saved machines. Connection details
+/// stay in herdr.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MachinePrefs {
+    /// Not listed and not connected.
+    pub hidden: bool,
+    /// Listed as "off" but not connected.
+    pub no_connect: bool,
 }
 
 impl HerdrConfig {
     /// What `session = "default"` means: herdr's default session.
     pub const HERDR_DEFAULT: &str = "default";
+
+    /// Whether herdr's saved machines are connected (see `machines`).
+    pub fn machines_enabled(&self) -> bool {
+        self.enabled && self.machines.unwrap_or(self.session.is_none())
+    }
+
+    /// The preferences for a machine, looked up by ID, then by label.
+    pub fn prefs(&self, id: &str, label: &str) -> MachinePrefs {
+        self.machine
+            .get(id)
+            .or_else(|| self.machine.get(label))
+            .copied()
+            .unwrap_or_default()
+    }
 }
 
 impl Default for HerdrConfig {
@@ -150,6 +185,10 @@ impl Default for HerdrConfig {
         HerdrConfig {
             enabled: true,
             session: None,
+            machines: None,
+            machine: Default::default(),
+            machines_file: None,
+            ssh: None,
         }
     }
 }
@@ -438,6 +477,50 @@ fn parse_herdr(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mu
                 }
             }
             ("session", _) => sink.error(value.span(), "`herdr.session` must be a string"),
+            ("machines", DeValue::Boolean(b)) => out.machines = Some(*b),
+            ("machines", _) => sink.error(value.span(), "`herdr.machines` must be true or false"),
+            ("machine", DeValue::Table(machines)) => {
+                for (name, prefs) in machines.iter() {
+                    let name = name.get_ref().to_string();
+                    let DeValue::Table(prefs) = prefs.get_ref() else {
+                        sink.error(
+                            prefs.span(),
+                            format!("`herdr.machine.\"{name}\"` must be a table"),
+                        );
+                        continue;
+                    };
+                    let mut out_prefs = MachinePrefs::default();
+                    for (k, v) in prefs.iter() {
+                        match (k.get_ref().as_ref(), v.get_ref()) {
+                            ("hidden", DeValue::Boolean(b)) => out_prefs.hidden = *b,
+                            ("connect", DeValue::Boolean(b)) => out_prefs.no_connect = !*b,
+                            ("hidden" | "connect", _) => sink.error(
+                                v.span(),
+                                format!("`herdr.machine.\"{name}\".{}` must be true or false", k.get_ref()),
+                            ),
+                            (other, _) => sink.warn(
+                                k.span(),
+                                format!(
+                                    "unknown setting `herdr.machine.\"{name}\".{other}`; machines are set up in herdr (`herdr machine add`)"
+                                ),
+                            ),
+                        }
+                    }
+                    out.machine.insert(name, out_prefs);
+                }
+            }
+            ("machine", _) => sink.error(
+                value.span(),
+                "`herdr.machine` must be a table of machines by herdr label or ID",
+            ),
+            ("machines_file", DeValue::String(path)) => {
+                out.machines_file = Some(PathBuf::from(path.as_ref()));
+            }
+            ("ssh", DeValue::String(path)) => out.ssh = Some(PathBuf::from(path.as_ref())),
+            ("machines_file" | "ssh", _) => sink.error(
+                value.span(),
+                format!("`herdr.{}` must be a path", key.get_ref()),
+            ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `herdr.{other}`")),
         }
     }

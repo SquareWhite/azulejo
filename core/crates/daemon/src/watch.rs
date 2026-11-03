@@ -153,7 +153,13 @@ pub fn reload(
     let mut diagnostics: Vec<ConfigDiagnostic> = fresh.diagnostics.iter().map(diagnostic).collect();
     {
         let mut current = shared.write().ok()?;
-        if applied && current.herdr != fresh.herdr {
+        // Per-machine settings (`[herdr.machine.*]`) apply live; the rest
+        // of `[herdr]` picks connections made at start.
+        let restart_only = |h: &azulejo_config::HerdrConfig| azulejo_config::HerdrConfig {
+            machine: Default::default(),
+            ..h.clone()
+        };
+        if applied && restart_only(&current.herdr) != restart_only(&fresh.herdr) {
             diagnostics.push(ConfigDiagnostic {
                 severity: "warning".into(),
                 message: "`[herdr]` changes apply after Azulejo restarts".into(),

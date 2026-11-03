@@ -347,3 +347,109 @@ async fn attach_command_runs_and_reports_takeover() {
     );
     let _ = second.kill().await;
 }
+
+/// The ssh stand-in (scripts/ssh-standin.sh), copied so a test can cut its
+/// "link" by creating `<copy>.fail`.
+fn ssh_standin(tag: &str) -> std::path::PathBuf {
+    let src =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh");
+    let dir = std::env::temp_dir().join(format!("azj-standin-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dst = dir.join("ssh");
+    std::fs::copy(&src, &dst).unwrap();
+    dst
+}
+
+#[tokio::test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+async fn a_remote_machine_through_herdrs_bridge() {
+    // A "remote" machine: a throwaway local session reached only through
+    // the SSH bridge path (ssh stand-in → remote-api-bridge), ADR 0011.
+    let tmp = TempSession::new().await;
+    tmp.herdr
+        .ensure_server(&tmp.session(), quick())
+        .await
+        .unwrap();
+    let ssh = ssh_standin("bridge");
+    let machine = azulejo_herdr::RemoteMachine::new(
+        azulejo_herdr::MachineProfile {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            label: "standin".into(),
+            target: "standin-host".into(),
+            session: tmp.name.clone(),
+            enabled: true,
+        },
+        azulejo_herdr::Ssh {
+            program: ssh.clone(),
+            control_dir: std::env::temp_dir(),
+        },
+    );
+    let client = machine.client();
+    assert!(client.socket_path().is_none());
+    let info = client.ping().await.unwrap();
+    assert!(info.protocol >= azulejo_herdr::MIN_PROTOCOL);
+
+    // A subscription over the bridge sees a workspace made over the bridge.
+    let mut events = client.subscribe(Subscription::lifecycle());
+    assert_eq!(
+        next_event(&mut events, |_| true).await,
+        StreamItem::Connected
+    );
+    let t0 = std::time::Instant::now();
+    let ensured = client
+        .ensure_workspace(
+            None,
+            &WorkspaceSpec {
+                label: Some("over-ssh".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let ws = ensured.workspace.workspace_id.clone();
+    next_event(
+        &mut events,
+        |i| matches!(i, StreamItem::Event(HerdrEvent::WorkspaceCreated(w)) if w.workspace_id == ws),
+    )
+    .await;
+    eprintln!("remote request + event: {:?}", t0.elapsed());
+    let survey = client.survey().await.unwrap();
+    assert!(
+        survey
+            .workspaces
+            .iter()
+            .any(|w| w.label.as_deref() == Some("over-ssh"))
+    );
+
+    // Cut the link: requests fail as unreachable with ssh's reason; a new
+    // stream reports it and comes back when the link does.
+    drop(events);
+    let fail = std::path::PathBuf::from(format!("{}.fail", ssh.display()));
+    std::fs::write(&fail, "").unwrap();
+    let err = client.ping().await.unwrap_err();
+    assert!(err.is_unreachable(), "{err}");
+    assert!(err.to_string().contains("Connection refused"), "{err}");
+    let mut events = client.subscribe(Subscription::lifecycle());
+    let first = next_event(&mut events, |_| true).await;
+    assert!(
+        matches!(&first, StreamItem::Disconnected(why) if why.contains("Connection refused")),
+        "{first:?}"
+    );
+    std::fs::remove_file(&fail).unwrap();
+    let back = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let StreamItem::Connected | StreamItem::Resync = events.recv().await.unwrap() {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(back.is_ok(), "stream never came back");
+
+    // A tile on that machine attaches through `ssh -tt`.
+    let term = ensured.created_terminal.unwrap().terminal_id;
+    let attach = machine.attach(&term, false);
+    assert_eq!(attach.program, ssh);
+    assert!(attach.args.iter().any(|a| a == "-tt"));
+    let _ = std::fs::remove_dir_all(ssh.parent().unwrap());
+}

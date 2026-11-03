@@ -119,6 +119,18 @@ pub enum Event {
         message: Option<String>,
     },
 
+    /// A herdr machine appeared, changed state or label (ADR 0011). Not
+    /// saved.
+    #[serde(rename = "machine.status")]
+    MachineStatus {
+        machine: crate::machines::MachineInfo,
+    },
+
+    /// A herdr machine left herdr's list (removed there, or hidden in
+    /// config). Its workspaces stay, unconnected. Not saved.
+    #[serde(rename = "machine.removed")]
+    MachineRemoved { machine: String },
+
     /// The agent in a terminal tile changed state, as herdr reports it (F16).
     /// Not saved.
     #[serde(rename = "agent.state_changed")]
