@@ -280,7 +280,7 @@ final class TileContainerView: NSView {
         }
 
         // 2. Final frames now: the one resize, under the snapshots.
-        for m in movers { m.view.layer?.removeAnimation(forKey: Self.motionKey) }
+        for m in movers { stopMotion(m.view) }
         Perf.measure("motion.layout") {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -410,6 +410,8 @@ final class TileContainerView: NSView {
         if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
+        // The card's rounded corners follow the moving clip (D.5).
+        (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: false)
 
         guard let aware = view as? MotionAware, let shown = snapshotAt else { return }
         let picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
@@ -450,7 +452,8 @@ final class TileContainerView: NSView {
         guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { return }
         let size = picture.size
         let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - size.height
-        aware.placeSnapshot(CGRect(x: 0, y: top, width: size.width, height: size.height), cover: view.bounds)
+        aware.placeSnapshot(CGRect(x: aware.contentLeft, y: top, width: size.width, height: size.height),
+                            cover: view.bounds)
         aware.revealWhenFresh(clock: clock)
         if let contents = aware.snapshotContents {
             let ghost = CALayer()
@@ -459,7 +462,7 @@ final class TileContainerView: NSView {
             ghost.contentsGravity = .resize
             ghost.contentsScale = window?.backingScaleFactor ?? 2
             ghost.masksToBounds = true
-            ghost.cornerRadius = layer.cornerRadius
+            ghost.cornerRadius = Design.Radius.tile
             ghost.backgroundColor = layer.backgroundColor
             ghost.zPosition = 0.5
             ghost.opacity = 0
@@ -477,7 +480,8 @@ final class TileContainerView: NSView {
         layer.add(hiddenUntilEnd(duration), forKey: Self.motionKey)
         if let aware = view as? MotionAware, let picture = aware.snapshotFrame {
             let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - picture.height
-            aware.placeSnapshot(CGRect(x: 0, y: top, width: picture.width, height: picture.height), cover: view.bounds)
+            aware.placeSnapshot(CGRect(x: aware.contentLeft, y: top, width: picture.width, height: picture.height),
+                                cover: view.bounds)
         }
         let ghost = outline(at: to)
         let group = CAAnimationGroup()
@@ -520,7 +524,7 @@ final class TileContainerView: NSView {
             view.removeFromSuperview()
             return
         }
-        layer.removeAnimation(forKey: Self.motionKey)
+        stopMotion(view)
         let model = view.frame
         let target = closed ? collapse(from, frames: frames) : from
         let group = CAAnimationGroup()
@@ -537,6 +541,7 @@ final class TileContainerView: NSView {
             let end = Motion.cropBounds(clip: target.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
             group.animations = clipAnimations(layer, from: from, fromBounds: start, to: target, toBounds: end)
                 + [fadeAnimation(from: layer.opacity, to: 0) as CAAnimation]
+            (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: true)
         case .outline:
             group.animations = [fadeAnimation(from: 0, to: 0)]
             if closed {
@@ -605,6 +610,12 @@ final class TileContainerView: NSView {
         layer.add(group, forKey: Self.motionKey)
     }
 
+    /// Drops a tile's motion, its corner caps' included.
+    private func stopMotion(_ view: NSView) {
+        view.layer?.removeAnimation(forKey: Self.motionKey)
+        (view as? TileFrame)?.stopCornerMotion()
+    }
+
     private func motionEnded(_ gen: Int) {
         guard gen == generation else { return }
         finishLeaving()
@@ -625,7 +636,7 @@ final class TileContainerView: NSView {
         generation += 1
         motionEnds = 0
         for view in subviews where view !== ring {
-            view.layer?.removeAnimation(forKey: Self.motionKey)
+            stopMotion(view)
             view.layer?.zPosition = 0
         }
         ring.layer?.removeAnimation(forKey: Self.motionKey)
@@ -638,7 +649,7 @@ final class TileContainerView: NSView {
 
     private func finishLeaving() {
         for (view, closed) in leaving {
-            view.layer?.removeAnimation(forKey: Self.motionKey)
+            stopMotion(view)
             view.layer?.zPosition = 0
             if closed {
                 view.removeFromSuperview()
