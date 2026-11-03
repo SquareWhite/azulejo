@@ -15,7 +15,9 @@ use std::future::Future;
 use std::sync::Arc;
 
 use azulejo_herdr as herdr;
-use azulejo_model::{AgentStatus, HerdrRef, Session, Tile, TileContent, TileId, WorkspaceId};
+use azulejo_model::{
+    AgentStatus, HerdrRef, OnExit, Session, Tile, TileContent, TileId, WorkspaceId,
+};
 use azulejo_protocol::{Command, Event, TerminalBind, WorkspaceBind};
 use tokio::sync::mpsc;
 
@@ -452,23 +454,18 @@ pub struct Reaction {
 }
 
 /// Matches herdr events to tiles (ADR 0009):
-/// - `pane_exited`: the process ended; the tile stays, ended, respawnable.
+/// - `pane_exited`: the process ended (`exit`, ctrl+d, a finished command).
+///   The tile closes, or with `on_exit = "keep"` (the tile's own, else
+///   `default_on_exit` from config) stays ended and respawnable.
 /// - `pane_closed`, `tab_closed`, `workspace_closed`: someone closed it in
 ///   herdr; the tile goes too (F15).
 /// - New workspaces, tabs and panes nobody here knows ask for a survey, which
 ///   adopts them (ADR 0008; split-off panes land beside their sibling).
 /// - Agent status updates the tile's agent (F16).
-pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
+pub fn reconcile(item: &herdr::StreamItem, session: &Session, default_on_exit: OnExit) -> Reaction {
     use herdr::HerdrEvent as E;
     let mut reaction = Reaction::default();
     let bound = || bound_tiles(session);
-    let end_where = |reaction: &mut Reaction, pred: &dyn Fn(&HerdrRef) -> bool| {
-        for (_, tile, h) in bound() {
-            if pred(h) {
-                reaction.internals.push(Internal::MarkEnded { tile });
-            }
-        }
-    };
     let close_where = |reaction: &mut Reaction, pred: &dyn Fn(&HerdrRef) -> bool| {
         for (_, tile, h) in bound() {
             if pred(h) {
@@ -496,10 +493,26 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
                         || (h.pane_id == pane.pane_id.as_str() && h.tab_id == pane.tab_id.as_str())
                 });
             }
-            // The process ended (`exit`, a crash): herdr drops the pane and
-            // says `pane_exited` only. The tile stays, ended and respawnable.
+            // The process ended (`exit`, ctrl+d, a crash): herdr drops the
+            // pane (and its tab, if it was the only one) and says
+            // `pane_exited` only. Like any terminal, the tile closes; with
+            // `on_exit = "keep"` it stays, ended and respawnable.
             E::PaneExited { pane_id, .. } => {
-                end_where(&mut reaction, &|h| h.pane_id == pane_id.as_str());
+                for (_, tile, h) in bound() {
+                    if h.pane_id != pane_id.as_str() {
+                        continue;
+                    }
+                    let on_exit = match session.tile(tile).map(|t| &t.content) {
+                        Ok(TileContent::Terminal {
+                            on_exit: Some(own), ..
+                        }) => *own,
+                        _ => default_on_exit,
+                    };
+                    reaction.internals.push(match on_exit {
+                        OnExit::Close => Internal::ClosedElsewhere { tile },
+                        OnExit::Keep => Internal::MarkEnded { tile },
+                    });
+                }
             }
             // Someone closed the pane, tab or workspace in herdr (its TUI, a
             // phone, the CLI, an agent): the tile goes with it.

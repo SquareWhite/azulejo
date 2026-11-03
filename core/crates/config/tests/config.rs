@@ -239,6 +239,35 @@ fn herdr_session_defaults_to_the_users_own() {
     assert!(config.has_errors());
 }
 
+#[test]
+fn a_terminal_closes_when_its_shell_exits_unless_kept() {
+    use azulejo_protocol::OnExit;
+    assert_eq!(Config::defaults(MAC).terminal.on_exit, OnExit::Close);
+
+    let config = user("[terminal]\non_exit = \"keep\"\n", MAC);
+    assert_eq!(config.terminal.on_exit, OnExit::Keep);
+    assert!(config.diagnostics.is_empty());
+
+    let config = user("[terminal]\non_exit = \"linger\"\n", LINUX);
+    assert_eq!(
+        config.terminal.on_exit,
+        OnExit::Close,
+        "a bad value keeps the default"
+    );
+    assert!(config.has_errors());
+
+    let config = user("[terminal]\nonexit = \"keep\"\n", MAC);
+    assert!(!config.has_errors());
+    assert!(
+        config
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("terminal.onexit")),
+        "{:?}",
+        config.diagnostics
+    );
+}
+
 // ----- context -----
 
 #[test]

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use azulejo_engine::{Core, CoreOptions};
 use azulejo_herdr::{Backoff, Client, ClientOptions, Herdr, Session as HerdrSession};
-use azulejo_model::{HerdrRef, Session, TileContent, TileId};
+use azulejo_model::{HerdrRef, OnExit, Session, TileContent, TileId};
 use azulejo_protocol::{Command, Direction, Event, LayoutSplit, TileClose};
 
 fn quick() -> ClientOptions {
@@ -300,6 +300,8 @@ fn terminal_io_round_trips_through_a_real_pane() {
     let h = TempHerdr::start();
     let dir = tempfile::tempdir().unwrap();
     let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    // The exit at the end checks I/O on an ended tile.
+    core.set_on_exit(OnExit::Keep);
     assert_eq!(core.herdr_socket(), Some(h.client.socket_path()));
     let session = wait_until(&core, Duration::from_secs(10), all_bound);
     let tile = session.focused_tile().unwrap();
@@ -464,6 +466,8 @@ fn respawn_rebinds_an_ended_tile_in_place() {
     let herdr = TempHerdr::start();
     let dir = tempfile::tempdir().unwrap();
     let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), herdr.client.clone());
+    // Respawn is for tiles kept after their shell exits.
+    core.set_on_exit(OnExit::Keep);
     core.execute(Command::LayoutSplit(LayoutSplit {
         tile: None,
         direction: Direction::Right,
@@ -638,5 +642,89 @@ fn agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second() {
     let close_ms = (closed - t0).as_millis();
     eprintln!("LATENCY external close: {close_ms} ms to tile.closed (incl. herdr CLI)");
     assert!(close_ms < 1000, "{close_ms} ms");
+    core.shutdown();
+}
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn a_shell_that_exits_closes_its_tile_and_leaves_nothing_in_herdr() {
+    use azulejo_protocol::{ReadSource, Reply, TerminalRead, TerminalSendKeys};
+    let h = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    for _ in 0..2 {
+        core.execute(Command::LayoutSplit(LayoutSplit {
+            tile: None,
+            direction: Direction::Down,
+            content: None,
+        }))
+        .unwrap();
+    }
+    let session = wait_until(&core, Duration::from_secs(10), |s| {
+        bound_terminals(s).len() == 3 && all_bound(s)
+    });
+    let tiles = bound_terminals(&session);
+    // Wait for a shell to draw its prompt, so ctrl+d reaches a reading shell.
+    let ready = |tile: TileId| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let text = match core.execute(Command::TerminalRead(TerminalRead {
+                tile: Some(tile),
+                source: ReadSource::Visible,
+                lines: None,
+            })) {
+                Ok(o) => match o.reply {
+                    Reply::Text { text, .. } => text,
+                    other => panic!("{other:?}"),
+                },
+                Err(_) => String::new(),
+            };
+            if !text.trim().is_empty() {
+                std::thread::sleep(Duration::from_millis(300));
+                return;
+            }
+            assert!(Instant::now() < deadline, "no prompt in {tile}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+    let ctrl_d = |tile: TileId| {
+        core.execute(Command::TerminalSendKeys(TerminalSendKeys {
+            tile: Some(tile),
+            keys: vec!["ctrl+d".into()],
+        }))
+        .unwrap();
+    };
+
+    // The default: ctrl+d closes the tile, and herdr has dropped the pane and
+    // the tab Azulejo made for it.
+    let (gone, gone_ref, _) = tiles[2].clone();
+    let gone_ref = gone_ref.unwrap();
+    ready(gone);
+    let start = Instant::now();
+    ctrl_d(gone);
+    let after = wait_until(&core, Duration::from_secs(5), |s| s.tile(gone).is_err());
+    let took = start.elapsed();
+    eprintln!("ctrl+d → tile closed: {took:?}");
+    assert!(took < Duration::from_secs(1), "took {took:?}");
+    assert_eq!(bound_terminals(&after).len(), 2);
+    assert!(after.check_invariants().is_ok());
+    let structure = h.structure();
+    assert!(
+        !structure.contains(&gone_ref.pane_id) && !structure.contains(&gone_ref.tab_id),
+        "left behind in herdr:\n{structure}"
+    );
+
+    // `keep`: the tile stays, ended, for Respawn.
+    core.set_on_exit(OnExit::Keep);
+    let (kept, _, _) = tiles[1].clone();
+    ready(kept);
+    ctrl_d(kept);
+    let after = wait_until(&core, Duration::from_secs(5), |s| {
+        matches!(
+            s.tile(kept).map(|t| &t.content),
+            Ok(TileContent::Terminal { ended: true, .. })
+        )
+    });
+    assert_eq!(bound_terminals(&after).len(), 2);
     core.shutdown();
 }

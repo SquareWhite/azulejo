@@ -28,6 +28,9 @@
 //! [herdr]
 //! session = "default"    # herdr session for terminal tiles: "default" (herdr's own) or a name
 //! enabled = true         # false: terminal tiles stay unbound (no herdr)
+//!
+//! [terminal]
+//! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
 //! ```
 
 mod action;
@@ -39,6 +42,7 @@ mod keymap;
 
 use std::path::{Path, PathBuf};
 
+use azulejo_protocol::OnExit;
 use toml::de::{DeTable, DeValue};
 
 pub use action::{Action, PLANNED_METHODS, Target};
@@ -96,11 +100,19 @@ impl Default for HerdrConfig {
     }
 }
 
+/// Terminal tile settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TerminalConfig {
+    /// What happens when the process in a tile's pane exits (ADR 0009).
+    pub on_exit: OnExit,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub keymap: Keymap,
     pub animation: Animation,
     pub herdr: HerdrConfig,
+    pub terminal: TerminalConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -126,6 +138,7 @@ impl Config {
         }];
         let mut animation = Animation::default();
         let mut herdr = HerdrConfig::default();
+        let mut terminal = TerminalConfig::default();
 
         parse_layer(
             DEFAULT_KEYMAP,
@@ -154,6 +167,10 @@ impl Config {
                         parse_herdr(sink, value, &mut herdr);
                         true
                     }
+                    "terminal" => {
+                        parse_terminal(sink, value, &mut terminal);
+                        true
+                    }
                     _ => false,
                 },
             );
@@ -175,6 +192,7 @@ impl Config {
             keymap,
             animation,
             herdr,
+            terminal,
             path,
             diagnostics,
         }
@@ -257,6 +275,28 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                 "`animation.duration_ms` must be a whole number",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `animation.{other}`")),
+        }
+    }
+}
+
+fn parse_terminal(
+    sink: &mut Sink<'_>,
+    value: &toml::Spanned<DeValue<'_>>,
+    out: &mut TerminalConfig,
+) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`terminal` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("on_exit", DeValue::String(s)) if s.as_ref() == "close" => out.on_exit = OnExit::Close,
+            ("on_exit", DeValue::String(s)) if s.as_ref() == "keep" => out.on_exit = OnExit::Keep,
+            ("on_exit", _) => sink.error(
+                value.span(),
+                "`terminal.on_exit` must be \"close\" or \"keep\"",
+            ),
+            (other, _) => sink.warn(key.span(), format!("unknown setting `terminal.{other}`")),
         }
     }
 }

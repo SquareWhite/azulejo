@@ -223,6 +223,7 @@ fn sample_events() -> Vec<Event> {
             tab_id: "w1:t2".into(),
         }),
         ended: false,
+        on_exit: Some(azulejo_protocol::OnExit::Keep),
     });
     let info = WorkspaceInfo {
         id: workspace,

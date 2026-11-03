@@ -24,7 +24,8 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use azulejo_model::{
-    Axis, MAX_RATIO, MIN_RATIO, Node, Session, Tab, TabId, Tile, TileContent, TileId, WorkspaceId,
+    Axis, MAX_RATIO, MIN_RATIO, Node, OnExit, Session, Tab, TabId, Tile, TileContent, TileId,
+    WorkspaceId,
 };
 use azulejo_protocol::{
     ApplyMode, Created, Error, ErrorCode, Focus, LayoutApply, LayoutExport, Reply,
@@ -172,6 +173,9 @@ struct NodeSpec {
     cwd: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     env: BTreeMap<String, String>,
+    /// `"close"` or `"keep"`: overrides `[terminal] on_exit` for this tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    on_exit: Option<OnExit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -368,6 +372,7 @@ fn build_node(
             || spec.command.is_some()
             || spec.cwd.is_some()
             || !spec.env.is_empty()
+            || spec.on_exit.is_some()
             || spec.url.is_some()
             || spec.path.is_some()
             || spec.files_root.is_some();
@@ -416,6 +421,7 @@ fn build_node(
         only("command", spec.command.is_some(), "terminal")?;
         only("cwd", spec.cwd.is_some(), "terminal")?;
         only("env", !spec.env.is_empty(), "terminal")?;
+        only("on_exit", spec.on_exit.is_some(), "terminal")?;
     }
     if kind != Kind::Browser {
         only("url", spec.url.is_some(), "browser")?;
@@ -457,6 +463,7 @@ fn build_node(
                 env: spec.env,
                 herdr: None,
                 ended: false,
+                on_exit: spec.on_exit,
             }
         }
         Kind::Browser => TileContent::Browser {
@@ -732,7 +739,11 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
         };
         match &t.content {
             TileContent::Terminal {
-                cwd, command, env, ..
+                cwd,
+                command,
+                env,
+                on_exit,
+                ..
             } => {
                 spec.kind = Some(Kind::Terminal);
                 // The workspace cwd is the default; only say so when different.
@@ -745,7 +756,12 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
                     argv => CommandSpec::Argv(argv.to_vec()),
                 });
                 spec.env = env.clone();
-                if spec.command.is_some() || spec.cwd.is_some() || !spec.env.is_empty() {
+                spec.on_exit = *on_exit;
+                if spec.command.is_some()
+                    || spec.cwd.is_some()
+                    || !spec.env.is_empty()
+                    || spec.on_exit.is_some()
+                {
                     // Kind inference covers terminals; keep files short.
                     spec.kind = None;
                 }

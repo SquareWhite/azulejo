@@ -168,6 +168,7 @@ impl App {
         };
         let core = Arc::new(core);
         let config: SharedConfig = Arc::new(RwLock::new(Arc::new(config)));
+        watch::push_settings(&core, &config);
         {
             let config = config.clone();
             core.set_commands(Arc::new(move || match config.read() {
@@ -230,6 +231,7 @@ impl App {
         let log: LogFn = Arc::new(|line| eprintln!("azulejo: {line}"));
         let event = watch::reload(&path, self.platform, &self.config, &log)?;
         if let Some(core) = &self.core {
+            watch::push_settings(core, &self.config);
             core.broadcast(azulejo_protocol::Event::ConfigReloaded(event.clone()));
         }
         Some(event)

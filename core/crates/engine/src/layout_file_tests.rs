@@ -182,6 +182,11 @@ fn diagnostics_say_where_and_what() {
             "tab 1 (`dev`): no tiles",
         ),
         ("[[tile]]\ncommand = []\n", "`command` is empty"),
+        (
+            "[[tile]]\nurl = \"x\"\non_exit = \"keep\"\n",
+            "`on_exit` only applies to terminal tiles",
+        ),
+        ("[[tile]]\non_exit = \"linger\"\n", "linger"),
     ];
     for (text, want) in cases {
         let err = parse(text, None).expect_err(text);
@@ -361,6 +366,7 @@ sizes = [70, 30]
 children = [{ path = "/etc/hosts" }, { url = "https://example.com" }]
 [[tab.root.children]]
 command = ["echo", "hi there"]
+on_exit = "keep"
 focus = true
 
 [[tab]]
@@ -498,4 +504,35 @@ fn the_documented_example_parses() {
         .collect();
     use azulejo_model::TileKind::*;
     assert_eq!(kinds, [Terminal, Terminal, Terminal, Browser]);
+}
+
+#[test]
+fn on_exit_per_tile_parses_and_round_trips() {
+    let text = "[[tile]]\ncommand = \"npm run dev\"\non_exit = \"keep\"\n[[tile]]\n";
+    let plan = parse(text, Some(&base())).unwrap();
+    let tab = &plan.tabs[0];
+    let on_exit = |i: usize| match &tab.tile(tab.root.tiles()[i]).unwrap().content {
+        TileContent::Terminal { on_exit, .. } => *on_exit,
+        other => panic!("not a terminal: {other:?}"),
+    };
+    assert_eq!(on_exit(0), Some(OnExit::Keep));
+    assert_eq!(on_exit(1), None, "unset: the config decides");
+
+    let mut engine = Engine::new();
+    engine
+        .execute(apply_cmd(text, ApplyMode::NewWorkspace))
+        .expect("apply");
+    let exported = match engine
+        .execute(Command::LayoutExport(LayoutExport::default()))
+        .unwrap()
+        .reply
+    {
+        Reply::LayoutFile { toml, .. } => toml,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        exported.matches("on_exit = \"keep\"").count(),
+        1,
+        "{exported}"
+    );
 }
