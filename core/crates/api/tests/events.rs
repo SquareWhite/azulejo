@@ -30,6 +30,23 @@ struct Rig {
     path: PathBuf,
 }
 
+/// Removes a test's socket directory.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl Drop for Rig {
+    fn drop(&mut self) {
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
 fn start(buffer: Option<usize>) -> Rig {
     let path = temp_socket();
     let feed = EventFeed::new();
@@ -323,6 +340,7 @@ fn a_real_core_streams_its_events() {
     use azulejo_api::CoreDispatcher;
     use azulejo_engine::{Core, CoreOptions};
     let path = temp_socket();
+    let _dir = TempDir(path.parent().unwrap().to_owned());
     let core = Arc::new(Core::start(CoreOptions {
         state_path: None,
         ..Default::default()
