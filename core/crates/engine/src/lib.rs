@@ -3,13 +3,14 @@
 //! Events come from diffing the session before and after each command, so no
 //! command handler can forget to report a change.
 
+pub mod adopt;
 mod diff;
 mod driver;
 pub mod link;
 pub mod persist;
 pub mod terminal;
 
-use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId};
+use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId, WorkspaceId};
 use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
     TileInfo, WindowSummary, WorkspaceSummary,
@@ -29,7 +30,13 @@ pub struct Outcome {
 #[derive(Debug)]
 pub struct Engine {
     session: Session,
+    /// The empty workspace a fresh session starts with, until the first herdr
+    /// survey: dropped then if adoption brought in the user's workspaces.
+    placeholder: Option<WorkspaceId>,
 }
+
+/// How many closed-here herdr panes `Session::detached_herdr` remembers.
+const MAX_DETACHED: usize = 1024;
 
 impl Default for Engine {
     fn default() -> Self {
@@ -45,12 +52,18 @@ impl Engine {
         session
             .create_tab(workspace, Tile::new(TileContent::terminal()), None)
             .expect("new workspace exists");
-        Self { session }
+        Self {
+            session,
+            placeholder: Some(workspace),
+        }
     }
 
     /// Starts from a saved session.
     pub fn with_session(session: Session) -> Self {
-        Self { session }
+        Self {
+            session,
+            placeholder: None,
+        }
     }
 
     pub fn session(&self) -> &Session {
@@ -70,10 +83,29 @@ impl Engine {
             }
         };
         let mut events = diff(&before, &self.session, kill);
+        self.remember_detached(&events);
         if force_layout && let Reply::Layout(state) = &reply {
             events.push(Event::LayoutChanged(state.clone()));
         }
         Ok(Outcome { reply, events })
+    }
+
+    /// Remembers the herdr panes of closed terminal tiles, so adoption
+    /// doesn't bring them back (ADR 0008). Killed panes go on the list too:
+    /// the kill reaches herdr after a survey may already have seen them.
+    fn remember_detached(&mut self, events: &[Event]) {
+        for event in events {
+            if let Event::TileClosed { tile, .. } = event
+                && let TileContent::Terminal { herdr: Some(h), .. } = &tile.content
+                && !self.session.detached_herdr.contains(h)
+            {
+                self.session.detached_herdr.push(h.clone());
+            }
+        }
+        let len = self.session.detached_herdr.len();
+        if len > MAX_DETACHED {
+            self.session.detached_herdr.drain(..len - MAX_DETACHED);
+        }
     }
 
     /// Runs a command and returns only its events; for shells that render from

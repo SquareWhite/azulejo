@@ -65,6 +65,33 @@ impl TempHerdr {
         self.rt.block_on(self.client.panes()).unwrap()
     }
 
+    /// Runs a herdr CLI command against this session.
+    fn cli(&self, args: &[&str]) -> String {
+        self.rt
+            .block_on(self.herdr.cli(&HerdrSession::named(&self.name), args))
+            .unwrap_or_else(|e| panic!("herdr {args:?}: {e}"))
+    }
+
+    /// herdr's structure: workspaces, tabs, panes and each tab's split tree.
+    fn structure(&self) -> String {
+        let snap = self.rt.block_on(self.client.snapshot()).unwrap();
+        let mut out = Vec::new();
+        for w in &snap.workspaces {
+            out.push(format!("ws {} {:?}", w.workspace_id, w.label));
+        }
+        for t in &snap.tabs {
+            let layout = self
+                .rt
+                .block_on(self.client.layout_export(&t.tab_id))
+                .unwrap();
+            out.push(format!("tab {} {:?} {:?}", t.tab_id, t.label, layout.root));
+        }
+        for p in &snap.panes {
+            out.push(format!("pane {} {} {}", p.pane_id, p.terminal_id, p.tab_id));
+        }
+        out.join("\n")
+    }
+
     fn kill(&self, pane: &str) {
         self.rt
             .block_on(
@@ -336,5 +363,72 @@ fn terminal_io_round_trips_through_a_real_pane() {
     }))
     .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidState);
+    core.shutdown();
+}
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn adopts_what_herdr_already_runs_without_changing_it() {
+    use azulejo_model::{Axis, Node};
+    let h = TempHerdr::start();
+    // The user's own herdr: a workspace whose tab is split into three panes.
+    h.cli(&["workspace", "create", "--label", "probe"]);
+    let first = h.panes()[0].pane_id.clone();
+    h.cli(&["pane", "split", first.as_str(), "--direction", "right"]);
+    let second = h
+        .panes()
+        .into_iter()
+        .find(|p| p.pane_id != first)
+        .unwrap()
+        .pane_id;
+    h.cli(&[
+        "pane",
+        "split",
+        second.as_str(),
+        "--direction",
+        "down",
+        "--ratio",
+        "0.3",
+    ]);
+    let before = h.structure();
+    assert_eq!(h.panes().len(), 3);
+
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    let core = Core::start_with_herdr(opts(&state), h.client.clone());
+    let session = wait_until(&core, Duration::from_secs(10), |s| {
+        bound_terminals(s).len() == 3 && all_bound(s)
+    });
+    // Give restore (re-resolving the adopted tiles) time to run too.
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(h.structure(), before, "herdr unchanged");
+
+    let ws = &session.windows[0].workspaces;
+    assert_eq!(ws.len(), 1, "the placeholder workspace is dropped");
+    assert_eq!(ws[0].name, "probe");
+    assert_eq!(ws[0].tabs.len(), 1);
+    let tab = &ws[0].tabs[0];
+    let pane_of = |id| match &tab.tile(id).unwrap().content {
+        TileContent::Terminal { herdr: Some(r), .. } => r.pane_id.clone(),
+        other => panic!("{other:?}"),
+    };
+    let Node::Split { axis, a, b, .. } = &tab.root else {
+        panic!("{:?}", tab.root)
+    };
+    assert_eq!(*axis, Axis::Horizontal);
+    let Node::Leaf { id } = **a else { panic!() };
+    assert_eq!(pane_of(id), first.as_str());
+    let Node::Split { axis, ratio, .. } = &**b else {
+        panic!()
+    };
+    assert_eq!(*axis, Axis::Vertical);
+    assert!((ratio - 0.3).abs() < 0.01, "{ratio}");
+
+    // Relaunch: the same session, still no changes in herdr.
+    core.shutdown();
+    let core = Core::start_with_herdr(opts(&state), h.client.clone());
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(core.session().unwrap(), session);
+    assert_eq!(h.structure(), before, "herdr unchanged after relaunch");
     core.shutdown();
 }

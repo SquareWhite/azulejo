@@ -221,13 +221,16 @@ fn run<P: HerdrPort>(
                 }
             });
         }
-        for effect in link::restore_effects(engine.session()) {
-            let _ = effects_tx.send(effect);
-        }
+        // Adopt what herdr already runs first (ADR 0008); restoring waits for
+        // that, so a fresh session's placeholder terminal doesn't create a
+        // herdr workspace the user's own ones make unnecessary.
+        let _ = effects_tx.send(Effect::Survey);
         Herdr {
             runtime,
             effects_tx,
             port,
+            restored: false,
+            survey: SurveyState::InFlight,
         }
     });
     drop(self_tx);
@@ -286,8 +289,12 @@ fn run<P: HerdrPort>(
                 let _ = reply.send(result);
             }
             Msg::Internal(internal) => {
+                let surveyed = matches!(internal, Internal::Surveyed(_) | Internal::SurveyFailed);
                 let events = engine.apply_internal(internal);
                 publish(&engine, &events, &herdr, &mut listeners);
+                if surveyed && let Some(h) = &mut herdr {
+                    h.survey_done(&engine);
+                }
             }
             Msg::Herdr(item) => {
                 let reaction = link::reconcile(&item, engine.session());
@@ -295,9 +302,12 @@ fn run<P: HerdrPort>(
                     let events = engine.apply_internal(internal);
                     publish(&engine, &events, &herdr, &mut listeners);
                 }
-                if let Some(h) = &herdr {
+                if let Some(h) = &mut herdr {
                     for effect in reaction.effects {
                         let _ = h.effects_tx.send(effect);
+                    }
+                    if reaction.survey {
+                        h.request_survey();
                     }
                 }
             }
@@ -322,6 +332,45 @@ struct Herdr<P> {
     runtime: tokio::runtime::Runtime,
     effects_tx: tmpsc::UnboundedSender<Effect>,
     port: Arc<P>,
+    /// Set once the first survey is in and restore work has been queued.
+    restored: bool,
+    survey: SurveyState,
+}
+
+/// Surveys are coalesced: at most one queued, plus one more if something
+/// changed while it ran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SurveyState {
+    Idle,
+    InFlight,
+    /// Asked for again while one was running.
+    Again,
+}
+
+impl<P> Herdr<P> {
+    fn request_survey(&mut self) {
+        self.survey = match self.survey {
+            SurveyState::Idle => {
+                let _ = self.effects_tx.send(Effect::Survey);
+                SurveyState::InFlight
+            }
+            SurveyState::InFlight | SurveyState::Again => SurveyState::Again,
+        };
+    }
+
+    fn survey_done(&mut self, engine: &Engine) {
+        if !self.restored {
+            self.restored = true;
+            for effect in link::restore_effects(engine.session()) {
+                let _ = self.effects_tx.send(effect);
+            }
+        }
+        let again = self.survey == SurveyState::Again;
+        self.survey = SurveyState::Idle;
+        if again {
+            self.request_survey();
+        }
+    }
 }
 
 #[cfg(test)]
