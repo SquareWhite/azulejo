@@ -253,7 +253,7 @@ enum Design {
         /// SF Symbol name for the state's icon.
         var symbol: String {
             switch self {
-            case .working: "progress.indicator"
+            case .working: "azulejo.ring"
             case .blocked: "exclamationmark.circle.fill"
             case .done: "checkmark.circle"
             case .idle: "circle.dashed"
@@ -287,7 +287,11 @@ enum Design {
         }
 
         /// The state's symbol as a tinted image, or nil if the symbol is missing.
+        /// Symbols named `azulejo.*` are drawn by the app (DesignSupport.swift).
         static func image(_ status: Status, pointSize: CGFloat = 11) -> NSImage? {
+            if status.symbol.hasPrefix("azulejo.") {
+                return Design.customSymbol(status.symbol, color: status.color, pointSize: pointSize)
+            }
             let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
                 .applying(.init(paletteColors: [status.color]))
             return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?

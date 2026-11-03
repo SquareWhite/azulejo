@@ -54,6 +54,9 @@ struct PaletteItem {
     var searchExtra = ""
     /// A coloured dot before the title (agent attention on jump targets).
     var dot: NSColor?
+    /// The agents' state icon before the title, drawn instead of the dot
+    /// (the same icons as the sidebar and tab strip).
+    var status: Design.Status?
 }
 
 /// The ⌘K quick-open menu: a search field over one fuzzy-filtered list of
@@ -405,7 +408,13 @@ final class PaletteListView: NSView {
                        respectFlipped: true, hints: nil)
             x += size + 8
         }
-        if let dot = item.dot {
+        if let status = item.status, let image = SidebarView.icon(status, pointSize: 11) {
+            let size = image.size
+            image.draw(in: NSRect(x: x, y: rect.midY - size.height / 2, width: size.width, height: size.height),
+                       from: .zero, operation: .sourceOver, fraction: item.enabled ? 1 : 0.35,
+                       respectFlipped: true, hints: nil)
+            x += size.width + 6
+        } else if let dot = item.dot {
             dot.setFill()
             NSBezierPath(ovalIn: NSRect(x: x, y: rect.midY - 4, width: 8, height: 8)).fill()
             x += 14

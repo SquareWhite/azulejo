@@ -129,7 +129,7 @@ final class TabButton: NSView {
     /// Automation: the rollup's marker text, as the sidebar shows it.
     let markerText: String
     private let handler: () -> Void
-    private let icon = NSImageView()
+    private let icon: StatusIconView
     private let label = NSTextField(labelWithString: "")
     private let selected: Bool
 
@@ -138,13 +138,12 @@ final class TabButton: NSView {
         self.status = status
         self.selected = selected
         self.handler = handler
+        icon = StatusIconView(status, image: Self.icon(status))
         markerText = rollup.marker?.string ?? ""
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.tab
         layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
-        icon.image = Self.icon(status)
-        icon.imageScaling = .scaleProportionallyDown
         addSubview(icon)
         label.stringValue = tab.label
         label.font = selected ? Design.Font.tabSelected : Design.Font.tab

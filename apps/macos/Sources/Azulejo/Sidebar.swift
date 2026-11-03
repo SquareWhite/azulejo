@@ -494,9 +494,7 @@ final class WorkspaceRow: NSView {
         setAccessibilityRole(.button)
         setAccessibilityLabel("\(ws.name), \(status.rawValue)")
 
-        let icon = NSImageView()
-        icon.image = SidebarView.icon(status, pointSize: 12)
-        icon.imageScaling = .scaleNone
+        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: 12))
         let name = NSTextField(labelWithString: ws.name)
         name.font = Design.Font.sidebarRow
         name.textColor = Design.Color.textPrimary
@@ -740,7 +738,7 @@ private final class SidebarFooter: NSView {
             item.orientation = .horizontal
             item.spacing = 4
             item.alignment = .centerY
-            let icon = NSImageView(image: SidebarView.icon(status, pointSize: 11) ?? NSImage())
+            let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: 11))
             let text = NSTextField(labelWithString: "\(count)")
             text.font = Design.Font.footerCount
             text.textColor = Design.Color.textSecondary

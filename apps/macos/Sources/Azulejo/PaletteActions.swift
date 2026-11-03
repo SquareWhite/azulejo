@@ -211,7 +211,8 @@ extension AppController {
                     id: "ws:" + ws.id, title: ws.name, kind: .workspace,
                     detail: where1 + "\(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
                     searchExtra: [ws.cwd, host].compactMap { $0 }.joined(separator: " "),
-                    dot: blocked > 0 ? AttentionStyle.blocked : nil))
+                    dot: blocked > 0 ? AttentionStyle.blocked : nil,
+                    status: Self.status(ws.tabs.flatMap(\.tiles))))
                 for tab in ws.tabs {
                     if ws.tabs.count > 1 || tab.tiles.count > 1 {
                         items.append(PaletteItem(
@@ -229,12 +230,23 @@ extension AppController {
                                           tile.command?.joined(separator: " "), tile.header?.title,
                                           doing, host]
                                 .compactMap { $0 }.joined(separator: " "),
-                            dot: AttentionStyle.color(for: tile)))
+                            dot: AttentionStyle.color(for: tile),
+                            status: Self.status([tile])))
                     }
                 }
             }
         }
         return items
+    }
+
+    /// The state icon for some tiles' agents, as the sidebar ranks them:
+    /// blocked, then finished but not looked at, then working.
+    static func status(_ tiles: [TileModel]) -> Design.Status? {
+        let agents = tiles.compactMap(\.agent)
+        if agents.contains(where: { $0.status == .blocked }) { return .blocked }
+        if agents.contains(where: { $0.attention }) { return .done }
+        if agents.contains(where: { $0.status == .working }) { return .working }
+        return nil
     }
 
     /// A remote machine's label for ⌘K rows; nil for Local. A machine herdr
