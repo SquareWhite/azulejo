@@ -79,11 +79,8 @@ Add an entry to [dogfood-log.md](dogfood-log.md) (the template's at the top), or
 
 ## Known gaps (coming in M2)
 
-- No animations: layout changes snap.
 - No find in terminal (`cmd+f`) yet, though the chord is reserved.
-- No file browser tile.
-- Panes created later inside a tab Azulejo already shows (from the herdr TUI, phone or CLI) don't appear until 2.7.
-- No layout files, no event stream, no Python client, no browser automation API.
+- Bismuth-style dynamic layouts (2.12), several herdr machines in the sidebar (2.13), the git branch per workspace (2.14) and tile headers with Preview | Source (2.15) are in progress.
 - No IME composition in terminal tiles yet; copy/paste, mouse selection and Claude Code's full key path are untested by hand.
 - OSC 52 clipboard and terminal notifications don't pass through herdr ([ADR 0005](adr/0005-scrollback-and-passthrough.md)).
 - Ad-hoc signed only: notarisation waits for a Developer ID ([release](release.md)).

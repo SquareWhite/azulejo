@@ -21,6 +21,16 @@ Spike 0.5 measured 86–118 ms (median) from resize to SIGWINCH in the pane: Gho
 - Scaled text looks stretched mid-motion. A crop mode (`--gravity topLeft` in the spike) is the alternative if it bothers people.
 - Very slow TUIs (redraw > animation length) still reveal a stale frame. Acceptable; the user can turn animations off.
 
+## Amendment, Nov 3, 2026: crop is the default
+
+Dogfooding: "animations stretch the content of the tile, which looks bad". `[animation] style` now picks `crop` (default), `scale` (the behaviour above) or `outline`.
+
+- **Crop** animates each tile layer's bounds and position instead of a transform. The frame is a clip over content at 1:1, so nothing stretches. Content sticks to the edge that moves least, so it stays still on screen while the moving edge reveals or cuts it off.
+- The resize-at-start rule stands. A shrinking terminal keeps its snapshot, now at 1:1, until the motion ends. A growing one shows its 1:1 snapshot over a plain background until live content has drawn at the new size, then reveals live content, even mid-motion: live content is laid out at the final size, so it can't stretch, and the blank strip the growing edge uncovers fills in early.
+- New tiles sweep in with the divider (from the parent's far edge); closing tiles shrink away from the neighbour that takes their space; the tall rotate cross-fades, since sliding every tile across the tab looked wrong.
+- **Outline** hides content during the motion, moves outlines only, and fades content in over 80 ms at the end.
+- Same budget: 60-animation stress at 120 Hz, crop 0 dropped frames, outline 1, scale 3 (≤ 3 single missed ticks allowed); 114/114 PTY resizes in every style.
+
 ## Evidence
 
 - `spikes/macos-anim/README.md`, findings table
