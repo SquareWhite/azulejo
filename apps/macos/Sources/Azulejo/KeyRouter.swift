@@ -16,6 +16,9 @@ final class KeyRouter {
     private(set) var resizing = false
     /// keyDowns the monitor has seen (automation checks it reached us).
     private(set) var seen = 0
+    /// What the last keyDown came to (`action:split_right`, `passed`,
+    /// `composing`, `palette`…); automation's `key.last`.
+    private(set) var lastOutcome = "none"
 
     init(app: AppController) {
         self.app = app
@@ -36,28 +39,50 @@ final class KeyRouter {
         // Sheets and panels (rename, alerts) get their keys untouched.
         if let window = event.window, !app.owns(window) { return false }
         guard let controller = app.controller(for: event.window) else { return false }
-        guard let chord = Self.chord(for: event) else { return false }
+        guard let chord = Self.chord(for: event) else {
+            lastOutcome = "unnamed"
+            return false
+        }
+
+        // An input method is composing (marked text in a terminal, the ⌘K
+        // field or an address bar): every key belongs to it until it commits,
+        // so it goes straight to the text view, past app chords and menu key
+        // equivalents (⌘K, ctrl+cmd+t…).
+        if let responder = (event.window ?? controller.window).firstResponder,
+           let client = responder as? NSTextInputClient, client.hasMarkedText() {
+            lastOutcome = "composing"
+            responder.keyDown(with: event)
+            return true
+        }
 
         if resizing {
+            lastOutcome = "resize"
             return resizeMode(chord, in: controller)
         }
 
         // The ⌘K menu takes navigation keys; typing goes to its search field.
         // Only its own toggles (⌘K, and ⌘⇧P / ⌘P if bound) still run as actions.
         if controller.palette.isOpen {
-            if controller.palette.handle(chord: chord) { return true }
+            if controller.palette.handle(chord: chord) {
+                lastOutcome = "palette"
+                return true
+            }
             let outcome = app.core.key(chord: chord, tile: nil)
             if outcome["outcome"] as? String == "action",
                let name = outcome["action"] as? String, PaletteStore.selfActions.contains(name) {
+                lastOutcome = "action:\(name)"
                 app.perform(outcome, in: controller)
                 return true
             }
             app.core.resetKeys()
+            lastOutcome = "palette-field"
             return false
         }
 
         let outcome = app.core.key(chord: chord, tile: controller.keyContext)
         app.log("key \(chord) → \(Self.describe(outcome))")
+        let kind = outcome["outcome"] as? String ?? "?"
+        lastOutcome = kind == "action" ? "action:\(Self.describe(outcome))" : (kind == "unhandled" ? "passed" : kind)
         switch outcome["outcome"] as? String {
         case "action":
             controller.setStatus(nil)
