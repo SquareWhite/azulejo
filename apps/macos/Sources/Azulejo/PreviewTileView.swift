@@ -207,6 +207,7 @@ final class PreviewTileView: NSView, TileView {
         shownPath = content.path
         loading = (content.path, content.revision)
         loadStarted = Date()
+        appliedKind = content.kind
         // `loadHTMLString(_:baseURL:)` gives the page no read access to the
         // file's folder, so local images stay broken. Write the document to a
         // cache file and load that with read access to the closest folder
@@ -244,9 +245,17 @@ final class PreviewTileView: NSView, TileView {
 
     private var loadStarted = Date()
 
+    // Automation state (`tile.*` keys).
+    private var applied = 0
+    private var appliedMode = "-"
+    private var appliedKind = "-"
+    private var lastScriptResult = "-"
+
     fileprivate func didFinishLoad() {
         guard let loading else { return }
         self.loading = nil
+        applied += 1
+        appliedMode = "load"
         Self.log(String(
             format: "preview.applied tile=%@ rev=%llu mode=load path=%@ t=%.6f took=%.1fms",
             Short.id(tileID), loading.revision, loading.path,
@@ -271,6 +280,9 @@ final class PreviewTileView: NSView, TileView {
         || ProcessInfo.processInfo.environment["AZULEJO_AUTOMATION"] != nil
 
     private func logApplied(_ content: PreviewContent, mode: String, started: Date) {
+        applied += 1
+        appliedMode = mode
+        appliedKind = content.kind
         Self.log(String(
             format: "preview.applied tile=%@ rev=%llu mode=%@ path=%@ t=%.6f took=%.1fms",
             Short.id(tileID), content.revision, mode, content.path,
@@ -516,6 +528,39 @@ struct PreviewContent: Decodable {
         var parts = [language ?? kind]
         if truncated == true { parts.append("truncated") }
         return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Automation
+
+extension PreviewTileView: AutomatableTile {
+    /// `tile js <script>`: evaluates in the page; the result shows as `tile.js`.
+    func automate(_ verb: String, _ arg: String) -> String? {
+        switch verb {
+        case "js":
+            guard let webView else { return "no page loaded" }
+            lastScriptResult = "pending"
+            webView.evaluateJavaScript(arg) { [weak self] value, error in
+                MainActor.assumeIsolated {
+                    self?.lastScriptResult = error.map { "error: \($0.localizedDescription)" }
+                        ?? value.map { "\($0)" } ?? "nil"
+                }
+            }
+            return nil
+        default:
+            return "unknown preview verb \(verb)"
+        }
+    }
+
+    func automationState() -> [String: String] {
+        [
+            "tile.kind": "preview",
+            "tile.applied": "\(applied)",
+            "tile.mode": appliedMode,
+            "tile.content": appliedKind,
+            "tile.path": shownPath ?? "-",
+            "tile.js": lastScriptResult,
+        ]
     }
 }
 

@@ -41,11 +41,11 @@ expect focus 1
 # --- resize (one step each way) and equalize ---
 key ctrl+alt+shift+l          # grow the master: its right divider moves right
 expect ratio 0.55
-key ctrl+alt+shift+h          # the master has no left divider: refused, nothing changes
-expect ratio 0.55
-key alt+l
-key ctrl+alt+shift+h          # from the stack, the same divider moves back left
+key ctrl+alt+shift+h          # no left divider: tmux-style, its right divider moves left instead
 expect ratio 0.50
+key alt+l
+key ctrl+alt+shift+h          # from the stack, its left divider (the same one) moves left again
+expect ratio 0.45
 key ctrl+alt+shift+j          # unbalance the stack
 key alt+shift+e               # equalize the stack again
 shot 03-equalized
