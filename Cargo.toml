@@ -21,3 +21,6 @@ azulejo-engine = { path = "core/crates/engine" }
 azulejo-api = { path = "core/crates/api" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = "1.2"
+ulid = "3"
+proptest = "1.12"
