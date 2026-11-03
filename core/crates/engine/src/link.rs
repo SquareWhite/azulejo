@@ -371,7 +371,8 @@ impl Engine {
                     .filter(|(_, _, h)| h.pane_id == pane_id)
                     .map(|(_, id, _)| id)
                     .collect();
-                self.agent_reported.insert((machine.clone(), pane_id.clone()), at_ms);
+                self.agent_reported
+                    .insert((machine.clone(), pane_id.clone()), at_ms);
                 let mut changed = false;
                 for id in tiles {
                     if let Ok(tile) = self.session.tile_mut(id) {
@@ -396,13 +397,21 @@ impl Engine {
                 // A status streamed in after the survey was requested is
                 // newer than the survey's: keep it.
                 let reported = &mut self.agent_reported;
-                reported.retain(|(m, pane), _| *m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane));
+                reported.retain(|(m, pane), _| {
+                    *m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
+                });
                 let fresher = |pane: &str| {
                     reported
                         .get(&(machine.clone(), pane.to_string()))
                         .is_some_and(|&at| at >= requested)
                 };
-                changed |= agent::refresh(&mut self.session, &machine, &survey, agent::now_ms(), fresher);
+                changed |= agent::refresh(
+                    &mut self.session,
+                    &machine,
+                    &survey,
+                    agent::now_ms(),
+                    fresher,
+                );
                 changed |= crate::meta::refresh_from_survey(&mut self.session, &machine, &survey);
                 if !changed {
                     return Vec::new();
@@ -924,7 +933,11 @@ pub(crate) async fn run_worker<P: HerdrPort>(
             Effect::Survey => {
                 let requested = agent::now_ms();
                 match port.survey().await {
-                    Ok(survey) => out(Internal::Surveyed(machine.clone(), Box::new(survey), requested)),
+                    Ok(survey) => out(Internal::Surveyed(
+                        machine.clone(),
+                        Box::new(survey),
+                        requested,
+                    )),
                     Err(e) => {
                         log(format!("herdr: reading its workspaces: {e}"));
                         out(Internal::SurveyFailed(machine.clone()));

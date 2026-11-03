@@ -369,7 +369,11 @@ fn a_survey_older_than_a_streamed_agent_status_keeps_the_streamed_one() {
     let mut engine = Engine::new();
     let mut s = fixture();
     let set = |s: &mut herdr::Survey, status: herdr::AgentStatus| {
-        let p = s.panes.iter_mut().find(|p| p.pane_id.as_str() == "w1:p1").unwrap();
+        let p = s
+            .panes
+            .iter_mut()
+            .find(|p| p.pane_id.as_str() == "w1:p1")
+            .unwrap();
         p.agent = Some("claude".into());
         p.agent_status = status;
     };
@@ -398,7 +402,11 @@ fn a_survey_older_than_a_streamed_agent_status_keeps_the_streamed_one() {
     // A survey requested at 1,500 (its snapshot still says working) lands late.
     engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_500));
     let a = agent(&engine);
-    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, true), "stale survey won");
+    assert_eq!(
+        (a.status, a.attention),
+        (AgentStatus::Blocked, true),
+        "stale survey won"
+    );
 
     // One requested after the stream's report is believed.
     engine.apply_internal(Internal::Surveyed(None, Box::new(s), 2_500));
