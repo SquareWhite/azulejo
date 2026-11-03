@@ -3,7 +3,7 @@
 # `.azulejo.toml` and run `azj layout apply` there.
 
 name = "shop"            # workspace name; defaults to the folder's name
-layout = "tall"          # master left, the rest stacked evenly on the right
+layout = "tile"          # master left, the rest stacked evenly on the right
 
 [[tile]]
 title = "editor"

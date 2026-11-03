@@ -54,10 +54,26 @@ split_auto  = "ctrl+cmd+t"            # "tall" rule: master left, stack right, a
 split_down  = "ctrl+cmd+shift+t"
 split_right = "ctrl+cmd+v"
 
-# Tall-layout rules (herdr: tall.py promote / rotate / equalize)
-promote_tile    = "alt+enter"         # swap focused tile with the master
+# Master-stack rules (herdr: tall.py promote / rotate / equalize). In a
+# dynamic Tile tab (the default for new tabs, ADR 0010) promote moves the tile
+# to the front of the order and equalize resets the stack sizes.
+promote_tile    = "alt+enter"         # to master
 rotate_layout   = "alt+o"             # master left <-> master on top
 equalize_layout = "alt+shift+e"       # even out the stack
+
+# Dynamic layouts (ADR 0010): Bismuth's Meta chords on the alt layer.
+cycle_layout_next      = "alt+backslash"         # tile -> monocle -> three_column
+cycle_layout_previous  = "alt+shift+backslash"
+toggle_layout_tile     = "alt+t"                 # bash/zsh lose alt+t (transpose words) in tiles
+toggle_layout_monocle  = "alt+z"                 # alt+m is Hammerspoon's, alt+shift+m is zoom
+toggle_layout_manual   = "alt+shift+t"           # freeze to a split tree, or restore it
+increase_masters       = "alt+equal"
+decrease_masters       = "alt+minus"
+grow_master_area       = "alt+shift+equal"
+shrink_master_area     = "alt+shift+minus"
+move_position_next     = "alt+shift+bracketright"
+move_position_previous = "alt+shift+bracketleft"
+rotate_part            = "alt+shift+o"           # several masters side by side <-> stacked
 
 # Workspaces (herdr: cmd+t, cmd+1..9, alt+0)
 new_workspace    = "cmd+t"
@@ -115,6 +131,19 @@ split_right = "ctrl+super+v"
 promote_tile    = "alt+enter"
 rotate_layout   = "alt+o"
 equalize_layout = "alt+shift+e"
+
+cycle_layout_next      = "alt+backslash"
+cycle_layout_previous  = "alt+shift+backslash"
+toggle_layout_tile     = "alt+t"
+toggle_layout_monocle  = "alt+z"
+toggle_layout_manual   = "alt+shift+t"
+increase_masters       = "alt+equal"
+decrease_masters       = "alt+minus"
+grow_master_area       = "alt+shift+equal"
+shrink_master_area     = "alt+shift+minus"
+move_position_next     = "alt+shift+bracketright"
+move_position_previous = "alt+shift+bracketleft"
+rotate_part            = "alt+shift+o"
 
 new_workspace    = "super+t"
 switch_workspace = "super+1..8"

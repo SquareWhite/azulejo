@@ -1,7 +1,7 @@
 //! Random op sequences against the session. After every op the invariants must
 //! hold, and a refused op must leave the session exactly as it was.
 
-use azulejo_model::{Direction, Session, Tile, TileContent, TileId};
+use azulejo_model::{Direction, InsertAt, LayoutKind, Session, Tile, TileContent, TileId};
 use proptest::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -31,6 +31,23 @@ enum Op {
     Promote(usize),
     Rotate(usize),
     Equalize(usize),
+    SetLayout(usize, LayoutKind),
+    ToggleLayout(usize, LayoutKind),
+    CycleLayout(usize, i32),
+    Masters(usize, i32),
+    MasterRatio(usize, f64),
+    MoveOrder(usize, i32),
+    RotateTurn(usize, bool),
+    RotatePart(usize),
+}
+
+fn kind() -> impl Strategy<Value = LayoutKind> {
+    prop::sample::select(vec![
+        LayoutKind::Manual,
+        LayoutKind::Tile,
+        LayoutKind::Monocle,
+        LayoutKind::ThreeColumn,
+    ])
 }
 
 fn direction() -> impl Strategy<Value = Direction> {
@@ -65,6 +82,14 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (0usize..64).prop_map(Op::Promote),
         2 => (0usize..64).prop_map(Op::Rotate),
         2 => (0usize..64).prop_map(Op::Equalize),
+        3 => (0usize..64, kind()).prop_map(|(t, k)| Op::SetLayout(t, k)),
+        1 => (0usize..64, kind()).prop_map(|(t, k)| Op::ToggleLayout(t, k)),
+        1 => (0usize..64, -2i32..3).prop_map(|(t, s)| Op::CycleLayout(t, s)),
+        2 => (0usize..64, -3i32..4).prop_map(|(t, d)| Op::Masters(t, d)),
+        2 => (0usize..64, -0.7f64..0.7).prop_map(|(t, d)| Op::MasterRatio(t, d)),
+        2 => (0usize..64, -3i32..4).prop_map(|(t, s)| Op::MoveOrder(t, s)),
+        1 => (0usize..64, any::<bool>()).prop_map(|(t, r)| Op::RotateTurn(t, r)),
+        1 => (0usize..64).prop_map(Op::RotatePart),
     ]
 }
 
@@ -212,6 +237,46 @@ fn apply(s: &mut Session, op: &Op) -> Result<(), azulejo_model::ModelError> {
                 s.equalize(id)?;
             }
         }
+        Op::SetLayout(i, k) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.set_layout(id, k)?;
+            }
+        }
+        Op::ToggleLayout(i, k) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.toggle_layout(id, k)?;
+            }
+        }
+        Op::CycleLayout(i, step) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.cycle_layout(id, step)?;
+            }
+        }
+        Op::Masters(i, d) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.change_masters(id, d)?;
+            }
+        }
+        Op::MasterRatio(i, d) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.change_master_ratio(id, d)?;
+            }
+        }
+        Op::MoveOrder(i, step) => {
+            if let Some(id) = nth(&tiles, i) {
+                s.move_in_order(id, step)?;
+            }
+        }
+        Op::RotateTurn(i, reverse) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.rotate_turn(id, reverse)?;
+            }
+        }
+        Op::RotatePart(i) => {
+            if let Some(id) = nth(&tabs, i) {
+                s.rotate_part(id)?;
+            }
+        }
     }
     Ok(())
 }
@@ -220,8 +285,15 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 10_000, ..ProptestConfig::default() })]
 
     #[test]
-    fn random_op_sequences_keep_the_invariants(ops in prop::collection::vec(op(), 1..40)) {
+    fn random_op_sequences_keep_the_invariants(
+        ops in prop::collection::vec(op(), 1..40),
+        default in kind(),
+        insert in prop::sample::select(vec![InsertAt::End, InsertAt::Master, InsertAt::AfterFocused]),
+    ) {
         let mut session = Session::new();
+        // New tabs start as any kind, so every op runs against every kind.
+        session.prefs.default = default;
+        session.prefs.insert = insert;
         let (_, ws) = session.create_window("main", None);
         session.create_tab(ws, Tile::new(TileContent::terminal()), None).unwrap();
         prop_assert_eq!(session.check_invariants(), Ok(()));

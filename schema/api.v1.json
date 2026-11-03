@@ -928,7 +928,7 @@
           "type": "object"
         },
         {
-          "description": "Opens a tile at the end of the tab's stack, whichever tile has focus; a\nlone tile becomes master | stack. Evens out the stack afterwards.",
+          "description": "Opens a tile at the end of the tab's stack, whichever tile has focus; a\nlone tile becomes master | stack. In a manual tab the stack is evened\nout afterwards; in a dynamic tab the tile goes where `[layout] insert`\nsays.",
           "properties": {
             "method": {
               "const": "layout.split_auto",
@@ -945,7 +945,7 @@
           "type": "object"
         },
         {
-          "description": "Swaps a tile with its tab's master; focus stays on the tile.",
+          "description": "Swaps a tile with its tab's master (manual tab) or moves it to the\nfront of the order (dynamic tab); focus stays on the tile.",
           "properties": {
             "method": {
               "const": "layout.promote",
@@ -962,14 +962,14 @@
           "type": "object"
         },
         {
-          "description": "Toggles master on the left ↔ master on top, keeping the stack's order.",
+          "description": "Toggles master on the left ↔ master on top, keeping the stack's order.\nIn a Tile tab, `reverse` makes it a quarter turn (absent: toggle;\n`false`: clockwise; `true`: anticlockwise) and `part` instead turns\nonly the master area (\"rotate part\").",
           "properties": {
             "method": {
               "const": "layout.rotate",
               "type": "string"
             },
             "params": {
-              "$ref": "#/$defs/TabTarget"
+              "$ref": "#/$defs/LayoutRotate"
             }
           },
           "required": [
@@ -987,6 +987,108 @@
             },
             "params": {
               "$ref": "#/$defs/TabTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Switches a tab to a layout kind: `manual` or a dynamic one.",
+          "properties": {
+            "method": {
+              "const": "layout.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSetKind"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Switches a tab to `kind`, or back to its previous kind if `kind` is\nalready active.",
+          "properties": {
+            "method": {
+              "const": "layout.toggle",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSetKind"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Steps through the configured cycle of layout kinds.",
+          "properties": {
+            "method": {
+              "const": "layout.cycle",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutCycle"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Adds (or with a negative `delta` removes) masters in a Tile or Three\nColumn tab.",
+          "properties": {
+            "method": {
+              "const": "layout.masters",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutMasters"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Grows (positive `delta`) or shrinks the master area of a Tile or Three\nColumn tab.",
+          "properties": {
+            "method": {
+              "const": "layout.master_ratio",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutMasterRatio"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Moves a tile `step` places along its dynamic tab's order, wrapping.",
+          "properties": {
+            "method": {
+              "const": "layout.move_order",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutMoveOrder"
             }
           },
           "required": [
@@ -2578,6 +2680,28 @@
       },
       "type": "object"
     },
+    "LayoutCycle": {
+      "properties": {
+        "step": {
+          "default": 1,
+          "description": "Positions to move through the cycle; negative goes back. Defaults to 1.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "type": "object"
+    },
     "LayoutExport": {
       "properties": {
         "path": {
@@ -2623,6 +2747,75 @@
       ],
       "type": "object"
     },
+    "LayoutKind": {
+      "description": "How a tab arranges its tiles.",
+      "oneOf": [
+        {
+          "const": "manual",
+          "description": "A split tree edited by hand; the tree is the source of truth.",
+          "type": "string"
+        },
+        {
+          "const": "tile",
+          "description": "Masters on one side, a stack on the other.",
+          "type": "string"
+        },
+        {
+          "const": "monocle",
+          "description": "Every tile full size, the focused one on top.",
+          "type": "string"
+        },
+        {
+          "const": "three_column",
+          "description": "Masters centred, stacks left and right.",
+          "type": "string"
+        }
+      ]
+    },
+    "LayoutMasterRatio": {
+      "properties": {
+        "delta": {
+          "default": 0.05,
+          "description": "Change in the master area's share; negative shrinks. Defaults to 0.05.",
+          "format": "double",
+          "type": "number"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "type": "object"
+    },
+    "LayoutMasters": {
+      "properties": {
+        "delta": {
+          "default": 1,
+          "description": "How many masters to add; negative removes. Defaults to 1.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "type": "object"
+    },
     "LayoutMove": {
       "properties": {
         "direction": {
@@ -2642,6 +2835,50 @@
       "required": [
         "direction"
       ],
+      "type": "object"
+    },
+    "LayoutMoveOrder": {
+      "properties": {
+        "step": {
+          "default": 1,
+          "description": "Places to move; negative moves towards the front. Defaults to 1.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tile."
+        }
+      },
+      "type": "object"
+    },
+    "LayoutParams": {
+      "description": "Every dynamic kind's parameters, remembered across switches.",
+      "properties": {
+        "three_column": {
+          "$ref": "#/$defs/ThreeColumnParams",
+          "default": {
+            "masters": 1,
+            "ratio": 0.6
+          }
+        },
+        "tile": {
+          "$ref": "#/$defs/TileParams",
+          "default": {
+            "masters": 1,
+            "orientation": "left",
+            "ratio": 0.5,
+            "rotate_part": false
+          }
+        }
+      },
       "type": "object"
     },
     "LayoutResize": {
@@ -2668,6 +2905,55 @@
       },
       "required": [
         "direction"
+      ],
+      "type": "object"
+    },
+    "LayoutRotate": {
+      "properties": {
+        "part": {
+          "description": "Tile tabs: turn only the master area, so several masters sit side by\nside instead of stacked.",
+          "type": "boolean"
+        },
+        "reverse": {
+          "description": "Tile tabs: a quarter turn, anticlockwise when `true`. Absent toggles\nmaster left ↔ top.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "type": "object"
+    },
+    "LayoutSetKind": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/LayoutKind"
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
+      "required": [
+        "kind"
       ],
       "type": "object"
     },
@@ -2733,10 +3019,44 @@
       "type": "object"
     },
     "LayoutState": {
-      "description": "A tab's layout, as `layout.changed` and `layout.get` report it.",
+      "description": "A tab's layout, as `layout.changed` and `layout.get` report it.\n\nShells draw from `rects`: every tile's rectangle in the unit square, its\nstacking order and whether it's shown (Monocle hides all but the focused\ntile without resizing them). `tree` is the tab's split tree: the source of\ntruth for manual tabs, derived for dynamic ones (ADR 0010).",
       "properties": {
         "focused": {
           "$ref": "#/$defs/TileId"
+        },
+        "kind": {
+          "$ref": "#/$defs/LayoutKind",
+          "default": "manual"
+        },
+        "order": {
+          "description": "Tile order of a dynamic tab, masters first; empty for manual tabs.",
+          "items": {
+            "$ref": "#/$defs/TileId"
+          },
+          "type": "array"
+        },
+        "params": {
+          "$ref": "#/$defs/LayoutParams",
+          "default": {
+            "three_column": {
+              "masters": 1,
+              "ratio": 0.6
+            },
+            "tile": {
+              "masters": 1,
+              "orientation": "left",
+              "ratio": 0.5,
+              "rotate_part": false
+            }
+          },
+          "description": "Every kind's parameters, as the tab remembers them."
+        },
+        "rects": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Placement"
+          },
+          "type": "array"
         },
         "tab": {
           "$ref": "#/$defs/TabId"
@@ -2934,6 +3254,43 @@
         }
       ]
     },
+    "Orientation": {
+      "description": "Which side the Tile layout's masters sit on.",
+      "enum": [
+        "left",
+        "top",
+        "right",
+        "bottom"
+      ],
+      "type": "string"
+    },
+    "Placement": {
+      "description": "Where one tile goes. `rect` is in the unit square, like\n[`Node::rects`]; higher `z` draws on top; hidden tiles keep their rect but\naren't drawn (Monocle's tiles under the top one).",
+      "properties": {
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "z": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tile",
+        "rect",
+        "z",
+        "visible"
+      ],
+      "type": "object"
+    },
     "PreviewContent": {
       "description": "A rendered preview, from `preview.updated` or `preview.get`.",
       "properties": {
@@ -3050,6 +3407,34 @@
           "type": "string"
         }
       ]
+    },
+    "Rect": {
+      "description": "A rectangle in the unit square, origin top left.",
+      "properties": {
+        "height": {
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
     },
     "Reply": {
       "oneOf": [
@@ -3449,11 +3834,22 @@
         "id": {
           "$ref": "#/$defs/TabId"
         },
+        "layout": {
+          "$ref": "#/$defs/TabLayout",
+          "description": "How the tiles are arranged (ADR 0010). Old state files have none and\nload as manual. For dynamic kinds `root` is derived from it."
+        },
         "name": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "recent": {
+          "description": "Recently focused tiles, most recent first: directional focus breaks\nties with it.",
+          "items": {
+            "$ref": "#/$defs/TileId"
+          },
+          "type": "array"
         },
         "root": {
           "$ref": "#/$defs/Node"
@@ -3528,6 +3924,11 @@
         "id": {
           "$ref": "#/$defs/TabId"
         },
+        "kind": {
+          "$ref": "#/$defs/LayoutKind",
+          "default": "manual",
+          "description": "The tab's layout kind, for a subtle hint in the tab bar."
+        },
         "name": {
           "type": [
             "string",
@@ -3537,6 +3938,73 @@
       },
       "required": [
         "id"
+      ],
+      "type": "object"
+    },
+    "TabLayout": {
+      "description": "A tab's arrangement. For `manual` only `previous`, `params` and `kind`\nmatter; `order` and `weights` are empty.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/LayoutKind"
+        },
+        "manual": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Node"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The last hand-made tree, restored when switching back to manual while\nit still holds the same tiles."
+        },
+        "order": {
+          "description": "Tile order, authoritative for dynamic kinds: masters first.",
+          "items": {
+            "$ref": "#/$defs/TileId"
+          },
+          "type": "array"
+        },
+        "params": {
+          "$ref": "#/$defs/LayoutParams",
+          "default": {
+            "three_column": {
+              "masters": 1,
+              "ratio": 0.6
+            },
+            "tile": {
+              "masters": 1,
+              "orientation": "left",
+              "ratio": 0.5,
+              "rotate_part": false
+            }
+          }
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayoutKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The kind before the last switch, for toggling back."
+        },
+        "weights": {
+          "additionalProperties": false,
+          "description": "Per-tile size weights within a column; absent means 1.0.",
+          "patternProperties": {
+            "^tile_[0-9A-HJKMNP-TV-Z]{26}$": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
       ],
       "type": "object"
     },
@@ -3618,6 +4086,11 @@
         },
         "id": {
           "$ref": "#/$defs/TabId"
+        },
+        "kind": {
+          "$ref": "#/$defs/LayoutKind",
+          "default": "manual",
+          "description": "The tab's layout kind, for a subtle hint in the tab bar."
         },
         "name": {
           "type": [
@@ -3810,6 +4283,28 @@
       },
       "required": [
         "text"
+      ],
+      "type": "object"
+    },
+    "ThreeColumnParams": {
+      "description": "The Three Column layout's parameters.",
+      "properties": {
+        "masters": {
+          "description": "How many tiles share the centre column: 1–10.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ratio": {
+          "description": "The centre column's share of the width: 0.2–0.75.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "masters",
+        "ratio"
       ],
       "type": "object"
     },
@@ -4304,6 +4799,37 @@
           "description": "Only tiles in this workspace; all tiles when absent."
         }
       },
+      "type": "object"
+    },
+    "TileParams": {
+      "description": "The Tile layout's parameters.",
+      "properties": {
+        "masters": {
+          "description": "How many tiles sit in the master area: 0–10.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orientation": {
+          "$ref": "#/$defs/Orientation",
+          "default": "left"
+        },
+        "ratio": {
+          "description": "The master area's share of the tab: 0.2–0.8.",
+          "format": "double",
+          "type": "number"
+        },
+        "rotate_part": {
+          "default": false,
+          "description": "Bismuth's \"rotate part\": masters split along the main axis instead of\nacross it, so with the master area on the left several masters sit\nside by side rather than stacked (and the other way round on top).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "masters",
+        "ratio"
+      ],
       "type": "object"
     },
     "TileRename": {
@@ -4807,6 +5333,12 @@
     "layout.promote",
     "layout.rotate",
     "layout.equalize",
+    "layout.set",
+    "layout.toggle",
+    "layout.cycle",
+    "layout.masters",
+    "layout.master_ratio",
+    "layout.move_order",
     "terminal.bind",
     "terminal.respawn",
     "terminal.send_text",

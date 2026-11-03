@@ -167,6 +167,11 @@ extension AppController {
                 params["path"] = absolutePath(value, controller: controller)
             case "url":
                 params["url"] = value
+            case "kind":
+                // "Three Column" and "three-column" both mean three_column.
+                params["kind"] = value.lowercased()
+                    .replacingOccurrences(of: " ", with: "_")
+                    .replacingOccurrences(of: "-", with: "_")
             default:
                 params[prompt] = value
             }

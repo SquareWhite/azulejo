@@ -13,12 +13,12 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-export AZJ_DEV_NAME=restore
-dev="$root/.dev/restore"
+export AZJ_DEV_NAME="${AZJ_DEV_NAME:-restore}"
+dev="$root/.dev/$AZJ_DEV_NAME"
 sock="$dev/run/azulejo.sock"
 log="$dev/logs/app.log"
 out="$dev/out/restore"
-session=azj-dev-restore
+session="azj-dev-$AZJ_DEV_NAME"
 dev_sh="$root/apps/macos/dev.sh"
 target=6
 

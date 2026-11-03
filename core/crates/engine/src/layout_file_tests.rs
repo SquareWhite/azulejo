@@ -449,7 +449,7 @@ fn export_of_one_tab_and_relative_paths() {
         }
         other => panic!("{other:?}"),
     };
-    assert!(toml.contains("layout = \"tall\""), "{toml}");
+    assert!(toml.contains("layout = \"tile\""), "{toml}");
     assert!(
         toml.contains("cwd = \"web\""),
         "relative to the file: {toml}"
@@ -534,5 +534,118 @@ fn on_exit_per_tile_parses_and_round_trips() {
         exported.matches("on_exit = \"keep\"").count(),
         1,
         "{exported}"
+    );
+}
+
+#[test]
+fn dynamic_kinds_from_files() {
+    use azulejo_model::{LayoutKind, Orientation};
+    // `tall` is `tile` with one master.
+    let plan = parse(SCRIPTED, Some(&base())).unwrap();
+    let tab = &plan.tabs[0];
+    assert_eq!(tab.layout.kind, LayoutKind::Tile);
+    assert_eq!(tab.layout.order, tab.root.tiles());
+
+    let text = "layout = \"three_column\"\nmasters = 2\nratio = 0.5\n[[tile]]\n[[tile]]\n[[tile]]\n[[tile]]\n";
+    let plan = parse(text, None).unwrap();
+    let tab = &plan.tabs[0];
+    assert_eq!(tab.layout.kind, LayoutKind::ThreeColumn);
+    assert_eq!(tab.layout.params.three_column.masters, 2);
+    assert_eq!(tab.layout.params.three_column.ratio, 0.5);
+
+    let text =
+        "layout = \"tile\"\nmasters = 2\norientation = \"top\"\n[[tile]]\n[[tile]]\n[[tile]]\n";
+    let tab = &parse(text, None).unwrap().tabs[0];
+    assert_eq!(tab.layout.params.tile.masters, 2);
+    assert_eq!(tab.layout.params.tile.orientation, Orientation::Top);
+
+    let tab = &parse("layout = \"monocle\"\n[[tile]]\n[[tile]]\n", None)
+        .unwrap()
+        .tabs[0];
+    assert_eq!(tab.layout.kind, LayoutKind::Monocle);
+
+    // Manual arrangements stay manual.
+    let tab = &parse("layout = \"rows\"\n[[tile]]\n[[tile]]\n", None)
+        .unwrap()
+        .tabs[0];
+    assert_eq!(tab.layout.kind, LayoutKind::Manual);
+
+    for (text, needle) in [
+        (
+            "layout = \"tile\"\nratio = 0.9\n[[tile]]\n[[tile]]\n",
+            "ratio",
+        ),
+        ("layout = \"tile\"\nmasters = 11\n[[tile]]\n", "masters"),
+        ("layout = \"tall\"\nmasters = 2\n[[tile]]\n", "one master"),
+        (
+            "layout = \"three_column\"\norientation = \"top\"\n[[tile]]\n",
+            "orientation",
+        ),
+        ("layout = \"monocle\"\nratio = 0.5\n[[tile]]\n", "monocle"),
+        ("layout = \"rows\"\nmasters = 2\n[[tile]]\n", "masters"),
+        (
+            "layout = \"tile\"\nsizes = [1, 2]\n[[tile]]\n[[tile]]\n",
+            "sizes",
+        ),
+    ] {
+        let err = parse(text, None).unwrap_err();
+        assert!(err.message.contains(needle), "{text}: {}", err.message);
+    }
+}
+
+#[test]
+fn dynamic_tabs_export_as_their_kind_and_round_trip() {
+    use azulejo_model::LayoutKind;
+    let mut engine = Engine::new();
+    let text = "layout = \"three_column\"\nmasters = 2\nratio = 0.5\n[[tile]]\ncommand = \"a\"\n[[tile]]\ncommand = \"b\"\n[[tile]]\ncommand = \"c\"\n";
+    engine
+        .execute(apply_cmd(text, ApplyMode::NewWorkspace))
+        .unwrap();
+    let tab = engine.session().focus().tab.unwrap();
+    // Reorder, so export must follow the order, not the tree.
+    let last = *engine
+        .session()
+        .tab(tab)
+        .unwrap()
+        .layout
+        .order
+        .last()
+        .unwrap();
+    engine
+        .execute(Command::LayoutPromote(azulejo_protocol::TileTarget {
+            tile: Some(last),
+        }))
+        .unwrap();
+    let toml = match engine
+        .execute(Command::LayoutExport(LayoutExport {
+            tab: Some(tab),
+            ..LayoutExport::default()
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::LayoutFile { toml, .. } => toml,
+        other => panic!("{other:?}"),
+    };
+    assert!(toml.contains("layout = \"three_column\""), "{toml}");
+    assert!(toml.contains("masters = 2"), "{toml}");
+    let plan = parse(&toml, None).unwrap();
+    let again = &plan.tabs[0];
+    assert_eq!(again.layout.kind, LayoutKind::ThreeColumn);
+    assert_eq!(
+        again.layout.params,
+        engine.session().tab(tab).unwrap().layout.params
+    );
+    let commands = |t: &Tab| -> Vec<String> {
+        t.layout
+            .order
+            .iter()
+            .map(|id| terminal(t.tile(*id).unwrap()).1.unwrap()[0].clone())
+            .collect()
+    };
+    assert_eq!(commands(again), vec!["c", "a", "b"]);
+    assert_eq!(
+        commands(engine.session().tab(tab).unwrap()),
+        vec!["c", "a", "b"]
     );
 }

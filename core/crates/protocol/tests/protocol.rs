@@ -117,7 +117,35 @@ fn sample_commands() -> Vec<Command> {
             content: None,
         }),
         Command::LayoutPromote(TileTarget { tile: None }),
-        Command::LayoutRotate(TabTarget { tab: None }),
+        Command::LayoutRotate(LayoutRotate {
+            tab: None,
+            reverse: Some(true),
+            part: false,
+        }),
+        Command::LayoutSet(LayoutSetKind {
+            tab: Some(tab),
+            kind: LayoutKind::ThreeColumn,
+        }),
+        Command::LayoutToggle(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::Monocle,
+        }),
+        Command::LayoutCycle(LayoutCycle {
+            tab: None,
+            step: -1,
+        }),
+        Command::LayoutMasters(LayoutMasters {
+            tab: None,
+            delta: 2,
+        }),
+        Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: -0.05,
+        }),
+        Command::LayoutMoveOrder(LayoutMoveOrder {
+            tile: Some(tile),
+            step: 1,
+        }),
         Command::LayoutEqualize(TabTarget { tab: Some(tab) }),
         Command::TerminalBind(TerminalBind {
             tile,
@@ -288,6 +316,7 @@ fn sample_events() -> Vec<Event> {
             tab: TabInfo {
                 id: tab,
                 name: None,
+                kind: LayoutKind::Tile,
             },
         },
         Event::TabClosed { workspace, tab },
@@ -296,6 +325,7 @@ fn sample_events() -> Vec<Event> {
             tab: TabInfo {
                 id: tab,
                 name: Some("x".into()),
+                kind: LayoutKind::Tile,
             },
         },
         Event::TabsReordered {
@@ -322,6 +352,15 @@ fn sample_events() -> Vec<Event> {
             tree: Node::leaf(tile.id),
             focused: tile.id,
             zoomed: Some(tile.id),
+            kind: LayoutKind::Tile,
+            params: LayoutParams::default(),
+            order: vec![tile.id],
+            rects: vec![Placement {
+                tile: tile.id,
+                rect: Rect::UNIT,
+                z: 0,
+                visible: true,
+            }],
         }),
         Event::FocusChanged(Focus {
             window: Some(window),
@@ -466,6 +505,10 @@ fn replies_round_trip() {
             tree: Node::leaf(tile.id),
             focused: tile.id,
             zoomed: None,
+            kind: LayoutKind::Manual,
+            params: LayoutParams::default(),
+            order: Vec::new(),
+            rects: Vec::new(),
         }),
         Reply::Tile(TileInfo {
             window: WindowId::new(),
@@ -510,6 +553,7 @@ fn replies_round_trip() {
                 tab: TabInfo {
                     id: TabId::new(),
                     name: Some("dev".into()),
+                    kind: LayoutKind::Tile,
                 },
             }],
         },

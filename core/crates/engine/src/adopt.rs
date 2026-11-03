@@ -250,14 +250,17 @@ pub fn build_tab(
         .unwrap_or(tiles[0].id);
     let zoomed = layout.is_some_and(|l| l.zoomed).then_some(focused);
 
-    Tab {
-        id: TabId::new(),
-        name: tab.label.clone().filter(|l| !l.trim().is_empty()),
+    // Adopted tabs stay manual: they mirror herdr's own geometry (ADR 0010).
+    let mut out = Tab::manual(
+        TabId::new(),
+        tab.label.clone().filter(|l| !l.trim().is_empty()),
         root,
         tiles,
         focused,
-        zoomed,
-    }
+    );
+    out.zoomed = zoomed;
+    out.recent.clear();
+    out
 }
 
 /// A terminal tile bound to an existing herdr pane. Its agent state comes

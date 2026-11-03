@@ -168,6 +168,12 @@ Checked against `docs/keybindings.md`: none of these are owned by Hammerspoon (`
 - A plain split behaves differently in a dynamic tab (the layout decides where the tile goes). The reply says so, and `alt+shift+t` gets the old behaviour back for that tab.
 - Bismuth is archived, so there's no upstream to track; we port its maths once and own it.
 
+## Implementation notes (2.12)
+
+- The macOS shell rebuilds from `session.get`, which carries the tab's tree and `layout` but not `rects`. For Tile and Three Column it draws the derived tree, which reproduces the rects exactly (a model invariant checks this after every op). For Monocle it gives every tile the full tab and shows only the focused one, so a focus switch restacks without resizing a terminal. `layout.changed` still carries `rects` for API clients; an overlapping kind added later would move the shell onto them.
+- Directional focus now breaks ties by most recently focused in manual tabs too, as decided above. In a tall layout, focusing right from the master lands on the stack tile used last rather than the middle one.
+- `layout = "tall"` with a `ratio` outside 0.2–0.8 is now an error in layout files; older files with such ratios need `layout = "rows"`/`"columns"` or an explicit `root`.
+
 ## Decisions (Nov 3, 2026)
 
 the maintainer answered the open questions:
