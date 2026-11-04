@@ -390,3 +390,23 @@ macOS test environment, herdr 0.9.1, Nov 4, 2026. `cargo test -p azulejo-herdr -
 - The staging tab exists for the length of a rebuild, about 3–4 ms here: one TUI frame at most.
 - Run 1's merge is the first API call after the attach client started; herdr's occasional ~100 ms connection pickup (see "Also seen" above) fits.
 - Pushes wait for 150 ms of quiet per tab first (`mirror::PUSH_QUIET`), so a settled change reaches herdr 150–160 ms after the last model change.
+
+## Reflow motion (ADR 0004, Nov 4 reflow amendment)
+
+Nov 4, 2026, Apple Silicon, 120 Hz, screen unlocked, load average about 3 (other agents running). `apps/macos/automation/anim.sh` stress, three runs of each style alternating (`AZJ_ANIM_STYLE=crop`, then `reflow`), same build: 105 motions with 11 retargets each.
+
+| Measure | Crop (runs 1–3) | Reflow (runs 1–3) |
+| --- | --- | --- |
+| Display-link ticks | 2,474 · 2,479 · 2,415 | 2,491 · 2,480 · 2,409 |
+| Dropped ticks | 5 · 7 · 2 | 0 · 2 · 0 |
+| Main-thread passes over a frame while moving | 0 · 0 · 0 | 0 · 1 · 0 |
+| Passes over half a frame | 9 · 8 · 10 | 18 · 17 · 15 |
+| Pass p99 / max (ms) | 1.4–1.6 / 5.8–6.6 | 2.5 / 6.7–10.4 |
+| Setup before the first frame, median / max (ms) | 13 / 28 | 0.7 / 19 |
+| PTY resizes (expected minimum / actual) | 345 / 345 | 357 / 1,473–1,489 (≈ 1,125 live) |
+
+- Reflow does more on the main thread each frame (every moving card lays out), so its passes run longer (p99 1.5 → 2.5 ms) but stay well under a frame; it drops fewer ticks than crop because a key press no longer snapshots and synchronously redraws every resized terminal (setup 13 → 0.7 ms median).
+- About 4.3× the PTY resizes: per terminal per changed-size motion, ≈ 3 live ones plus the final one.
+- Before two fixes the first reflow run had 65 passes over a frame and 9 dropped ticks: libghostty's layer redrew synchronously on every live resize (`needsDisplayOnBoundsChange`, 2–4 ms each, all terminals on the same tick), and tile headers measured their text at every layout (0.12 ms per header per frame, now 0.03).
+- herdr: with `AZJ_DEBUG_MIRROR=1`, four terminals and eight sidebar toggles (158 live resizes) produced no herdr events and no mirror pushes or pulls; the run's totals (6 pushes, 13 events, all from the splits and one ratio change) match crop's.
+- `--slow` (1.5 s motions, reflow): 86 captures, 0 stray pixels outside the cards, 0 STALE frames.

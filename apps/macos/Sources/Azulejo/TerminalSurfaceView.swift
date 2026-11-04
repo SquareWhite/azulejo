@@ -33,6 +33,27 @@ final class TerminalSurfaceView: NSView {
         return (Int(size.columns), Int(size.rows))
     }
 
+    /// Reflow motion: the surface resizes several times while its tile
+    /// moves. libghostty's layer redraws synchronously on every bounds
+    /// change (`needsDisplayOnBoundsChange`, waiting on the GPU, 2–4 ms on
+    /// the main thread, for every terminal that resizes in that frame);
+    /// while this is on, its renderer thread draws the new size instead, a
+    /// few ms later. The layer keeps its last frame top left until then
+    /// (no stretching) and drops frames drawn for another size.
+    var liveResizing = false {
+        didSet { layer?.needsDisplayOnBoundsChange = !liveResizing }
+    }
+
+    /// One cell in points, for live resizes that change the grid by whole
+    /// cells only (reflow motion).
+    var cellSize: CGSize? {
+        guard let surface else { return nil }
+        let size = ghostty_surface_size(surface)
+        let scale = contentScale > 0 ? contentScale : (window?.backingScaleFactor ?? 2)
+        guard size.cell_width_px > 0, size.cell_height_px > 0 else { return nil }
+        return CGSize(width: CGFloat(size.cell_width_px) / scale, height: CGFloat(size.cell_height_px) / scale)
+    }
+
     /// Creates the surface and starts `command`. Call only once the view has a
     /// non-zero frame: the PTY takes the surface's size before the child runs
     /// (herdr's attach rejects a zero-sized PTY; ADR 0006).

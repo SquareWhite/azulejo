@@ -104,16 +104,21 @@ class TileFrame: NSView, TileView, ThemeAware {
 
     override var isFlipped: Bool { false }
 
+    /// Where the content sits in a card of `size`: below the header, inside
+    /// a terminal's margin (at the sides and bottom, half of it under the
+    /// header).
+    func contentFrame(for size: NSSize) -> NSRect {
+        let h = ownsChrome ? 0 : min(Self.headerHeight, max(size.height, 0))
+        let body = max(size.height - h, 0)
+        let p = min(pad, size.width / 4, body / 4)
+        return NSRect(x: p, y: p, width: max(size.width - 2 * p, 0), height: max(body - p - p / 2, 0))
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         let h = ownsChrome ? 0 : min(Self.headerHeight, max(newSize.height, 0))
         header.frame = NSRect(x: 0, y: newSize.height - h, width: newSize.width, height: h)
-        let body = max(newSize.height - h, 0)
-        let p = min(pad, newSize.width / 4, body / 4)
-        // Terminals: the margin at the sides and bottom, half of it under the
-        // header.
-        content.frame = NSRect(x: p, y: p, width: max(newSize.width - 2 * p, 0),
-                               height: max(body - p - p / 2, 0))
+        content.frame = contentFrame(for: newSize)
         // Same coordinates as this view's bounds, so the caps and the dim
         // can follow a crop clip in them.
         overlays.frame = NSRect(origin: .zero, size: newSize)
@@ -381,6 +386,9 @@ final class MotionTileFrame: TileFrame, MotionAware {
         aware.placeSnapshot(convert(frame, to: content), cover: convert(cover, to: content))
     }
 
+    func liveResizeWillStart(final: CGSize) { aware.liveResizeWillStart(final: contentFrame(for: final).size) }
+    func liveResizeDidEnd() { aware.liveResizeDidEnd() }
+    var resizesLive: Bool { aware.resizesLive }
     func revealWhenFresh(clock: MotionClock) { aware.revealWhenFresh(clock: clock) }
     func motionDidEnd(clock: MotionClock) { aware.motionDidEnd(clock: clock) }
     func motionCancelled() { aware.motionCancelled() }
@@ -496,27 +504,47 @@ final class TileHeaderView: NSView, ThemeAware {
     /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
     private(set) var shownSubtitle = ""
 
-    private func render() { needsLayout = true }
+    private func render() {
+        labelKey = nil
+        widths = [:]
+        needsLayout = true
+    }
 
-    /// Title and subtitle for `room` points. A path subtitle loses folders
-    /// from its front ("…/work/azulejo"), so the folder that matters stays;
-    /// anything else, and a path whose last folder alone is too long, is cut
-    /// at the end by the label.
-    private func text(room: CGFloat) -> NSAttributedString {
+    /// Text widths for the current title and subtitle, and what the label
+    /// shows with its natural size. Reflow motion lays the strip out every
+    /// frame, so it measures and redraws text only when that changes.
+    private var widths: [String: CGFloat] = [:]
+    private var labelKey: String?
+    private var labelNatural = CGSize.zero
+
+    private func width(_ string: String, _ font: NSFont) -> CGFloat {
+        let key = "\(font.pointSize)\u{0}\(font.fontName)\u{0}\(string)"
+        if let w = widths[key] { return w }
+        if widths.count > 64 { widths = [:] }
+        let w = NSAttributedString(string: string, attributes: [.font: font]).size().width
+        widths[key] = w
+        return w
+    }
+
+    /// The subtitle as it fits in `room` points after the title. A path
+    /// loses folders from its front ("…/work/azulejo"), so the folder that
+    /// matters stays; anything else, and a path whose last folder alone is
+    /// too long, is cut at the end by the label.
+    private func fittedSubtitle(room: CGFloat) -> String {
+        guard !subtitleText.isEmpty else { return "" }
+        let subtitleRoom = room - ceil(width(titleText, Design.Font.headerTitle)) - 4
+        return Self.fitPath(subtitleText, room: subtitleRoom) { width(" — \($0)", Design.Font.headerSubtitle) }
+    }
+
+    private func text(subtitle: String) -> NSAttributedString {
         let text = NSMutableAttributedString(string: titleText, attributes: [
             .font: Design.Font.headerTitle,
             .foregroundColor: Design.Color.textPrimary,
         ])
-        shownSubtitle = ""
         if !subtitleText.isEmpty {
-            let subtitleRoom = room - ceil(text.size().width) - 4
-            let attributes: [NSAttributedString.Key: Any] = [
+            text.append(NSAttributedString(string: " — \(subtitle)", attributes: [
                 .font: Design.Font.headerSubtitle, .foregroundColor: Design.Color.textMuted,
-            ]
-            shownSubtitle = Self.fitPath(subtitleText, room: subtitleRoom) {
-                NSAttributedString(string: " — \($0)", attributes: attributes).size().width
-            }
-            text.append(NSAttributedString(string: " — \(shownSubtitle)", attributes: attributes))
+            ]))
         }
         return text
     }
@@ -538,6 +566,10 @@ final class TileHeaderView: NSView, ThemeAware {
 
     override func layout() {
         super.layout()
+        Perf.measure("header.layout") { layoutStrip() }
+    }
+
+    private func layoutStrip() {
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
         trailingInset = 0
@@ -562,10 +594,16 @@ final class TileHeaderView: NSView, ThemeAware {
             }
         }
         let room = max(right - margin - iconSize - spacing, 0)
-        label.attributedStringValue = text(room: room - 4)
-        // Measured from the text itself: a truncating label's intrinsic width
-        // follows its current frame, so a strip that grew kept the "…".
-        let natural = label.attributedStringValue.size()
+        shownSubtitle = fittedSubtitle(room: room - 4)
+        let key = "\(titleText)\u{0}\(shownSubtitle)"
+        if key != labelKey {
+            labelKey = key
+            label.attributedStringValue = text(subtitle: shownSubtitle)
+            // Measured from the text itself: a truncating label's intrinsic
+            // width follows its current frame, so a strip that grew kept the "…".
+            labelNatural = label.attributedStringValue.size()
+        }
+        let natural = labelNatural
         let labelHeight = ceil(natural.height)
         let labelWidth = min(ceil(natural.width) + 4, room)
         // Centred over the whole strip unless controls sit on the right; kept

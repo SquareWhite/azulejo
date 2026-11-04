@@ -859,7 +859,7 @@ mod tests {
             assert_eq!(animation["enabled"], true);
             assert_eq!(animation["duration_ms"], 200);
             assert_eq!(animation["curve"], "ease_out");
-            assert_eq!(animation["style"], "crop");
+            assert_eq!(animation["style"], "reflow");
             assert_eq!(animation["tab_switch"], "fade");
             assert_eq!(animation["reduce_motion"], "system");
             assert_eq!(animation["unfocused_split_opacity"], Value::Null);
