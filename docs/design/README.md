@@ -22,6 +22,7 @@ Everything sits on a dark window background (`#1b1d23`) as rounded cards with ev
 
 - **No title bar.** Full-size content view; traffic lights (red, yellow, green) at the top-left of the sidebar card, with a sidebar-toggle icon at the card's top-right.
 - The toolbar row shares the title-bar height: tab strip on the left, search field on the right.
+- **Sidebar toggle in motion** (Nov 4): the card slides out past the window's left edge and fades as it closes (and back as it opens), its right edge a gutter from the tiles' left edge all the way, while the tiles grow or shrink with the layout motion's crop rules. The toggle and the tab strip slide along. The traffic lights stay where they are, open or closed: on the card, then on the window colour.
 
 ## Sidebar (card, `#21252b`)
 
@@ -95,7 +96,7 @@ The values above live in [`shared/design/tokens.json`](../../shared/design/token
 - **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Each has a dark and a light value; the light ones are provisional.
 - **Tile radii and spacing** follow the mockup since D.5: gutter and outer margin 8 pt, tile radius 10 pt, header strip 28 pt, browser toolbar 36 pt, 8 pt margin round a terminal's text. The sidebar width (168 → 230 pt) moves with D.3.
 - **Tile cards** (D.5): the card's corners are the window colour drawn over the tile (`CornerCapLayer`, a nine-slice image), not a rounded mask, so the terminal's Metal surface and web views aren't masked (a rounded mask costs an offscreen pass). During crop motion the caps follow the moving clip.
-- **Header strips** (D.5): unfocused tiles `header` (#202329), the focused tile `headerFocused` (#21252b), with a `headerHairline` underneath, sampled from the mockup, whose focused tile is a shade lighter. Terminal titles are centred; tiles with controls on the right (preview, files) are left-aligned. Browser tiles have no header strip; their toolbar takes its place (`browserChrome`, address pill `browserField`, D.6).
+- **Header strips** (D.5): `header` (#21252b, the mockup's focused strip) on every tile, with a `headerHairline` underneath. Unfocused strips come out at the mockup's #202329 through the focus dim (below), not a colour of their own. Terminal titles are centred; tiles with controls on the right (preview, files) are left-aligned. Browser tiles have no header strip; their toolbar takes its place (`browserChrome`, address pill `browserField`, D.6).
 - **Preview** (D.7): Preview | Source pill (`previewToggleTrack`, `previewToggleSelected`); Open and Reveal show while the pointer is over the header. The page's dark palette (`shared/webview/preview.css`) now uses the mockup's One Dark values (body #252930).
 - **Status icons** (`Design.Status`): working `progress.indicator`, blocked `exclamationmark.circle.fill`, done `checkmark.circle`, idle `circle.dashed`, off and connecting `circle.dotted`, reconnecting `arrow.triangle.2.circlepath`, error `exclamationmark.triangle.fill`, connected `circle.fill`, each with its status colour.
 - **Blocked is yellow**, as in the mockup, where the shell used red before. Red is for errors only.
@@ -104,16 +105,19 @@ The values above live in [`shared/design/tokens.json`](../../shared/design/token
 - **Tab overflow** (provisional, pending the designer): tabs shrink to `tabFitMinWidth` and no further; past that the strip scrolls sideways, fades (`tabFadeWidth`) the edges that hide tabs, and scrolls the selected tab into view. When not even one tab fits at that width (the minimum window size), the strip shows the selected tab alone, shrunk down to its icon, and the search field gives way before the strip goes below that.
 - **After the Nov 4 e2e pass**: SF Symbol point sizes are tokens too (`Design.Symbol`, by where the symbol sits). The find bar drops its controls whole in narrow tiles (the count, then previous / next, then close) so the query keeps `findFieldMin`; the browser's back and forward give way the same way. The agent badge is a subview of the header strip, so it rides with the strip mid-motion. The browser's notice banner takes its own row over the page, and the config banner is capped at a fifth of the tile area, its text cut with the whole message in the tooltip.
 
-### Focus indicator (pending designer confirmation)
+### Focus indicator: unfocused tiles dim (decided Nov 4, 2026)
 
-The mockup doesn't show focus. Until the designer decides, the focused tile gets:
+the maintainer settled the designer question: **no outline round the focused tile; every unfocused tile dims instead.** The 1 pt accent outline, its slide between tiles and the orange zoom outline are gone (tokens `focus`, `zoom`, `border.focus`, `headerFocused` removed).
 
-- a 1 pt outline in the accent blue at 45 % opacity (`Design.Color.focus`, `Design.Border.focus`), drawn just outside the tile and sliding between tiles as before;
-- its header title at full brightness (`textPrimary`); other tiles' header titles use `textSecondary`;
-- its header strip a shade lighter (`headerFocused` vs `header`, D.5), as on the mockup's focused tile. The mockup's focused tile body is lighter too (#282c34 vs #252930); terminals draw their own body from the Ghostty theme, so that part isn't copied;
-- an orange outline instead while the tile is zoomed (`Design.Color.zoom`).
+- **What dims.** Each unfocused tile on screen gets `color.dimFill` (the window colour, #1b1d23) laid over the whole card, header strip, find bar and badge included, at `alpha.unfocusedDim` (25 %). The focused tile stays at full brightness. Every tile kind is drawn the same way otherwise: header titles in `textPrimary`, icons in `textSecondary`, strips in `header`.
+- **Why 25 % of the window colour.** It turns the mockup's focused colours into its unfocused ones: body #282c34 → #252830 (the mockup's unfocused body is #252930), header strip #21252b → #202329 (exactly the mockup's). So the old "focused header a shade lighter" and the mockup's lighter focused body both fall out of the one dim, terminals included, whatever their Ghostty theme. Text drops by about a fifth (terminal #abb2bf → #878d98, near `textMuted`), so unfocused content stays readable. Ghostty's own default is close: 30 % of the terminal background. Fading towards the window colour rather than each tile's background makes browser and preview tiles recede the same way terminals do.
+- **Ghostty's setting wins.** If the user's Ghostty config sets `unfocused-split-opacity` (0.15–1, clamped as Ghostty does), the dim is 1 − that; `1` turns dimming off. `unfocused-split-fill` replaces the fill colour. The core reads both from Ghostty's config files (a dev profile reads its own).
+- **When nothing dims:** one tile on screen, that is a lone tile, Monocle or zoom.
+- **The keyboard elsewhere:** with ⌘K open, the toolbar search or the sidebar's Files panel holding the keyboard, nothing changes: the last focused tile stays bright, the others dim. The dim follows the core's focused tile, not first responder.
+- **The window not key:** nothing changes either. Ghostty does the same: its overlay keeps the last focused split bright whatever the window's state (`SurfaceView.swift`: `isSplit && !isFocusedSurface`, no window check). Dimming everything would flash the whole tile area on every app switch and lose where focus is; dimming nothing would make a background window look focused. macOS already marks an inactive window (grey traffic lights).
+- **Motion.** Focus moving cross-fades the dim in 120 ms (`motion.focus`) on the `[animation]` curve; instantly with motion off or under Reduce Motion. Mid-motion the dim rides with the card's crop clip, like the corner caps.
 
-Changing any of these is a one-line edit in `tokens.json`.
+Changing the strength or the fill is a one-line edit in `tokens.json`.
 
 ## What the mockup needs, against the plan
 
@@ -141,7 +145,7 @@ Status as of Nov 3, 2026, after the maintainer's decisions. "Visual" means M2.5 
 | **Preview \| Source** toggle | F29, PLAN 2.15 | decided: M2, before polish | functional |
 | Rounded tile cards with gutters | — | M2.5 | visual |
 | One Dark chrome palette, terminal theme to match | M2.5 D.1 (design tokens) | decided: M2.5 | functional (theme) + visual |
-| Focus indicator | 1.6 focus ring, 2.1 ring animation, D.1 subtle default | done; the mockup shows none, so **ask the designer** (default described above) | visual |
+| Focus indicator | 1.6 focus ring, 2.1 ring animation, D.1 subtle default | **decided Nov 4**: no outline, unfocused tiles dim (above) | visual |
 | "session" wording ("Jump to session or tile") | keep "workspace" | decided: designer relabels | copy |
 
 ### Decisions on the functional items (Nov 3, 2026)

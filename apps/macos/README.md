@@ -120,8 +120,10 @@ keeps a closed workspace's panes, and that a relaunch doesn't bring it back.
 
 ## Layout motion (F4, PLAN 2.1)
 
-Layout changes animate: split, close, move, swap, resize, zoom and the tall
-actions, plus the focus ring and tab/workspace switches. Every tile goes to its
+Layout changes animate: split, close, move, swap, resize, zoom, the tall
+actions and the sidebar opening or closing (`toggle_sidebar`: the card slides
+and fades while the tile area grows or shrinks with it, a gutter apart), plus
+tab/workspace switches. Every tile goes to its
 final frame at the start of a motion and Core Animation carries it there
 visually, so nothing re-lays out per frame. A terminal that changes size first
 covers itself with an IOSurface copy of its last frame, resizes its PTY once
@@ -150,9 +152,27 @@ duration_ms = 200         # 0–1000
 curve = "ease_out"        # "ease_out", "ease_in_out", "linear"
 style = "crop"            # "crop", "scale", "outline"
 tab_switch = "fade"       # tab and workspace switches: "fade", "slide", "none"
-dim_inactive = false      # dim tiles without focus
 reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on; "ignore"
 ```
+
+### Focus: unfocused tiles dim
+
+There's no outline round the focused tile. Every other tile on screen dims,
+header strip included: the window colour laid over it at 25 %
+(`alpha.unfocusedDim`, `color.dimFill` in `shared/design/tokens.json`), which
+turns the mockup's focused tile colours into its unfocused ones. Nothing dims
+with one tile on screen (a lone tile, Monocle, zoom). The dim follows the
+focused tile, not the keyboard: with ⌘K open, the sidebar's Files panel or the
+search field in use, the last focused tile stays bright. It doesn't change
+when the window isn't key, as in Ghostty. Focus moving cross-fades it in
+120 ms on the motion curve; instantly with motion off or under Reduce Motion.
+
+Ghostty's own settings for this win when its config sets them, read by the
+core from Ghostty's config files: `unfocused-split-opacity` (0.15–1; the dim
+is 1 − that, so `1` turns dimming off) and `unfocused-split-fill` (hex). A
+dev profile reads `.dev/<name>/config/ghostty/config` instead, so dev runs
+never depend on your own Ghostty config for them. `[animation] dim_inactive`
+is retired: it only warns now.
 
 Changes apply on save (config hot reload). `apps/macos/automation/anim.sh`
 runs a 60-animation stress on a dev instance (frame pacing from the display
@@ -169,7 +189,7 @@ runs one style regardless of the config. The app can't run
 | `Core.swift` | C ABI wrapper: `send`, `execute` (replies), `key`, `action`, `keymap`, `info`; events hop to the main queue |
 | `AppDelegate.swift` | `AppController`: windows, refresh from `session.get`, actions the shell resolves (switch tab N, last tab, cycling, renames) |
 | `WindowController.swift` | One window: sidebar, tab bar, tiles, HUD; persists its frame via `window.set_frame` |
-| `TileContainerView.swift` | Lays out the active tab's tree; keeps one view per tile across tabs and layout changes; focus ring; layout motion |
+| `TileContainerView.swift` | Lays out the active tab's tree; keeps one view per tile across tabs and layout changes; the focus dim; layout motion, the sidebar's included |
 | `Animation.swift` | `[animation]` settings, crop and scale geometry, `MotionAware` (terminal freeze/reveal), frame clock, motion stats |
 | `TileView.swift` | The `TileView` protocol and the placeholder tile |
 | `KeyRouter.swift` | Local keyDown monitor → `azj_core_key` → action, or pass through |
@@ -224,7 +244,7 @@ TileViews.register(.terminal) { tile in TerminalTileView(tile) }
 
 - `update(_:)` runs on every core change to the tile (title, URL, path, herdr
   binding, `ended`). Make it cheap and idempotent.
-- `setFocused(_:)`: take first responder when focused; the container draws the ring.
+- `setFocused(_:)`: take first responder when focused; the container dims the other tiles.
 - `tileWillClose()` runs once before the view goes for good.
 - The container reuses the view across splits, swaps, moves, zoom and tab
   switches, and only ever sets its frame.
