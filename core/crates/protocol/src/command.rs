@@ -207,10 +207,12 @@ pub enum Command {
     /// front of the order (dynamic tab); focus stays on the tile.
     #[serde(rename = "layout.promote")]
     LayoutPromote(TileTarget),
-    /// Toggles master on the left ↔ master on top, keeping the stack's order.
-    /// In a Tile tab, `reverse` makes it a quarter turn (absent: toggle;
-    /// `false`: clockwise; `true`: anticlockwise) and `part` instead turns
-    /// only the master area ("rotate part").
+    /// Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area
+    /// goes left → top → right → bottom (clockwise), or back with `reverse`.
+    /// `part` turns only the master area instead ("rotate part": masters
+    /// side by side or stacked), and `flip` toggles master left ↔ top
+    /// (`tall.py`'s rotate). A manual tab flips its split tree's master
+    /// left ↔ top whatever is asked; Monocle and Three Column don't rotate.
     #[serde(rename = "layout.rotate")]
     LayoutRotate(LayoutRotate),
     /// Gives every tile in the tab's stack the same size.
@@ -645,14 +647,17 @@ pub struct LayoutRotate {
     /// Defaults to the focused tab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<TabId>,
-    /// Tile tabs: a quarter turn, anticlockwise when `true`. Absent toggles
-    /// master left ↔ top.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reverse: Option<bool>,
+    /// Tile tabs: turn anticlockwise (master left → bottom → right → top).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reverse: bool,
     /// Tile tabs: turn only the master area, so several masters sit side by
     /// side instead of stacked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub part: bool,
+    /// Tile tabs: toggle master left ↔ top (and right ↔ bottom) instead of
+    /// turning. Not with `part`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub flip: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -92,15 +92,15 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `zoom_tile` | global | `alt+shift+m` | `alt+shift+m` | Zoom tile |
 | `close_tile` | global | `alt+w` | `alt+w` | Close tile (detach) |
 | `kill_tile` | global | unbound | unbound | Kill tile and its process |
-| `cycle_tile_next` | global | `alt+bracketright` | `alt+bracketright` | Next tile |
-| `cycle_tile_previous` | global | `alt+bracketleft` | `alt+bracketleft` | Previous tile |
+| `cycle_tile_next` | global | unbound | unbound | Next tile |
+| `cycle_tile_previous` | global | unbound | unbound | Previous tile |
 | `rename_tile` | global | unbound | unbound | Rename tile… |
 | `split_auto` | global | `ctrl+cmd+t` | `ctrl+super+t` | New tile in stack (tall) |
 | `promote_tile` | global | `alt+enter` | `alt+enter` | Promote tile to master |
-| `rotate_layout` | global | `alt+o` | `alt+o` | Rotate layout |
+| `rotate_layout` | global | `alt+o` | `alt+o` | Rotate layout clockwise |
 | `equalize_layout` | global | `alt+shift+e` | `alt+shift+e` | Equalize stack |
-| `cycle_layout_next` | global | `alt+backslash` | `alt+backslash` | Next layout |
-| `cycle_layout_previous` | global | `alt+shift+backslash` | `alt+shift+backslash` | Previous layout |
+| `cycle_layout_next` | global | `alt+bracketright`, `alt+backslash` | `alt+bracketright`, `alt+backslash` | Next layout |
+| `cycle_layout_previous` | global | `alt+bracketleft`, `alt+shift+backslash` | `alt+bracketleft`, `alt+shift+backslash` | Previous layout |
 | `toggle_layout_tile` | global | `alt+t` | `alt+t` | Toggle Tile layout |
 | `toggle_layout_monocle` | global | `alt+z` | `alt+z` | Toggle Monocle layout |
 | `toggle_layout_three_column` | global | unbound | unbound | Toggle Three Column layout |
@@ -112,8 +112,8 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `move_position_next` | global | `alt+shift+bracketright` | `alt+shift+bracketright` | Move tile to next position |
 | `move_position_previous` | global | `alt+shift+bracketleft` | `alt+shift+bracketleft` | Move tile to previous position |
 | `rotate_part` | global | `alt+shift+o` | `alt+shift+o` | Rotate master area |
-| `rotate_clockwise` | global | unbound | unbound | Rotate layout clockwise |
 | `rotate_anticlockwise` | global | unbound | unbound | Rotate layout anticlockwise |
+| `flip_layout` | global | unbound | unbound | Flip layout (master left ↔ top) |
 | `new_workspace` | global | `cmd+t` | `super+t` | New workspace |
 | `switch_workspace_last` | global | `cmd+9` | `super+9` | Switch to last workspace |
 | `last_workspace` | global | `alt+0` | `alt+0` | Previous active workspace |
@@ -214,6 +214,54 @@ Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `su
 
 <!-- keys:end -->
 
+## Bismuth mapping
+
+Every default layout chord, checked end to end on Nov 4, 2026 against [Bismuth](research/bismuth.md) (source at `ef69afe`). The run went through the real key router, in-process on a dev profile: [`apps/macos/automation/bismuth.azs`](../apps/macos/automation/bismuth.azs) (`just mac-bismuth`). It used a dynamic Tile tab with four terminals, then spot checks in Three Column and Monocle. Its log traces the order, parameters, focus, weights and every rect after each key.
+
+Tiles are named by creation (`t1` is the first terminal). Orders list masters first. Rects are `x,y,w×h` in a 1000×1000 tab.
+
+| Chord | Action → core command | What happened (Tile, four tiles, unless noted) | Bismuth (`Meta` chord) | Match |
+| --- | --- | --- | --- | --- |
+| `alt+h/j/k/l` | `focus_tile_*` → `layout.focus` | Geometric over the rects; ties go to the tile focused last. From the master, `alt+l` went to `t5`, the stack tile used last, not the middle one. `alt+k` at the top of the stack did nothing. Three Column: the same across its columns. Monocle: `l`/`j` next and `h`/`k` previous in the order, wrapping; it restacks only, with no PTY resize | `Meta+H/J/K/L`: `focusDir`, geometric, ties to the newest timestamp. Monocle turns all four into `focusOrder(±1)` (left/up −1) | yes |
+| `alt+shift+h/j/k/l` | `swap_tile_*` → `layout.swap` | The geometric neighbour trades places in the order, and weights travel with the tiles: `t3` ↔ master gave `t3,t2,t1,t5`; `alt+shift+l` restored `t1,t2,t3,t5`. Monocle: trades with the next or previous tile in the order, and the shown tile stays | `Meta+Shift+H/J/K/L`: `swapDirection`, a list swap with the geometric neighbour. In Monocle every rect is the same, so there's no neighbour and nothing happens | yes; Monocle differs on purpose |
+| `ctrl+alt+shift+h/j/k/l` | `resize_tile_*` → `layout.resize` (0.05) | Master `l`: ratio 0.50 → 0.55 (`t1` 550 wide). Master `h`: it has no left edge, so its right edge moves left, back to 0.50. Bottom stack tile `l`: its left edge moves right, ratio 0.55. Middle stack tile `j`: its bottom edge moves down (`t3` 1.15, `t5` 0.85); `k`: its top edge moves up (`t2` 0.85, `t3` 1.30). Three Column centre `l`: 0.60 → 0.67; `h`: back to 0.60; right stack `h`: 0.53. Monocle: nothing | `Meta+Ctrl+L/H` move the east edge ±3 %, or the west edge when there's no east neighbour; `J`/`K` the same with south and north | yes for tiles at an edge; middle tiles and the step differ on purpose |
+| `alt+enter` | `promote_tile` → `layout.promote` | To the front of the order, focus stays: `t1,t2,t3,t5` → `t3,t1,t2,t5`. Works in Three Column and Monocle too | `Meta+Return`: `putWindowToMaster` | yes |
+| `alt+o` | `rotate_layout` → `layout.rotate {}` | A clockwise quarter turn: master at `0,0,1000×500` (top), then `500,0,500×1000` (right), then `0,500,1000×500` (bottom), then left again. The stack keeps its order. Manual tab: the tree flips master left ↔ top. Three Column, Monocle: nothing | `Meta+R`: `parts.rotate(90)`, left → top → right → bottom | yes (fixed) |
+| `alt+shift+o` | `rotate_part` → `layout.rotate {part}` | With two masters: stacked ↔ side by side. With the master area on the right or at the bottom, side-by-side masters are mirrored: first master `t5` at `750,0` (right) and `0,750` (bottom), on the outer edge | `Meta+Shift+R` turns only the master part by 90°. 0° and 180° both look stacked and 90° and 270° side by side, so each press toggles. The whole-layout turn mirrors the masters on the right and at the bottom | yes (fixed) |
+| `alt+shift+e` | `equalize_layout` → `layout.equalize` | Every weight back to 1, ratio unchanged | none | Azulejo only (`tall.py`) |
+| `alt+=` / `alt+-` | `increase_masters` / `decrease_masters` → `layout.masters` | Tile, 0–10: two masters stacked on the left; 0 puts every tile in the stack; four or more fill the tab. Three Column, 1–10: two masters share the centre. Monocle: nothing | `Meta+]` / `Meta+[`: Tile 0–10, Three Column 1–10 | yes; different chord |
+| `alt+shift+=` / `alt+shift+-` | `grow_master_area` / `shrink_master_area` → `layout.master_ratio` (±0.05) | Tile 0.50 → 0.55 → 0.50 → 0.45, held to 0.2–0.8. Three Column 0.607 → 0.657, held to 0.2–0.75 | unbound; ±0.05 with the same limits | yes |
+| `alt+shift+]` / `alt+shift+[` | `move_position_next` / `previous` → `layout.move_order` (±1) | One place along the order: `t5,t3,t1,t2` → `t3,t5,t1,t2`. Past either end it wraps round to the other end and the rest move up: the master went to the end (`t3,t1,t2,t5`), and the last tile back to the front | unbound; `swapOrder` moves the window before its destination, wrapping the same way | yes (fixed) |
+| `alt+t` | `toggle_layout_tile` → `layout.toggle {tile}` | On Tile: back to the previous kind (Monocle), then Tile again | `Meta+T` | yes |
+| `alt+z` | `toggle_layout_monocle` → `layout.toggle {monocle}` | Monocle, then back to Tile | `Meta+M` | yes |
+| `alt+shift+t` | `toggle_layout_manual` → `layout.toggle {manual}` | Freezes to a split tree with the same rects; again goes back to Tile with the same order | none (`Meta+Shift+F`, Floating, is the closest) | Azulejo only |
+| `alt+]` / `alt+[` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | Tile → Monocle and back, animated; the tab's hint reads "… · Monocle layout ▣" | `Meta+]` / `Meta+[` change the master count | different on purpose |
+| `alt+\` / `alt+shift+\` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | Tile → Monocle → Three Column (`286 \| 428 \| 286`) → back | `Meta+\` / `Meta+\|` | yes |
+| `ctrl+cmd+t`, `ctrl+cmd+shift+t`, `ctrl+cmd+v` | `split_auto`, `split_down`, `split_right` → `layout.split_auto`, `layout.split` | Each new tile goes to the end of the order (`[layout] insert = "end"`), the split's direction is ignored, and the new tile takes focus: `t1` … `t6`. The same in Three Column and Monocle | A new window is appended (`newWindowAsMaster` off), and KWin focuses it | yes |
+| `alt+w` | `close_tile` → `tile.close` | Leaves the order; the tile now in its place takes focus, else the one before: closing `t4` (4th of 5) focused `t5`, closing the last focused the one before it | The window leaves the list; KWin picks the focus | yes; focus is Azulejo's |
+| `alt+shift+m` | `zoom_tile` → `layout.zoom` | The overlay zoom toggles; order and rects stay | none (Monocle is Bismuth's answer) | Azulejo only |
+
+### Mismatches
+
+Fixed (Nov 4, 2026):
+
+1. **`alt+o` only flipped master left ↔ top.** It's now Bismuth's four-way clockwise rotate in a Tile tab. The old flip is `flip_layout`, in quick open with no chord. A manual tab still flips its tree, since a split tree's tall reading always puts the master first, so it can't hold a master on the right or at the bottom.
+2. **Moving past the end of the order swapped the first and last tiles.** Bismuth wraps the tile round to the other end and moves the rest up, so moving the master back sends it to the end.
+3. **Three Column's columns were off.** Bismuth weighs them (1 − ratio) : ratio : (1 − ratio), so the default 0.6 gives 2/7, 3/7, 2/7. Azulejo gave 0.2, 0.6, 0.2, a centre much wider than Bismuth's. Resizing now changes the ratio the way Bismuth's does, by the edge move × (2 − ratio).
+4. **Resizing Three Column's centre grew it both ways.** `ctrl+alt+shift+h` moved its left edge out and `l` its right edge, and the centre stays centred, so both did the same thing. As in Bismuth, `l` now grows it and `h` shrinks it.
+5. **Side-by-side masters weren't mirrored on the right and at the bottom.** Bismuth turns the whole layout, so the first master stays on the outer edge. With one master, or stacked masters, nothing changes.
+
+Different on purpose:
+
+- **Master count is `alt+=` / `alt+-`.** `alt+]` / `alt+[` switch layouts instead (the maintainer's call). Bismuth's own layout chords, `alt+\` / `alt+shift+\`, work too.
+- **Resizing moves 5 %, the same step as manual tabs**, against Bismuth's 3 %.
+- **Resizing a tile with neighbours on both sides** moves the edge on the side you press (`ctrl+alt+shift+k` on a middle stack tile moves its top edge up, so it grows). Bismuth always moves the east or south edge, so its `Meta+Ctrl+K` would shrink that tile. Azulejo keeps herdr's rule, which manual tabs use too, so the chords behave the same in both. Tiles at an edge, which is every tile with one or two in a stack, behave as in Bismuth. Three Column's centre is the exception (fix 4).
+- **Monocle swap** trades the shown tile with the next or previous one in the order. Bismuth has no neighbour there and does nothing.
+- **Close** gives focus to the tile now in that place; Bismuth leaves it to KWin.
+- **Cycling from a manual tab** (not in `[layout] cycle`) goes to the first kind forward and the last kind back; Bismuth goes to the first either way. Toggling the active kind with no previous kind goes to Manual (from Tile) or Tile; Bismuth stays put.
+- **The layout name** shows in the tab's hint (its tooltip) rather than an on-screen notification.
+- **Azulejo only:** equalize, zoom and the manual toggle.
+
 ## What isn't in the keymap
 
 These stay with the system or AppKit, on purpose:
@@ -299,18 +347,18 @@ Where each global default came from:
 | `split_down` | `ctrl+cmd+shift+t` | herdr |
 | `split_right` | `ctrl+cmd+v` | new direct chord for herdr's `prefix+v` |
 | `promote_tile` | `alt+enter` | herdr `tall.py promote`; in a dynamic tab, moves the tile to the front of the order |
-| `rotate_layout` | `alt+o` | herdr `tall.py rotate` |
+| `rotate_layout` | `alt+o` | Bismuth `Meta+R`: a clockwise quarter turn in a Tile tab (master left → top → right → bottom); a manual tab flips master left ↔ top, as herdr's `tall.py rotate` did |
 | `equalize_layout` | `alt+shift+e` | herdr `tall.py equalize`; in a dynamic tab, resets the stack sizes |
-| `cycle_layout_next/previous` | `alt+\` / `alt+shift+\` | Bismuth `Meta+\` / `Meta+\|` (ADR 0010) |
+| `cycle_layout_next/previous` | `alt+]` / `alt+[`, and `alt+\` / `alt+shift+\` | `alt+]` / `alt+[` (Nov 4, 2026); the second pair is Bismuth's own `Meta+\` / `Meta+\|` (ADR 0010) |
 | `toggle_layout_tile` | `alt+t` | Bismuth `Meta+T`; bash/zsh lose `alt+t` (transpose words) inside tiles |
 | `toggle_layout_monocle` | `alt+z` | Bismuth `Meta+M`; `alt+m` is Hammerspoon's and `alt+shift+m` is zoom |
 | `toggle_layout_manual` (freeze to a split tree, or restore it) | `alt+shift+t` | new |
-| `increase_masters` / `decrease_masters` | `alt+=` / `alt+-` | Bismuth `Meta+]` / `Meta+[` (`alt+]`/`alt+[` already cycle tiles) |
+| `increase_masters` / `decrease_masters` | `alt+=` / `alt+-` | Bismuth `Meta+]` / `Meta+[`; `alt+]` / `alt+[` switch layouts here |
 | `grow_master_area` / `shrink_master_area` | `alt+shift+=` / `alt+shift+-` | unbound in Bismuth; resizing the master edge does the same |
 | `move_position_next/previous` | `alt+shift+]` / `alt+shift+[` | unbound in Bismuth |
 | `rotate_part` (several masters side by side ↔ stacked) | `alt+shift+o` | Bismuth `Meta+Shift+R` |
 | `close_tile` (detaches the herdr pane, F14) | `alt+w` | new: the `alt` twin of `cmd+w` |
-| `cycle_tile_next/previous` | `alt+]` / `alt+[` | new direct chord for `prefix+tab` |
+| `cycle_tile_next/previous` | unbound | lost `alt+]` / `alt+[` to the layout cycle (Nov 4, 2026). Bismuth leaves focus next/previous unbound too; quick open and prefix mode (`prefix+tab`) still have them. No free `alt` chord fits: `alt+tab` is Hammerspoon's and `alt+.` is the shells' last-argument key |
 | `new_workspace` | `cmd+t` | herdr |
 | `new_tab` | `cmd+shift+t` | herdr |
 | `switch_workspace` 1–8 | `cmd+1..8` | herdr |
@@ -332,7 +380,7 @@ Where each global default came from:
 
 The app menu keeps the macOS chords, now as actions: `quit` (`cmd+q`), `hide` (`cmd+h`), `hide_others` (`alt+cmd+h`) and `minimize` (`cmd+m`). Keys that only work in one tile kind or mode (browser chrome, the files list, preview's Preview | Source, quick open, find bars, resize mode) keep the conventions they had before they were configurable; they're in the reference.
 
-Rename, kill the herdr pane, help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_clockwise` and `rotate_anticlockwise` (four-way Tile rotation) and "Set layout…".
+Rename, kill the herdr pane, help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_anticlockwise` (Bismuth's unbound Rotate Reverse), `flip_layout` (master left ↔ top: what `alt+o` did before it turned four ways) and "Set layout…". The old `rotate_clockwise` name still binds `rotate_layout`, with a warning.
 
 New tabs start as a dynamic Tile layout (`[layout] default`, ADR 0010), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
 

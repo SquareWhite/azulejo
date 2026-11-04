@@ -1032,7 +1032,7 @@
           "type": "object"
         },
         {
-          "description": "Toggles master on the left ↔ master on top, keeping the stack's order.\nIn a Tile tab, `reverse` makes it a quarter turn (absent: toggle;\n`false`: clockwise; `true`: anticlockwise) and `part` instead turns\nonly the master area (\"rotate part\").",
+          "description": "Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area\ngoes left → top → right → bottom (clockwise), or back with `reverse`.\n`part` turns only the master area instead (\"rotate part\": masters\nside by side or stacked), and `flip` toggles master left ↔ top\n(`tall.py`'s rotate). A manual tab flips its split tree's master\nleft ↔ top whatever is asked; Monocle and Three Column don't rotate.",
           "properties": {
             "method": {
               "const": "layout.rotate",
@@ -3234,16 +3234,17 @@
     },
     "LayoutRotate": {
       "properties": {
+        "flip": {
+          "description": "Tile tabs: toggle master left ↔ top (and right ↔ bottom) instead of\nturning. Not with `part`.",
+          "type": "boolean"
+        },
         "part": {
           "description": "Tile tabs: turn only the master area, so several masters sit side by\nside instead of stacked.",
           "type": "boolean"
         },
         "reverse": {
-          "description": "Tile tabs: a quarter turn, anticlockwise when `true`. Absent toggles\nmaster left ↔ top.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "description": "Tile tabs: turn anticlockwise (master left → bottom → right → top).",
+          "type": "boolean"
         },
         "tab": {
           "anyOf": [
@@ -4874,7 +4875,7 @@
           "type": "integer"
         },
         "ratio": {
-          "description": "The centre column's share of the width: 0.2–0.75.",
+          "description": "The centre column's weight against each side column's `1 − ratio`,\nas in Bismuth: 0.2–0.75. With three columns the centre takes\n`ratio / (2 − ratio)` of the width (0.6 gives 3/7); with two (the\nmasters and one stack tile) it takes `ratio` itself.",
           "format": "double",
           "type": "number"
         }

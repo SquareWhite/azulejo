@@ -525,10 +525,16 @@ impl Engine {
             }
             Command::LayoutRotate(p) => {
                 let tab = p.tab.or(focus.tab).ok_or_else(nothing)?;
-                match (p.part, p.reverse) {
-                    (true, _) => s.rotate_part(tab)?,
-                    (false, Some(reverse)) => s.rotate_turn(tab, reverse)?,
-                    (false, None) => s.rotate(tab)?,
+                match (p.part, p.flip) {
+                    (true, true) => {
+                        return Err(Error::new(
+                            ErrorCode::InvalidParams,
+                            "give at most one of `part` and `flip`",
+                        ));
+                    }
+                    (true, false) => s.rotate_part(tab)?,
+                    (false, true) => s.flip(tab)?,
+                    (false, false) => s.rotate_turn(tab, p.reverse)?,
                 };
                 Reply::Ok
             }

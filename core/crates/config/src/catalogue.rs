@@ -265,7 +265,7 @@ pub(crate) fn title(action: Action) -> String {
         Split(d) => format!("Split {}", dir(d)),
         SplitAuto => "New tile in stack (tall)".into(),
         PromoteTile => "Promote tile to master".into(),
-        RotateLayout => "Rotate layout".into(),
+        RotateLayout => "Rotate layout clockwise".into(),
         EqualizeLayout => "Equalize stack".into(),
         CycleLayoutNext => "Next layout".into(),
         CycleLayoutPrevious => "Previous layout".into(),
@@ -282,7 +282,7 @@ pub(crate) fn title(action: Action) -> String {
         MovePositionNext => "Move tile to next position".into(),
         MovePositionPrevious => "Move tile to previous position".into(),
         RotatePart => "Rotate master area".into(),
-        RotateClockwise => "Rotate layout clockwise".into(),
+        FlipLayout => "Flip layout (master left ↔ top)".into(),
         RotateAnticlockwise => "Rotate layout anticlockwise".into(),
         NewWorkspace => "New workspace".into(),
         SwitchWorkspace(i) => format!("Switch to workspace {i}"),
@@ -361,7 +361,7 @@ fn category(action: Action) -> &'static str {
         Split(_) | SplitAuto | PromoteTile | RotateLayout | EqualizeLayout | CycleLayoutNext
         | CycleLayoutPrevious | ToggleLayout(_) | IncreaseMasters | DecreaseMasters
         | GrowMasterArea | ShrinkMasterArea | MovePositionNext | MovePositionPrevious
-        | RotatePart | RotateClockwise | RotateAnticlockwise => "layout",
+        | RotatePart | RotateAnticlockwise | FlipLayout => "layout",
         NewWorkspace | SwitchWorkspace(_) | SwitchWorkspaceLast | LastWorkspace | NextWorkspace
         | PreviousWorkspace | CloseWorkspace | RenameWorkspace => "workspace",
         NewTab | SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab | CloseTab

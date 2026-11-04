@@ -796,23 +796,41 @@ fn every_layout_command_maps_in_a_dynamic_tab() {
     );
     assert!((tab_of(&engine).layout.params.tile.ratio - 0.3).abs() < 1e-9);
 
-    // Rotate: toggle, quarter turns, part.
+    // Rotate: quarter turns clockwise (Bismuth), back, flip, part.
     use azulejo_model::Orientation;
+    let orientation = |e: &Engine| tab_of(e).layout.params.tile.orientation;
     run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
-    assert_eq!(
-        tab_of(&engine).layout.params.tile.orientation,
-        Orientation::Top
-    );
-    run(
-        &mut engine,
-        Command::LayoutRotate(LayoutRotate {
-            reverse: Some(false),
-            ..LayoutRotate::default()
-        }),
-    );
-    assert_eq!(
-        tab_of(&engine).layout.params.tile.orientation,
-        Orientation::Right
+    assert_eq!(orientation(&engine), Orientation::Top);
+    run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    assert_eq!(orientation(&engine), Orientation::Right);
+    run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    assert_eq!(orientation(&engine), Orientation::Bottom);
+    run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    assert_eq!(orientation(&engine), Orientation::Left);
+    let back = LayoutRotate {
+        reverse: true,
+        ..LayoutRotate::default()
+    };
+    run(&mut engine, Command::LayoutRotate(back.clone()));
+    assert_eq!(orientation(&engine), Orientation::Bottom);
+    run(&mut engine, Command::LayoutRotate(back));
+    assert_eq!(orientation(&engine), Orientation::Right);
+    let flip = LayoutRotate {
+        flip: true,
+        ..LayoutRotate::default()
+    };
+    run(&mut engine, Command::LayoutRotate(flip.clone()));
+    assert_eq!(orientation(&engine), Orientation::Bottom);
+    run(&mut engine, Command::LayoutRotate(flip));
+    assert_eq!(orientation(&engine), Orientation::Right);
+    assert!(
+        engine
+            .execute(Command::LayoutRotate(LayoutRotate {
+                flip: true,
+                part: true,
+                ..LayoutRotate::default()
+            }))
+            .is_err()
     );
     run(
         &mut engine,

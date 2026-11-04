@@ -52,24 +52,25 @@ resize_tile_right = "ctrl+alt+shift+l"
 resize_mode = "ctrl+alt+r"            # sticky hjkl until esc (herdr prefix+r)
 zoom_tile   = "alt+shift+m"           # not cmd+m (Minimise), not alt+m (Hammerspoon)
 close_tile  = "alt+w"                 # detaches the herdr pane (F14); kill is palette-only
-cycle_tile_next     = "alt+]"         # herdr prefix+tab
-cycle_tile_previous = "alt+["
+# cycle_tile_next / cycle_tile_previous (herdr prefix+tab) are unbound, as in
+# Bismuth: alt+] / alt+[ switch layouts now. Quick open and prefix mode keep them.
 
 # New tiles (herdr: ctrl+cmd+t via tall.py, ctrl+cmd+shift+t, prefix+v)
 split_auto  = "ctrl+cmd+t"            # "tall" rule: master left, stack right, append to stack
 split_down  = "ctrl+cmd+shift+t"
 split_right = "ctrl+cmd+v"
 
-# Master-stack rules (herdr: tall.py promote / rotate / equalize). In a
-# dynamic Tile tab (the default for new tabs, ADR 0010) promote moves the tile
-# to the front of the order and equalize resets the stack sizes.
+# Master-stack rules (herdr: tall.py promote / equalize, Bismuth's rotate). In
+# a dynamic Tile tab (the default for new tabs, ADR 0010) promote moves the
+# tile to the front of the order and equalize resets the stack sizes.
 promote_tile    = "alt+enter"         # to master
-rotate_layout   = "alt+o"             # master left <-> master on top
+rotate_layout   = "alt+o"             # Bismuth Meta+R: master left -> top -> right -> bottom
 equalize_layout = "alt+shift+e"       # even out the stack
+# flip_layout (master left <-> top, tall.py's rotate) is palette-only.
 
 # Dynamic layouts (ADR 0010): Bismuth's Meta chords on the alt layer.
-cycle_layout_next      = "alt+backslash"         # tile -> monocle -> three_column
-cycle_layout_previous  = "alt+shift+backslash"
+cycle_layout_next      = ["alt+bracketright", "alt+backslash"]       # tile -> monocle -> three_column
+cycle_layout_previous  = ["alt+bracketleft", "alt+shift+backslash"]  # alt+\ / alt+| are Bismuth's own
 toggle_layout_tile     = "alt+t"                 # bash/zsh lose alt+t (transpose words) in tiles
 toggle_layout_monocle  = "alt+z"                 # alt+m is Hammerspoon's, alt+shift+m is zoom
 toggle_layout_manual   = "alt+shift+t"           # freeze to a split tree, or restore it
@@ -197,8 +198,6 @@ resize_tile_right = "ctrl+alt+shift+l"
 resize_mode = "ctrl+alt+r"
 zoom_tile   = "alt+shift+m"
 close_tile  = "alt+w"
-cycle_tile_next     = "alt+]"
-cycle_tile_previous = "alt+["
 
 split_auto  = "ctrl+super+t"
 split_down  = "ctrl+super+shift+t"
@@ -208,8 +207,8 @@ promote_tile    = "alt+enter"
 rotate_layout   = "alt+o"
 equalize_layout = "alt+shift+e"
 
-cycle_layout_next      = "alt+backslash"
-cycle_layout_previous  = "alt+shift+backslash"
+cycle_layout_next      = ["alt+bracketright", "alt+backslash"]
+cycle_layout_previous  = ["alt+bracketleft", "alt+shift+backslash"]
 toggle_layout_tile     = "alt+t"
 toggle_layout_monocle  = "alt+z"
 toggle_layout_manual   = "alt+shift+t"
