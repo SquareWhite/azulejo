@@ -81,6 +81,8 @@ final class TabStripView: NSView, ThemeAware {
     var statuses: [String] { buttons.map(\.status.rawValue) }
     /// Automation: the first tab, for hit tests.
     var firstTab: NSView? { buttons.first }
+    /// The selected tab's hint (its tooltip: name, tile count, layout kind).
+    var selectedHint: String { buttons.first { $0.selected }?.toolTip ?? "" }
 
     func apply(_ workspace: WorkspaceModel?) {
         let tabs = workspace?.tabs ?? []

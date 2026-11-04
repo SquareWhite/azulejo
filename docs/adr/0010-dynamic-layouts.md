@@ -62,7 +62,7 @@ The kinds, ported from Bismuth's maths (the full set, as decided):
 | --- | --- | --- |
 | `tile` | Masters on one side, stack on the other; both split by weight. Rotates through left/top/right/bottom. Masters can sit stacked or side by side ("rotate part") | masters 0–10 (1), ratio 0.2–0.8 (0.5) |
 | `monocle` | All tiles full size, focused one shown; directional focus cycles the order | — |
-| `three_column` | Masters centred; left and right stacks; right stack gets `floor((n−m)/2)` | masters 1–10 (1), ratio 0.2–0.75 (0.6) |
+| `three_column` | Masters centred; left and right stacks; right stack gets `floor((n−m)/2)`. Columns weigh `(1−ratio) : ratio : (1−ratio)`, as in Bismuth (amended Nov 4) | masters 1–10 (1), ratio 0.2–0.75 (0.6) |
 
 Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **Spread** and **Stair** (overlapping cards hide most of each terminal), **Floating** (Azulejo has no floating tiles) and Cascade (not even wired up in Bismuth). The `z` field means they can be added later without a model change.
 
@@ -76,10 +76,10 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
 | Focus next/previous (`cycle_tile_*`) | Tree order | `order` |
 | Swap left/down/up/right | Tree swap with geometric neighbour | Swap the two tiles' positions in `order` (weights travel with tiles) |
 | Move left/down/up/right | Tree restructure | Same as swap, as in Bismuth |
-| Move to next/previous position (new) | — | Move one step in `order`, wrapping |
-| Resize left/down/up/right | Move nearest divider; flip to the opposite one at the edge | Same edge rule (both already match Bismuth), translated into parameters: master ratio, stack weights, three-column ratio. Monocle ignores it |
+| Move to next/previous position (new) | — | Move one step in `order`; past either end, wrap round to the other end (Bismuth's `swapOrder`; amended Nov 4) |
+| Resize left/down/up/right | Move nearest divider; flip to the opposite one at the edge | Same edge rule, translated into parameters: master ratio, stack weights, three-column ratio. Monocle ignores it. Matches Bismuth for tiles at an edge; see the Nov 4 note for tiles with neighbours on both sides |
 | Promote (`alt+enter`) | Swap with master | Move to the front of `order` |
-| Rotate (`alt+o`) | Master left ↔ top | Tile: left ↔ top, as today. Full four-way rotation and "rotate part" are separate actions |
+| Rotate (`alt+o`) | Master left ↔ top | Tile: Bismuth's clockwise quarter turn, left → top → right → bottom (amended Nov 4). Anticlockwise, "rotate part" and the old left ↔ top flip are separate actions |
 | Equalize | Even out the stack | Reset all weights to 1.0 (ratio unchanged) |
 | Zoom | Overlay | Unchanged; works in every kind |
 
@@ -113,7 +113,7 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
 
 ### 8. Protocol and config
 
-- **Commands:** `layout.set {tab?, kind}`, `layout.toggle {tab?, kind}`, `layout.cycle {tab?, step}`, `layout.masters {tab?, delta}`, `layout.master_ratio {tab?, delta}`, `layout.move_order {tile?, step}`, and `layout.rotate {tab?, reverse?, part?}` extending today's. They reach the palette and CLI through the schema, as everything else does.
+- **Commands:** `layout.set {tab?, kind}`, `layout.toggle {tab?, kind}`, `layout.cycle {tab?, step}`, `layout.masters {tab?, delta}`, `layout.master_ratio {tab?, delta}`, `layout.move_order {tile?, step}`, and `layout.rotate {tab?, reverse?, part?, flip?}` extending today's (`flip` added Nov 4). They reach the palette and CLI through the schema, as everything else does.
 - **Event:** `layout.changed` gains `kind`, `params`, `order` and `rects`.
 - **Config:**
 
@@ -147,17 +147,20 @@ These follow the maintainer's `alt` layer (herdr binds, `tall.py`) and map Bismu
 
 | Action | Proposed | Bismuth | Notes |
 | --- | --- | --- | --- |
-| Next / previous layout | `alt+\` / `alt+shift+\` | `Meta+\` / `Meta+\|` | `alt+\` types `«` in browser text fields |
+| Next / previous layout | `alt+]` / `alt+[`, and `alt+\` / `alt+shift+\` | `Meta+\` / `Meta+\|` | `alt+]` / `alt+[` added Nov 4; `alt+\` types `«` in browser text fields |
 | Toggle Tile | `alt+t` | `Meta+T` | bash/zsh lose `alt+t` (transpose words) inside tiles |
 | Toggle Monocle | `alt+z` | `Meta+M` | `alt+m` belongs to Hammerspoon, `alt+shift+m` is zoom |
 | Toggle manual (freeze / restore) | `alt+shift+t` | — | |
-| More / fewer masters | `alt+=` / `alt+-` | `Meta+]` / `Meta+[` | `alt+]` / `alt+[` already cycle tiles |
+| More / fewer masters | `alt+=` / `alt+-` | `Meta+]` / `Meta+[` | `alt+]` / `alt+[` switch layouts |
 | Bigger / smaller master area | `alt+shift+=` / `alt+shift+-` | unbound | Resizing the master with `ctrl+alt+shift+h/l` does the same |
 | Move to next / previous position | `alt+shift+]` / `alt+shift+[` | unbound | |
 | Rotate part (masters side by side) | `alt+shift+o` | `Meta+Shift+R` | |
 | Push to master | `alt+enter` (existing) | `Meta+Return` | unchanged |
-| Rotate | `alt+o` (existing, left ↔ top) | `Meta+R` (four-way) | Four-way clockwise/anticlockwise go to the palette |
-| Focus / swap / resize | existing `alt+hjkl`, `alt+shift+hjkl`, `ctrl+alt+shift+hjkl` | `Meta+…` | Same behaviour |
+| Rotate | `alt+o` (four-way clockwise since Nov 4) | `Meta+R` (four-way) | Anticlockwise (`rotate_anticlockwise`) and the old left ↔ top flip (`flip_layout`) go to the palette |
+| Focus / swap / resize | existing `alt+hjkl`, `alt+shift+hjkl`, `ctrl+alt+shift+hjkl` | `Meta+…` | Same behaviour, with the differences in the Nov 4 note |
+| Next / previous tile | unbound (was `alt+]` / `alt+[`) | unbound | Palette and prefix mode (`prefix+tab`) |
+
+Amended Nov 4, 2026: `alt+o` is the four-way rotate, `alt+]` / `alt+[` switch layouts, and `cycle_tile_next` / `cycle_tile_previous` lost their chords. See [the Nov 4 note](#bismuth-check-nov-4-2026).
 
 Checked against `docs/keybindings.md`: none of these are owned by Hammerspoon (`alt+1..9`, `alt+m`, `alt+q`, `alt+,`, `alt+n`, `alt+f1..f3`) or already bound in `shared/config/keymap.default.toml`. Avoided on purpose: `alt+f`, `alt+b` and `alt+d`, which shells use for word movement. Linux uses the same chords; GNOME's `alt+space` window menu is why the layout cycle isn't on `alt+space`.
 
@@ -181,3 +184,17 @@ the maintainer answered the open questions:
 1. **Default for new tabs:** dynamic Tile. `[layout] default = "tile"`.
 2. **Adopted herdr tabs:** stay manual, so they match herdr's own layout exactly.
 3. **Layout set:** Tile, Monocle and Three Column only. Spiral and Quarter are dropped; Spread, Stair, Floating and Cascade aren't planned. The `z` field still leaves room for more later.
+
+## Bismuth check (Nov 4, 2026)
+
+Every default layout chord was run end to end through the key router (`apps/macos/automation/bismuth.azs`, `just mac-bismuth`), with the order, parameters and rects traced after each key. The results were compared with Bismuth's source. The table and every difference are in [docs/keybindings.md, "Bismuth mapping"](../keybindings.md#bismuth-mapping). What changed:
+
+- **`alt+o` is Bismuth's rotate** (`Meta+R`): a clockwise quarter turn of a Tile tab, left → top → right → bottom. `layout.rotate` with no params now turns clockwise; `reverse: true` turns back; `flip: true` is the old left ↔ top toggle, kept as the `flip_layout` action with no chord. A manual tab flips its tree either way: a split tree's tall reading always puts the master first, so a master on the right or at the bottom has no tree to go to. `rotate_clockwise` is gone, and the name still binds `rotate_layout` with a warning.
+- **`alt+]` / `alt+[` switch layouts** (`cycle_layout_next` / `previous`). `alt+\` / `alt+shift+\`, Bismuth's own chords, stay as second bindings, on Linux too. `cycle_tile_next` / `previous` are unbound, as Bismuth's focus next/previous are: no `alt` chord is free that fits, since Hammerspoon owns `alt+tab` and shells use `alt+.`. They stay in quick open and prefix mode.
+- **Fixed to match Bismuth:**
+  - Moving past the end of the order wraps the tile round to the other end, with the rest moving up. It used to swap the two ends.
+  - Three Column weighs its columns `(1−ratio) : ratio : (1−ratio)`, so the default 0.6 gives 2/7, 3/7, 2/7. It used to give 0.2, 0.6, 0.2. Edge moves change the ratio by the move × (2 − ratio), as in Bismuth's `adjust`.
+  - Resizing Three Column's centre: `l` grows it and `h` shrinks it. Both used to grow it, since its two edges move together.
+  - With the master area on the right or at the bottom, side-by-side masters (rotate part) are mirrored, so the first master keeps the outer edge.
+- **Kept on purpose:** resizing moves 5 % (Bismuth 3 %), the same step as manual tabs. A tile with neighbours on both sides moves the edge on the pressed side (herdr's rule, as in manual tabs), where Bismuth always moves its east or south edge. Swap in Monocle trades places in the order (a no-op in Bismuth). Close picks the next focus. Master count is on `alt+=` / `alt+-`.
+- The 10,000-sequence proptest gives the four-way turn more weight, and a new property checks that four turns (or one turn and one back) restore the arrangement exactly, with the masters on the expected side after each turn.

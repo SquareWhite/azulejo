@@ -22,6 +22,12 @@ key alt+o
 expect orientation top
 wait 600
 key alt+o
+expect orientation right
+wait 600
+key alt+o
+expect orientation bottom
+wait 600
+key alt+o
 expect orientation left
 wait 600
 key alt+l

@@ -29,7 +29,7 @@ enum Op {
     MoveWorkspace(usize, usize),
     SplitAuto(usize),
     Promote(usize),
-    Rotate(usize),
+    Flip(usize),
     Equalize(usize),
     SetLayout(usize, LayoutKind),
     ToggleLayout(usize, LayoutKind),
@@ -80,7 +80,7 @@ fn op() -> impl Strategy<Value = Op> {
         1 => (0usize..64, 0usize..8).prop_map(|(w, i)| Op::MoveWorkspace(w, i)),
         6 => (0usize..64).prop_map(Op::SplitAuto),
         2 => (0usize..64).prop_map(Op::Promote),
-        2 => (0usize..64).prop_map(Op::Rotate),
+        2 => (0usize..64).prop_map(Op::Flip),
         2 => (0usize..64).prop_map(Op::Equalize),
         3 => (0usize..64, kind()).prop_map(|(t, k)| Op::SetLayout(t, k)),
         1 => (0usize..64, kind()).prop_map(|(t, k)| Op::ToggleLayout(t, k)),
@@ -88,7 +88,7 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (0usize..64, -3i32..4).prop_map(|(t, d)| Op::Masters(t, d)),
         2 => (0usize..64, -0.7f64..0.7).prop_map(|(t, d)| Op::MasterRatio(t, d)),
         2 => (0usize..64, -3i32..4).prop_map(|(t, s)| Op::MoveOrder(t, s)),
-        1 => (0usize..64, any::<bool>()).prop_map(|(t, r)| Op::RotateTurn(t, r)),
+        3 => (0usize..64, any::<bool>()).prop_map(|(t, r)| Op::RotateTurn(t, r)),
         1 => (0usize..64).prop_map(Op::RotatePart),
     ]
 }
@@ -227,9 +227,9 @@ fn apply(s: &mut Session, op: &Op) -> Result<(), azulejo_model::ModelError> {
                 s.promote(id)?;
             }
         }
-        Op::Rotate(i) => {
+        Op::Flip(i) => {
             if let Some(id) = nth(&tabs, i) {
-                s.rotate(id)?;
+                s.flip(id)?;
             }
         }
         Op::Equalize(i) => {

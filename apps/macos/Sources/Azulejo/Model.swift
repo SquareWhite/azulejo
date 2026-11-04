@@ -138,6 +138,8 @@ struct TabLayoutModel: Decodable, Equatable {
     var kind: LayoutKind
     var order: [String]?
     var params: LayoutParamsModel?
+    /// Per-tile stack weights that aren't 1.0 (automation traces them).
+    var weights: [String: Double]?
 }
 
 /// A dynamic tab's parameters, for automation and later the tab bar.

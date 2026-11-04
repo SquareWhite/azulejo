@@ -35,6 +35,8 @@ pub enum Action {
     /// Tall layout: master left, stack right, new tiles append to the stack.
     SplitAuto,
     PromoteTile,
+    /// A quarter turn clockwise in a Tile tab (Bismuth's rotate); a manual
+    /// tab flips its master left ↔ top.
     RotateLayout,
     EqualizeLayout,
     // Dynamic layouts (ADR 0010)
@@ -50,8 +52,10 @@ pub enum Action {
     MovePositionPrevious,
     /// Turns only the master area (masters side by side or stacked).
     RotatePart,
-    RotateClockwise,
     RotateAnticlockwise,
+    /// Master left ↔ top: `tall.py`'s rotate, `alt+o` before it turned
+    /// four ways.
+    FlipLayout,
     // Workspaces
     NewWorkspace,
     /// 1-based position in the window.
@@ -222,8 +226,8 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("move_position_next", MovePositionNext),
         ("move_position_previous", MovePositionPrevious),
         ("rotate_part", RotatePart),
-        ("rotate_clockwise", RotateClockwise),
         ("rotate_anticlockwise", RotateAnticlockwise),
+        ("flip_layout", FlipLayout),
         ("new_workspace", NewWorkspace),
         ("switch_workspace_last", SwitchWorkspaceLast),
         ("last_workspace", LastWorkspace),
@@ -437,7 +441,7 @@ impl Action {
             Split(_) => "layout.split",
             SplitAuto => "layout.split_auto",
             PromoteTile => "layout.promote",
-            RotateLayout | RotatePart | RotateClockwise | RotateAnticlockwise => "layout.rotate",
+            RotateLayout | RotatePart | RotateAnticlockwise | FlipLayout => "layout.rotate",
             EqualizeLayout => "layout.equalize",
             CycleLayoutNext | CycleLayoutPrevious => "layout.cycle",
             ToggleLayout(_) => "layout.toggle",
@@ -501,12 +505,12 @@ impl Action {
                 part: true,
                 ..LayoutRotate::default()
             }),
-            RotateClockwise => Command::LayoutRotate(LayoutRotate {
-                reverse: Some(false),
+            RotateAnticlockwise => Command::LayoutRotate(LayoutRotate {
+                reverse: true,
                 ..LayoutRotate::default()
             }),
-            RotateAnticlockwise => Command::LayoutRotate(LayoutRotate {
-                reverse: Some(true),
+            FlipLayout => Command::LayoutRotate(LayoutRotate {
+                flip: true,
                 ..LayoutRotate::default()
             }),
             EqualizeLayout => Command::LayoutEqualize(TabTarget::default()),

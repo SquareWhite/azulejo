@@ -1309,5 +1309,50 @@ fn dynamic_layout_chords_resolve() {
             resolve(&config, "alt+shift+o", None),
             Some(Action::RotatePart)
         );
+        // alt+] / alt+[ switch layouts; Bismuth's alt+\ / alt+| stay too.
+        assert_eq!(
+            resolve(&config, "alt+]", None),
+            Some(Action::CycleLayoutNext)
+        );
+        assert_eq!(
+            resolve(&config, "alt+[", None),
+            Some(Action::CycleLayoutPrevious)
+        );
+        assert_eq!(
+            resolve(&config, "alt+shift+backslash", None),
+            Some(Action::CycleLayoutPrevious)
+        );
+        // In every tile kind alike: no context binds them.
+        for kind in [TileKind::Browser, TileKind::Preview, TileKind::Files] {
+            assert_eq!(
+                resolve(&config, "alt+]", Some(kind)),
+                Some(Action::CycleLayoutNext)
+            );
+            assert_eq!(
+                resolve(&config, "alt+[", Some(kind)),
+                Some(Action::CycleLayoutPrevious)
+            );
+        }
+        assert_eq!(resolve(&config, "alt+o", None), Some(Action::RotateLayout));
+        // Next/previous tile lost their chords (palette and prefix mode).
+        let bound = |a: Action| config.keymap.chords_for(a, None);
+        assert!(bound(Action::CycleTileNext).is_empty());
+        assert!(bound(Action::CycleTilePrevious).is_empty());
+        assert!(bound(Action::FlipLayout).is_empty());
     }
+}
+
+#[test]
+fn rotate_clockwise_still_binds_rotate_layout_with_a_warning() {
+    let config = user("[keys]\nrotate_clockwise = \"alt+shift+r\"\n", MAC);
+    assert_eq!(
+        resolve(&config, "alt+shift+r", None),
+        Some(Action::RotateLayout)
+    );
+    let w = warnings(&config);
+    assert!(
+        w.iter()
+            .any(|m| m.contains("`rotate_clockwise` is now `rotate_layout`")),
+        "{w:#?}"
+    );
 }

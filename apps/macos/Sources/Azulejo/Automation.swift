@@ -25,6 +25,7 @@ import AppKit
 ///                            windows workspaces workspace tabs tab tiles
 ///                            focus zoomed sidebar axis ratio kind masters
 ///                            orientation part visible resizes dimmed
+///                            order layout
 ///                            (dimmed: unfocused tiles dimmed, by place in
 ///                            the tab, "2,3" or "none"; dim.strength: how
 ///                            much, "0.25")
@@ -32,6 +33,9 @@ import AppKit
 ///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
 ///     theme set|preview|system|picker …   see `ThemeAutomation`
+///     trace on|off           key and action lines also log the layout:
+///                            kind, parameters, order, focus, weights, rects
+///                            (`expect order t2,t1,t3` checks the order)
 ///     menu workspace N|rail N|tile [invoke TITLE]   build a right-click menu, log
 ///                            its items, run one (see `MenuAutomation`);
 ///                            `menu answer TEXT` answers the next prompt,
@@ -65,6 +69,8 @@ final class Automation {
     private var remembered: [String: String] = [:]
     /// `delivery direct`: keys skip the event queue (see `press`).
     private var directDelivery = false
+    /// `trace on`: key and action lines also log the layout (`layoutTrace`).
+    private var tracing = false
 
     init(app: AppController, script: String, out: String) {
         self.app = app
@@ -139,6 +145,9 @@ final class Automation {
             delay = 0
         case "log": record("# \(arg)"); delay = 0
         case "delivery": directDelivery = arg == "direct"; record("delivery \(arg)"); delay = 0
+        case "trace":
+            tracing = arg == "on"; record("trace \(arg)"); delay = 0
+            if tracing { record("      \(state()["layout"] ?? "")") }
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
         case "menu":
@@ -556,6 +565,8 @@ final class Automation {
             case .manual, .monocle:
                 break
             }
+            s["layout"] = Self.layoutTrace(tab)
+            s["order"] = tab.order.map { Self.tileName($0, in: tab) }.joined(separator: ",")
             s["visible"] = "\(controller.tiles.visibleTileFrames().count)"
             s["dimmed"] = controller.tiles.dimmedTiles
             s["dim.strength"] = String(format: "%.2f", Motion.dimStrength)
@@ -573,6 +584,52 @@ final class Automation {
         return s
     }
 
+    /// A tile's name in traces and `expect order`: `t1` is the first tile
+    /// seen, `t2` the next, and a name never moves to another tile while the
+    /// layout order changes and tiles close.
+    static func tileName(_ id: String, in tab: TabModel) -> String {
+        for tile in tab.tiles where traceNames[tile.id] == nil {
+            traceNames[tile.id] = "t\(traceNames.count + 1)"
+        }
+        return traceNames[id] ?? "t?"
+    }
+    private static var traceNames: [String: String] = [:]
+
+    /// `trace on`: the layout after each key, for checking chords against
+    /// Bismuth: kind, parameters, order (masters first), focus, weights and
+    /// each tile's rect in a 1000×1000 tab (top-left origin, from the tree
+    /// the shell draws; Monocle marks the one tile shown).
+    static func layoutTrace(_ tab: TabModel) -> String {
+        let name = { (id: String) in tileName(id, in: tab) }
+        var parts = ["kind=\(tab.kind.rawValue)"]
+        let p = tab.layout?.params
+        switch tab.kind {
+        case .tile:
+            parts.append("o=\(p?.tile.orientation ?? "?") m=\(p?.tile.masters ?? -1)"
+                + " r=\(String(format: "%.3f", p?.tile.ratio ?? 0)) part=\(p?.tile.rotatePart == true ? "yes" : "no")")
+        case .threeColumn:
+            parts.append("m=\(p?.threeColumn.masters ?? -1) r=\(String(format: "%.3f", p?.threeColumn.ratio ?? 0))")
+        case .manual, .monocle: break
+        }
+        parts.append("order=\(tab.order.map(name).joined(separator: ","))")
+        parts.append("focus=\(name(tab.focused))")
+        let weights = (tab.layout?.weights ?? [:]).sorted { name($0.key) < name($1.key) }
+        if !weights.isEmpty {
+            parts.append("w=" + weights.map { "\(name($0.key)):\(String(format: "%.2f", $0.value))" }.joined(separator: ","))
+        }
+        let size: CGFloat = 1000
+        let frames = tab.root.frames(in: CGRect(x: 0, y: 0, width: size, height: size), gap: 0)
+        let rects: [String] = tab.tiles.map { tile in
+            if tab.kind == .monocle {
+                return "\(name(tile.id))=\(tile.id == tab.focused ? "shown" : "hidden")"
+            }
+            guard let f = frames[tile.id] else { return "\(name(tile.id))=?" }
+            return "\(name(tile.id))=\(Int(f.minX)),\(Int(size - f.maxY)),\(Int(f.width))x\(Int(f.height))"
+        }
+        parts.append("rects " + rects.joined(separator: " "))
+        return parts.joined(separator: " ")
+    }
+
     private func record(_ what: String) {
         let s = state()
         var line = "\(String(format: "%3d", step)) \(what)"
@@ -580,6 +637,9 @@ final class Automation {
             line += "\n      ws \(s["workspace"] ?? "?")/\(s["workspaces"] ?? "?") tab \(s["tab"] ?? "?")/\(s["tabs"] ?? "?")"
             line += " tiles \(s["tiles"] ?? "?") focus \(s["focus"] ?? "?") zoom \(s["zoomed"] ?? "?")"
             line += " sidebar \(s["sidebar"] ?? "?")  \(s["tree"] ?? "")"
+            if tracing {
+                line += "\n      → \(s["key.last"] ?? "?")  \(s["layout"] ?? "")  hint \"\(s["tab.hint"] ?? "")\""
+            }
             for note in notes { line += "\n      · \(note)" }
         }
         logText += line + "\n"

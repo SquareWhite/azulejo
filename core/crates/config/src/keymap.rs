@@ -23,6 +23,11 @@ use crate::action::{Action, NameSpec, names};
 use crate::chord::{Chord, ChordPattern, Key, Mods, Platform};
 use crate::diag::{Diagnostic, Location, Severity, Sink, Source};
 
+/// Action names that changed, old → new. Configs using an old name keep
+/// working, with a warning. `rotate_clockwise` went when `rotate_layout`
+/// (`alt+o`) became the clockwise quarter turn (Nov 4, 2026).
+const RENAMED: &[(&str, &str)] = &[("rotate_clockwise", "rotate_layout")];
+
 /// Whether the shell has seen the prefix key and is waiting for the next chord.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PrefixState {
@@ -395,7 +400,14 @@ impl<'s, 'a> LayerParser<'s, 'a> {
         context: Option<KeyContext>,
         prefix: bool,
     ) -> Option<Entry> {
-        let name = key.get_ref().as_ref();
+        let mut name = key.get_ref().as_ref();
+        if let Some((old, new)) = RENAMED.iter().find(|(old, _)| *old == name) {
+            self.sink.warn(
+                key.span(),
+                format!("`{old}` is now `{new}`; it still works, but rename it"),
+            );
+            name = new;
+        }
         let Some(order) = self.names.iter().position(|(n, _)| n == name) else {
             self.sink
                 .warn(key.span(), format!("unknown action `{name}`"));

@@ -768,6 +768,7 @@ extension WindowController {
         }
         s["tab.statuses"] = tabBar.statuses.joined(separator: ",")
         s["tab.overflow"] = tabBar.overflow
+        s["tab.hint"] = tabBar.selectedHint
         s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText
         s["search.active"] = search.active ? "yes" : "no"
         if palette.isHidden {

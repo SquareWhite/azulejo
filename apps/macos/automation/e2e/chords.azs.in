@@ -41,13 +41,6 @@ key alt+j
 expect key.last action:focus_tile_down
 key alt+k
 expect key.last action:focus_tile_up
-key alt+]
-expect key.last action:cycle_tile_next
-remember focus
-key alt+[
-expect key.last action:cycle_tile_previous
-key alt+]
-unchanged focus
 # --- swap ---
 key alt+h
 expect focus 1
@@ -109,6 +102,10 @@ key alt+o
 expect key.last action:rotate_layout
 expect orientation top
 key alt+o
+expect orientation right
+key alt+o
+expect orientation bottom
+key alt+o
 expect orientation left
 key alt+shift+e
 expect key.last action:equalize_layout
@@ -137,10 +134,16 @@ expect focus 2
 key alt+shift+bracketleft
 expect key.last action:move_position_previous
 expect focus 1
+key alt+]
+expect key.last action:cycle_layout_next
+expect kind monocle
+key alt+[
+expect key.last action:cycle_layout_previous
+expect kind tile
 key alt+backslash
 expect key.last action:cycle_layout_next
 expect kind monocle
-key alt+backslash
+key alt+]
 expect kind three_column
 key alt+shift+backslash
 expect key.last action:cycle_layout_previous
@@ -171,12 +174,41 @@ wait 1500
 key cmd+a
 expect key.last passed
 expect sidebar visible
+# alt+] / alt+[ switch layouts in a browser tile too, as alt+\ does: the
+# router sees them before the page, and only cmd+[ / cmd+] are its own
+key alt+]
+expect key.last action:cycle_layout_next
+expect kind monocle
+key alt+[
+expect key.last action:cycle_layout_previous
+expect kind tile
+key cmd+l
+expect key.last action:browser_focus_address
+key alt+]
+expect key.last action:cycle_layout_next
+expect kind monocle
+key alt+[
+expect kind tile
+key escape
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@PLAN@"}}}
 until tile.kind preview 3000
 wait 1000
 key cmd+a
 expect key.last passed
 expect sidebar visible
+key alt+]
+expect key.last action:cycle_layout_next
+expect kind monocle
+key alt+[
+expect kind tile
+key cmd+f
+key alt+]
+expect key.last action:cycle_layout_next
+expect key.context find_bar
+expect kind monocle
+key alt+[
+expect kind tile
+key escape
 key alt+w
 until tiles 5 3000
 key alt+w
@@ -239,6 +271,9 @@ until workspaces 1 3000
 key cmd+k
 expect key.last action:quick_open
 expect palette all
+key alt+]
+expect key.last palette-field
+expect kind tile
 key escape
 expect palette closed
 key cmd+f
