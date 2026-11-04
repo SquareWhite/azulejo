@@ -32,6 +32,8 @@ enum Motion {
     static var durationOverride: CFTimeInterval?
     static var enabledOverride: Bool?
     static var styleOverride: String?
+    /// The app log (motion ends, reveals).
+    static var log: (String) -> Void = { _ in }
 
     enum Style { case crop, scale, outline }
 

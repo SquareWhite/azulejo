@@ -63,6 +63,7 @@ final class TerminalSurfaceView: NSView {
 
     /// Stops the child (SIGHUP via the PTY closing) and frees the surface.
     func close() {
+        stopProbe()
         TerminalRuntime.shared?.unregister(token)
         onExit = nil
         if let surface {
@@ -72,6 +73,7 @@ final class TerminalSurfaceView: NSView {
     }
 
     isolated deinit {
+        probe?.cancel()
         if let surface { ghostty_surface_free(surface) }
         TerminalRuntime.shared?.unregister(token)
     }
@@ -137,16 +139,100 @@ final class TerminalSurfaceView: NSView {
     private func updateSurfaceSize() {
         guard let surface, bounds.width > 0, bounds.height > 0 else { return }
         let px = convertToBacking(NSRect(origin: .zero, size: bounds.size)).size
-        if px != lastPixelSize {
+        let changed = px != lastPixelSize
+        if changed {
             lastPixelSize = px
             resizeCount += 1
         }
         ghostty_surface_set_size(surface, UInt32(px.width), UInt32(px.height))
+        if changed { startDrawProbe() }
     }
 
     /// Times the surface (and so the PTY) changed pixel size; motion stats.
     private(set) var resizeCount = 0
     private(set) var lastPixelSize = CGSize.zero
+
+    // MARK: Draw probe
+
+    /// Short tile id for logs.
+    var logName = ""
+    /// Where draw-probe lines go (the app log).
+    static var log: (String) -> Void = { _ in }
+
+    /// When the surface last changed pixel size.
+    private(set) var resizedAt: CFTimeInterval = 0
+    /// When a new presented frame was last seen (the probe only looks after
+    /// a resize), and its identity.
+    private(set) var lastFrameSeenAt: CFTimeInterval = 0
+    private var lastFrameKey: (UnsafeMutableRawPointer, UInt32)?
+    /// Whether libghostty has presented a frame at `lastPixelSize` since the
+    /// last resize (nil while the probe is still looking).
+    private(set) var drewAtSize: Bool?
+    private var probe: DispatchSourceTimer?
+
+    /// The presented frame's identity and seed: a new frame changes one.
+    private var presentedKey: (UnsafeMutableRawPointer, UInt32)? {
+        guard let s = presentedSurface else { return nil }
+        return (Unmanaged.passUnretained(s).toOpaque(), IOSurfaceGetSeed(s))
+    }
+
+    /// Whether the presented frame has the surface's current pixel size.
+    var presentedAtSize: Bool {
+        guard let s = presentedSurface else { return false }
+        return IOSurfaceGetWidth(s) == Int(lastPixelSize.width) && IOSurfaceGetHeight(s) == Int(lastPixelSize.height)
+    }
+
+    /// The presented frame's size in pixels, for logs.
+    var presentedSizeText: String {
+        guard let s = presentedSurface else { return "none" }
+        return "\(IOSurfaceGetWidth(s))x\(IOSurfaceGetHeight(s))"
+    }
+
+    /// After a resize, watch (on a plain timer, not the display link, which
+    /// stops with the screen locked) for libghostty's first frame at the new
+    /// size, and log when it came or that it didn't within 2 s. Tells a
+    /// reveal bug from a renderer that isn't drawing.
+    private func startDrawProbe() {
+        resizedAt = CACurrentMediaTime()
+        drewAtSize = nil
+        let before = presentedKey
+        lastFrameKey = before
+        guard probe == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + .milliseconds(5), repeating: .milliseconds(5))
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.probeTick() }
+        }
+        probe = timer
+        timer.resume()
+    }
+
+    private func probeTick() {
+        let now = CACurrentMediaTime()
+        let key = presentedKey
+        if let key, lastFrameKey.map({ $0.0 != key.0 || $0.1 != key.1 }) ?? true {
+            lastFrameKey = key
+            lastFrameSeenAt = now
+            if presentedAtSize {
+                drewAtSize = true
+                stopProbe()
+                Self.log("terminal \(logName): drew at \(Int(lastPixelSize.width))x\(Int(lastPixelSize.height)) px "
+                    + "\(Int((now - resizedAt) * 1000)) ms after the resize")
+                return
+            }
+        }
+        if now - resizedAt > 2 {
+            drewAtSize = false
+            stopProbe()
+            Self.log("terminal \(logName): NO frame at \(Int(lastPixelSize.width))x\(Int(lastPixelSize.height)) px "
+                + "2 s after the resize (shows \(presentedSizeText)); libghostty isn't drawing")
+        }
+    }
+
+    private func stopProbe() {
+        probe?.cancel()
+        probe = nil
+    }
 
     // MARK: Snapshot
 

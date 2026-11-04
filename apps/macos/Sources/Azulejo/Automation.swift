@@ -242,9 +242,40 @@ final class Automation {
         do {
             try output.representation(using: .png, properties: [:])?.write(to: url)
             record("shot \(name) → \(url.lastPathComponent)")
+            checkFreshness(name)
         } catch {
             failures.append("line \(step): shot \(name): \(error)")
         }
+    }
+
+    /// Both renders read each terminal's layer contents: the IOSurface
+    /// libghostty last presented, or the motion snapshot (a copy of an older
+    /// one) while it's up. Says so when that isn't the terminal's current
+    /// frame (`STALE` lines in the log), and writes `<name>.fresh.json`, so
+    /// a capture never passes off an old frame as the app's state. A locked
+    /// screen is noted too: the display link doesn't tick then.
+    private func checkFreshness(_ name: String) {
+        guard let tiles = app?.focusedController?.tiles else { return }
+        let report = tiles.captureFreshness()
+        let locked = Self.screenLocked
+        let stale = report.tiles.flatMap { tile in
+            (tile["stale"] as? [String] ?? []).map { "tile \(tile["tile"] ?? "?"): \($0)" }
+        }
+        let json: [String: Any] = [
+            "capture": name, "screen_locked": locked, "stale": stale, "terminals": report.tiles,
+            "display_link_ticks_since_last_motion": report.ticks,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: out.appendingPathComponent("\(name).fresh.json"))
+        }
+        for line in stale { record("  STALE \(name): \(line)") }
+        if locked { record("  note \(name): screen locked (no display-link ticks, no system captures)") }
+    }
+
+    /// `CGSSessionScreenIsLocked` from the console session.
+    static var screenLocked: Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return (session["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue ?? false
     }
 
     private func animCommand(_ arg: String) {
@@ -286,7 +317,9 @@ final class Automation {
     /// `screencapture` gets nothing while the screen is locked, so the app
     /// also renders the layer presentation tree itself to `<name>-app.png`:
     /// tiles, headers and corner caps where the motion has them at that
-    /// instant (live Metal surfaces show as their background).
+    /// instant. Terminals show the frame libghostty last presented, or their
+    /// motion snapshot while it's up; `checkFreshness` flags either when it
+    /// isn't current.
     private func capture(_ arg: String) {
         let parts = arg.split(separator: " ").map(String.init)
         guard let name = parts.first else { return }
@@ -333,6 +366,7 @@ final class Automation {
         let url = out.appendingPathComponent("\(name).png")
         do {
             try rep.representation(using: .png, properties: [:])?.write(to: url)
+            checkFreshness(name)
         } catch {
             notes.append("capture \(name): \(error)")
         }

@@ -43,6 +43,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         Motion.load(core.animation())
+        Motion.log = { [weak self] in self?.log($0) }
         Perf.installRunLoopObservers()
         core.onEvent = { [weak self] json in
             Perf.noteEvent(json, moving: MotionStats.shared.moving)
