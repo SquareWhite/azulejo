@@ -1,0 +1,86 @@
+# C3 / C4: states and edge layouts for a visual check against the mockup and
+# the tokens. gallery.sh fills @FX@ @SITE@ @FOCUS@. Shots only; few asserts.
+log C gallery
+delivery direct
+window-size 1440 900
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+# --- every tile kind, one focused at a time ---
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"files","root":"@FX@/azulejo"}}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@FX@/plan.md"}}}
+wait 2500
+shot 01-kinds-preview-focused
+key alt+h
+wait 400
+shot 02-kinds-files-focused
+key alt+k
+wait 400
+shot 03-kinds-browser-focused
+# --- browser chrome: editing, then https ---
+key cmd+l
+wait 300
+shot 04-browser-editing
+key escape
+core {"method":"browser.open","params":{"url":"https://example.invalid/path/to/page"}}
+wait 1500
+shot 05-browser-https
+# --- read-only take-over overlay on the terminal ---
+key alt+h
+wait 300
+sh python3 @FOCUS@/takeover.py {herdr} {session} {pane} 5 >/dev/null 2>&1 &
+until terminal.phase observing-taken-over 5000
+wait 500
+shot 06-taken-over
+wait 5500
+terminal takeover
+until terminal.phase attached 8000
+# --- 1 tile, Monocle, Three Column are covered elsewhere; 10 tiles here ---
+key cmd+shift+t
+until tabs 2 3000
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+until tiles 10 5000
+wait 2500
+shot 07-ten-tiles
+# --- many tabs: the strip overflows ---
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+until tabs 12 5000
+wait 1500
+shot 08-many-tabs
+# --- minimum window size, with the 10-tile tab ---
+key ctrl+2
+wait 300
+window-size 480 320
+wait 1200
+shot 09-min-size-ten-tiles
+key ctrl+1
+wait 600
+shot 10-min-size-kinds
+window-size 1440 900
+wait 600
+# --- an empty workspace, and a tab whose last tile closed ---
+core {"method":"workspace.create","params":{"name":"empty"}}
+wait 1200
+shot 11-empty-workspace
+key cmd+shift+t
+wait 1500
+key alt+w
+wait 1200
+shot 12-tab-after-last-tile-closed

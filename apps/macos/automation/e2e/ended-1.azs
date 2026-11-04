@@ -1,0 +1,11 @@
+# B9 part 1: three terminals in a manual tab, then quit (state saved).
+log B9 ended setup
+delivery direct
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+key ctrl+cmd+v
+key ctrl+cmd+v
+until tiles 3 3000
+wait 2000
+sh {herdr} --session {session} pane list > {out}/panes.json
+sh echo {pane:2} > {out}/kill1; echo {pane:3} > {out}/kill2

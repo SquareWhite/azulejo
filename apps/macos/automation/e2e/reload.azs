@@ -1,0 +1,49 @@
+# B8 / B13: the ⌘K badge follows the binding, the menu offers every command,
+# and config reloads (keys, animation, a broken file) apply without restart.
+log B8 B13 reload
+delivery direct
+until terminal.phase attached 10000
+sh cp {config} {config}.orig
+expect search.chord ⌘K
+key cmd+k
+expect palette all
+expect palette.anchor search
+key escape
+expect palette closed
+# Every command: count the `>` scope against the core's commands.list.
+palette open >
+expect palette commands
+remember palette.count
+sh "$AZJ" --json commands list > {out}/commands.json
+palette close
+# --- rebind quick_open: the badge and the router follow on save ---
+sh printf '\n[keys]\nquick_open = "cmd+j"\n' >> {config}
+until search.chord ⌘J 3000
+key cmd+j
+expect key.last action:quick_open
+expect palette all
+key escape
+key cmd+k
+expect key.last passed
+expect palette closed
+shot 01-badge-rebound
+# --- a broken file: banner, no crash, old bindings stay ---
+sh printf '\nthis is [not toml\n' >> {config}
+until banner.shown yes 4000
+expect windows 1
+key cmd+j
+expect key.last action:quick_open
+key escape
+shot 02-broken-config
+# --- animation keys reload: motion off, then a split is instant ---
+sh cp {config}.orig {config}
+sh printf '\n[animation]\nenabled = false\n' >> {config}
+until search.chord ⌘K 3000
+until banner.shown no 3000
+wait 300
+anim reset
+key ctrl+cmd+t
+until tiles 2 3000
+wait 500
+anim stats anim-after-reload
+sh cp {config}.orig {config}
