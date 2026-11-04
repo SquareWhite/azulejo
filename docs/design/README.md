@@ -23,6 +23,7 @@ Everything sits on a dark window background (`#1b1d23`) as rounded cards with ev
 - **No title bar.** Full-size content view; traffic lights (red, yellow, green) at the top-left of the sidebar card, with a sidebar-toggle icon at the card's top-right.
 - The toolbar row shares the title-bar height: tab strip on the left, search field on the right.
 - **Sidebar toggle in motion** (Nov 4): the card slides out past the window's left edge and fades as it closes (and back as it opens), its right edge a gutter from the tiles' left edge all the way, while the tiles grow or shrink with the layout motion's crop rules. The toggle and the tab strip slide along. The traffic lights stay where they are, open or closed: on the card, then on the window colour.
+- **Collapsed is a rail** (Nov 4, the maintainer: "like in herdr"): `toggle_sidebar` turns the card into a narrow card (`space.railWidth`, 40 pt) under the toolbar row, level with the tiles' top, a gutter from them; the traffic lights and the toggle stay in the toolbar row above it. In motion the card's top and right edges move and it clips its rows, which cross-fade between their full and rail forms. `[sidebar] collapsed = "hidden"` slides it out of sight instead, as before. See "Rail" below.
 
 ## Sidebar (card, `#21252b`)
 
@@ -37,6 +38,16 @@ Everything sits on a dark window background (`#1b1d23`) as rounded cards with ev
   - dev-server: notes · main (idle, dimmed while the machine reconnects).
 - **"+"** under each group to add a workspace on that machine.
 - **Footer**: rollup counts by status, icon + number: working 2, blocked 2, idle 3, done 2.
+
+### Rail (the collapsed sidebar, Nov 4)
+
+Not in the mockup; modelled on herdr's collapsed sidebar. Same card colour, radius and hairline as the full card, rows `space.railPadding` in from its sides; only tokens, no colours of its own.
+
+- **Machine group**: the machine's first letter (`font.railLetter`, muted; "L" for Local) and its connection dot, or the orange turning ring while it connects or reconnects. Its rows dim while it isn't connected, as in the full sidebar.
+- **Workspace rows** (`space.railRowHeight`): the number ⌘1…⌘8 use, then the row's status icon, the same icons as the full sidebar (`Design.Status`, `symbol.railStatus`; the working ring turns, still under Reduce Motion). The current workspace sits on `selected`; hover on `selected` at `alpha.rowHover`.
+- **Agents**, below a hairline and pinned to the bottom when there's room: one row per terminal with an agent, its machine letter and status icon, in window order (herdr's default "spaces" order). Blocked rows sit on `statusBlocked` at `alpha.railAttention`, their letter in the blocked colour.
+- **`»`** (`chevron.right.2`, muted) at the bottom opens the full sidebar.
+- Tooltips: a workspace's name and ⌘ number, branch, agent counts; an agent's name, workspace / tab, state; a group's machine and state.
 
 ### Status icons (used in sidebar, tabs and footer)
 
@@ -93,7 +104,7 @@ Four tiles in the mockup: a terminal as the master on the left, a browser top-ri
 
 The values above live in [`shared/design/tokens.json`](../../shared/design/tokens.json), the single source for both shells. The macOS shell reads them through `Design.swift`, which `scripts/design-tokens` (or `just design-tokens`) generates; `just lint` fails while it's stale. No view sets a colour, font or corner radius directly any more.
 
-- **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Each has a dark and a light value; the light ones are provisional.
+- **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Since Nov 4 they live per theme (`themes.<id>.color` in tokens.json): this palette is `atom-one-dark`, the default, unchanged; `atom-one-light`, `macos-dark` and `macos-light` sit beside it, and users can add their own. [docs/themes.md](../themes.md) has the themes, the config, the terminal colour precedence and the full token list; `Design.Color` tokens resolve against the current theme, and views re-apply their layer colours on a switch (`ThemeAware`, `Theme.swift`).
 - **Tile radii and spacing** follow the mockup since D.5: gutter and outer margin 8 pt, tile radius 10 pt, header strip 28 pt, browser toolbar 36 pt, 8 pt margin round a terminal's text. The sidebar width (168 → 230 pt) moves with D.3.
 - **Tile cards** (D.5): the card's corners are the window colour drawn over the tile (`CornerCapLayer`, a nine-slice image), not a rounded mask, so the terminal's Metal surface and web views aren't masked (a rounded mask costs an offscreen pass). During crop motion the caps follow the moving clip.
 - **Header strips** (D.5): `header` (#21252b, the mockup's focused strip) on every tile, with a `headerHairline` underneath. Unfocused strips come out at the mockup's #202329 through the focus dim (below), not a colour of their own. Terminal titles are centred; tiles with controls on the right (preview, files) are left-aligned. Browser tiles have no header strip; their toolbar takes its place (`browserChrome`, address pill `browserField`, D.6).

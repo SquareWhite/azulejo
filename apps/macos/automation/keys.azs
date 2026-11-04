@@ -131,7 +131,7 @@ expect workspace 1
 
 # --- sidebar: cmd+a toggles it in terminal tiles ---
 key cmd+a
-expect sidebar hidden
+expect sidebar rail
 shot 08-no-sidebar
 key cmd+a
 expect sidebar visible

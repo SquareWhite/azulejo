@@ -28,6 +28,14 @@ capture t1-atom-one-dark-find 0
 wait 1200
 key escape
 until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t1-atom-one-dark-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
 
 log === config file → atom-one-light
 remember resizes
@@ -56,6 +64,14 @@ capture t2-atom-one-light-find 0
 wait 1200
 key escape
 until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t2-atom-one-light-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
 
 log === ⌘K "Set theme…": arrows preview, esc goes back
 remember resizes
@@ -108,8 +124,19 @@ capture t3-macos-dark-find 0
 wait 1200
 key escape
 until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t3-macos-dark-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
 
-log === config file → macos-light
+log === config file → macos-light, with the sidebar collapsed to its rail
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
 remember resizes
 remember terminal.attaches
 sh python3 @HERE@/set-appearance.py {config} theme=macos-light
@@ -118,6 +145,11 @@ wait 1500
 unchanged resizes
 unchanged terminal.attaches
 expect theme.window light
+capture t4-macos-light-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
 capture t4-macos-light 0
 wait 1200
 palette open

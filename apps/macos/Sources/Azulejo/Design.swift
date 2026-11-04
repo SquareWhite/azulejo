@@ -619,6 +619,7 @@ enum Design {
         static let bannerBorder: CGFloat = 0.5
         static let browserBanner: CGFloat = 0.95
         static let paletteShadow: CGFloat = 0.35
+        static let railAttention: CGFloat = 0.16
     }
 
     /// Spacing and fixed sizes, in points.
@@ -662,6 +663,12 @@ enum Design {
         static let sidebarGroupHeight: CGFloat = 32
         static let sidebarAddHeight: CGFloat = 26
         static let sidebarFooterHeight: CGFloat = 36
+        static let railWidth: CGFloat = 40
+        static let railPadding: CGFloat = 4
+        static let railGroupHeight: CGFloat = 22
+        static let railRowHeight: CGFloat = 24
+        static let railSectionGap: CGFloat = 12
+        static let railExpandHeight: CGFloat = 30
         static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
         static let findFieldMin: CGFloat = 60
@@ -684,6 +691,8 @@ enum Design {
         static let sidebarSegment: CGFloat = 11
         static let footerStatus: CGFloat = 11
         static let machineRing: CGFloat = 9
+        static let railStatus: CGFloat = 11
+        static let railExpand: CGFloat = 11
         static let paletteKind: CGFloat = 12
         static let paletteStatus: CGFloat = 11
     }
@@ -702,6 +711,8 @@ enum Design {
         nonisolated(unsafe) static let sidebarBranch: NSFont = .systemFont(ofSize: 12, weight: .regular)
         nonisolated(unsafe) static let sidebarSegment: NSFont = .systemFont(ofSize: 12, weight: .medium)
         nonisolated(unsafe) static let footerCount: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let railNumber: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let railLetter: NSFont = .systemFont(ofSize: 11, weight: .medium)
         nonisolated(unsafe) static let dot: NSFont = .systemFont(ofSize: 8, weight: .regular)
         nonisolated(unsafe) static let addButton: NSFont = .systemFont(ofSize: 13, weight: .regular)
         nonisolated(unsafe) static let badge: NSFont = .systemFont(ofSize: 11, weight: .semibold)

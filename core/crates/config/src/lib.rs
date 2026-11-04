@@ -41,6 +41,9 @@
 //! theme_light = "atom-one-light"  # with "auto"
 //! theme_dark = "atom-one-dark"
 //! terminal_colors = "theme"  # or "ghostty"; default: "ghostty" if its config sets colours
+//! [sidebar]
+//! collapsed = "rail"     # what toggle_sidebar collapses it to: "rail" (workspace numbers and
+//!                        # agent states down a narrow column) or "hidden"
 //!
 //! [layout]               # dynamic layouts (ADR 0010)
 //! default = "tile"       # new tabs: "tile", "monocle", "three_column" or "manual"
@@ -65,7 +68,7 @@ pub mod theme;
 
 use std::path::{Path, PathBuf};
 
-use azulejo_protocol::{InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation};
+use azulejo_protocol::{InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation, SidebarState};
 use toml::de::{DeTable, DeValue};
 
 pub use action::{Action, PLANNED_METHODS, Target};
@@ -232,6 +235,22 @@ pub struct TerminalConfig {
     pub on_exit: OnExit,
 }
 
+/// The `[sidebar]` settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidebarConfig {
+    /// What collapsing the sidebar (`toggle_sidebar`) gives: a rail or
+    /// nothing. Never `Full`.
+    pub collapsed: SidebarState,
+}
+
+impl Default for SidebarConfig {
+    fn default() -> Self {
+        SidebarConfig {
+            collapsed: SidebarState::Rail,
+        }
+    }
+}
+
 /// The `[layout]` defaults: what new tabs start as. Unlike the model's own
 /// default (manual, so a bare session behaves as before), new tabs default to
 /// dynamic Tile here (ADR 0010).
@@ -253,6 +272,7 @@ pub struct Config {
     pub appearance: AppearanceConfig,
     /// The built-in themes plus the user's (`<config dir>/themes/*.toml`).
     pub themes: Themes,
+    pub sidebar: SidebarConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -288,6 +308,7 @@ impl Config {
             .and_then(Path::parent)
             .map(|dir| dir.join("themes"));
         let themes = Themes::load(themes_dir.as_deref(), &mut diagnostics);
+        let mut sidebar = SidebarConfig::default();
 
         parse_layer(
             DEFAULT_KEYMAP,
@@ -318,6 +339,10 @@ impl Config {
                     }
                     "terminal" => {
                         parse_terminal(sink, value, &mut terminal);
+                        true
+                    }
+                    "sidebar" => {
+                        parse_sidebar(sink, value, &mut sidebar);
                         true
                     }
                     "layout" => {
@@ -365,6 +390,7 @@ impl Config {
             terminal,
             appearance,
             themes,
+            sidebar,
             path,
             diagnostics,
         }
@@ -534,6 +560,28 @@ fn parse_terminal(
                 "`terminal.on_exit` must be \"close\" or \"keep\"",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `terminal.{other}`")),
+        }
+    }
+}
+
+fn parse_sidebar(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut SidebarConfig) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`sidebar` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("collapsed", DeValue::String(s)) if s.as_ref() == "rail" => {
+                out.collapsed = SidebarState::Rail
+            }
+            ("collapsed", DeValue::String(s)) if s.as_ref() == "hidden" => {
+                out.collapsed = SidebarState::Hidden
+            }
+            ("collapsed", _) => sink.error(
+                value.span(),
+                "`sidebar.collapsed` must be \"rail\" or \"hidden\"",
+            ),
+            (other, _) => sink.warn(key.span(), format!("unknown setting `sidebar.{other}`")),
         }
     }
 }

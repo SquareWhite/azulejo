@@ -89,7 +89,7 @@ log === S10 cmd+a is the sidebar in a terminal (context chord); first responder 
 expect sidebar visible
 key cmd+a
 expect key.last action:toggle_sidebar
-expect sidebar hidden
+expect sidebar rail
 expect responder terminal
 key cmd+a
 expect sidebar visible

@@ -47,6 +47,9 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     private var panelView: FilesTileView?
 
     override var isFlipped: Bool { true }
+    /// A click on empty space does nothing (the card it sits in would move
+    /// the window).
+    override func mouseDown(with event: NSEvent) {}
 
     override init(frame: NSRect) {
         mode = Mode(rawValue: UserDefaults.standard.string(forKey: Self.modeKey) ?? "") ?? .agents
@@ -781,6 +784,10 @@ private final class SidebarFooter: NSView {
 /// `sidebar files <verb> [arg]` (the files tile's verbs on the Files view).
 /// State: `sidebar.mode`, `sidebar.statuses`, `sidebar.footer`, and the
 /// Files view's `tile.*` keys as `sidebar.files.*`.
+/// The rail: `sidebar rail select N|agent N|expand`; state `rail.shown`,
+/// `rail.rows`, `rail.groups`, `rail.agents`, `rail.tips`,
+/// `rail.agent.tips`, `rail.group.tips`, `rail.fits`, `rail.spinning`,
+/// `rail.keyboard`.
 @MainActor
 enum SidebarAutomation {
     static func run(_ arg: String, controller: WindowController?) -> String? {
@@ -801,6 +808,24 @@ enum SidebarAutomation {
             guard let panel = sidebar.filesPanel else { return "the Files view isn't shown" }
             let bits = rest.split(separator: " ", maxSplits: 1).map(String.init)
             return panel.automate(bits.first ?? "", bits.count > 1 ? bits[1] : "")
+        case "rail":
+            // `sidebar rail select N` (the Nth workspace row), `sidebar rail
+            // agent N` (the Nth agent row), `sidebar rail expand` (»).
+            guard let rail = controller?.railView, !rail.isHiddenOrHasHiddenAncestor else { return "the rail isn't shown" }
+            let bits = rest.split(separator: " ").map(String.init)
+            let n = bits.count > 1 ? Int(bits[1]) : nil
+            switch bits.first ?? "" {
+            case "select":
+                guard let n, rail.workspaceRows.indices.contains(n - 1) else { return "no rail row \(rest)" }
+                rail.workspaceRows[n - 1].press()
+            case "agent":
+                guard let n, rail.agentRows.indices.contains(n - 1) else { return "no rail agent \(rest)" }
+                rail.agentRows[n - 1].press()
+            case "expand":
+                (rail.expandButton as? NSButton)?.performClick(nil)
+            default:
+                return "sidebar rail takes select N, agent N or expand"
+            }
         default:
             return "unknown sidebar verb \(parts.first ?? "")"
         }
@@ -814,6 +839,24 @@ enum SidebarAutomation {
             "sidebar.statuses": sidebar.statuses.joined(separator: "|"),
             "sidebar.footer": sidebar.footerCounts,
         ]
+        // The rail: rows, groups, agents, tooltips (lines joined by " ¦ ",
+        // rows by " ‖ "), whether it all fits, spinning working rings and
+        // whether the keyboard is in it (never).
+        let rail = controller.railView
+        let tips = { (views: [NSView]) in
+            views.map { ($0.toolTip ?? "").replacingOccurrences(of: "\n", with: " ¦ ") }.joined(separator: " ‖ ")
+        }
+        s["rail.shown"] = rail.isHiddenOrHasHiddenAncestor ? "no" : "yes"
+        s["rail.rows"] = rail.rowSummary
+        s["rail.groups"] = rail.groupSummary
+        s["rail.agents"] = rail.agentSummary.isEmpty ? "-" : rail.agentSummary
+        s["rail.tips"] = tips(rail.workspaceRows)
+        s["rail.agent.tips"] = tips(rail.agentRows)
+        s["rail.group.tips"] = tips(rail.groups)
+        s["rail.fits"] = rail.fits ? "yes" : "no"
+        s["rail.spinning"] = "\((rail.workspaceRows as [RailRow] + rail.agentRows).filter { $0.isSpinning }.count)"
+        let responder = controller.window.firstResponder as? NSView
+        s["rail.keyboard"] = responder.map { $0.isDescendant(of: rail) } == true ? "yes" : "no"
         if let panel = sidebar.filesPanel {
             for (key, value) in panel.automationState() {
                 s["sidebar.files." + key.replacingOccurrences(of: "tile.", with: "")] = value

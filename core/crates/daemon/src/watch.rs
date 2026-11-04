@@ -170,6 +170,7 @@ pub fn push_settings(core: &Core, shared: &SharedConfig) {
     if let Ok(config) = shared.read() {
         core.set_on_exit(config.terminal.on_exit);
         core.set_layout_prefs(config.layout.clone());
+        core.set_sidebar_collapsed(config.sidebar.collapsed);
     }
 }
 

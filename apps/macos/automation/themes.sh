@@ -30,7 +30,11 @@ for a in "$@"; do
 done
 out="$root/.dev/$AZJ_DEV_NAME.out/mockup"
 tail="$(mktemp "${TMPDIR:-/tmp}/azj-themes.XXXXXX")"
-trap 'rm -f "$tail"' EXIT
+# The profile's user themes and Ghostty file: none left from an earlier run.
+profile="$root/.dev/$AZJ_DEV_NAME/config"
+clean() { rm -rf "$profile/azulejo/themes" "$profile/ghostty/config"; }
+clean
+trap 'rm -f "$tail"; [[ -n "$keep" ]] || clean' EXIT
 sed -e "s|@HERE@|$here/themes|g" "$here/themes/themes.azs.in" >"$tail"
 
 status=0
@@ -127,6 +131,33 @@ for tag, theme in themes:
     else:
         failures.append(f"{theme}: the find bar's frame wasn't logged")
     print(f"{theme}:")
+    # The rail: its card, the selected workspace's fill and a blocked
+    # agent's tint, somewhere down the column.
+    rail_shot = out / f"{tag}-{theme}-rail-app.png"
+    if rail_shot.exists():
+        rail = Image.open(rail_shot).convert("RGB")
+        column = rail.crop((10 * 2, 70 * 2, 46 * 2, 880 * 2))
+        colours = {c[1][:3] for c in column.getcolors(column.size[0] * column.size[1])}
+        card = mode(rail, (12, 700, 32, 150))
+        sel = solid(theme, "selected", "sidebar") if vibrant else None
+        if not vibrant:
+            sel_rgb, sel_a = colour(theme, "selected")
+            sel = over(sel_rgb, sel_a, solid(theme, "sidebar"))
+            if not near(card, solid(theme, "sidebar"), 3):
+                failures.append(f"{theme} rail card: #{bytes(card).hex()} is not #{bytes(solid(theme, 'sidebar')).hex()}")
+        else:
+            sel_rgb, sel_a = colour(theme, "selected")
+            sel = over(sel_rgb, sel_a, card)
+        blk_rgb, _ = colour(theme, "statusBlocked")
+        tint = over(blk_rgb, round(255 * tokens["alpha"]["railAttention"]), card)
+        for name, want in [("rail selected row", sel), ("rail blocked tint", tint)]:
+            hit = any(near(c, want, 3) for c in colours)
+            print(f"  {name:<18} #{bytes(want).hex()} {'found' if hit else 'MISSING'}")
+            if not hit:
+                failures.append(f"{theme} {name}: no #{bytes(want).hex()} in the rail")
+        samples["rail card"] = (card, None)
+    else:
+        failures.append(f"{theme}: no rail capture")
     for name, (got, want) in samples.items():
         note = ""
         if want is not None and not near(got, want, 3):

@@ -1,0 +1,43 @@
+# The rail after a relaunch, run by sidebar.sh on the same profile once
+# sidebar.azs left the sidebar collapsed. sidebar.sh fills in @SIDE@: the
+# folder with the ssh stand-in (scripts/ssh-standin.sh) for "standin", a
+# throwaway herdr session reached through the SSH path. Nothing connects to
+# a real machine.
+
+log sidebar relaunch
+# Saved per window: the rail comes back.
+until sidebar rail 5000
+expect rail.shown yes
+expect chrome.rail.overlaps none
+
+# standin's group and its adopted workspace (6 and 7: its first one and "on-remote").
+until rail.groups L:connected|S:connected 20000
+until rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle|7:idle 10000
+expect rail.group.tips Local ¦ Connected ‖ standin ¦ Connected
+expect rail.fits yes
+shot 06-rail-remote
+
+# Cut the "SSH link": standin reconnects (orange, turning), its row dims.
+sh touch @SIDE@/ssh.fail
+sh pkill -f 'azj-dev-side-remote remote-api-bridge' || true
+until rail.groups L:connected|S:reconnecting 10000
+expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle~|7:idle~
+shot 07-rail-reconnecting
+capture 07-rail-reconnecting-window 0
+sh rm -f @SIDE@/ssh.fail
+until rail.groups L:connected|S:connected 40000
+expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle|7:idle
+
+# [sidebar] collapsed = "hidden": the collapsed sidebar goes out of sight
+# (live, on the config reload), and the toggle goes between full and hidden.
+sh printf '\n[sidebar]\ncollapsed = "hidden"\n' >> {config}
+until sidebar hidden 8000
+until rail.shown no 2000
+action toggle_sidebar
+until sidebar visible 3000
+action toggle_sidebar
+until sidebar hidden 3000
+# Back to a rail.
+sh sed -i '' 's/collapsed = "hidden"/collapsed = "rail"/' {config}
+until sidebar rail 8000
+expect rail.shown yes
