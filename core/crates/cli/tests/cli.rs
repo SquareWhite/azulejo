@@ -196,6 +196,122 @@ fn acts_on_the_calling_tile() {
     assert!(stderr(&out).contains("--no-caller"), "{}", stderr(&out));
 }
 
+/// Runs `azj` like [`azj`], from working folder `cwd`.
+fn azj_in(cwd: &Path, socket: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_azj"));
+    cmd.env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("AZULEJO_SOCKET", socket)
+        .current_dir(cwd)
+        .args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn preview_open_from_a_terminal_opens_the_plan_beside_it() {
+    let app = start();
+    let work = app.dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    // What azj sees as its working folder (/tmp is a symlink on macOS).
+    let work = work.canonicalize().unwrap();
+    let mut client = Client::connect(&app.socket).unwrap();
+    let terminal = client.call("tile.list", None).unwrap()["tiles"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let out = azj_in(
+        &work,
+        &app.socket,
+        &[("AZULEJO_TILE_ID", &terminal)],
+        &["--json", "preview", "open", "--path", "plan.md"],
+    );
+    let reply = json_of(&out);
+    assert_eq!(reply["type"], "created");
+    let preview = reply["tile"].as_str().unwrap().to_owned();
+    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
+    assert_eq!(info["kind"], "preview");
+    assert_eq!(info["path"], work.join("plan.md").display().to_string());
+    let layout = client.call("layout.get", None).unwrap();
+    assert_eq!(layout["tree"]["a"]["id"], terminal.as_str());
+    assert_eq!(layout["tree"]["b"]["id"], preview.as_str());
+    assert_eq!(layout["focused"], terminal.as_str(), "focus stays put");
+
+    // Run against the preview tile itself, it shows the file there.
+    let out = azj_in(
+        &work,
+        &app.socket,
+        &[],
+        &[
+            "--json", "preview", "open", "--tile", &preview, "--path", "b.md",
+        ],
+    );
+    assert_eq!(json_of(&out)["type"], "ok");
+    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
+    assert_eq!(info["path"], work.join("b.md").display().to_string());
+    assert_eq!(
+        client.call("tile.list", None).unwrap()["tiles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn files_open_paths_are_relative_to_the_tiles_root_not_azjs_folder() {
+    let app = start();
+    let root = app.dir.join("repo");
+    let elsewhere = app.dir.join("elsewhere");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(root.join("README.md"), "# hi\n").unwrap();
+    let files = json_of(&azj(
+        &app.socket,
+        &[],
+        &[
+            "--json",
+            "tile",
+            "split",
+            "--right",
+            "--kind",
+            "files",
+            "--root",
+            root.to_str().unwrap(),
+        ],
+    ))["tile"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let out = azj_in(
+        &elsewhere,
+        &app.socket,
+        &[],
+        &[
+            "--json",
+            "files",
+            "open",
+            "--tile",
+            &files,
+            "--path",
+            "README.md",
+            "--target",
+            "terminal",
+        ],
+    );
+    let terminal = json_of(&out)["tile"].as_str().unwrap().to_owned();
+    let info = json_of(&azj(
+        &app.socket,
+        &[],
+        &["--json", "tile", "get", &terminal],
+    ));
+    assert_eq!(info["cwd"], root.display().to_string(), "{info}");
+}
+
 #[test]
 fn falls_back_to_the_herdr_pane() {
     let app = start();

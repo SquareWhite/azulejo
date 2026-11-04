@@ -194,9 +194,10 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
         Err(e) => return usage_error(err, &e),
     };
     // The core runs elsewhere (its own working directory), so relative paths
-    // only mean something here.
+    // only mean something here, except those relative to a tile's root.
     if let Ok(cwd) = std::env::current_dir() {
         absolutise_paths(
+            spec,
             &mut params,
             &cwd,
             std::env::var_os("HOME").map(PathBuf::from),
@@ -240,13 +241,29 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
     }
 }
 
-/// Params that name files or folders: top-level `path`, `cwd` and `root`, and
-/// the same inside a tile's `content`.
-const PATH_PARAMS: [&str; 3] = ["path", "cwd", "root"];
+/// Params that name files or folders: top-level `path`, `cwd`, `root` and
+/// `base_dir`, and the same inside a tile's `content`.
+const PATH_PARAMS: [&str; 4] = ["path", "cwd", "root", "base_dir"];
 
-/// Makes relative path params absolute against `cwd`, and expands a leading
-/// `~/` (or a bare `~`) against `home`.
+/// What the schema says about paths the core resolves against a tile's root
+/// (`files.open`, `files.reveal`). `azj` leaves those as typed.
+const ROOT_RELATIVE: &str = "relative to the tile's root";
+
+/// Whether `spec`'s param `name` is a path the core resolves against a tile's
+/// root, going by its schema description.
+pub fn is_root_relative(spec: &MethodSpec, name: &str) -> bool {
+    spec.params
+        .iter()
+        .find(|p| p.name == name)
+        .and_then(|p| p.description.as_deref())
+        .is_some_and(|d| d.contains(ROOT_RELATIVE))
+}
+
+/// Makes `spec`'s relative path params absolute against `cwd`, and expands a
+/// leading `~/` (or a bare `~`) against `home`. Paths the schema calls
+/// relative to a tile's root stay as they are: the core resolves them.
 pub fn absolutise_paths(
+    spec: &MethodSpec,
     params: &mut Map<String, Value>,
     cwd: &std::path::Path,
     home: Option<PathBuf>,
@@ -265,13 +282,19 @@ pub fn absolutise_paths(
                 home.join(rest)
             }
         } else if std::path::Path::new(text.as_str()).is_absolute() {
-            return;
+            PathBuf::from(text.as_str())
         } else {
             cwd.join(text.as_str())
         };
+        // Tidy doubled slashes (`$TMPDIR/x`) and `.` parts; `..` stays, as
+        // folding it could cross a symlink.
+        let path: PathBuf = path.components().collect();
         *text = path.to_string_lossy().into_owned();
     };
     for key in PATH_PARAMS {
+        if is_root_relative(spec, key) {
+            continue;
+        }
         if let Some(value) = params.get_mut(key) {
             fix(value);
         }
@@ -690,11 +713,16 @@ mod path_tests {
     use super::*;
     use serde_json::json;
 
-    fn fixed(params: Value) -> Value {
+    fn fixed(method: &str, params: Value) -> Value {
         let Value::Object(mut map) = params else {
             panic!()
         };
+        let spec = spec::methods()
+            .into_iter()
+            .find(|s| s.method == method)
+            .unwrap();
         absolutise_paths(
+            &spec,
             &mut map,
             std::path::Path::new("/work/proj"),
             Some(PathBuf::from("/home/me")),
@@ -703,35 +731,111 @@ mod path_tests {
     }
 
     #[test]
-    fn relative_paths_become_absolute() {
+    fn local_file_paths_become_absolute() {
         assert_eq!(
-            fixed(json!({"path": "docs/plan.md", "tile": "tile_x"})),
+            fixed(
+                "preview.open",
+                json!({"path": "docs/plan.md", "tile": "tile_x"})
+            ),
             json!({"path": "/work/proj/docs/plan.md", "tile": "tile_x"})
         );
         assert_eq!(
-            fixed(json!({"content": {"kind": "preview", "path": "a.md"}, "cwd": "."})),
-            json!({"content": {"kind": "preview", "path": "/work/proj/a.md"}, "cwd": "/work/proj/."})
+            fixed(
+                "layout.apply",
+                json!({"path": "layouts/dev.toml", "base_dir": ".."})
+            ),
+            json!({"path": "/work/proj/layouts/dev.toml", "base_dir": "/work/proj/.."})
         );
         assert_eq!(
-            fixed(json!({"content": {"kind": "files", "root": "src"}})),
+            fixed("layout.export", json!({"path": "./.azulejo.toml"})),
+            json!({"path": "/work/proj/.azulejo.toml"})
+        );
+        assert_eq!(
+            fixed(
+                "layout.split",
+                json!({"content": {"kind": "preview", "path": "a.md"}})
+            ),
+            json!({"content": {"kind": "preview", "path": "/work/proj/a.md"}})
+        );
+        assert_eq!(
+            fixed("workspace.create", json!({"cwd": "."})),
+            json!({"cwd": "/work/proj"})
+        );
+        assert_eq!(
+            fixed(
+                "tab.create",
+                json!({"content": {"kind": "files", "root": "src"}})
+            ),
             json!({"content": {"kind": "files", "root": "/work/proj/src"}})
+        );
+        assert_eq!(
+            fixed("files.set_root", json!({"root": "src"})),
+            json!({"root": "/work/proj/src"})
         );
     }
 
     #[test]
-    fn absolute_home_and_other_params_are_left_alone_or_expanded() {
+    fn paths_relative_to_a_tile_root_stay_relative() {
+        for method in ["files.open", "files.reveal"] {
+            assert_eq!(
+                fixed(method, json!({"path": "README.md", "tile": "tile_x"})),
+                json!({"path": "README.md", "tile": "tile_x"}),
+                "{method}"
+            );
+            // The core expands `~` for these too.
+            assert_eq!(
+                fixed(method, json!({"path": "~/notes.md"})),
+                json!({"path": "~/notes.md"}),
+                "{method}"
+            );
+        }
+        // `dir` isn't a path param anywhere.
         assert_eq!(
-            fixed(json!({"path": "/etc/hosts"})),
+            fixed("files.expand", json!({"dir": "src"})),
+            json!({"dir": "src"})
+        );
+    }
+
+    #[test]
+    fn the_schema_marks_exactly_the_root_relative_paths() {
+        let marked: Vec<String> = spec::methods()
+            .iter()
+            .flat_map(|s| {
+                PATH_PARAMS
+                    .iter()
+                    .filter(|p| is_root_relative(s, p))
+                    .map(|p| format!("{}.{p}", s.method))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(marked, ["files.reveal.path", "files.open.path"]);
+    }
+
+    #[test]
+    fn absolute_home_and_other_params_are_tidied_or_left_alone() {
+        assert_eq!(
+            fixed("preview.open", json!({"path": "/etc/hosts"})),
             json!({"path": "/etc/hosts"})
         );
         assert_eq!(
-            fixed(json!({"path": "~/notes.md"})),
+            fixed("workspace.create", json!({"cwd": "/var/T//azj-e2e/./x"})),
+            json!({"cwd": "/var/T/azj-e2e/x"})
+        );
+        assert_eq!(
+            fixed("preview.open", json!({"path": "~/notes.md"})),
             json!({"path": "/home/me/notes.md"})
         );
-        assert_eq!(fixed(json!({"path": "~"})), json!({"path": "/home/me"}));
         assert_eq!(
-            fixed(json!({"url": "docs/x", "path": ""})),
-            json!({"url": "docs/x", "path": ""})
+            fixed("preview.open", json!({"path": "~"})),
+            json!({"path": "/home/me"})
+        );
+        assert_eq!(
+            fixed("browser.open", json!({"url": "docs/x"})),
+            json!({"url": "docs/x"})
+        );
+        assert_eq!(
+            fixed("preview.open", json!({"path": ""})),
+            json!({"path": ""})
         );
     }
 }

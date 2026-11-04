@@ -512,6 +512,14 @@ impl Files {
         Ok(joined.canonicalize().unwrap_or(joined))
     }
 
+    /// `path` made absolute against a files tile's or panel's root; `path`
+    /// unchanged when the core isn't showing `tile`.
+    pub(crate) fn absolute(&self, tile: TileId, path: &str) -> String {
+        self.join(tile, Some(path))
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| path.to_owned())
+    }
+
     fn join(&self, tile: TileId, path: Option<&str>) -> Result<PathBuf, Error> {
         let root = &self.state(tile)?.root;
         Ok(match path {

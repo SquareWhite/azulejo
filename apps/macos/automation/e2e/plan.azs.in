@@ -9,14 +9,13 @@ wait 1500
 core {"method":"terminal.send_text","params":{"text":"cd @FX@; env | grep '^AZULEJO_' | sort > @OUT@/tile-env.txt; @AZJ@ preview open --path plan.md > @OUT@/open.out 2>&1; echo exit=$status >> @OUT@/open.out\n"}}
 wait 2500
 sh cat {out}/open.out
-# `preview open` needs a preview tile; the documented way from a terminal is a
-# split with preview content (relative path, resolved against the caller?).
-core {"method":"terminal.send_text","params":{"text":"@AZJ@ tile split --right --kind preview --path plan.md > @OUT@/split.out 2>&1; echo exit=$status >> @OUT@/split.out\n"}}
-wait 2500
-# Whatever the command did, a preview of plan.md must be on screen now.
+# From a terminal, `preview open` splits a preview of plan.md to its right and
+# leaves focus in the terminal.
+expect tiles 2
+expect focus 1
+key alt+l
 until tile.kind preview 3000
 until tile.content markdown 3000
-expect tiles 2
 shot 01-opened-from-tile
 key alt+h
 expect focus 1
