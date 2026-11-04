@@ -123,7 +123,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         wantsLayer = true
         isHidden = true
         layer?.shadowColor = Design.Color.shadow.cgColor
-        layer?.shadowOpacity = 0.35
+        layer?.shadowOpacity = Float(Design.Alpha.paletteShadow)
         layer?.shadowRadius = 18
         layer?.shadowOffset = CGSize(width: 0, height: -6)
 

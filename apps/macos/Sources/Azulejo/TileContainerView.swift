@@ -193,6 +193,9 @@ final class TileContainerView: NSView {
         views.values.compactMap { ($0 as? MotionAware)?.surfaceResizes }.reduce(0, +)
     }
 
+    /// A tile's header strip, for overlays drawn in it (the agent badge).
+    func header(of id: String) -> TileHeaderView? { (views[id] as? TileFrame)?.header }
+
     /// Frames of the tiles actually on screen (Monocle and zoom hide the
     /// rest), for overlays such as attention badges.
     func visibleTileFrames() -> [String: CGRect] {
@@ -717,7 +720,7 @@ final class TileContainerView: NSView {
         let dim = Motion.settings.dimInactive && visibleTiles.count > 1
         for id in visibleTiles {
             guard let view = views[id] else { continue }
-            let alpha: CGFloat = dim && id != tab.focused ? 0.72 : 1
+            let alpha: CGFloat = dim && id != tab.focused ? Design.Alpha.unfocusedTile : 1
             guard view.alphaValue != alpha else { continue }
             if animate {
                 NSAnimationContext.runAnimationGroup { ctx in

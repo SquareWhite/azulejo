@@ -111,11 +111,12 @@ final class SidebarView: NSView, KeepsKeyboard {
         super.layout()
         let pad = Design.Space.sidebarPadding
         let width = bounds.width
-        segments.frame = NSRect(x: pad, y: 0, width: width - pad * 2, height: Design.Space.sidebarSegmentHeight)
+        segments.frame = NSRect(x: pad, y: Design.Space.sidebarSegmentTop, width: width - pad * 2,
+                                height: Design.Space.sidebarSegmentHeight)
         let footerHeight = Design.Space.sidebarFooterHeight
         footer.frame = NSRect(x: pad, y: bounds.height - footerHeight, width: width - pad * 2, height: footerHeight)
         footerLine.frame = NSRect(x: pad, y: footer.frame.minY - 1, width: width - pad * 2, height: 1)
-        let bodyTop = segments.frame.maxY + 8
+        let bodyTop = segments.frame.maxY + Design.Space.sidebarListTop
         let body = NSRect(x: 0, y: bodyTop, width: width, height: max(0, footerLine.frame.minY - bodyTop))
         list.frame = body
         files.frame = body
@@ -177,7 +178,7 @@ final class SidebarView: NSView, KeepsKeyboard {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for group in groups {
             let header = MachineHeader(group: group)
-            add(header, height: 30)
+            add(header, height: Design.Space.sidebarGroupHeight)
             let dimmed = group.machine.map { $0.state != .connected } ?? true
             for (number, ws) in group.workspaces {
                 let row = WorkspaceRow(
@@ -189,7 +190,8 @@ final class SidebarView: NSView, KeepsKeyboard {
             }
             // No "+" where nothing would run: off, or gone from herdr's list.
             if let machine = group.machine, machine.state != .off {
-                add(AddRow(machine: machine.label) { [weak self] in self?.onAdd?(machine.id) }, height: 24)
+                let addRow = AddRow(machine: machine.label) { [weak self] in self?.onAdd?(machine.id) }
+                add(addRow, height: Design.Space.sidebarAddHeight)
             }
         }
     }
@@ -362,7 +364,8 @@ private final class FlippedView: NSView {
 // MARK: - Rows
 
 /// A machine group's header: its name, then on the right a connection dot,
-/// or a spinner and its state while it connects or reconnects.
+/// or a turning arc in the state's colour (the mockup's orange for
+/// reconnecting) and its state while it connects or reconnects.
 @MainActor
 final class MachineHeader: NSView {
     /// Automation: what the header says ("dev-server ● Reconnecting…").
@@ -394,15 +397,13 @@ final class MachineHeader: NSView {
         right.spacing = 5
         right.alignment = .centerY
         let busy = machine?.state == .connecting || machine?.state == .reconnecting
-        if busy, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let spinner = NSProgressIndicator()
-            spinner.style = .spinning
-            spinner.controlSize = .mini
-            spinner.isDisplayedWhenStopped = false
-            spinner.startAnimation(nil)
-            spinner.wantsLayer = true
-            spinner.layerUsesCoreImageFilters = true
-            spinner.contentFilters = [Self.tint(status.color)].compactMap { $0 }
+        if busy {
+            // The app's own ring, not the system spinner, which can't take a
+            // colour. It holds still with motion off or Reduce Motion on.
+            let image = Design.customSymbol("azulejo.ring", color: status.color, pointSize: 9)
+            let spinner = StatusIconView(status, image: image, spins: true)
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            spinner.setContentHuggingPriority(.required, for: .horizontal)
             right.addArrangedSubview(spinner)
         }
         if let state {
@@ -433,27 +434,21 @@ final class MachineHeader: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Recolours the system spinner to the state's colour.
-    private static func tint(_ color: NSColor) -> CIFilter? {
-        guard let rgb = color.usingColorSpace(.sRGB), let filter = CIFilter(name: "CIFalseColor") else { return nil }
-        filter.setValue(CIColor(color: rgb), forKey: "inputColor0")
-        filter.setValue(CIColor(color: rgb), forKey: "inputColor1")
-        return filter
-    }
 }
 
 /// A small filled circle: a machine's connection state.
 @MainActor
 private final class Dot: NSView {
     init(color: NSColor) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 6, height: 6))
+        let side = Design.Radius.machineDot * 2
+        super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
         wantsLayer = true
-        layer?.cornerRadius = 3
+        layer?.cornerRadius = Design.Radius.machineDot
         layer?.backgroundColor = color.cgColor
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 6),
-            heightAnchor.constraint(equalToConstant: 6),
+            widthAnchor.constraint(equalToConstant: side),
+            heightAnchor.constraint(equalToConstant: side),
         ])
     }
 
@@ -487,7 +482,7 @@ final class WorkspaceRow: NSView {
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.row + 1
         layer?.cornerCurve = .continuous
-        alphaValue = dimmed ? 0.5 : 1
+        alphaValue = dimmed ? Design.Alpha.dimmed : 1
         var tip = number <= 9 ? "\(ws.name) (⌘\(number))" : ws.name
         if let branch { tip += "\n\(branch)" }
         toolTip = tip
@@ -556,7 +551,7 @@ final class WorkspaceRow: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = selected
                 ? Design.Color.selected.cgColor
-                : hovering ? Design.Color.selected.withAlphaComponent(0.45).cgColor : nil
+                : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover).cgColor : nil
         }
     }
 
@@ -705,7 +700,8 @@ private final class SegmentButton: NSButton {
 
 // MARK: - Footer
 
-/// Counts of workspaces by state: working, blocked, idle, done.
+/// Counts of workspaces by state: working, blocked, idle, done, each
+/// number in its state's colour; zero counts are faded.
 @MainActor
 private final class SidebarFooter: NSView {
     private static let order: [Design.Status] = [.working, .blocked, .idle, .done]
@@ -741,10 +737,11 @@ private final class SidebarFooter: NSView {
             let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: 11))
             let text = NSTextField(labelWithString: "\(count)")
             text.font = Design.Font.footerCount
-            text.textColor = Design.Color.textSecondary
+            // Tinted by state, as in the mockup (idle stays grey).
+            text.textColor = status.color
             item.addArrangedSubview(icon)
             item.addArrangedSubview(text)
-            item.alphaValue = count == 0 ? 0.45 : 1
+            item.alphaValue = count == 0 ? Design.Alpha.footerZero : 1
             item.toolTip = "\(count) \(status.rawValue)"
             stack.addArrangedSubview(item)
         }

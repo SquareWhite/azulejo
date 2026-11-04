@@ -588,7 +588,7 @@ final class TerminalTileView: NSView, TileView {
         case .attached:
             overlay.show(nil)
         case .waiting(let text):
-            overlay.show(.init(style: .full, title: text, detail: nil, buttons: []))
+            overlay.show(.init(style: .placeholder, title: text, detail: nil, buttons: []))
         case .observing(let takenOver):
             overlay.show(.init(
                 style: .banner,
@@ -846,7 +846,9 @@ extension TerminalTileView: MotionAware {
 @MainActor
 final class TerminalOverlay: NSView {
     enum Action { case takeOver, respawn, close, retryNow }
-    enum Style { case full, banner }
+    /// `placeholder`: a new pane on its way, drawn on the terminal's own
+    /// background so a split doesn't flash a dark hole before the shell.
+    enum Style { case full, placeholder, banner }
 
     struct Button {
         let action: Action
@@ -894,19 +896,24 @@ final class TerminalOverlay: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         NSLayoutConstraint.deactivate(constraints.filter { $0.firstItem === stack || $0.secondItem === stack })
         let title = NSTextField(labelWithString: content.title)
-        title.font = content.style == .full ? Design.Font.overlayTitle : Design.Font.overlayTitleSmall
-        title.textColor = Design.Color.textOnAccent
+        title.font = content.style == .banner ? Design.Font.overlayTitleSmall : Design.Font.overlayTitle
+        title.textColor = content.style == .placeholder ? Design.Color.textMuted : Design.Color.textOnAccent
         actions = content.buttons.map(\.action)
         let buttons = content.buttons.enumerated().map { index, button in
             let b = NSButton(title: button.title, target: self, action: #selector(pressed(_:)))
             b.tag = index
             b.bezelStyle = .rounded
-            b.controlSize = content.style == .full ? .regular : .small
+            b.controlSize = content.style == .banner ? .small : .regular
             return b
         }
         switch content.style {
-        case .full:
-            layer?.backgroundColor = Design.Color.overlay.cgColor
+        case .full, .placeholder:
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = (content.style == .placeholder
+                    ? TerminalRuntime.shared?.background ?? Design.Color.tile
+                    : Design.Color.overlay).cgColor
+            }
+            stack.layer?.backgroundColor = nil
             stack.orientation = .vertical
             stack.addArrangedSubview(title)
             if let detail = content.detail {

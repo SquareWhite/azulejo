@@ -264,13 +264,14 @@ extension TileFrame: AutomatableTile {
         var state = (content as? AutomatableTile)?.automationState() ?? [:]
         state["tile.header.title"] = header.titleText
         state["tile.header.subtitle"] = header.subtitleText
+        state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
         return state
     }
 }
 
 /// The strip across the top of a tile: icon, bold title, " — " and a muted
-/// subtitle (truncated in the middle), then the tile's own controls. Centred
+/// subtitle (a path keeps its last folder), then the tile's own controls. Centred
 /// like the mockup's terminal tiles; left-aligned when the tile puts controls
 /// on the right (preview, files). The focused tile's strip is a shade lighter
 /// (as the mockup's focused tile is), with a hairline underneath.
@@ -296,7 +297,9 @@ final class TileHeaderView: NSView {
         wantsLayer = true
         icon.image = NSImage(systemSymbolName: Self.symbol(kind), accessibilityDescription: kind.rawValue)
         icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        label.lineBreakMode = .byTruncatingMiddle
+        // Paths are fitted before they get here (`fitPath`); what's still too
+        // long (a long title or command) loses its end.
+        label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.cell?.truncatesLastVisibleLine = true
         addSubview(icon)
@@ -331,41 +334,84 @@ final class TileHeaderView: NSView {
         render()
     }
 
-    private func render() {
+    /// Room kept clear at the strip's right end for something drawn over it
+    /// (the agent badge, which the attention overlay puts in the strip).
+    var trailingInset: CGFloat = 0 {
+        didSet { if trailingInset != oldValue { needsLayout = true } }
+    }
+
+    /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
+    private(set) var shownSubtitle = ""
+
+    private func render() { needsLayout = true }
+
+    /// Title and subtitle for `room` points. A path subtitle loses folders
+    /// from its front ("…/work/azulejo"), so the folder that matters stays;
+    /// anything else, and a path whose last folder alone is too long, is cut
+    /// at the end by the label.
+    private func text(room: CGFloat) -> NSAttributedString {
         let text = NSMutableAttributedString(string: titleText, attributes: [
             .font: Design.Font.headerTitle,
             .foregroundColor: focused ? Design.Color.textPrimary : Design.Color.textSecondary,
         ])
+        shownSubtitle = ""
         if !subtitleText.isEmpty {
-            text.append(NSAttributedString(string: " — \(subtitleText)", attributes: [
-                .font: Design.Font.headerSubtitle,
-                .foregroundColor: Design.Color.textMuted,
-            ]))
+            let subtitleRoom = room - ceil(text.size().width) - 4
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Design.Font.headerSubtitle, .foregroundColor: Design.Color.textMuted,
+            ]
+            shownSubtitle = Self.fitPath(subtitleText, room: subtitleRoom) {
+                NSAttributedString(string: " — \($0)", attributes: attributes).size().width
+            }
+            text.append(NSAttributedString(string: " — \(shownSubtitle)", attributes: attributes))
         }
-        label.attributedStringValue = text
-        needsLayout = true
+        return text
+    }
+
+    /// `path` as it fits in `room` (measured by `width`): whole, else with
+    /// leading folders swapped for "…", always keeping the last one. Text
+    /// that isn't a path (a command) comes back unchanged.
+    static func fitPath(_ path: String, room: CGFloat, width: (String) -> CGFloat) -> String {
+        guard path.hasPrefix("/") || path.hasPrefix("~/"), width(path) > room else { return path }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count > 1 else { return path }
+        for start in 1..<parts.count {
+            let candidate = "…/" + parts[start...].joined(separator: "/")
+            if width(candidate) <= room { return candidate }
+        }
+        // Not even "…/last" fits: the last folder alone, cut at its end.
+        return String(parts[parts.count - 1])
     }
 
     override func layout() {
         super.layout()
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
-        var right = bounds.width - margin
+        var right = bounds.width - margin - trailingInset
         if let accessory {
+            // The tile's controls show whole or not at all: below
+            // `headerTitleMin` of room for the title they hide (Preview |
+            // Source, the files buttons), never clipped to "Prev".
             let size = accessory.fittingSize
-            let w = min(size.width, max(bounds.width * 0.6, 0))
-            accessory.frame = NSRect(x: right - w, y: (h - size.height) / 2, width: w, height: size.height)
-            right -= w + spacing
+            let titleRoom = right - size.width - spacing - margin - iconSize - spacing
+            accessory.isHidden = titleRoom < Design.Space.headerTitleMin
+            if !accessory.isHidden {
+                accessory.frame = NSRect(x: right - size.width, y: (h - size.height) / 2,
+                                         width: size.width, height: size.height)
+                right -= size.width + spacing
+            }
         }
+        let room = max(right - margin - iconSize - spacing, 0)
+        label.attributedStringValue = text(room: room - 4)
         // Measured from the text itself: a truncating label's intrinsic width
         // follows its current frame, so a strip that grew kept the "…".
         let natural = label.attributedStringValue.size()
         let labelHeight = ceil(natural.height)
-        let room = max(right - margin - iconSize - spacing, 0)
         let labelWidth = min(ceil(natural.width) + 4, room)
-        // Centred over the whole strip unless controls sit on the right.
+        // Centred over the whole strip unless controls sit on the right; kept
+        // clear of anything over the strip's right end.
         let group = iconSize + spacing + labelWidth
-        let left = accessory == nil ? max(margin, (bounds.width - group) / 2) : margin
+        let left = accessory != nil ? margin : max(margin, min((bounds.width - group) / 2, right - group))
         icon.frame = NSRect(x: left, y: (h - iconSize) / 2, width: iconSize, height: iconSize)
         label.frame = NSRect(x: left + iconSize + spacing, y: (h - labelHeight) / 2,
                              width: labelWidth, height: labelHeight)

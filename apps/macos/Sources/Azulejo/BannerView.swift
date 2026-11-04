@@ -9,9 +9,10 @@ extension Core {
     }
 }
 
-/// A strip across the top of the tiles for config problems after a reload
-/// (F25b). Doesn't move the tiles (no terminal resize); dismiss with ×, and it
-/// goes away by itself after a later clean reload.
+/// A strip above the tiles for config problems after a reload (F25b). It
+/// takes its own row under the toolbar and the tiles move down for it, so it
+/// never covers a header or terminal text; dismiss with ×, and it goes away
+/// by itself after a later clean reload.
 @MainActor
 final class BannerView: NSView {
     static let maxLines = 4
@@ -40,6 +41,10 @@ final class BannerView: NSView {
         close.target = self
         close.action = #selector(dismiss)
         close.refusesFirstResponder = true
+        // The message takes the width; the × stays its own size at the right
+        // end (it used to stretch and sit mid-banner).
+        close.setContentHuggingPriority(.required, for: .horizontal)
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
         for v in [icon, text, close] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
@@ -95,10 +100,10 @@ final class BannerView: NSView {
         let tint = errors ? Design.Color.error : Design.Color.warning
         icon.stringValue = errors ? "⚠︎" : "ⓘ"
         icon.textColor = tint
-        layer?.backgroundColor = tint.withAlphaComponent(0.16).blended(
-            withFraction: 0.75, of: Design.Color.window)?.cgColor
+        layer?.backgroundColor = tint.withAlphaComponent(Design.Alpha.bannerFill).blended(
+            withFraction: Design.Alpha.bannerMix, of: Design.Color.window)?.cgColor
         layer?.borderWidth = Design.Border.hairline
-        layer?.borderColor = tint.withAlphaComponent(0.5).cgColor
+        layer?.borderColor = tint.withAlphaComponent(Design.Alpha.bannerBorder).cgColor
         isHidden = false
         superview?.needsLayout = true
         return false

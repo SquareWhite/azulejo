@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TOKENS = ROOT / "shared" / "design" / "tokens.json"
 OUT = ROOT / "apps" / "macos" / "Sources" / "Azulejo" / "Design.swift"
 
-WEIGHTS = {"regular", "medium", "semibold", "bold"}
+WEIGHTS = {"light", "regular", "medium", "semibold", "bold"}
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*$")
 
 
@@ -102,6 +102,7 @@ def generate(tokens: dict) -> str:
 
     cgfloat_enum("Radius", "Corner radii, in points.", "radius")
     cgfloat_enum("Border", "Border widths, in points.", "border")
+    cgfloat_enum("Alpha", "Opacities (0 to 1) applied on top of colour tokens.", "alpha")
     cgfloat_enum("Space", "Spacing and fixed sizes, in points.", "space")
 
     # Fonts
@@ -192,7 +193,7 @@ def main() -> None:
         tokens = json.loads(TOKENS.read_text())
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
-    for section in ("color", "radius", "border", "space", "font", "status", "icon", "motion"):
+    for section in ("color", "radius", "border", "alpha", "space", "font", "status", "icon", "motion"):
         if section not in tokens:
             fail(f"missing section {section!r}")
     text = generate(tokens)
