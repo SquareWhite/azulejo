@@ -24,7 +24,10 @@ extension Core {
 extension AppController {
     /// Reads the core's themes and applies the choice (launch, config reloads).
     func loadTheme() {
-        Theme.load(core.theme())
+        let json = core.theme()
+        Theme.load(json)
+        // Not a colour, but `[appearance]` too: the agent badge in headers.
+        AttentionStyle.tileBadge = json["tile_agent_badge"] as? Bool ?? false
     }
 
     /// Saves `id` (or "auto") as the theme. Shows the problem when the

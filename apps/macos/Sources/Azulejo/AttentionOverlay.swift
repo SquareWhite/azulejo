@@ -9,6 +9,16 @@ enum AttentionStyle {
     static let working = Design.Status.working.color
     static let idle = Design.Status.idle.color
 
+    /// `[appearance] tile_agent_badge` (off by default): the full badge
+    /// ("● claude · working") in terminal tile headers. Off, a header shows
+    /// only the blocked icon, on blocked tiles. Follows config reloads.
+    static var tileBadge = false {
+        didSet {
+            if tileBadge != oldValue { NotificationCenter.default.post(name: tileBadgeChanged, object: nil) }
+        }
+    }
+    static let tileBadgeChanged = Notification.Name("AzulejoTileBadgeChanged")
+
     /// The dot for a tile, or nil when there's no agent worth showing.
     static func color(for tile: TileModel) -> NSColor? {
         guard let agent = tile.agent else { return nil }
@@ -55,26 +65,38 @@ enum AttentionStyle {
     }
 }
 
-/// Badges on the tiles: the agent's name and state at the right end of each
-/// terminal tile's header strip (clear of the terminal's text; the badge is
-/// the strip's subview, so it moves with it and the title keeps clear of
-/// it), and a thin coloured border on tiles that need a look. The overlay
-/// lies over the tile container and passes every click through.
+/// Agent state on the tiles: a thin coloured border on tiles that need a
+/// look, and at the right end of a terminal tile's header strip either the
+/// blocked icon (blocked tiles only; the default) or, with `[appearance]
+/// tile_agent_badge = true`, the agent's name and state on every agent tile.
+/// Either sits clear of the terminal's text: it's the strip's subview, so it
+/// moves with it and the title keeps clear of it. The overlay lies over the
+/// tile container and passes every click through.
 @MainActor
 final class AttentionOverlayView: NSView, ThemeAware {
     /// A tile's header strip, so the badge can sit in it.
     var header: ((String) -> TileHeaderView?)?
-    /// Badges by tile; each lives in its tile's header strip.
+    /// Badges by tile (`tile_agent_badge` on); each lives in its tile's
+    /// header strip.
     private var badges: [String: AgentBadgeView] = [:]
+    /// Blocked icons by tile (`tile_agent_badge` off), in the header strips.
+    private var marks: [String: StatusIconView] = [:]
     private var borders: [String: NSView] = [:]
-    /// What's drawn, for automation: tile id → "blocked!" / "working" / …
+    /// Agent state, for automation: tile id → "blocked!" / "working" / …
     private(set) var shown: [String: String] = [:]
+    /// What each tile's header carries, for automation: tile id → "badge",
+    /// "dot" (a narrow tile's badge) or "blocked" (the blocked icon).
+    private(set) var inHeader: [String: String] = [:]
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         Theme.track(self)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(tileBadgeChanged), name: AttentionStyle.tileBadgeChanged, object: nil)
     }
+
+    @objc private func tileBadgeChanged() { apply(tab, frames: frames) }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
@@ -96,29 +118,33 @@ final class AttentionOverlayView: NSView, ThemeAware {
         self.tab = tab
         self.frames = frames
         var seen = Set<String>()
+        var withBadge = Set<String>(), withMark = Set<String>()
         var state: [String: String] = [:]
+        var carried: [String: String] = [:]
         for (id, frame) in frames {
             guard let tile = tab?.tile(id), let agent = tile.agent,
                   agent.status != .unknown || agent.attention
             else { continue }
             seen.insert(id)
-            let badge = badges[id] ?? AgentBadgeView()
-            badges[id] = badge
-            badge.apply(tile)
-            // In the header strip's right end. A narrow tile gets the dot
-            // alone, so the title keeps some room.
-            badge.compact = false
-            if badge.fittingSize.width > frame.width * 0.45 { badge.compact = true }
-            if let strip = header?(id), !strip.isHidden {
-                // The strip lays it out and keeps its title clear of it.
-                strip.badge = badge
-            } else {
-                // A tile without a strip: over its top right corner.
-                if badge.superview !== self { addSubview(badge) }
-                let size = badge.fittingSize, inset = Design.Space.badgeInset
-                let top = min(TileFrame.headerHeight, frame.height)
-                badge.frame = NSRect(x: frame.maxX - size.width - inset, y: frame.maxY - top + (top - size.height) / 2,
-                                     width: size.width, height: size.height)
+            if AttentionStyle.tileBadge {
+                withBadge.insert(id)
+                let badge = badges[id] ?? AgentBadgeView()
+                badges[id] = badge
+                badge.apply(tile)
+                // A narrow tile gets the dot alone, so the title keeps some room.
+                badge.compact = false
+                if badge.fittingSize.width > frame.width * 0.45 { badge.compact = true }
+                place(badge, tile: id, frame: frame)
+                carried[Short.id(id)] = badge.compact ? "dot" : "badge"
+            } else if agent.status == .blocked {
+                // F11: a blocked agent can be found at a glance in a busy
+                // tab, attention seen or not. The icon alone, no text.
+                withMark.insert(id)
+                let mark = marks[id] ?? StatusIconView(.blocked) { Self.blockedIcon() }
+                marks[id] = mark
+                mark.toolTip = "\(agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent") · blocked"
+                place(mark, tile: id, frame: frame)
+                carried[Short.id(id)] = "blocked"
             }
 
             let focused = tab?.focused == id
@@ -141,16 +167,53 @@ final class AttentionOverlayView: NSView, ThemeAware {
             }
             state[Short.id(id)] = agent.status.rawValue + (agent.attention ? "!" : "")
         }
-        for (id, badge) in badges where !seen.contains(id) {
-            if let strip = header?(id), strip.badge === badge { strip.badge = nil }
-            badge.removeFromSuperview()
+        for (id, badge) in badges where !withBadge.contains(id) {
+            unplace(badge, tile: id)
             badges[id] = nil
+        }
+        for (id, mark) in marks where !withMark.contains(id) {
+            unplace(mark, tile: id)
+            marks[id] = nil
         }
         for (id, border) in borders where !seen.contains(id) {
             border.removeFromSuperview()
             borders[id] = nil
         }
         shown = state
+        inHeader = carried
+    }
+
+    /// The blocked symbol as the tab strip draws it: the "!" in the strip's
+    /// colour (the window's when the strip is see-through), the disc in the
+    /// status colour. A one-colour palette would fill the "!" in too.
+    private static func blockedIcon() -> NSImage? {
+        let status = Design.Status.blocked
+        let strip = Theme.resolved(Design.Color.header)
+        let mark = strip.alphaComponent < 1 ? Theme.resolved(Design.Color.window) : strip
+        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.header, weight: .bold)
+            .applying(.init(paletteColors: [mark, Theme.resolved(status.color)]))
+        return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
+            .withSymbolConfiguration(config)
+    }
+
+    /// `view` at the right end of the tile's header strip, which lays it out
+    /// and keeps its title clear of it; over the tile's top right corner when
+    /// it has no strip.
+    private func place(_ view: NSView, tile id: String, frame: CGRect) {
+        if let strip = header?(id), !strip.isHidden {
+            strip.badge = view
+            return
+        }
+        if view.superview !== self { addSubview(view) }
+        let size = view.fittingSize, inset = Design.Space.badgeInset
+        let top = min(TileFrame.headerHeight, frame.height)
+        view.frame = NSRect(x: frame.maxX - size.width - inset, y: frame.maxY - top + (top - size.height) / 2,
+                            width: size.width, height: size.height)
+    }
+
+    private func unplace(_ view: NSView, tile id: String) {
+        if let strip = header?(id), strip.badge === view { strip.badge = nil }
+        view.removeFromSuperview()
     }
 }
 

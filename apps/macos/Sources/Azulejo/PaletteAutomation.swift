@@ -21,8 +21,11 @@ import AppKit
 /// `palette.topkind` (Command / Workspace / Tab / Terminal …), `palette.kinds`
 /// (the distinct kinds in the results), `palette.count`, `palette.selected`,
 /// `banner` (first line or `none`),
-/// `badges` (`ABCD=blocked!,…` or `none`), `agents` (each tile's agent in
-/// reading order: `blocked!,none`), `sidebar.markers` / `tab.markers` (`●2|-`),
+/// `badges` (`ABCD=blocked!,…` or `none`: agent state on tiles), `agents`
+/// (each tile's agent in reading order: `blocked!,none`), `header.agents`
+/// (what each tile's header strip carries, in reading order: `badge`, `dot`
+/// (a narrow tile's badge), `blocked` (the blocked icon) or `none`),
+/// `tile.badge.setting` (`[appearance] tile_agent_badge`: `on` / `off`), `sidebar.markers` / `tab.markers` (`●2|-`),
 /// `tab.label`, `dock`, `sidebar.machines` (group headers: `Local ●|dev-server ●
 /// Reconnecting…`), `machines` (`Local=connected,dev-server=reconnecting`),
 /// `workspace.machine` (the active workspace's machine label).
@@ -145,6 +148,7 @@ enum ShellAutomation {
             ? "none" : controller.banner.message.replacingOccurrences(of: "\n", with: " | ")
         let badges = controller.attention.shown.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         s["badges"] = badges.isEmpty ? "none" : badges.joined(separator: ",")
+        s["tile.badge.setting"] = AttentionStyle.tileBadge ? "on" : "off"
         func compact(_ markers: [String]) -> String {
             markers.map { $0.isEmpty ? "-" : $0.replacingOccurrences(of: " ", with: "") }.joined(separator: "|")
         }
@@ -164,6 +168,8 @@ enum ShellAutomation {
             s["agents"] = tab.order.map { id in
                 tab.tile(id)?.agent.map { $0.status.rawValue + ($0.attention ? "!" : "") } ?? "none"
             }.joined(separator: ",")
+            let carried = controller.attention.inHeader
+            s["header.agents"] = tab.order.map { carried[Short.id($0)] ?? "none" }.joined(separator: ",")
             s["focused.agent"] = tab.tile(tab.focused)?.agent.map {
                 $0.status.rawValue + ($0.attention ? "!" : "")
             } ?? "none"
