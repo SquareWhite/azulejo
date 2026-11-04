@@ -578,7 +578,9 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
         park_unknown: false,
     };
     let ticks = last_tick(&client, &refs[1].pane_id).await;
+    let t0 = std::time::Instant::now();
     let out = client.mirror(&target).await.unwrap();
+    eprintln!("merge 3 tabs: {:?}, {} writes", t0.elapsed(), out.writes);
     assert!(azulejo_herdr::satisfies(&out.layout, &target), "{out:?}");
     // herdr says so on the stream, typed.
     let item = next_event(&mut events, |i| {
@@ -619,7 +621,13 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
         zoomed: Some(PaneId(refs[2].pane_id.0.clone())),
         ..target.clone()
     };
+    let t0 = std::time::Instant::now();
     let out = client.mirror(&turned).await.unwrap();
+    eprintln!(
+        "rebuild 3 panes + zoom: {:?}, {} writes",
+        t0.elapsed(),
+        out.writes
+    );
     assert!(azulejo_herdr::satisfies(&out.layout, &turned), "{out:?}");
     assert!(out.layout.zoomed);
     let snap = client.snapshot().await.unwrap();
@@ -633,6 +641,8 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
         "still attached after the rebuild"
     );
     // Pushing it again writes nothing.
+    let t0 = std::time::Instant::now();
     assert_eq!(client.mirror(&turned).await.unwrap().writes, 0);
+    eprintln!("push with nothing to do: {:?}", t0.elapsed());
     let _ = attached.kill().await;
 }

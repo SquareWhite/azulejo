@@ -1,4 +1,5 @@
-//! Keeps terminal tiles and herdr in step (ADR 0002).
+//! Keeps terminal tiles and herdr in step (ADR 0002, 0012; the layout
+//! mirror itself is [`crate::mirror`]).
 //!
 //! The engine stays pure: [`effects`] turns events into herdr work, a worker
 //! runs that work through a [`HerdrPort`] one item at a time, and the results

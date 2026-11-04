@@ -641,3 +641,122 @@ fn herdr_restarting_mid_way_keeps_the_mirror() {
     assert_eq!(herdr.tabs(), 1);
     core.shutdown();
 }
+
+/// A tab's herdr tree in tile IDs, for a tab on `machine`.
+fn remote_shape(s: &Session, machine: &str, node: &LayoutNode) -> String {
+    match node {
+        LayoutNode::Pane { pane_id } => {
+            let pane = pane_id.as_ref().unwrap().as_str();
+            terminals(s)
+                .into_iter()
+                .find(|(_, h)| {
+                    h.as_ref()
+                        .is_some_and(|h| h.pane_id == pane && h.machine.as_deref() == Some(machine))
+                })
+                .map(|(t, _)| t.to_string())
+                .unwrap_or_else(|| format!("?{pane}"))
+        }
+        LayoutNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => format!(
+            "({direction:?} {ratio:.2} {} {})",
+            remote_shape(s, machine, first),
+            remote_shape(s, machine, second)
+        ),
+    }
+}
+
+/// ADR 0011 machines mirror the same way: over herdr's SSH bridge (a
+/// stand-in that runs it locally against a second throwaway session).
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn a_remote_machines_tabs_are_mirrored_there() {
+    let local = TempHerdr::start();
+    let remote = TempHerdr::start();
+    let dir = std::env::temp_dir().join(format!("azj-live-mirror-mm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let ssh = dir.join("ssh");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh"),
+        &ssh,
+    )
+    .unwrap();
+    let machine = azulejo_herdr::RemoteMachine::new(
+        azulejo_herdr::MachineProfile {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            label: "standin".into(),
+            target: "standin-host".into(),
+            session: remote.name.clone(),
+            enabled: true,
+        },
+        azulejo_herdr::Ssh {
+            program: ssh.clone(),
+            control_dir: dir.clone(),
+        },
+    );
+    let id = machine.profile.id.clone();
+    let core = core(&local, &dir.join("state.json"), LayoutKind::Manual);
+    wait_session(&core, "local pane", |s| all_bound(s, 1));
+    core.add_machine(id.clone(), "standin".into(), machine.client());
+
+    let reply = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                name: Some("made-there".into()),
+                machine: Some("standin".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(created) = reply.reply else {
+        panic!("{reply:?}")
+    };
+    let ws = created.workspace.unwrap();
+    core.execute(Command::TabCreate(azulejo_protocol::TabCreate {
+        workspace: Some(ws),
+        ..Default::default()
+    }))
+    .unwrap();
+    wait_session(&core, "remote pane", |s| all_bound(s, 2));
+    split(&core, Direction::Right);
+    split(&core, Direction::Down);
+    let remote_tab = |s: &Session| s.workspace(ws).unwrap().tabs[0].clone();
+    let (s, layout) = wait("mirrored on the machine", Duration::from_secs(15), || {
+        let s = core.session().unwrap();
+        let tab = remote_tab(&s);
+        let first = tab.tiles.iter().find_map(|t| match &t.content {
+            TileContent::Terminal { herdr: Some(h), .. } => Some(h.clone()),
+            _ => None,
+        })?;
+        let layout = remote
+            .rt
+            .block_on(remote.client.layout_export(&HerdrTab(first.tab_id)))
+            .ok()?;
+        (tab.tiles.len() == 3 && remote_shape(&s, &id, &layout.root) == azulejo_shape(&tab.root))
+            .then_some((s, layout))
+    });
+    assert!(matches!(
+        layout.root,
+        LayoutNode::Split {
+            direction: SplitDirection::Right,
+            ..
+        }
+    ));
+    assert_eq!(remote.tabs(), 1, "one herdr tab on the machine");
+    assert_eq!(local.tabs(), 1, "Local untouched");
+    let tabs: std::collections::HashSet<String> = remote_tab(&s)
+        .tiles
+        .iter()
+        .filter_map(|t| match &t.content {
+            TileContent::Terminal { herdr: Some(h), .. } => Some(h.tab_id.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tabs.len(), 1);
+    core.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}
