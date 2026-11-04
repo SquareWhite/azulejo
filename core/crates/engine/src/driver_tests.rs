@@ -33,6 +33,8 @@ struct FakeState {
     /// the typed text, and the view `scroll_state` reports.
     screen: Option<String>,
     view: herdr::ScrollInfo,
+    /// What `read` returns for `Visible` instead of the typed text.
+    visible: Option<String>,
     /// Makes every terminal I/O call fail, as when herdr is down.
     down: bool,
     /// What the user already runs in herdr before Azulejo connects.
@@ -292,8 +294,9 @@ impl HerdrPort for Fake {
             return Err("connection refused".into());
         }
         s.reads.push((pane_id.clone(), source, lines));
-        let text = match (&s.screen, source) {
-            (Some(screen), herdr::ReadSource::Recent) => screen.clone(),
+        let text = match (&s.screen, &s.visible, source) {
+            (Some(screen), _, herdr::ReadSource::Recent) => screen.clone(),
+            (_, Some(visible), herdr::ReadSource::Visible) => visible.clone(),
             _ => s.typed.get(&pane_id).cloned().unwrap_or_default(),
         };
         Ok(herdr::ReadResult {
@@ -966,6 +969,38 @@ fn terminal_search_locates_matches_for_the_find_bar() {
             (pane.clone(), herdr::ReadSource::Recent, Some(140)),
         ]
     );
+
+    // herdr cut both reads short (it returns at most 1000 rows): the rows
+    // are placed by where the view turns up in them. The view is the last
+    // two rows plus a blank one herdr trims, so the bottom isn't row 102.
+    {
+        let mut s = fake.state();
+        s.view = herdr::ScrollInfo {
+            offset_from_bottom: 0,
+            max_offset_from_bottom: 100,
+            viewport_rows: 3,
+        };
+        s.visible = Some("ok\nERROR again\n".into());
+    }
+    let cut = Command::TerminalSearch(TerminalSearch {
+        tile: None,
+        query: "error".into(),
+        case_sensitive: false,
+        lines: Some(3),
+        locate: true,
+    });
+    let Ok(Reply::Matches {
+        matches, truncated, ..
+    }) = reply(&core, cut)
+    else {
+        panic!("search failed")
+    };
+    assert!(truncated);
+    let found: Vec<_> = matches
+        .iter()
+        .map(|m| (m.line, m.row, m.offset_from_bottom))
+        .collect();
+    assert_eq!(found, vec![(1, Some(98), Some(3)), (3, Some(101), Some(0))]);
 
     // Output that doesn't line up leaves the rows out, not wrong.
     fake.state().screen = Some("something else\n".into());

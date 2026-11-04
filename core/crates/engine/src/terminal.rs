@@ -88,8 +88,13 @@ pub async fn run<P: HerdrPort>(port: &P, pane: HerdrRef, command: Command) -> Re
             }
             // Locating: the whole buffer (herdr counts `lines` in rows for
             // both sources), as typed and as on screen, so lines can be
-            // matched to rows from the top.
+            // matched to rows.
             let s = port.scroll_state(pane.clone()).await.map_err(unavailable)?;
+            let scroll = ScrollState {
+                offset_from_bottom: s.offset_from_bottom,
+                max_offset_from_bottom: s.max_offset_from_bottom,
+                viewport_rows: s.viewport_rows,
+            };
             let all = s.max_offset_from_bottom + u64::from(s.viewport_rows);
             let lines = p
                 .lines
@@ -103,22 +108,31 @@ pub async fn run<P: HerdrPort>(port: &P, pane: HerdrRef, command: Command) -> Re
                 .await
                 .map_err(unavailable)?;
             let screen = port
-                .read(pane, herdr::ReadSource::Recent, Some(lines))
+                .read(pane.clone(), herdr::ReadSource::Recent, Some(lines))
                 .await
                 .map_err(unavailable)?;
-            let scroll = ScrollState {
-                offset_from_bottom: s.offset_from_bottom,
-                max_offset_from_bottom: s.max_offset_from_bottom,
-                viewport_rows: s.viewport_rows,
+            let rows: Vec<&str> = screen.text.lines().collect();
+            // Whole, the reads start at the buffer's first row. Cut short
+            // (herdr returns at most its last 1000 rows, and trims blank
+            // ones at the bottom), find where the view sits in them.
+            let first = match (read.truncated, screen.truncated) {
+                (false, false) => Some(0),
+                (true, true) => {
+                    let view = port
+                        .read(pane, herdr::ReadSource::Visible, None)
+                        .await
+                        .map_err(unavailable)?;
+                    let view: Vec<&str> = view.text.lines().collect();
+                    first_row(&rows, &view, &scroll)
+                }
+                _ => None,
             };
             let mut matches = search(&read.text, &p.query, p.case_sensitive);
-            // Cut short, the reads start at an unknown row.
-            if !read.truncated && !screen.truncated {
+            if let Some(first) = first {
                 let typed: Vec<&str> = read.text.lines().collect();
-                let rows: Vec<&str> = screen.text.lines().collect();
                 let starts = line_rows(&typed, &rows);
                 for m in &mut matches {
-                    m.row = starts.get(m.line).copied().flatten();
+                    m.row = starts.get(m.line).copied().flatten().map(|r| first + r);
                     m.offset_from_bottom = m.row.map(|row| centre(row, &scroll));
                 }
             }
@@ -195,6 +209,28 @@ pub fn line_rows(lines: &[&str], rows: &[&str]) -> Vec<Option<u64>> {
         out.push(Some(start as u64));
     }
     out
+}
+
+/// The buffer row of `rows[0]`, for a read cut short at the top: where the
+/// view (`view`, the rows on screen at `scroll`) turns up in `rows`. Nearest
+/// the bottom-anchored guess when several places match; `None` when the view
+/// isn't in them (scrolled above the read).
+pub fn first_row(rows: &[&str], view: &[&str], scroll: &ScrollState) -> Option<u64> {
+    let all = scroll.max_offset_from_bottom + u64::from(scroll.viewport_rows);
+    let view_top = all.checked_sub(u64::from(scroll.viewport_rows) + scroll.offset_from_bottom)?;
+    if view.is_empty() || view.len() > rows.len() {
+        return None;
+    }
+    let guess =
+        rows.len() as i64 - i64::from(scroll.viewport_rows) - scroll.offset_from_bottom as i64;
+    (0..=rows.len() - view.len())
+        .filter(|&k| {
+            view.iter()
+                .zip(&rows[k..])
+                .all(|(a, b)| a.trim_end() == b.trim_end())
+        })
+        .min_by_key(|&k| (k as i64 - guess).abs())
+        .and_then(|k| view_top.checked_sub(k as u64))
 }
 
 /// The `terminal.scroll` offset that puts buffer row `row` mid-view.

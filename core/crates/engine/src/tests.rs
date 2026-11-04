@@ -497,6 +497,24 @@ fn line_rows_follow_soft_wraps() {
 }
 
 #[test]
+fn first_row_finds_the_view_in_a_cut_read() {
+    use crate::terminal::first_row;
+    let view = |offset| azulejo_protocol::ScrollState {
+        offset_from_bottom: offset,
+        max_offset_from_bottom: 10,
+        viewport_rows: 2,
+    };
+    // Buffer rows 0..12; herdr gave rows 5..=10 (row 11 is blank, trimmed).
+    let rows = ["e", "f", "x", "x", "y", "$"];
+    // Live view: rows 10 and 11, shown as "$" alone.
+    assert_eq!(first_row(&rows, &["$"], &view(0)), Some(5));
+    // Scrolled up 3: rows 7 and 8, "x x"; nearest the guess wins.
+    assert_eq!(first_row(&rows, &["x", "x"], &view(3)), Some(5));
+    // Scrolled above the read: no anchor.
+    assert_eq!(first_row(&rows, &["a", "b"], &view(9)), None);
+}
+
+#[test]
 fn centre_puts_a_row_mid_view() {
     use crate::terminal::centre;
     let view = azulejo_protocol::ScrollState {
