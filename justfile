@@ -15,6 +15,7 @@ lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
     scripts/design-tokens --check
+    python3 scripts/test_design_tokens.py
 
 # Regenerate the macOS shell's Design.swift from shared/design/tokens.json
 design-tokens:

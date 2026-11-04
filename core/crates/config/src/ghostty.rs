@@ -122,6 +122,16 @@ pub const UNFOCUSED_SPLIT_OPACITY_MIN: f64 = 0.15;
 const MAX_DEPTH: usize = 8;
 
 impl GhosttyConfig {
+    /// Whether the config picks terminal colours (`theme`, `background`,
+    /// `foreground` or `palette`): then it wins over Azulejo's theme unless
+    /// `[appearance] terminal_colors = "theme"` says otherwise.
+    pub fn sets_colors(&self) -> bool {
+        self.theme.is_some()
+            || self.background.is_some()
+            || self.foreground.is_some()
+            || !self.palette.is_empty()
+    }
+
     /// Parses config text as if read from `path` (used for includes and
     /// diagnostics).
     pub fn parse(text: &str, path: &Path) -> GhosttyConfig {
@@ -218,7 +228,10 @@ impl GhosttyConfig {
                         "unfocused-split-fill" => &mut self.unfocused_split_fill,
                         _ => &mut self.selection_foreground,
                     };
-                    if value.is_empty() {
+                    // Ghostty's `cell-foreground` / `cell-background`: no fixed colour.
+                    let cell = key.starts_with("selection-")
+                        && matches!(value, "cell-foreground" | "cell-background");
+                    if value.is_empty() || cell {
                         *slot = None;
                     } else if let Some(rgb) = Rgb::parse(value) {
                         *slot = Some(rgb);

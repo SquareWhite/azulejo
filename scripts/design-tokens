@@ -6,6 +6,11 @@
 
 Reads shared/design/tokens.json. Keys starting with "_" are notes and are
 skipped. Standard library only, deterministic output.
+
+Colours live per theme (themes.<id>.color); validate() checks that every
+theme sets every token in colorTokens, with a valid value, plus its
+appearance, syntax, sidebar material and terminal palette.
+scripts/test_design_tokens.py tests this file.
 """
 
 from __future__ import annotations
@@ -21,6 +26,27 @@ OUT = ROOT / "apps" / "macos" / "Sources" / "Azulejo" / "Design.swift"
 
 WEIGHTS = {"light", "regular", "medium", "semibold", "bold"}
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*$")
+THEME_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+APPEARANCES = {"light", "dark"}
+# Must match azulejo-config's theme::SYNTAXES and azulejo-preview's syntax::NAMES.
+SYNTAXES = {"one-dark", "one-light", "github-dark", "github-light"}
+# NSVisualEffectView.Material names a theme may give its sidebar card.
+MATERIALS = {"sidebar", "menu", "popover", "headerView", "windowBackground", "underWindowBackground",
+             "contentBackground", "titlebar", "hudWindow"}
+# NSColor class properties a theme colour may name ({"system": …}).
+SYSTEM_COLORS = [
+    "windowBackgroundColor", "controlBackgroundColor", "textBackgroundColor",
+    "underPageBackgroundColor", "labelColor", "secondaryLabelColor", "tertiaryLabelColor",
+    "quaternaryLabelColor", "separatorColor", "gridColor", "controlColor", "controlTextColor",
+    "unemphasizedSelectedContentBackgroundColor", "selectedContentBackgroundColor",
+    "controlAccentColor", "selectedTextBackgroundColor", "findHighlightColor", "systemFill",
+    "secondarySystemFill", "tertiarySystemFill", "quaternarySystemFill", "systemBlue",
+    "systemGreen", "systemYellow", "systemOrange", "systemRed", "systemPurple", "systemPink",
+    "systemGray", "systemTeal", "systemIndigo", "systemBrown", "headerTextColor", "shadowColor",
+    "linkColor", "placeholderTextColor", "alternateSelectedControlTextColor",
+]
+TERMINAL_KEYS = ["background", "foreground", "cursor", "cursorText", "selectionBackground",
+                 "selectionForeground", "palette"]
 
 
 def fail(msg: str) -> None:
@@ -52,6 +78,105 @@ def number(value: object, where: str) -> str:
     return f"{value:g}"
 
 
+def entries_any(section: dict) -> list[tuple[str, object]]:
+    """Like entries(), without the camelCase rule (CSS variable names)."""
+    return [(k, v) for k, v in section.items() if not k.startswith("_")]
+
+
+def swift_string(value: object) -> str:
+    return "nil" if value is None else f'"{value}"'
+
+
+def swift_color(value: object, where: str) -> str:
+    if isinstance(value, str):
+        return f".rgba({rgba(value, where)})"
+    if isinstance(value, dict):
+        alpha = value.get("alpha")
+        alpha_text = "nil" if alpha is None else number(alpha, f"{where}.alpha")
+        return (f'.system("{value["system"]}", alpha: {alpha_text}, '
+                f'fallback: {rgba(value["hex"], f"{where}.hex")})')
+    fail(f"{where}: {value!r} is neither a hex colour nor a system colour")
+    raise AssertionError
+
+
+def check_colour(value: object, where: str) -> list[str]:
+    errors = []
+    hexre = re.compile(r"#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?")
+    if isinstance(value, str):
+        if not hexre.fullmatch(value):
+            errors.append(f"{where}: {value!r} is not #rrggbb or #rrggbbaa")
+    elif isinstance(value, dict):
+        unknown = set(value) - {"system", "alpha", "hex"}
+        if unknown:
+            errors.append(f"{where}: unknown keys {sorted(unknown)}")
+        if value.get("system") not in SYSTEM_COLORS:
+            errors.append(f"{where}: unknown system colour {value.get('system')!r}")
+        alpha = value.get("alpha")
+        if alpha is not None and (isinstance(alpha, bool) or not isinstance(alpha, (int, float))
+                                  or not 0 <= alpha <= 1):
+            errors.append(f"{where}: alpha must be 0 to 1")
+        if not isinstance(value.get("hex"), str) or not hexre.fullmatch(value["hex"]):
+            errors.append(f"{where}: needs \"hex\", the colour as macOS draws it by default")
+    else:
+        errors.append(f"{where}: {value!r} is neither a hex colour nor a system colour")
+    return errors
+
+
+def validate(tokens: dict) -> list[str]:
+    """Every problem with the themes, as messages (empty when fine)."""
+    errors: list[str] = []
+    names = [k for k in tokens.get("colorTokens", {}) if not k.startswith("_")]
+    for name in names:
+        if not IDENT.match(name):
+            errors.append(f"colorTokens.{name}: token names are lowerCamelCase")
+    themes = {k: v for k, v in tokens.get("themes", {}).items() if not k.startswith("_")}
+    if tokens.get("defaultTheme") not in themes:
+        errors.append(f"defaultTheme {tokens.get('defaultTheme')!r} isn't a theme")
+    for tid, theme in themes.items():
+        where = f"themes.{tid}"
+        if not THEME_ID.match(tid):
+            errors.append(f"{where}: theme ids are lowercase letters, digits and -")
+        if not isinstance(theme.get("name"), str) or not theme["name"]:
+            errors.append(f"{where}: needs a name")
+        if theme.get("appearance") not in APPEARANCES:
+            errors.append(f"{where}: appearance must be light or dark")
+        if theme.get("syntax") not in SYNTAXES:
+            errors.append(f"{where}: syntax must be one of {sorted(SYNTAXES)}")
+        material = theme.get("sidebarMaterial")
+        if material is not None and material not in MATERIALS:
+            errors.append(f"{where}: sidebarMaterial {material!r} isn't a known material")
+        colours = {k: v for k, v in theme.get("color", {}).items() if not k.startswith("_")}
+        for name in names:
+            if name not in colours:
+                errors.append(f"{where}.color: missing {name}")
+            else:
+                errors += check_colour(colours[name], f"{where}.color.{name}")
+        for name in colours:
+            if name not in names:
+                errors.append(f"{where}.color.{name}: not in colorTokens")
+        term = theme.get("terminal", {})
+        for key in TERMINAL_KEYS:
+            if key not in term:
+                errors.append(f"{where}.terminal: missing {key}")
+        for key in set(term) - set(TERMINAL_KEYS):
+            errors.append(f"{where}.terminal.{key}: unknown")
+        for key in ("background", "foreground", "cursor", "cursorText", "selectionBackground",
+                    "selectionForeground"):
+            value = term.get(key)
+            if value is None and key not in ("background", "foreground"):
+                continue
+            if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                errors.append(f"{where}.terminal.{key}: must be #rrggbb")
+        palette = term.get("palette")
+        if not isinstance(palette, list) or len(palette) != 16 or not all(
+                isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette):
+            errors.append(f"{where}.terminal.palette: needs 16 #rrggbb colours")
+    for name, token in entries_any(tokens.get("webview", {})):
+        if token not in names:
+            errors.append(f"webview.{name}: {token!r} isn't a colour token")
+    return errors
+
+
 def generate(tokens: dict) -> str:
     lines: list[str] = []
     add = lines.append
@@ -61,33 +186,76 @@ def generate(tokens: dict) -> str:
     add("")
     add("import AppKit")
     add("")
-    add("/// Design tokens: colours, radii, spacing, type, status icons and motion.")
+    add("/// Design tokens: colours (per theme), radii, spacing, type, status icons and motion.")
     add("/// Use these instead of literal colours, fonts and sizes in the shell.")
     add("enum Design {")
 
     # Colours
-    add("    /// Colours with a dark and a light value, resolved per appearance.")
+    tokens_doc = {k: v for k, v in entries(tokens["colorTokens"])}
+    add("    /// Colour tokens. Each resolves against the current theme (Theme.swift)")
+    add("    /// in the appearance it's drawn in, so re-reading it after a theme change")
+    add("    /// gives the new colour; a CGColor taken from it doesn't change (see")
+    add("    /// ThemeAware).")
     add("    enum Color {")
-    for name, value in entries(tokens["color"]):
-        if not isinstance(value, dict) or "dark" not in value or "light" not in value:
-            fail(f"color.{name}: needs dark and light")
-        dark = rgba(value["dark"], f"color.{name}.dark")
-        light = rgba(value["light"], f"color.{name}.light")
-        use = value.get("_use")
+    for name, use in tokens_doc.items():
         if use:
             add(f"        /// {use}")
-        add(f'        static let {name} = dynamic("{name}", dark: {dark}, light: {light})')
+        add(f'        static let {name} = Theme.token("{name}")')
+    add("    }")
     add("")
-    add("        private static func dynamic(_ name: String, dark: UInt32, light: UInt32) -> NSColor {")
-    add("            let darkColor = rgba(dark), lightColor = rgba(light)")
-    add("            return NSColor(name: NSColor.Name(\"azulejo.\" + name)) { appearance in")
-    add("                appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? lightColor : darkColor")
-    add("            }")
-    add("        }")
+
+    # Themes
+    themes = [(k, v) for k, v in tokens["themes"].items() if not k.startswith("_")]
+    add("    /// The built-in themes (tokens.json `themes`), in order. The core sends")
+    add("    /// the same tables plus the user's themes (`azj_core_theme`).")
+    add("    enum Themes {")
+    add(f'        static let defaultID = "{tokens["defaultTheme"]}"')
+    add("        /// Every colour token, in tokens.json order.")
+    add("        static let tokens: [String] = [")
+    for name in tokens_doc:
+        add(f'            "{name}",')
+    add("        ]")
+    add("        static let builtIn: [ThemeSpec] = [")
+    for tid, theme in themes:
+        material = theme.get("sidebarMaterial")
+        add("            ThemeSpec(")
+        add(f'                id: "{tid}", name: "{theme["name"]}", appearance: .{theme["appearance"]},')
+        add(f'                syntax: "{theme["syntax"]}", sidebarMaterial: {swift_string(material)},')
+        add("                colors: [")
+        for name in tokens_doc:
+            add(f'                    "{name}": {swift_color(theme["color"][name], f"themes.{tid}.color.{name}")},')
+        add("                ],")
+        term = theme["terminal"]
+        opt = lambda k: "nil" if term.get(k) is None else rgba(term[k], f"themes.{tid}.terminal.{k}")
+        add("                terminal: TerminalSpec(")
+        add(f'                    background: {rgba(term["background"], "terminal.background")}, '
+            f'foreground: {rgba(term["foreground"], "terminal.foreground")},')
+        add(f"                    cursor: {opt('cursor')}, cursorText: {opt('cursorText')},")
+        add(f"                    selectionBackground: {opt('selectionBackground')}, "
+            f"selectionForeground: {opt('selectionForeground')},")
+        palette = ", ".join(rgba(c, f"themes.{tid}.terminal.palette") for c in term["palette"])
+        add(f"                    palette: [{palette}])),")
+    add("        ]")
+    add("    }")
     add("")
-    add("        private static func rgba(_ v: UInt32) -> NSColor {")
-    add("            NSColor(srgbRed: CGFloat((v >> 24) & 0xff) / 255, green: CGFloat((v >> 16) & 0xff) / 255,")
-    add("                    blue: CGFloat((v >> 8) & 0xff) / 255, alpha: CGFloat(v & 0xff) / 255)")
+
+    # Webview variables
+    add("    /// CSS variables the shell sets on webview pages: `--azj-<name>` gets the token.")
+    add("    enum Webview {")
+    add("        static let variables: [(name: String, token: String)] = [")
+    for name, token in entries_any(tokens["webview"]):
+        add(f'            ("{name}", "{token}"),')
+    add("        ]")
+    add("    }")
+    add("")
+
+    # System colours
+    add("    /// The NSColor a theme's `{\"system\": name}` colour names.")
+    add("    static func systemColor(_ name: String) -> NSColor? {")
+    add("        switch name {")
+    for name in SYSTEM_COLORS:
+        add(f'        case "{name}": .{name}')
+    add("        default: nil")
     add("        }")
     add("    }")
     add("")
@@ -123,7 +291,7 @@ def generate(tokens: dict) -> str:
     add("")
 
     # Status
-    colours = {name for name, _ in entries(tokens["color"])}
+    colours = {name for name, _ in entries(tokens["colorTokens"])}
     add("    /// Agent and machine states, each with an SF Symbol and a colour.")
     add("    enum Status: String, CaseIterable, Sendable {")
     status = entries(tokens["status"])
@@ -194,9 +362,13 @@ def main() -> None:
         tokens = json.loads(TOKENS.read_text())
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
-    for section in ("color", "radius", "border", "alpha", "space", "symbol", "font", "status", "icon", "motion"):
+    for section in ("colorTokens", "themes", "webview", "radius", "border", "alpha", "space", "symbol",
+                    "font", "status", "icon", "motion"):
         if section not in tokens:
             fail(f"missing section {section!r}")
+    problems = validate(tokens)
+    if problems:
+        fail("\n  ".join(["invalid themes:"] + problems))
     text = generate(tokens)
     if check:
         if not OUT.exists() or OUT.read_text() != text:
