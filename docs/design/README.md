@@ -99,6 +99,9 @@ The values above live in [`shared/design/tokens.json`](../../shared/design/token
 - **Preview** (D.7): Preview | Source pill (`previewToggleTrack`, `previewToggleSelected`); Open and Reveal show while the pointer is over the header. The page's dark palette (`shared/webview/preview.css`) now uses the mockup's One Dark values (body #252930).
 - **Status icons** (`Design.Status`): working `progress.indicator`, blocked `exclamationmark.circle.fill`, done `checkmark.circle`, idle `circle.dashed`, off and connecting `circle.dotted`, reconnecting `arrow.triangle.2.circlepath`, error `exclamationmark.triangle.fill`, connected `circle.fill`, each with its status colour.
 - **Blocked is yellow**, as in the mockup, where the shell used red before. Red is for errors only.
+- **Opacities** (`Design.Alpha`, Nov 4): every alpha the shell lays over a colour token (attention border, row hover, faded footer counts, dimmed rows, banners, the unfocused-tile dim) is a token too, as are the badge's and machine's dot radii.
+- **After the Nov 3 e2e pass** (Nov 4): path subtitles in tile headers drop leading folders ("…/projects/azulejo") so the last one stays; the agent badge sits at the right end of the header strip, never over terminal text; a tile's header controls (Preview | Source, the files buttons) hide whole when they'd leave the title less than `headerTitleMin`, rather than clip; the config banner takes its own row under the toolbar and the tiles move down for it; a new terminal's "starting the herdr pane…" placeholder uses the terminal's background.
+- **Tab overflow** (provisional, pending the designer): tabs shrink to `tabFitMinWidth` and no further; past that the strip scrolls sideways, fades (`tabFadeWidth`) the edges that hide tabs, and scrolls the selected tab into view.
 
 ### Focus indicator (pending designer confirmation)
 
