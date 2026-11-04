@@ -62,8 +62,9 @@ struct PaletteItem {
 /// The ⌘K quick-open menu: a search field over one fuzzy-filtered list of
 /// commands and jump targets (workspaces, tabs, tiles), drawn over the tiles
 /// (not a separate window). A leading `>` limits it to commands, `@` to jump
-/// targets. Keys reach it through `handle(chord:)` from the key router; plain
-/// typing goes to the field.
+/// targets. Its keys are the keymap's `palette` context: the key router
+/// resolves them and calls `perform(keyAction:)`; plain typing goes to the
+/// field.
 @MainActor
 final class PaletteView: NSView, NSTextFieldDelegate {
     /// What the current query lists, from its leading character.
@@ -206,23 +207,23 @@ final class PaletteView: NSView, NSTextFieldDelegate {
 
     // MARK: Keys
 
-    /// Keys while open. Returns true when consumed; anything else goes on to
-    /// the search field.
-    func handle(chord: String) -> Bool {
-        switch chord {
-        case "escape":
+    /// Its keymap actions while open (`[keys.<platform>.palette]`; the key
+    /// router resolves the chords). Unknown names do nothing.
+    func perform(keyAction name: String) {
+        switch name {
+        case "palette_close":
             close()
-        case "enter":
+        case "palette_run":
             runSelected()
-        case "down", "ctrl+n", "ctrl+j":
+        case "palette_next":
             move(1)
-        case "up", "ctrl+p", "ctrl+k":
+        case "palette_previous":
             move(-1)
-        case "pagedown":
+        case "palette_page_down":
             move(Self.maxRows)
-        case "pageup":
+        case "palette_page_up":
             move(-Self.maxRows)
-        case "tab":
+        case "palette_complete":
             // Complete the field with the selected title (keeping `>` / `@`).
             if promptItem == nil, results.indices.contains(selected) {
                 field.stringValue = scope.prefix + results[selected].item.title
@@ -230,9 +231,8 @@ final class PaletteView: NSView, NSTextFieldDelegate {
                 field.currentEditor()?.moveToEndOfDocument(nil)
             }
         default:
-            return false
+            break
         }
-        return true
     }
 
     private func move(_ delta: Int) {

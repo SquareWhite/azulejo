@@ -1,5 +1,5 @@
-//! The keymap: chords → actions, per platform and per focused tile kind, plus
-//! the optional prefix mode.
+//! The keymap: chords → actions, per platform and per context (the focused
+//! tile kind, or a mode that has the keyboard), plus the optional prefix mode.
 //!
 //! Layers, lowest precedence first:
 //! 1. bundled defaults, `[keys]` then `[keys.<platform>]`
@@ -7,8 +7,10 @@
 //!
 //! A layer that names an action replaces that action's chords; `""` or
 //! `"none"` unbinds it. Context sections (`[keys.terminal]`,
-//! `[keys.macos.terminal]`, …) replace an action's chords only while that tile
-//! kind is focused, and win over the global bindings there.
+//! `[keys.macos.palette]`, …) replace an action's chords only in that context,
+//! and win over the global bindings there. Actions that only work in one
+//! context (`palette_next`, `browser_back`) go to that context wherever
+//! they're written.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -29,37 +31,127 @@ pub enum PrefixState {
     Armed,
 }
 
+/// Where a binding applies beyond the global keymap: while a tile kind has
+/// focus, or while a mode has the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum KeyContext {
+    Terminal,
+    Browser,
+    Preview,
+    /// Files tiles and the sidebar's Files view, while the list has the
+    /// keyboard (its filter field is `Find`).
+    Files,
+    /// Quick open (the ⌘K menu).
+    Palette,
+    /// A find bar, or the files filter, while its field has the keyboard.
+    Find,
+    /// Resize mode (`resize_mode`): only its own bindings apply.
+    Resize,
+}
+
+impl KeyContext {
+    pub const ALL: [KeyContext; 7] = [
+        KeyContext::Terminal,
+        KeyContext::Browser,
+        KeyContext::Preview,
+        KeyContext::Files,
+        KeyContext::Palette,
+        KeyContext::Find,
+        KeyContext::Resize,
+    ];
+
+    /// The section name in config files (`[keys.macos.<name>]`).
+    pub fn name(self) -> &'static str {
+        match self {
+            KeyContext::Terminal => "terminal",
+            KeyContext::Browser => "browser",
+            KeyContext::Preview => "preview",
+            KeyContext::Files => "files",
+            KeyContext::Palette => "palette",
+            KeyContext::Find => "find_bar",
+            KeyContext::Resize => "resize",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<KeyContext> {
+        KeyContext::ALL.into_iter().find(|c| c.name() == name)
+    }
+
+    /// The tile kind this context stands for, if it's one.
+    pub fn tile(self) -> Option<TileKind> {
+        match self {
+            KeyContext::Terminal => Some(TileKind::Terminal),
+            KeyContext::Browser => Some(TileKind::Browser),
+            KeyContext::Preview => Some(TileKind::Preview),
+            KeyContext::Files => Some(TileKind::Files),
+            _ => None,
+        }
+    }
+
+    /// "in browser tiles", for messages.
+    pub fn describe(self) -> &'static str {
+        match self {
+            KeyContext::Terminal => "in terminal tiles",
+            KeyContext::Browser => "in browser tiles",
+            KeyContext::Preview => "in preview tiles",
+            KeyContext::Files => "in files tiles and the sidebar's Files view",
+            KeyContext::Palette => "in quick open",
+            KeyContext::Find => "in find bars",
+            KeyContext::Resize => "in resize mode",
+        }
+    }
+
+    /// Whether global bindings apply here too, under the context's own.
+    /// Resize mode swallows every chord it doesn't bind.
+    pub fn inherits_global(self) -> bool {
+        self != KeyContext::Resize
+    }
+}
+
+impl From<TileKind> for KeyContext {
+    fn from(kind: TileKind) -> Self {
+        match kind {
+            TileKind::Terminal => KeyContext::Terminal,
+            TileKind::Browser => KeyContext::Browser,
+            TileKind::Preview => KeyContext::Preview,
+            TileKind::Files => KeyContext::Files,
+        }
+    }
+}
+
 /// What the key router knows when a chord arrives.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Context {
-    /// Kind of the focused tile; `None` when nothing tile-like has focus.
-    pub tile: Option<TileKind>,
+    /// The focused tile kind or the mode with the keyboard; `None` when
+    /// nothing context-specific has focus.
+    pub scope: Option<KeyContext>,
     pub prefix: PrefixState,
 }
 
 impl Context {
     pub fn tile(tile: TileKind) -> Self {
+        Context::scope(tile.into())
+    }
+
+    pub fn scope(scope: KeyContext) -> Self {
         Context {
-            tile: Some(tile),
+            scope: Some(scope),
             prefix: PrefixState::Idle,
         }
     }
 }
 
-const CONTEXTS: [(&str, TileKind); 4] = [
-    ("terminal", TileKind::Terminal),
-    ("browser", TileKind::Browser),
-    ("preview", TileKind::Preview),
-    ("files", TileKind::Files),
-];
-
-fn context_from_name(name: &str) -> Option<TileKind> {
-    CONTEXTS.iter().find(|(n, _)| *n == name).map(|(_, k)| *k)
+fn context_names() -> String {
+    KeyContext::ALL
+        .iter()
+        .map(|c| c.name())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
-/// All lookup contexts: no tile, then each tile kind.
-fn all_contexts() -> impl Iterator<Item = Option<TileKind>> {
-    std::iter::once(None).chain(CONTEXTS.iter().map(|(_, k)| Some(*k)))
+/// All lookup contexts: global, then each context.
+fn all_contexts() -> impl Iterator<Item = Option<KeyContext>> {
+    std::iter::once(None).chain(KeyContext::ALL.into_iter().map(Some))
 }
 
 /// Where a binding was written.
@@ -72,7 +164,7 @@ struct Origin {
 #[derive(Debug, Clone)]
 struct Entry {
     platform: Option<Platform>,
-    context: Option<TileKind>,
+    context: Option<KeyContext>,
     name: String,
     /// Position in the action table, for deterministic tie-breaks.
     order: usize,
@@ -129,13 +221,14 @@ impl<'s, 'a> LayerParser<'s, 'a> {
                 DeValue::Table(sub) => {
                     if let Some(platform) = Platform::from_name(name) {
                         self.platform_section(platform, sub, out);
-                    } else if let Some(kind) = context_from_name(name) {
+                    } else if let Some(kind) = KeyContext::from_name(name) {
                         self.action_section(None, Some(kind), sub, out);
                     } else {
                         self.sink.warn(
                             key.span(),
                             format!(
-                                "unknown section `[keys.{name}]`; expected a platform (macos, linux) or a tile kind (terminal, browser, preview, files)"
+                                "unknown section `[keys.{name}]`; expected a platform (macos, linux) or a context ({})",
+                                context_names()
                             ),
                         );
                     }
@@ -153,13 +246,14 @@ impl<'s, 'a> LayerParser<'s, 'a> {
         for (key, value) in table.iter() {
             let name = key.get_ref().as_ref();
             match value.get_ref() {
-                DeValue::Table(sub) => match context_from_name(name) {
+                DeValue::Table(sub) => match KeyContext::from_name(name) {
                     Some(kind) => self.action_section(Some(platform), Some(kind), sub, out),
                     None => self.sink.warn(
                         key.span(),
                         format!(
-                            "unknown section `[keys.{}.{name}]`; expected a tile kind (terminal, browser, preview, files)",
-                            platform.name()
+                            "unknown section `[keys.{}.{name}]`; expected a context ({})",
+                            platform.name(),
+                            context_names()
                         ),
                     ),
                 },
@@ -175,7 +269,7 @@ impl<'s, 'a> LayerParser<'s, 'a> {
     fn action_section(
         &mut self,
         platform: Option<Platform>,
-        context: Option<TileKind>,
+        context: Option<KeyContext>,
         table: &DeTable<'_>,
         out: &mut Layer,
     ) {
@@ -298,7 +392,7 @@ impl<'s, 'a> LayerParser<'s, 'a> {
         key: &Spanned<std::borrow::Cow<'_, str>>,
         value: &Spanned<DeValue<'_>>,
         platform: Option<Platform>,
-        context: Option<TileKind>,
+        context: Option<KeyContext>,
         prefix: bool,
     ) -> Option<Entry> {
         let name = key.get_ref().as_ref();
@@ -306,6 +400,37 @@ impl<'s, 'a> LayerParser<'s, 'a> {
             self.sink
                 .warn(key.span(), format!("unknown action `{name}`"));
             return None;
+        };
+        // Actions that only work in one context go there from a global
+        // section; anywhere else they'd never fire.
+        let home = match &self.names[order].1 {
+            NameSpec::Plain(action) => action.context(),
+            NameSpec::Indexed(_) => None,
+        };
+        let context = match (home, context) {
+            (Some(home), _) if prefix => {
+                self.sink.warn(
+                    key.span(),
+                    format!(
+                        "`{name}` only works {}, not after the prefix; ignored",
+                        home.describe()
+                    ),
+                );
+                return None;
+            }
+            (Some(home), None) => Some(home),
+            (Some(home), Some(other)) if home != other => {
+                self.sink.warn(
+                    key.span(),
+                    format!(
+                        "`{name}` only works {}, so it does nothing under `{}`; ignored",
+                        home.describe(),
+                        other.name(),
+                    ),
+                );
+                return None;
+            }
+            (_, context) => context,
         };
 
         let texts: Vec<&str> = match value.get_ref() {
@@ -493,7 +618,7 @@ fn merge(
     platform: Platform,
     layers: &[Layer],
     pick: impl Fn(&Layer) -> &Vec<Entry>,
-) -> HashMap<(Option<TileKind>, String), Entry> {
+) -> HashMap<(Option<KeyContext>, String), Entry> {
     let mut merged = HashMap::new();
     for layer in layers {
         for wanted in [None, Some(platform)] {
@@ -509,9 +634,6 @@ fn merge(
 fn reserved(platform: Platform) -> Vec<(Chord, &'static str)> {
     let list: &[(&str, &str)] = match platform {
         Platform::Macos => &[
-            ("cmd+q", "Quit"),
-            ("cmd+h", "Hide"),
-            ("cmd+m", "Minimise"),
             ("cmd+tab", "the app switcher"),
             ("cmd+grave", "window cycling"),
             ("cmd+space", "Spotlight"),
@@ -536,14 +658,50 @@ fn reserved(platform: Platform) -> Vec<(Chord, &'static str)> {
         .collect()
 }
 
+/// What the config says about one action in one context, after layering:
+/// for listings (`config.keys`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// `None` for the global bindings.
+    pub context: Option<KeyContext>,
+    /// The action's config name (`switch_tab`, not `switch_tab_3`).
+    pub name: String,
+    /// The chords as written, with the action each one stands for (indexed
+    /// actions get one per digit). Empty when unbound.
+    pub bindings: Vec<(Chord, Action)>,
+    /// The user's config wrote it (otherwise the bundled defaults).
+    pub user: bool,
+}
+
 /// The resolved keymap for one platform.
 #[derive(Debug, Clone)]
 pub struct Keymap {
     platform: Platform,
-    maps: HashMap<Option<TileKind>, HashMap<Chord, Action>>,
+    maps: HashMap<Option<KeyContext>, HashMap<Chord, Action>>,
     prefix_enabled: bool,
     prefix_key: Option<Chord>,
     prefix_map: HashMap<Chord, Action>,
+    written: Vec<Written>,
+    prefix_written: Vec<Written>,
+}
+
+fn written(merged: &HashMap<(Option<KeyContext>, String), Entry>) -> Vec<Written> {
+    let mut out: Vec<(usize, Written)> = merged
+        .iter()
+        .map(|((context, name), e)| {
+            (
+                e.order,
+                Written {
+                    context: *context,
+                    name: name.clone(),
+                    bindings: e.bindings.clone(),
+                    user: e.origin.layer > 0,
+                },
+            )
+        })
+        .collect();
+    out.sort_by_key(|(order, w)| (*order, w.context));
+    out.into_iter().map(|(_, w)| w).collect()
 }
 
 impl Keymap {
@@ -567,13 +725,15 @@ impl Keymap {
         // Direct bindings, per context.
         let merged = merge(platform, layers, |l| &l.entries);
         let mut maps = HashMap::new();
-        let mut slot_maps: Vec<(Option<TileKind>, HashMap<Chord, Slot>)> = Vec::new();
+        let mut slot_maps: Vec<(Option<KeyContext>, HashMap<Chord, Slot>)> = Vec::new();
         let mut reported: HashSet<(Chord, Action, Action)> = HashSet::new();
         for context in all_contexts() {
-            // Global entries, with this context's entries replacing them per action.
+            // Global entries, with this context's entries replacing them per
+            // action. Resize mode only has its own.
+            let inherit = context.is_none_or(KeyContext::inherits_global);
             let mut effective: HashMap<&str, (&Entry, bool)> = merged
                 .iter()
-                .filter(|((ctx, _), _)| ctx.is_none())
+                .filter(|((ctx, _), _)| inherit && ctx.is_none())
                 .map(|((_, name), e)| (name.as_str(), (e, false)))
                 .collect();
             if context.is_some() {
@@ -604,7 +764,7 @@ impl Keymap {
                             dup.winner.action.name(),
                             dup.loser.action.name(),
                             context
-                                .map(|k| format!(" in {} tiles", context_name(k)))
+                                .map(|k| format!(" {}", k.describe()))
                                 .unwrap_or_default(),
                             dup.winner.action.name(),
                         ),
@@ -660,7 +820,9 @@ impl Keymap {
             let mut chords: Vec<_> = slots.iter().collect();
             chords.sort_by_key(|(c, _)| **c);
             for (chord, slot) in chords {
-                let terminal = *context == Some(TileKind::Terminal);
+                let terminal = *context == Some(KeyContext::Terminal)
+                    // Typing ctrl+b literally is what that one is for.
+                    && slot.action != Action::SendHerdrPrefix;
                 let first_time = !seen.contains(&(*chord, slot.origin.clone()));
                 if terminal && *chord == Chord::CTRL_B {
                     diag(
@@ -740,7 +902,7 @@ impl Keymap {
                             show(key),
                             slot.action.name(),
                             context
-                                .map(|k| format!(" in {} tiles", context_name(k)))
+                                .map(|k| format!(" {}", k.describe()))
                                 .unwrap_or_default(),
                         ),
                     );
@@ -754,6 +916,8 @@ impl Keymap {
             prefix_enabled,
             prefix_key: prefix_key.map(|(k, _)| k),
             prefix_map: prefix_slots.iter().map(|(c, s)| (*c, s.action)).collect(),
+            written: written(&merged),
+            prefix_written: written(&merged_prefix),
         }
     }
 
@@ -771,6 +935,11 @@ impl Keymap {
         self.prefix_key.filter(|_| self.prefix_enabled)
     }
 
+    /// The configured prefix chord, whether or not prefix mode is on.
+    pub fn prefix_chord(&self) -> Option<Chord> {
+        self.prefix_key
+    }
+
     /// The action for `chord`, or `None` to let the key through to the tile.
     ///
     /// While the prefix is armed only the prefix keymap applies; otherwise the
@@ -783,17 +952,17 @@ impl Keymap {
                 if self.prefix_key() == Some(*chord) {
                     return Some(Action::EnterPrefix);
                 }
-                self.maps.get(&context.tile)?.get(chord).copied()
+                self.maps.get(&context.scope)?.get(chord).copied()
             }
         }
     }
 
-    /// Direct chords for `action` while `tile` has focus, sorted. For menus
-    /// and the palette.
-    pub fn chords_for(&self, action: Action, tile: Option<TileKind>) -> Vec<Chord> {
+    /// Direct chords for `action` in `context`, sorted. For menus and the
+    /// palette.
+    pub fn chords_for(&self, action: Action, context: Option<KeyContext>) -> Vec<Chord> {
         let mut chords: Vec<Chord> = self
             .maps
-            .get(&tile)
+            .get(&context)
             .into_iter()
             .flatten()
             .filter(|(_, a)| **a == action)
@@ -815,10 +984,13 @@ impl Keymap {
         chords
     }
 
-    /// Every direct binding while `tile` has focus.
-    pub fn bindings(&self, tile: Option<TileKind>) -> impl Iterator<Item = (Chord, Action)> + '_ {
+    /// Every direct binding that applies in `context`.
+    pub fn bindings(
+        &self,
+        context: Option<KeyContext>,
+    ) -> impl Iterator<Item = (Chord, Action)> + '_ {
         self.maps
-            .get(&tile)
+            .get(&context)
             .into_iter()
             .flatten()
             .map(|(c, a)| (*c, *a))
@@ -828,14 +1000,17 @@ impl Keymap {
     pub fn prefix_bindings(&self) -> impl Iterator<Item = (Chord, Action)> + '_ {
         self.prefix_map.iter().map(|(c, a)| (*c, *a))
     }
-}
 
-fn context_name(kind: TileKind) -> &'static str {
-    CONTEXTS
-        .iter()
-        .find(|(_, k)| *k == kind)
-        .map(|(n, _)| *n)
-        .expect("every tile kind has a context name")
+    /// What the config files say per action and context, in action order
+    /// (before conflicts are settled): for `config.keys`.
+    pub fn written(&self) -> &[Written] {
+        &self.written
+    }
+
+    /// The same for `[prefix.keys]`.
+    pub fn prefix_written(&self) -> &[Written] {
+        &self.prefix_written
+    }
 }
 
 /// What the router did with a chord.
@@ -867,9 +1042,16 @@ impl KeyRouter {
         self.state = PrefixState::Idle;
     }
 
-    pub fn handle(&mut self, keymap: &Keymap, chord: Chord, tile: Option<TileKind>) -> KeyOutcome {
+    /// Routes `chord` in `scope` (the focused tile kind or the mode that has
+    /// the keyboard).
+    pub fn handle(
+        &mut self,
+        keymap: &Keymap,
+        chord: Chord,
+        scope: Option<KeyContext>,
+    ) -> KeyOutcome {
         let context = Context {
-            tile,
+            scope,
             prefix: self.state,
         };
         match self.state {

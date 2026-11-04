@@ -679,3 +679,19 @@ private final class WeakPreview {
     weak var view: PreviewTileView?
     init(_ view: PreviewTileView) { self.view = view }
 }
+
+// MARK: - Keys
+
+extension PreviewTileView: KeyScope {
+    var keyScope: String { keyContext }
+
+    /// `preview_toggle_source` (`[keys.<platform>.preview]`): Preview | Source,
+    /// for files that have a source to show.
+    func perform(keyAction name: String, event: NSEvent?) -> Bool {
+        guard name == "preview_toggle_source", header.selectedMode != "none" else { return false }
+        let source = !shownSource
+        header.setSource(source)
+        setSource(source)
+        return true
+    }
+}

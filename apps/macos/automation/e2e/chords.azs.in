@@ -181,11 +181,11 @@ key alt+w
 until tiles 5 3000
 key alt+w
 until tiles 4 3000
-# --- ctrl+b reaches the PTY (doubled), the attach client stays ---
+# --- ctrl+b reaches the PTY (doubled by send_herdr_prefix), the attach client stays ---
 key alt+h
 remember resizes
 key ctrl+b
-expect key.last passed
+expect key.last action:send_herdr_prefix
 key q
 wait 800
 expect terminal.phase attached

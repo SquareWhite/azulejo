@@ -7,8 +7,9 @@ import GhosttyKit
 ///
 /// Keys: the window's key router sees every keyDown first and only lets
 /// unbound chords through, so `keyDown` here is plain typing. A typed
-/// `ctrl+b` goes out twice: herdr's attach client reads `ctrl+b ctrl+b` as a
-/// literal `ctrl+b`, so `ctrl+b q` can never detach the tile by accident
+/// `ctrl+b` goes out twice (`typeTwice`, the keymap's `send_herdr_prefix` in
+/// terminal tiles): herdr's attach client reads `ctrl+b ctrl+b` as a literal
+/// `ctrl+b`, so `ctrl+b q` can never detach the tile by accident
 /// (docs/keybindings.md). A read-only surface (observe mode) swallows keys.
 @MainActor
 final class TerminalSurfaceView: NSView {
@@ -282,13 +283,6 @@ final class TerminalSurfaceView: NSView {
         guard !readOnly else { return }
         let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
         let markedBefore = markedText.length > 0
-        if !markedBefore, Self.isPlainCtrlB(event) {
-            // Literal ctrl+b, never the start of herdr's detach chord.
-            sendKey(event, action: action)
-            sendKey(event, action: GHOSTTY_ACTION_RELEASE)
-            sendKey(event, action: action)
-            return
-        }
 
         // The input method sees the key first, as in Ghostty.app: with the
         // option-as-alt config translated away so alt chords stay alt chords.
@@ -356,9 +350,16 @@ final class TerminalSurfaceView: NSView {
         _ = ghostty_surface_key(surface, key)
     }
 
-    static func isPlainCtrlB(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.control, .option, .command, .shift])
-        return flags == .control && event.keyCode == 11 // kVK_ANSI_B
+    /// `send_herdr_prefix` (ctrl+b by default): the key sent twice, which
+    /// herdr's attach client delivers to the pane as one literal key, never
+    /// the start of its detach chord (`ctrl+b q`). The key router calls this
+    /// instead of `keyDown`, and never while an input method is composing.
+    func typeTwice(_ event: NSEvent) {
+        guard !readOnly else { return }
+        let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+        sendKey(event, action: action)
+        sendKey(event, action: GHOSTTY_ACTION_RELEASE)
+        sendKey(event, action: action)
     }
 
     /// Committed input-method text, sent as typed input (never as a paste).

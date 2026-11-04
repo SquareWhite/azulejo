@@ -2,10 +2,10 @@
 //! user-facing protocol methods no key is bound to, each with its current
 //! chords. `commands.list` serves this; shells show it.
 
-use azulejo_protocol::{CommandEntry, METHODS, TileKind};
+use azulejo_protocol::{CommandEntry, METHODS};
 
 use crate::action::{NameSpec, names};
-use crate::{Action, Config, PLANNED_METHODS, Target};
+use crate::{Action, Config, KeyContext, PLANNED_METHODS, Target};
 
 /// How many entries an indexed action (`switch_tab`) gets: 1 to this.
 pub const INDEXED_ENTRIES: u8 = 9;
@@ -26,13 +26,6 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
         "Preview file in this tile",
         "preview",
         Some("path"),
-        true,
-    ),
-    (
-        "preview.set_mode",
-        "Toggle preview source",
-        "preview",
-        None,
         true,
     ),
     (
@@ -61,13 +54,6 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
         "Set file browser root…",
         "files",
         Some("root"),
-        true,
-    ),
-    (
-        "files.toggle_hidden",
-        "Show or hide hidden files",
-        "files",
-        None,
         true,
     ),
     (
@@ -149,6 +135,10 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "events.subscribe",
     "events.unsubscribe",
     "commands.list",
+    // For `azj config keys` / `azj config defaults`; the palette shows chords
+    // itself, and "Open config file" writes the template.
+    "config.keys",
+    "config.defaults",
     // The sidebar's machine groups read it; "+" on a group is workspace.create.
     "machines.list",
 ];
@@ -179,6 +169,7 @@ pub fn catalogue(config: &Config) -> Vec<CommandEntry> {
             needs_tile: *needs_tile,
             prompt: prompt.map(str::to_owned),
             planned: !METHODS.contains(method),
+            context: None,
         });
     }
     out
@@ -193,14 +184,8 @@ fn action_entry(config: &Config, name: &str, action: Action, index: Option<u8>) 
             chords.push(c);
         }
     };
-    for tile in [
-        None,
-        Some(TileKind::Terminal),
-        Some(TileKind::Browser),
-        Some(TileKind::Preview),
-        Some(TileKind::Files),
-    ] {
-        for chord in keymap.chords_for(action, tile) {
+    for context in std::iter::once(None).chain(KeyContext::ALL.into_iter().map(Some)) {
+        for chord in keymap.chords_for(action, context) {
             push(chord.display(platform));
         }
     }
@@ -236,6 +221,7 @@ fn action_entry(config: &Config, name: &str, action: Action, index: Option<u8>) 
         needs_tile: needs_tile(action),
         prompt: prompt(action).map(str::to_owned),
         planned,
+        context: action.context().map(|c| c.name().to_owned()),
     }
 }
 
@@ -249,7 +235,20 @@ fn dir(d: azulejo_protocol::Direction) -> &'static str {
     }
 }
 
-fn title(action: Action) -> String {
+/// What an action does, for listings: its palette title, with `N` for
+/// indexed actions.
+pub(crate) fn describe(name: &str, spec: &NameSpec) -> String {
+    match spec {
+        NameSpec::Plain(action) => title(*action),
+        NameSpec::Indexed(_) => match name {
+            "switch_workspace" => "Switch to workspace N".into(),
+            "switch_tab" => "Switch to tab N".into(),
+            other => other.to_owned(),
+        },
+    }
+}
+
+pub(crate) fn title(action: Action) -> String {
     use Action::*;
     match action {
         FocusTile(d) => format!("Focus tile {}", dir(d)),
@@ -312,6 +311,45 @@ fn title(action: Action) -> String {
         ToggleSidebar => "Toggle sidebar".into(),
         EditScrollback => "Edit scrollback".into(),
         EnterPrefix => "Prefix".into(),
+        Quit => "Quit Azulejo".into(),
+        Hide => "Hide Azulejo".into(),
+        HideOthers => "Hide other apps".into(),
+        Minimize => "Minimise window".into(),
+        SendHerdrPrefix => "Type herdr's prefix (ctrl+b) into the pane".into(),
+        TakeOver => "Take over or give back a terminal".into(),
+        PaletteClose => "Quick open: close".into(),
+        PaletteRun => "Quick open: run the selected row".into(),
+        PaletteNext => "Quick open: next row".into(),
+        PalettePrevious => "Quick open: previous row".into(),
+        PalettePageDown => "Quick open: page down".into(),
+        PalettePageUp => "Quick open: page up".into(),
+        PaletteComplete => "Quick open: complete the query".into(),
+        FindNext => "Find: next match".into(),
+        FindPrevious => "Find: previous match".into(),
+        FindClose => "Find: close the bar".into(),
+        ResizeModeExit => "Resize mode: done".into(),
+        BrowserFocusAddress => "Browser: edit the address".into(),
+        BrowserReload => "Browser: reload".into(),
+        BrowserReloadFromOrigin => "Browser: reload from origin".into(),
+        BrowserBack => "Browser: back".into(),
+        BrowserForward => "Browser: forward".into(),
+        BrowserStop => "Browser: stop loading".into(),
+        BrowserZoomIn => "Browser: zoom in".into(),
+        BrowserZoomOut => "Browser: zoom out".into(),
+        BrowserZoomReset => "Browser: actual size".into(),
+        BrowserInspector => "Browser: Web Inspector".into(),
+        PreviewToggleSource => "Preview: toggle Preview | Source".into(),
+        FilesDown => "Files: next row".into(),
+        FilesUp => "Files: previous row".into(),
+        FilesOpen => "Files: open".into(),
+        FilesExpand => "Files: expand folder or open file".into(),
+        FilesCollapse => "Files: collapse folder or go to parent".into(),
+        FilesOpenExternal => "Files: open in default app".into(),
+        FilesParent => "Files: go to parent folder".into(),
+        FilesQuickLook => "Files: Quick Look".into(),
+        FilesFilter => "Files: filter".into(),
+        FilesToggleHidden => "Files: show or hide hidden files".into(),
+        FilesLeave => "Files: back to the tiles (sidebar)".into(),
     }
 }
 
@@ -328,10 +366,27 @@ fn category(action: Action) -> &'static str {
         | PreviousWorkspace | CloseWorkspace | RenameWorkspace => "workspace",
         NewTab | SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab | CloseTab
         | RenameTab => "tab",
-        NewWindow | CloseWindow => "window",
-        Find | EditScrollback => "terminal",
+        NewWindow | CloseWindow | Minimize => "window",
+        Find | EditScrollback | SendHerdrPrefix | TakeOver => "terminal",
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
-        | EnterPrefix => "app",
+        | EnterPrefix | Quit | Hide | HideOthers => "app",
+        PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
+        | PalettePageUp | PaletteComplete => "palette",
+        FindNext | FindPrevious | FindClose => "find",
+        ResizeModeExit => "tile",
+        BrowserFocusAddress
+        | BrowserReload
+        | BrowserReloadFromOrigin
+        | BrowserBack
+        | BrowserForward
+        | BrowserStop
+        | BrowserZoomIn
+        | BrowserZoomOut
+        | BrowserZoomReset
+        | BrowserInspector => "browser",
+        PreviewToggleSource => "preview",
+        FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
+        | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => "files",
     }
 }
 
@@ -354,6 +409,29 @@ fn needs_tile(action: Action) -> bool {
             | MovePositionPrevious
             | Find
             | EditScrollback
+            | SendHerdrPrefix
+            | TakeOver
+            | BrowserFocusAddress
+            | BrowserReload
+            | BrowserReloadFromOrigin
+            | BrowserBack
+            | BrowserForward
+            | BrowserStop
+            | BrowserZoomIn
+            | BrowserZoomOut
+            | BrowserZoomReset
+            | BrowserInspector
+            | PreviewToggleSource
+            | FilesDown
+            | FilesUp
+            | FilesOpen
+            | FilesExpand
+            | FilesCollapse
+            | FilesOpenExternal
+            | FilesParent
+            | FilesQuickLook
+            | FilesFilter
+            | FilesToggleHidden
     )
 }
 

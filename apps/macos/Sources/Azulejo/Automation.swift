@@ -203,7 +203,14 @@ final class Automation {
         }
         // The characters a real keypress carries: shifted letters upper case,
         // ctrl+letter its control character, named keys their codes.
-        let named = ["space": " ", "enter": "\r", "tab": "\t", "escape": "\u{1b}", "backspace": "\u{7f}"]
+        var named = ["space": " ", "enter": "\r", "tab": "\t", "escape": "\u{1b}", "backspace": "\u{7f}"]
+        for (name, key) in [("up", NSUpArrowFunctionKey), ("down", NSDownArrowFunctionKey),
+                            ("left", NSLeftArrowFunctionKey), ("right", NSRightArrowFunctionKey),
+                            ("pageup", NSPageUpFunctionKey), ("pagedown", NSPageDownFunctionKey),
+                            ("home", NSHomeFunctionKey), ("end", NSEndFunctionKey),
+                            ("delete", NSDeleteFunctionKey)] {
+            named[name] = UnicodeScalar(key).map { String(Character($0)) }
+        }
         var ignoring = raw.count == 1 ? raw : named[aliases[raw] ?? raw] ?? ""
         if flags.contains(.shift) { ignoring = ignoring.uppercased() }
         var chars = ignoring

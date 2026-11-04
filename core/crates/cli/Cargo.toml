@@ -21,4 +21,6 @@ azulejo-protocol.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+azulejo-config.workspace = true
+azulejo-daemon.workspace = true
 azulejo-engine.workspace = true

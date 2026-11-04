@@ -12,6 +12,10 @@ enum PaletteStore {
     /// The menu's own actions: it doesn't list itself.
     static let selfActions: Set<String> = ["quick_open", "command_palette", "goto"]
 
+    /// Keymap contexts that are modes rather than tile kinds: their actions
+    /// only make sense while the mode has the keyboard.
+    static let modeContexts: Set<String> = ["palette", "find_bar", "resize"]
+
     /// Recently run rows (commands and places), newest first. A per-viewer
     /// convenience: lost with the app's defaults, which is fine.
     static func recents() -> [String] {
@@ -95,8 +99,11 @@ extension AppController {
         var items: [PaletteItem] = []
         for entry in list {
             guard let id = entry["id"] as? String, let title = entry["title"] as? String else { continue }
-            // The menu doesn't list itself.
+            // The menu doesn't list itself, nor the keys of modes that are
+            // over once it runs (its own, find bars', resize mode's).
             if PaletteStore.selfActions.contains(id) { continue }
+            let context = entry["context"] as? String
+            if let context, PaletteStore.modeContexts.contains(context) { continue }
             PaletteStore.entries[id] = entry
             let planned = entry["planned"] as? Bool ?? false
             let needsTile = entry["needs_tile"] as? Bool ?? false
@@ -112,6 +119,10 @@ extension AppController {
             } else if needsTile, focused == nil {
                 item.enabled = false
                 item.note = "needs a tile"
+            } else if let context, let kind = focused?.kind.rawValue, kind != context {
+                // A tile kind's own keys (browser_back, files_down…).
+                item.enabled = false
+                item.note = "\(context) tiles"
             }
             item.initialInput = initialInput(for: id, prompt: prompt, controller: controller)
             items.append(item)

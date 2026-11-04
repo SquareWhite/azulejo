@@ -1,0 +1,196 @@
+# Every keymap context rebinds live: one key in each of palette, find_bar,
+# resize, browser, preview and files moves to a new chord through the dev
+# profile's config file. Without a restart the new chord works and the old
+# one doesn't; "" and "none" unbind; copying the old file back restores the
+# defaults; and "Open config file" writes the commented template when the
+# file is missing. Run with rebind.sh.
+# @URL@ (a page), @DIR@ (fixtures and rebind.toml), @AZJ@ (azj on this
+# instance's socket).
+
+log setup
+delivery direct
+until responder terminal 10000
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+sh cp {config} {config}.orig
+# terminal | (browser / (preview | files))
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
+until responder browser-page 10000
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until responder preview-page 10000
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
+until responder files-tree 10000
+until tile.rows 4
+expect tile.selected sub
+
+log === R01 the defaults, context by context
+# files: j moves, . shows hidden files
+key j
+expect key.last action:files_down
+expect key.context files
+expect tile.selected alpha.txt
+key period
+expect key.last action:files_toggle_hidden
+until tile.hidden shown 3000
+key period
+until tile.hidden hidden 3000
+# preview: alt+cmd+u toggles Preview | Source
+key alt+h
+until responder preview-page 5000
+key alt+cmd+u
+expect key.last action:preview_toggle_source
+until tile.source source 5000
+key alt+cmd+u
+until tile.source rendered 5000
+# find_bar: escape closes the bar
+key cmd+f
+until tile.find open 3000
+expect key.context preview
+key escape
+expect key.last find
+expect key.context find_bar
+expect tile.find closed
+# browser: cmd+l edits the address
+key alt+k
+until responder browser-page 5000
+key cmd+l
+expect key.last action:browser_focus_address
+expect tile.address_focused yes
+key escape
+expect tile.address_focused no
+# palette: down / up move the selection
+key cmd+k
+expect palette all
+expect palette.index 0
+key down
+expect key.last palette
+expect key.context palette
+expect palette.index 1
+key up
+expect palette.index 0
+key escape
+expect palette closed
+# resize: ctrl+alt+r, then l grows the terminal, escape ends it
+key alt+h
+until responder terminal 5000
+expect ratio 0.50
+key ctrl+alt+r
+expect keys.resizing yes
+key l
+expect key.context resize
+expect ratio 0.55
+key escape
+expect keys.resizing no
+shot r01-defaults
+
+log === R02 rebind one key per context in the config file; it reloads on save
+sh cat @DIR@/rebind.toml >> {config}
+until search.chord ⌘J 5000
+expect banner.shown no
+sh @AZJ@ --json config keys > {out}/keys-rebound.json
+
+log === R03 resize: d grows now, l does nothing, escape no longer ends it (q does)
+expect responder terminal
+key ctrl+alt+r
+expect keys.resizing yes
+key l
+expect ratio 0.55
+expect keys.resizing yes
+key d
+expect ratio 0.60
+key escape
+expect keys.resizing yes
+key q
+expect keys.resizing no
+key alt+h
+expect key.last action:focus_tile_left
+
+log === R04 palette: cmd+j opens it, ctrl+down moves, down and up don't
+key cmd+k
+expect key.last passed
+expect palette closed
+key cmd+j
+expect key.last action:quick_open
+expect palette all
+expect palette.index 0
+key down
+expect key.last palette-field
+expect palette.index 0
+key ctrl+down
+expect key.last palette
+expect palette.index 1
+key up
+expect key.last palette-field
+expect palette.index 1
+key escape
+expect palette closed
+
+log === R05 browser: cmd+e edits the address, cmd+l doesn't
+key alt+l
+until responder browser-page 5000
+key cmd+l
+expect key.last passed
+expect tile.address_focused no
+key cmd+e
+expect key.last action:browser_focus_address
+expect tile.address_focused yes
+key escape
+expect tile.address_focused no
+
+log === R06 preview: cmd+shift+u toggles, alt+cmd+u doesn't
+key alt+j
+until responder preview-page 5000
+key alt+cmd+u
+expect key.last passed
+wait 300
+expect tile.source rendered
+key cmd+shift+u
+expect key.last action:preview_toggle_source
+until tile.source source 5000
+key cmd+shift+u
+until tile.source rendered 5000
+
+log === R07 find_bar: ctrl+g closes the bar, escape doesn't
+key cmd+f
+until tile.find open 3000
+key escape
+expect key.last passed
+expect tile.find open
+key ctrl+g
+expect key.last find
+expect tile.find closed
+
+log === R08 files: n moves, j doesn't; . is unbound ("")
+key alt+l
+until responder files-tree 5000
+expect tile.selected alpha.txt
+key j
+expect key.last passed
+expect tile.selected alpha.txt
+key n
+expect key.last action:files_down
+expect tile.selected beta.txt
+key period
+expect key.last passed
+wait 300
+expect tile.hidden hidden
+shot r08-rebound
+
+log === R09 the old file back: the defaults return without a restart
+sh cp {config}.orig {config}
+until search.chord ⌘K 5000
+key j
+expect key.last action:files_down
+expect tile.selected gamma.txt
+key cmd+j
+expect key.last passed
+
+log === R10 open_config writes the commented template when the file is missing
+sh mv {config} {config}.moved
+wait 500
+action open_config
+sh test -s {config}
+sh cp {config} {out}/created-config.toml
+sh @AZJ@ config defaults > {out}/defaults.toml
+sh mv {config}.moved {config}
+until search.chord ⌘K 5000

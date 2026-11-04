@@ -9,10 +9,12 @@ import UniformTypeIdentifiers
 /// again), `files.revealed` (open folders down to a path and select it) and
 /// `files.git` (decorations).
 ///
-/// Keys while the tree has focus: ↑↓ or j/k move, ←→ or h/l close and open
-/// folders, Return opens a file in the tab's preview tile (or toggles a
-/// folder), ⌘↓ opens in the default app, Space toggles Quick Look, / filters
-/// the loaded entries as you type (Esc clears).
+/// Keys while the tree has focus come from the keymap's `files` context
+/// (defaults: ↓↑ or j/k move, h/l close and open folders, Return opens a file
+/// in the tab's preview tile or toggles a folder, ⌘↓ opens in the default
+/// app, ⌘↑ goes up, Space toggles Quick Look, / filters, . shows hidden
+/// files). ← → are AppKit's outline keys. While the filter has the keyboard
+/// the context is `find_bar`: enter goes to the list, escape clears it.
 @MainActor
 final class FilesTileView: NSView, TileView {
     let tileID: String
@@ -530,7 +532,14 @@ extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
 }
 
 extension FilesTileView: NSSearchFieldDelegate {
+    /// AppKit's fallbacks in the filter field. Enter and escape normally
+    /// arrive as `find_bar` actions; when the router let them through, the
+    /// user unbound them there, so they do nothing. Down always moves into
+    /// the list (AppKit's move command on the field).
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if KeyRouter.letThroughCurrentKey(),
+           selector == #selector(NSResponder.cancelOperation(_:))
+            || selector == #selector(NSResponder.insertNewline(_:)) { return true }
         switch selector {
         case #selector(NSResponder.cancelOperation(_:)):
             clearFilter()
@@ -671,52 +680,13 @@ private struct WeakFiles {
 final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     weak var owner: FilesTileView?
 
-    override func keyDown(with event: NSEvent) {
-        guard let owner else { return super.keyDown(with: event) }
-        let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        let node = owner.selectedNode
-        switch (event.keyCode, mods) {
-        case (36, []), (76, []):  // Return, keypad Enter
-            if let node { owner.activate(node) }
-            return
-        case (125, [.command]):  // ⌘↓
-            if let node {
-                if node.dir { expandItem(node) } else { owner.openInDefaultApp(node) }
-            }
-            return
-        case (126, [.command]):  // ⌘↑
-            if let node { owner.goToParent(of: node) }
-            return
-        case (49, []):  // Space
-            toggleQuickLook()
-            return
-        case (53, []) where owner.isPanel:  // Esc: back to the tiles
-            owner.onEscape?()
-            return
-        default:
-            break
-        }
-        guard mods.isEmpty, let chars = event.charactersIgnoringModifiers else {
-            return super.keyDown(with: event)
-        }
-        switch chars {
-        case "j": step(1)
-        case "k": step(-1)
-        case "l":
-            if let node, node.dir { expandItem(node) } else if let node { owner.activate(node) }
-        case "h":
-            if let node {
-                if node.dir, isItemExpanded(node) { collapseItem(node) } else { owner.goToParent(of: node) }
-            }
-        case "/": owner.showFilter()
-        case ".": owner.toggleHidden()
-        default: super.keyDown(with: event)
-        }
-    }
+    // No keyDown override: the key router hands the `files` actions to the
+    // tile (FilesTileView.perform(keyAction:)); what it lets through is
+    // AppKit's (← → collapse and expand, type-select).
 
     /// Moves the selection by `delta` rows (NSTableView handles arrows in
     /// `keyDown`, not through `moveDown:`).
-    private func step(_ delta: Int) {
+    fileprivate func step(_ delta: Int) {
         guard numberOfRows > 0 else { return }
         let row = max(0, min(numberOfRows - 1, (selectedRow < 0 ? -1 : selectedRow) + delta))
         selectRowIndexes([row], byExtendingSelection: false)
@@ -747,7 +717,7 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
 
     // Quick Look: the selected entry, toggled with Space.
 
-    private func toggleQuickLook() {
+    fileprivate func toggleQuickLook() {
         let panel = QLPreviewPanel.shared()!
         if panel.isVisible { panel.orderOut(nil) } else { panel.makeKeyAndOrderFront(nil) }
     }
@@ -932,5 +902,59 @@ extension FilesTileView: Findable {
         showFilter()
         filter.currentEditor()?.selectAll(nil)
         return nil
+    }
+}
+
+// MARK: - Keys
+
+extension FilesTileView: KeyScope {
+    /// `files` while the list has the keyboard, `find_bar` while the filter
+    /// does.
+    var keyScope: String { isFiltering ? "find_bar" : "files" }
+
+    var keyContext: String { keyScope }
+
+    private var isFiltering: Bool {
+        guard let editor = filter.currentEditor() else { return false }
+        return window?.firstResponder === editor
+    }
+
+    /// The `files` actions, and `find_bar`'s in the filter.
+    func perform(keyAction name: String, event: NSEvent?) -> Bool {
+        let node = selectedNode
+        switch name {
+        case "find_next":
+            guard isFiltering else { return false }
+            focusTree()
+        case "find_close":
+            guard isFiltering else { return false }
+            clearFilter()
+        case "files_down": outline.step(1)
+        case "files_up": outline.step(-1)
+        case "files_open":
+            guard let node else { return false }
+            activate(node)
+        case "files_expand":
+            guard let node else { return false }
+            if node.dir { outline.expandItem(node) } else { activate(node) }
+        case "files_collapse":
+            guard let node else { return false }
+            if node.dir, outline.isItemExpanded(node) { outline.collapseItem(node) } else { goToParent(of: node) }
+        case "files_open_external":
+            guard let node else { return false }
+            if node.dir { outline.expandItem(node) } else { openInDefaultApp(node) }
+        case "files_parent":
+            guard let node else { return false }
+            goToParent(of: node)
+        case "files_quick_look": outline.toggleQuickLook()
+        case "files_filter": showFilter()
+        case "files_toggle_hidden": toggleHidden()
+        case "files_leave":
+            guard isPanel else { return false }
+            onEscape?()
+        default:
+            return false
+        }
+        return true
     }
 }
