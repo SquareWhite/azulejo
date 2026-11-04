@@ -26,6 +26,13 @@ add_ghostty_resources() {
   cp -R "$share/terminfo" "$res/terminfo"
 }
 
+# The app icon (Info.plist's CFBundleIconFile). `just icon` regenerates it
+# from scripts/icon/draw.swift; docs/design/icon/README.md.
+add_icon() {
+  mkdir -p "$1/Contents/Resources"
+  cp Resources/AppIcon.icns "$1/Contents/Resources/AppIcon.icns"
+}
+
 if xcodebuild -version >/dev/null 2>&1; then
   xcodegen generate --quiet
   xcodebuild -project Azulejo.xcodeproj -scheme Azulejo -configuration Debug \
@@ -34,6 +41,7 @@ if xcodebuild -version >/dev/null 2>&1; then
   cp -R "$out/DerivedData/Build/Products/Debug/Azulejo.app" "$out/Azulejo.app"
   cp "$out/DerivedData/Build/Products/Debug/azj-observe" "$out/Azulejo.app/Contents/MacOS/azj-observe"
   add_ghostty_resources "$out/Azulejo.app"
+  add_icon "$out/Azulejo.app"
   codesign --force --sign - "$out/Azulejo.app" >/dev/null 2>&1
 else
   echo "Full Xcode not found; building with SwiftPM." >&2
@@ -63,6 +71,7 @@ else
   cp "$bindir/AzjObserve" "$app/Contents/MacOS/azj-observe"
   cp Resources/Info.plist "$app/Contents/Info.plist"
   add_ghostty_resources "$app"
+  add_icon "$app"
   codesign --force --sign - "$app" >/dev/null 2>&1
 fi
 echo "$out/Azulejo.app"
