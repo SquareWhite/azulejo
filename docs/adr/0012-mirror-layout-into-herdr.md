@@ -1,6 +1,6 @@
 # 0012: Mirror Azulejo's layout into herdr
 
-Status: accepted · Nov 4, 2026 · M2 (PLAN 2.14) · supersedes [0002](0002-herdr-mapping.md)'s tab-per-tile rule · amends [0008](0008-use-the-users-herdr-session.md), [0009](0009-changes-made-in-herdr.md), [0010](0010-dynamic-layouts.md)
+Status: accepted · Nov 4, 2026 · M2 (PLAN 2.16) · supersedes [0002](0002-herdr-mapping.md)'s tab-per-tile rule · amends [0008](0008-use-the-users-herdr-session.md), [0009](0009-changes-made-in-herdr.md), [0010](0010-dynamic-layouts.md)
 
 ## Context
 
@@ -83,7 +83,7 @@ It applies live on reload (unlike the rest of `[herdr]`). Off means no pushes, n
 
 - The TUI and the phone show Azulejo's tabs as herdr tabs with the same splits, zoom and Monocle. Splitting, closing, swapping, resizing and zooming in the TUI change Azulejo.
 - ADR 0008's "read-only" rule narrows: adoption and restore still only read, but the mirror changes the layout of herdr tabs Azulejo shows, adopted ones included. It never calls `layout.apply` and never closes a pane except on an explicit kill.
-- A structural change (a layout switch, a Tile rotation, a promote that changes the shape) shows a staging tab in the TUI's tab bar for a few milliseconds. Ratio changes and swaps don't.
+- A structural change (a layout switch, a Tile rotation, a promote that changes the shape) shows a staging tab in the TUI's tab bar for the length of the rebuild, 3–4 ms for three panes ([measurements](../measurements.md#layout-mirror-pushes-adr-0012)). Ratio changes and swaps don't.
 - **Two clients resizing** at once: the last write wins. A TUI drag during an Azulejo push can be overwritten by the push; the TUI's next drag comes back as usual.
 - **The phone** below `mobile_width_threshold` (64 columns) draws herdr's single-column mobile layout, whatever the tree. Mirroring changes what it shows above that width, and the tab list (one per Azulejo tab rather than per tile).
 - **Animations** don't cause a storm. The model changes once per command and the shell only animates between states. A held resize key or a divider drag sends many commands, but the 150 ms quiet period collapses them into one push of the settled layout.
