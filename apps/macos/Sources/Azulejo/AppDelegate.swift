@@ -406,7 +406,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "quick_open": openQuickOpen(in: controller)
         case "command_palette": openQuickOpen(query: ">", in: controller)
         case "goto": openQuickOpen(query: "@", in: controller)
-        case "find": controller.flash("Find lands with the terminal tile (1.7)")
+        case "find":
+            // The focused tile's find bar (terminal, browser, preview) or
+            // filter (files).
+            guard let findable = (controller.tiles.focusedView as? TileFrame)?.content as? Findable else {
+                return controller.flash("nothing to find in here")
+            }
+            if let problem = findable.beginFind() { controller.flash(problem) }
         case "edit_scrollback": controller.flash("Edit scrollback isn't wired yet")
         case "reload_config":
             // The core reads the file and sends `config.reloaded` (banner).

@@ -24,8 +24,8 @@ enum TileFocus {
     /// A visible text field (or its field editor) outside every tile container
     /// has the keyboard, or a view inside something that keeps the keyboard
     /// (the sidebar's Files tree). Fields inside tiles — the browser's
-    /// address bar, the files filter — don't count: the focused tile manages
-    /// those itself.
+    /// address bar, the files filter, a find bar — don't count: the focused
+    /// tile manages those itself (its `setFocused` leaves them alone).
     static func typingOutsideTiles(in window: NSWindow) -> Bool {
         guard let responder = window.firstResponder as? NSView else { return false }
         var view = responder

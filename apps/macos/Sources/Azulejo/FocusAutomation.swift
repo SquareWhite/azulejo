@@ -73,8 +73,8 @@ enum KeyDelivery {
 ///
 /// Keys: `responder` (what holds first responder: `terminal`, `terminal-ro`,
 /// `terminal-tile`, `browser-page`, `browser-address`, `preview-page`,
-/// `preview-native`, `files-tree`, `files-filter`, `palette`, `window`, or
-/// `<kind>:<class>`), `responder.tile` (short id of the tile holding it, `-`),
+/// `preview-native`, `files-tree`, `files-filter`, `<kind>-find` (a find
+/// bar), `palette`, `window`, or `<kind>:<class>`), `responder.tile` (short id of the tile holding it, `-`),
 /// `responder.focused` (`yes` when that tile is the focused one),
 /// `key.last` (the router's verdict on the last keyDown: `action:<name>`,
 /// `passed`, `composing`, `palette`, `palette-field`…), `ime.marked`,
@@ -184,6 +184,7 @@ enum FocusAutomation {
         let kind = frame.kind.rawValue
         let label: String
         switch start {
+        case is FindField: label = "\(kind)-find"
         case let surface as TerminalSurfaceView: label = surface.readOnly ? "terminal-ro" : "terminal"
         case is TerminalTileView: label = "terminal-tile"
         case is NSOutlineView: label = "files-tree"

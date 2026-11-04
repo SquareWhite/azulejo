@@ -390,4 +390,134 @@ sh @HERE@/pane-has.sh {herdr} {session} {pane} azjbanner
 sh sed -i '' '$d' '{config}'
 until banner.shown no 5000
 expect responder terminal
+
+# --- find (⌘F) in each tile kind, in a tab of its own: T | V(B / H(P | F)) ---
+key cmd+shift+t
+until tab 3
+until responder terminal 10000
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+
+log === S39 cmd+f in a terminal opens its find bar with the keyboard in it
+# The shell prints the markers; the command line itself doesn't hold them.
+type echo azj''needle; echo azj''twin; echo azj''twin
+key enter
+type seq 1 150
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} 150
+key cmd+f
+expect key.last action:find
+expect responder terminal-find
+expect responder.focused yes
+expect tile.find open
+
+log === S40 typing in the bar searches herdr's history and scrolls the match into view, highlighted
+type azjneedle
+expect key.last passed
+until tile.find.status 1 of 1 5000
+until tile.find.revealed yes
+expect tile.find.query azjneedle
+expect responder terminal-find
+# libghostty marks the occurrence herdr now shows.
+until tile.find.highlights 1
+capture s40-find-terminal 300
+wait 500
+
+log === S41 herdr refreshes and app refreshes leave the keyboard in the bar
+sh {herdr} --session {session} pane rename {pane} azjfind >/dev/null
+seen-visible on
+wait 300
+seen-visible off
+wait 300
+expect responder terminal-find
+type x
+expect tile.find.query azjneedlex
+until tile.find.status No matches 5000
+# Nothing typed in the bar reached the PTY.
+sh @HERE@/pane-has.sh --not {herdr} {session} {pane} azjneedlex
+key backspace
+until tile.find.status 1 of 1 5000
+
+log === S42 enter and shift+enter step through the matches, newest first; cmd+a stays in the bar
+key cmd+a
+expect key.last passed
+expect sidebar visible
+type azjtwin
+until tile.find.status 1 of 2 5000
+key enter
+expect key.last find
+expect tile.find.status 2 of 2
+key enter
+expect tile.find.status 1 of 2
+key shift+enter
+expect tile.find.status 2 of 2
+expect responder terminal-find
+
+log === S43 escape closes the bar, gives the keyboard back to the terminal and the view to the bottom
+key escape
+expect key.last find
+expect tile.find closed
+expect responder terminal
+expect responder.focused yes
+until tile.find.scroll 0
+type echo azjafter
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjafter
+
+log === S44 cmd+f again reopens the bar with the last query, searched afresh
+key cmd+f
+expect responder terminal-find
+expect tile.find.query azjtwin
+until tile.find.status 1 of 2 5000
+key escape
+expect responder terminal
+
+log === S45 cmd+f in a browser: WebKit's find, same bar; escape gives the page back
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
+until tile.title focus page 10000
+until responder browser-page
+key cmd+f
+expect key.last action:find
+expect responder browser-find
+expect responder.focused yes
+type azulejo
+until tile.find.status 1 of 3 5000
+key enter
+until tile.find.status 2 of 3 5000
+key shift+enter
+until tile.find.status 1 of 3 5000
+expect responder browser-find
+capture s45-find-browser 300
+wait 500
+key escape
+expect responder browser-page
+expect tile.find closed
+expect responder.focused yes
+
+log === S46 cmd+f in a preview finds in the rendered page
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until responder preview-page 10000
+until tile.mode load 10000
+key cmd+f
+expect key.last action:find
+expect responder preview-find
+type focus
+until tile.find.status 1 of 1 5000
+key escape
+expect responder preview-page
+expect tile.find closed
+expect responder.focused yes
+
+log === S47 cmd+f in a files tile opens its filter
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
+until responder files-tree 10000
+until tile.rows 4
+key cmd+f
+expect key.last action:find
+expect responder files-filter
+type gam
+until tile.rows 1
+key escape
+until responder files-tree
+expect responder.focused yes
 quit

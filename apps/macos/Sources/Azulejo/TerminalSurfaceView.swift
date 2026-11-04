@@ -374,6 +374,21 @@ final class TerminalSurfaceView: NSView {
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
+    // MARK: Search highlight (find bar)
+
+    /// Runs a libghostty binding action (`search:<text>`, `end_search`).
+    @discardableResult
+    func bindingAction(_ action: String) -> Bool {
+        guard let surface else { return false }
+        return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+    }
+
+    /// Occurrences libghostty's search marks on this screen (what's in view;
+    /// herdr holds the rest), or -1 with no search running.
+    private(set) var searchTotal = -1
+
+    func searchChanged(total: Int?) { searchTotal = total ?? -1 }
+
     func completeClipboardRead(text: String, state: UnsafeMutableRawPointer?) {
         guard let surface else { return }
         "text/plain".withCString { mime in

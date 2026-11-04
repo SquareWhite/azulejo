@@ -92,7 +92,7 @@ close_tab    = "cmd+w"
 quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/tiles (">" commands, "@" jump)
 # command_palette (opens quick open with ">") and goto (with "@") are unbound
 # by default; bind them here to get cmd+shift+p / cmd+p back.
-find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers
+find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers and previews, the files filter
 new_window      = "cmd+n"
 open_config     = "cmd+,"
 # Deliberately unbound: cmd+h, cmd+m, cmd+` (macOS). cmd+k takes over Ghostty's

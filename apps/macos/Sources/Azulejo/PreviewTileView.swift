@@ -32,6 +32,14 @@ final class PreviewTileView: NSView, TileView {
     private var webView: WKWebView?
     private var nativeView: QLPreviewView?
     private let placeholder = NSTextField(wrappingLabelWithString: "")
+    /// ⌘F: the bar sits under the header and pushes the page down.
+    private lazy var finder: WebFinder = {
+        let finder = WebFinder(webView: { [weak self] in self?.webView })
+        finder.bar.onFocus = { [weak self] in self?.findFocused() }
+        finder.onClosed = { [weak self] in self?.findClosed() }
+        return finder
+    }()
+    private var findHeight: NSLayoutConstraint!
 
     /// What's on screen: the file and how it's shown.
     private var shownPath: String?
@@ -86,8 +94,16 @@ final class PreviewTileView: NSView, TileView {
         header.setSource(tile.showsSource)
         body.translatesAutoresizingMaskIntoConstraints = false
         addSubview(body)
+        let bar = finder.bar
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bar)
+        findHeight = bar.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            body.topAnchor.constraint(equalTo: topAnchor),
+            bar.topAnchor.constraint(equalTo: topAnchor),
+            bar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            findHeight,
+            body.topAnchor.constraint(equalTo: bar.bottomAnchor),
             body.leadingAnchor.constraint(equalTo: leadingAnchor),
             body.trailingAnchor.constraint(equalTo: trailingAnchor),
             body.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -136,7 +152,10 @@ final class PreviewTileView: NSView, TileView {
     }
 
     func setFocused(_ focused: Bool) {
+        self.focused = focused
         guard focused, let window, TileFocus.canTake(in: window) else { return }
+        // Typing in this tile's find bar: refreshes leave it there.
+        if finder.bar.holdsKeyboard { return }
         let target: NSView = webView ?? nativeView ?? self
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
@@ -251,6 +270,7 @@ final class PreviewTileView: NSView, TileView {
     }
 
     private var loadStarted = Date()
+    private var focused = false
 
     // Automation state (`tile.*` keys).
     private var applied = 0
@@ -320,6 +340,11 @@ final class PreviewTileView: NSView, TileView {
     /// Puts `view` in the body, removing whatever was there.
     private func show(_ view: NSView, mode: Mode) {
         shownMode = mode
+        // Quick Look and the empty state have nothing to find in.
+        if mode != .html, finder.bar.isOpen {
+            finder.bar.hide()
+            findHeight.constant = 0
+        }
         guard view.superview !== body else { return }
         body.subviews.forEach { $0.removeFromSuperview() }
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -577,6 +602,31 @@ struct PreviewContent: Decodable {
     }
 }
 
+// MARK: - Find (⌘F)
+
+extension PreviewTileView: Findable {
+    func beginFind() -> String? {
+        guard shownMode == .html, webView != nil else {
+            return shownMode == .native ? "Find works in rendered and source previews, not Quick Look"
+                : "nothing to find yet"
+        }
+        findHeight.constant = FindBar.height
+        layoutSubtreeIfNeeded()
+        finder.open()
+        return nil
+    }
+
+    fileprivate func findFocused() {
+        // A click into the bar of a tile that isn't focused focuses it.
+        if !focused { Self.core?.send(["method": "tile.focus", "params": ["tile": tileID]]) }
+    }
+
+    fileprivate func findClosed() {
+        findHeight.constant = 0
+        if let webView { window?.makeFirstResponder(webView) }
+    }
+}
+
 // MARK: - Automation
 
 extension PreviewTileView: AutomatableTile {
@@ -613,7 +663,7 @@ extension PreviewTileView: AutomatableTile {
             "tile.js": lastScriptResult,
             "tile.source": shownSource ? "source" : "rendered",
             "tile.toggle": header.selectedMode,
-        ]
+        ].merging(finder.automationState()) { $1 }
     }
 }
 

@@ -163,6 +163,16 @@ private func ghosttyAction(
          GHOSTTY_ACTION_NEW_TAB, GHOSTTY_ACTION_NEW_SPLIT, GHOSTTY_ACTION_CLOSE_TAB:
         // Ghostty's own window keybindings: Azulejo's keymap owns these.
         return true
+    case GHOSTTY_ACTION_START_SEARCH, GHOSTTY_ACTION_SEARCH_SELECTED:
+        // The find bar is Azulejo's (FindBar); libghostty only highlights.
+        return true
+    case GHOSTTY_ACTION_SEARCH_TOTAL:
+        let total = Int(action.action.search_total.total)
+        onMain(token(of: surface)) { $0.searchChanged(total: total) }
+        return true
+    case GHOSTTY_ACTION_END_SEARCH:
+        onMain(token(of: surface)) { $0.searchChanged(total: nil) }
+        return true
     case GHOSTTY_ACTION_MOUSE_SHAPE:
         let shape = action.action.mouse_shape
         onMain(token(of: surface)) { $0.setMouseShape(shape) }
