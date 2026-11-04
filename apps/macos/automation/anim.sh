@@ -68,9 +68,23 @@ if [[ "$mode" == "--slow" ]]; then
   step 06e-rotate-right alt+o                  # -> right
   step 06f-rotate-bottom alt+o                 # -> bottom
   step 06g-rotate-left alt+o                   # -> left again
+  # A rotate turned round mid-motion: four quarter turns 500 ms apart, so
+  # each one retargets the last from where the tiles show.
+  emit "key alt+o" "wait 500" "key alt+o" "capture 06h-rotate-retarget-a-mid 250" "wait 250" \
+    "key alt+o" "capture 06h-rotate-retarget-b-mid 250" "wait 250" "key alt+o" \
+    "capture 06h-rotate-retarget-c-mid 400" "wait 1800" "capture 06h-rotate-retarget-d-end 0" "wait 400"
+  emit "expect orientation left"
   step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
-  step 06c-monocle alt+backslash               # tile -> monocle
-  step 06d-three-column alt+backslash          # monocle -> three column
+  step 06b2-masters-back alt+minus
+  step 06c-monocle-in alt+z                    # tile -> monocle: focused grows, others tuck away
+  emit "expect kind monocle"
+  step 06c2-monocle-focus alt+j                # stacked tiles: a quick dissolve, no resize
+  step 06c3-monocle-out alt+z                  # monocle -> tile: the others grow back in
+  emit "expect kind tile"
+  step 06d-three-column alt+bracketleft        # tile -> three column (previous in the cycle)
+  emit "expect kind three_column"
+  step 06d2-tile alt+bracketright              # three column -> tile (next, wrapping round)
+  emit "expect kind tile"
   step 07-focus alt+k                          # the dim cross-fades
   # The sidebar (cmd+a in a terminal): the card turns into the rail and
   # back (its top and right edges move, the rows cross-fade) while the tile
@@ -115,6 +129,38 @@ else
       n=$((n + 1))
     done
   done
+  # Dynamic layouts (ADR 0010): round the cycle through every kind and
+  # back, masters and the master area up and down, Monocle in, a focus
+  # switch in it (no PTY resize) and out, manual and back, a move along
+  # the order, rotate part, promote.
+  layouts=(
+    "alt+bracketright" "alt+bracketright" "alt+bracketright"   # tile -> monocle -> three column -> tile
+    "alt+bracketleft" "alt+bracketleft" "alt+bracketleft"      # and back
+    "alt+equal" "alt+minus"                                   # masters 2, then 1
+    "alt+shift+equal" "alt+shift+minus"                       # master area bigger, smaller
+    "alt+z" "alt+j" "alt+k" "alt+z"                           # monocle in, focus x2, out
+    "alt+t" "alt+t"                                           # tile toggles to the previous kind and back
+    "alt+shift+t" "alt+shift+t"                               # manual and back
+    "alt+shift+bracketright" "alt+shift+bracketleft"          # move along the order and back
+    "alt+shift+o" "alt+shift+o"                               # rotate part and back
+  )
+  for _ in 1 2; do
+    for chord in "${layouts[@]}"; do
+      emit "key $chord" "wait $settle"
+    done
+  done
+  emit "expect kind tile" "expect orientation left"
+  # Rapid repeats: each key lands 150 ms into the last one's motion (a
+  # retarget from where the tiles show). A full turn, the cycle through
+  # every kind, Monocle in and straight out, masters up and down.
+  emit "key alt+o" "key alt+o" "key alt+o" "key alt+o" "wait $settle"
+  emit "expect orientation left"
+  emit "key alt+bracketright" "key alt+bracketright" "key alt+bracketright" "wait $settle"
+  emit "expect kind tile"
+  emit "key alt+z" "key alt+z" "wait $settle" "expect kind tile"
+  emit "key alt+equal" "key alt+minus" "wait $settle"
+  emit "key alt+bracketleft" "key alt+bracketleft" "key alt+bracketright" "key alt+bracketright" "wait $settle"
+  emit "expect kind tile"
   # The sidebar collapses to its rail and opens, four times (every terminal
   # resizes once each way), then collapses and opens again 150 ms apart
   # (each step waits 150 ms): the second toggle turns the first round

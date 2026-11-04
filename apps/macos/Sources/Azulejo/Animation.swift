@@ -9,6 +9,13 @@ import QuartzCore
 /// snapshot covers it — and Core Animation carries it visually from where it
 /// was to where it is. Nothing re-lays out per frame.
 ///
+/// Every layout change with a geometric relation moves: each tile goes from
+/// its old frame to its new one (rotate, layout switches, Monocle in and
+/// out, masters, promote, swaps, splits, closes, zoom, the sidebar). Only
+/// changes with no path between the two pictures fade: tab and workspace
+/// switches (another tab's tiles), and a focus switch between Monocle's
+/// stacked tiles (the next one dissolves in over the last).
+///
 /// `style` says what the content does on the way:
 /// - "crop" (default): the tile's frame is a clip. Its bounds and position
 ///   animate; content stays at 1:1, revealed or cut off by the moving edges.
@@ -106,6 +113,9 @@ enum Motion {
     static var duration: CFTimeInterval { durationOverride ?? Double(settings.durationMs) / 1000 }
     /// Tab and workspace switches.
     static var tabDuration: CFTimeInterval { duration * 0.75 }
+    /// A focus switch between Monocle's stacked tiles: the next one
+    /// dissolves in over the last, quicker than a move (nothing travels).
+    static var stackDuration: CFTimeInterval { duration * 0.6 }
 
     static var timing: CAMediaTimingFunction {
         switch settings.curve {
@@ -217,8 +227,6 @@ protocol MotionAware: AnyObject {
     @discardableResult func motionWillStart(freeze: Bool, fill: Bool) -> Bool
     /// The snapshot's frame in the tile's coordinates, while frozen.
     var snapshotFrame: CGRect? { get }
-    /// The frozen frame's contents (an IOSurface), for a cross-fade ghost.
-    var snapshotContents: Any? { get }
     /// Puts the 1:1 snapshot at `frame` (tile coordinates) over a plain
     /// background spanning `cover`, which hides the live surface around it.
     func placeSnapshot(_ frame: CGRect, cover: CGRect)
@@ -281,7 +289,7 @@ final class MotionStats {
     /// When the last tick's callback ran (not its vsync timestamp): a missed
     /// tick blames whatever the main thread did between two callbacks.
     private var lastCallback: CFTimeInterval?
-    private var currentKind = ""
+    private(set) var currentKind = ""
     private(set) var droppedByKind: [String: Int] = [:]
     /// Per dropped tick: what overlapped it (`Perf` spans), summed by name.
     private(set) var dropCauses: [String: Double] = [:]
