@@ -19,7 +19,7 @@ use crate::stream::EventStream;
 use crate::types::{
     EnsuredWorkspace, MoveTo, Moved, PaneId, PaneInfo, ProcessInfo, ReadResult, ReadSource,
     Resolved, ServerInfo, Snapshot, SplitSpec, Survey, TabId, TabLayout, TerminalId, TerminalRef,
-    TerminalSpec, WorkspaceId, WorkspaceInfo, WorkspaceSpec,
+    TerminalSpec, WorkspaceId, WorkspaceInfo, WorkspaceSpec, ZoomState,
 };
 use crate::wire::{self, method};
 
@@ -394,12 +394,23 @@ impl Client {
         wire::field(&r, "layout")
     }
 
-    /// Zooms `pane` (and focuses it) or unzooms its tab.
-    pub async fn zoom_pane(&self, pane: &PaneId, on: bool) -> Result<()> {
+    /// Zooms `pane` (and focuses it) or unzooms its tab. Returns the zoom
+    /// as herdr has it right after: a tab's only pane doesn't zoom.
+    pub async fn zoom_pane(&self, pane: &PaneId, on: bool) -> Result<ZoomState> {
         let mode = if on { "on" } else { "off" };
-        self.call(method::PANE_ZOOM, json!({ "pane_id": pane, "mode": mode }))
-            .await
-            .map(drop)
+        let r = self
+            .call(method::PANE_ZOOM, json!({ "pane_id": pane, "mode": mode }))
+            .await?;
+        let zoom = r
+            .get("zoom")
+            .ok_or_else(|| Error::Protocol(format!("pane.zoom: {}", wire::short(&r))))?;
+        Ok(ZoomState {
+            zoomed: zoom.get("zoomed").and_then(Value::as_bool) == Some(true),
+            focused: zoom
+                .get("focused_pane_id")
+                .and_then(Value::as_str)
+                .map(PaneId::from),
+        })
     }
 
     pub async fn rename_tab(&self, tab: &TabId, label: &str) -> Result<()> {

@@ -420,6 +420,14 @@ pub struct Moved {
     pub reason: Option<String>,
 }
 
+/// A tab's zoom right after [`crate::Client::zoom_pane`], from herdr's reply.
+/// herdr refuses to zoom a tab's only pane (`single_pane`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZoomState {
+    pub zoomed: bool,
+    pub focused: Option<PaneId>,
+}
+
 /// Result of [`crate::Client::ensure_workspace`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnsuredWorkspace {

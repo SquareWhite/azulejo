@@ -760,3 +760,176 @@ fn a_remote_machines_tabs_are_mirrored_there() {
     core.shutdown();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The root split's ratio in a tree.
+fn root_ratio(node: &Node) -> Option<f64> {
+    match node {
+        Node::Split { ratio, .. } => Some(*ratio),
+        Node::Leaf { .. } => None,
+    }
+}
+
+/// A resize in herdr right after a split made in Azulejo, before that
+/// split's push: the resize wins, every time.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn a_resize_in_herdr_right_after_a_split_is_never_lost() {
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = core(&herdr, &dir.path().join("state.json"), LayoutKind::Manual);
+    let s = wait_session(&core, "first pane", |s| all_bound(s, 1));
+    let first = terminals(&s)[0].0;
+    let mut lost = Vec::new();
+    for i in 0..20 {
+        core.execute(Command::TileFocus(TileTarget { tile: Some(first) }))
+            .unwrap();
+        let new = split(&core, Direction::Right);
+        // As soon as herdr has the pane, resize there: well inside the
+        // split's 150 ms quiet period.
+        let s = wait("pane made", Duration::from_secs(10), || {
+            let s = core.session().unwrap();
+            all_bound(&s, 2).then_some(s)
+        });
+        let tab = pane_of(&s, new).tab_id;
+        let want = if i % 2 == 0 { 0.3 } else { 0.7 };
+        herdr
+            .rt
+            .block_on(
+                herdr
+                    .client
+                    .set_split_ratio(&HerdrTab(tab.clone()), &[], want),
+            )
+            .unwrap();
+        let followed = (0..100).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            core.session()
+                .ok()
+                .and_then(|s| root_ratio(tab_root(&s)))
+                .is_some_and(|r| (r - want).abs() < 1e-3)
+        });
+        // And nothing pushes it back.
+        std::thread::sleep(Duration::from_millis(400));
+        let kept = matches!(herdr.export(&tab).root, LayoutNode::Split { ratio, .. } if (ratio - want).abs() < 1e-3)
+            && root_ratio(tab_root(&core.session().unwrap()))
+                .is_some_and(|r| (r - want).abs() < 1e-3);
+        if !(followed && kept) {
+            lost.push(i);
+        }
+        core.execute(Command::TileClose(TileClose {
+            tile: Some(new),
+            kill: true,
+        }))
+        .unwrap();
+        wait_session(&core, "back to one", |s| all_bound(s, 1));
+    }
+    assert!(lost.is_empty(), "resizes lost in rounds {lost:?}");
+    core.shutdown();
+}
+
+fn tab_kind(s: &Session) -> LayoutKind {
+    tab_layout(s).kind
+}
+
+/// Monocle with a browser beside the terminals: focusing the browser keeps
+/// Monocle, and herdr keeps showing a terminal. Only an unzoom made in herdr
+/// ends Monocle.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn monocle_with_a_browser_stays_monocle() {
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = core(&herdr, &dir.path().join("state.json"), LayoutKind::Tile);
+    let s = wait_session(&core, "first pane", |s| all_bound(s, 1));
+    let a = terminals(&s)[0].0;
+    let browser = core
+        .execute(Command::LayoutSplit(LayoutSplit {
+            tile: None,
+            direction: Direction::Right,
+            content: Some(TileContent::Browser {
+                url: None,
+                page_title: None,
+            }),
+        }))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(created) = browser.reply else {
+        panic!()
+    };
+    let b = created.tile.unwrap();
+    core.execute(Command::LayoutSet(LayoutSetKind {
+        tab: None,
+        kind: LayoutKind::Monocle,
+    }))
+    .unwrap();
+    // One terminal and a browser: back and forth, Monocle stays.
+    for tile in [a, b, a, b] {
+        core.execute(Command::TileFocus(TileTarget { tile: Some(tile) }))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(tab_kind(&core.session().unwrap()), LayoutKind::Monocle);
+    }
+
+    // A second terminal: focusing the browser keeps herdr on the terminal
+    // focused last, zoomed.
+    core.execute(Command::TileFocus(TileTarget { tile: Some(a) }))
+        .unwrap();
+    let c = split(&core, Direction::Right);
+    let s = wait_session(&core, "second pane", |s| all_bound(s, 2));
+    let (pa, pc) = (pane_of(&s, a), pane_of(&s, c));
+    let mut last_terminal = c;
+    for tile in [c, b, a, b] {
+        if tile != b {
+            last_terminal = tile;
+        }
+        core.execute(Command::TileFocus(TileTarget { tile: Some(tile) }))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        let s = core.session().unwrap();
+        assert_eq!(tab_kind(&s), LayoutKind::Monocle, "after focusing {tile}");
+        let l = herdr.export(&pa.tab_id);
+        assert!(l.zoomed, "herdr stays zoomed after focusing {tile}");
+        let shown = if last_terminal == c {
+            &pc.pane_id
+        } else {
+            &pa.pane_id
+        };
+        assert_eq!(l.focused_pane_id, Some(PaneId(shown.clone())));
+        assert_eq!(s.windows[0].workspaces[0].tabs[0].focused, tile);
+    }
+
+    // Unzoomed in herdr, for real: Monocle ends.
+    herdr
+        .rt
+        .block_on(herdr.client.zoom_pane(&PaneId(pa.pane_id.clone()), false))
+        .unwrap();
+    wait_session(&core, "Monocle ends", |s| {
+        tab_kind(s) != LayoutKind::Monocle
+    });
+    core.shutdown();
+}
+
+/// Quick splits into a Tile stack (as restore.sh builds one): herdr's own
+/// in-between ratios (each new split at ½) are never taken for a change, so
+/// the stack stays even.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn quick_splits_into_a_tile_stack_stay_even() {
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = core(&herdr, &dir.path().join("state.json"), LayoutKind::Tile);
+    wait_session(&core, "first pane", |s| all_bound(s, 1));
+    for _ in 0..5 {
+        core.execute(Command::LayoutSplitAuto(
+            azulejo_protocol::LayoutSplitAuto::default(),
+        ))
+        .unwrap();
+    }
+    wait_session(&core, "six panes", |s| all_bound(s, 6));
+    let (s, _) = wait_mirrored(&herdr, &core, "the stack in herdr");
+    std::thread::sleep(Duration::from_millis(800));
+    let s2 = core.session().unwrap();
+    let layout = tab_layout(&s2);
+    assert_eq!(layout.kind, LayoutKind::Tile);
+    assert!(layout.weights.is_empty(), "weights {:?}", layout.weights);
+    assert_eq!(tab_root(&s), tab_root(&s2));
+    core.shutdown();
+}

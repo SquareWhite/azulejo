@@ -329,3 +329,162 @@ fn a_dynamic_tab_freezes_when_herdr_makes_what_its_rule_cant() {
     assert!(herdr::same_tree(&target.root, &row, herdr::RATIO_TOLERANCE));
     s.check_invariants().unwrap();
 }
+
+// ---- pulls: our own writes vs someone's change ----------------------------
+
+fn set(panes: &[&str]) -> std::collections::BTreeSet<String> {
+    panes.iter().map(|p| (*p).to_owned()).collect()
+}
+
+#[test]
+fn a_resize_right_after_our_splits_is_a_change() {
+    // The record after the push: one pane. Our two splits land (recorded),
+    // then the TUI resizes before anything else is read.
+    let mut before = export("w1:t1", p("w1:p1"));
+    assert!(record_split(
+        &mut before,
+        &"w1:p1".into(),
+        herdr::SplitDirection::Right,
+        0.5,
+        &"w1:p2".into()
+    ));
+    assert!(record_split(
+        &mut before,
+        &"w1:p2".into(),
+        herdr::SplitDirection::Down,
+        0.5,
+        &"w1:p3".into()
+    ));
+    let now = export(
+        "w1:t1",
+        right(0.7, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p3"))),
+    );
+    let all = set(&["w1:p1", "w1:p2", "w1:p3"]);
+    assert_eq!(judge(&before, &now, Some(&all)), Pulled::Change);
+    // A pull that read herdr before the worker's word came already has the
+    // pane: the late word changes nothing.
+    let mut read = now.clone();
+    assert!(!record_split(
+        &mut read,
+        &"w1:p2".into(),
+        herdr::SplitDirection::Down,
+        0.5,
+        &"w1:p3".into()
+    ));
+    assert_eq!(read, now);
+    // Our splits alone are an echo.
+    let ours = export(
+        "w1:t1",
+        right(0.5, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p3"))),
+    );
+    assert_eq!(judge(&before, &ours, Some(&all)), Pulled::Echo);
+}
+
+#[test]
+fn a_change_among_known_panes_counts_whatever_came_or_went() {
+    let before = export("w1:t1", right(0.5, p("w1:p1"), p("w1:p2")));
+    // A pane split off in the TUI (not adopted yet), and the root dragged.
+    let now = export(
+        "w1:t1",
+        right(0.7, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p9"))),
+    );
+    let tiles = set(&["w1:p1", "w1:p2"]);
+    assert_eq!(
+        judge(&before, &now, Some(&tiles)),
+        Pulled::Wait,
+        "until it's a tile"
+    );
+    let adopted = set(&["w1:p1", "w1:p2", "w1:p9"]);
+    assert_eq!(judge(&before, &now, Some(&adopted)), Pulled::Change);
+    // Only the split: the record follows, nothing to absorb.
+    let split = export(
+        "w1:t1",
+        right(0.5, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p9"))),
+    );
+    assert_eq!(judge(&before, &split, Some(&tiles)), Pulled::Membership);
+    // A pane closed in herdr collapses its split; the rest is unchanged.
+    let three = export(
+        "w1:t1",
+        right(0.5, p("w1:p1"), down(0.3, p("w1:p2"), p("w1:p3"))),
+    );
+    let closed = export("w1:t1", right(0.5, p("w1:p1"), p("w1:p2")));
+    assert_eq!(judge(&three, &closed, None), Pulled::Membership);
+}
+
+#[test]
+fn zoom_counts_only_with_the_same_panes() {
+    let mut before = export("w1:t1", right(0.5, p("w1:p1"), p("w1:p2")));
+    before.zoomed = true;
+    let mut now = before.clone();
+    now.zoomed = false;
+    assert_eq!(
+        judge(&before, &now, None),
+        Pulled::Change,
+        "unzoomed in the TUI"
+    );
+    // A split clears herdr's zoom: not an unzoom.
+    let split = export(
+        "w1:t1",
+        right(0.5, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p3"))),
+    );
+    assert_eq!(judge(&before, &split, None), Pulled::Membership);
+}
+
+/// A Monocle tab with one terminal and a browser, or two terminals and a
+/// browser, focused on the browser.
+fn monocle_with_browser(terminals: usize) -> (Session, TabId, Vec<TileId>, TileId) {
+    let mut s = Session::new();
+    s.prefs.default = LayoutKind::Tile;
+    let (_, ws) = s.create_window("main", None);
+    let a = terminal();
+    let aid = a.id;
+    let tab = s.create_tab(ws, a, None).unwrap();
+    let mut terms = vec![aid];
+    for _ in 1..terminals {
+        let t = terminal();
+        terms.push(t.id);
+        s.split(aid, Direction::Right, t).unwrap();
+    }
+    for (i, t) in terms.iter().enumerate() {
+        bind(&mut s, *t, &format!("w1:p{}", i + 1), "w1:t1");
+    }
+    let b = browser();
+    let bid = b.id;
+    s.split(aid, Direction::Right, b).unwrap();
+    s.set_layout(tab, LayoutKind::Monocle).unwrap();
+    s.focus_tile(terms[terms.len() - 1]).unwrap();
+    s.focus_tile(bid).unwrap();
+    (s, tab, terms, bid)
+}
+
+#[test]
+fn monocle_on_a_browser_keeps_herdr_on_the_terminal_focused_last() {
+    let (mut s, tab, terms, browser) = monocle_with_browser(2);
+    let t = &targets(&s, &None)[&tab];
+    assert_eq!(t.zoomed, Some("w1:p2".into()), "the terminal focused last");
+    // herdr shows that pane, zoomed: nothing to absorb, the browser keeps
+    // focus and Monocle stays.
+    let mut l = export("w1:t1", t.root.clone());
+    l.zoomed = true;
+    l.focused_pane_id = Some("w1:p2".into());
+    assert!(!absorb(&mut s, &None, &l));
+    let tab_now = s.tab(tab).unwrap();
+    assert_eq!(tab_now.layout.kind, LayoutKind::Monocle);
+    assert_eq!(tab_now.focused, browser);
+    // Zoomed onto the other terminal in the TUI: that one comes to the top.
+    l.focused_pane_id = Some("w1:p1".into());
+    assert!(absorb(&mut s, &None, &l));
+    assert_eq!(s.tab(tab).unwrap().focused, terms[0]);
+}
+
+#[test]
+fn monocle_with_one_terminal_and_a_browser_has_nothing_to_zoom() {
+    let (mut s, tab, _, _) = monocle_with_browser(1);
+    let t = &targets(&s, &None)[&tab];
+    assert_eq!(t.zoomed, None, "herdr doesn't zoom a tab's only pane");
+    // herdr reports it unzoomed: that isn't leaving Monocle.
+    let l = export("w1:t1", t.root.clone());
+    assert!(!absorb(&mut s, &None, &l));
+    assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Monocle);
+    s.check_invariants().unwrap();
+}

@@ -42,6 +42,21 @@ pub enum MirrorMsg {
     Target(TabId, Option<Box<herdr::MirrorTarget>>),
     /// herdr said a tab's layout changed.
     Pull(herdr::TabId),
+    /// The worker split `target` in herdr tab `tab`, making `new`: our own
+    /// write, recorded so it isn't mistaken for someone else's.
+    Split {
+        tab: herdr::TabId,
+        target: herdr::PaneId,
+        direction: herdr::SplitDirection,
+        ratio: f64,
+        new: herdr::PaneId,
+    },
+    /// The worker made a herdr tab holding only `pane`.
+    NewTab {
+        tab: herdr::TabId,
+        workspace: herdr::WorkspaceId,
+        pane: herdr::PaneId,
+    },
     /// herdr (re)connected: what was recorded may be stale.
     Reset,
 }
@@ -155,6 +170,24 @@ fn waiting(tab: &Tab, workspace_machine: &Machine, machine: &Machine) -> bool {
         })
 }
 
+/// The tile whose pane herdr should zoom, of those `live` in herdr. A zoomed
+/// tile; in Monocle the focused tile, or when that has no pane (a browser,
+/// a preview) the terminal focused last, so herdr keeps showing one pane
+/// rather than unzooming. None with fewer than two panes: herdr doesn't zoom
+/// a tab's only pane.
+fn zoom_tile(tab: &Tab, live: &dyn Fn(TileId) -> bool) -> Option<TileId> {
+    if tab.tiles.iter().filter(|t| live(t.id)).count() < 2 {
+        return None;
+    }
+    match tab.layout.kind {
+        LayoutKind::Monocle => Some(tab.focused)
+            .filter(|t| live(*t))
+            .or_else(|| tab.recent.iter().copied().find(|t| live(*t)))
+            .or_else(|| tab.layout.order.iter().copied().find(|t| live(*t))),
+        _ => tab.zoomed.filter(|t| live(*t)),
+    }
+}
+
 /// What every tab with terminals on `machine` should look like in herdr.
 /// Tabs whose terminals are still getting panes are left out until they
 /// have them. Each herdr tab goes to at most one Azulejo tab: the one with
@@ -205,10 +238,7 @@ pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::M
             }
             let mut homes: Vec<(String, (usize, usize))> = counts.into_iter().collect();
             homes.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1)));
-            let zoom_tile = match tab.layout.kind {
-                LayoutKind::Monocle => Some(tab.focused),
-                _ => tab.zoomed,
-            };
+            let zoom_tile = zoom_tile(tab, &|t| live.contains_key(&t));
             let label = tab.name.clone().or_else(|| {
                 pruned
                     .tiles()
@@ -221,9 +251,7 @@ pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::M
                 target: herdr::MirrorTarget {
                     tab: None,
                     root: to_herdr(&pruned, &pane),
-                    zoomed: zoom_tile
-                        .filter(|z| live.contains_key(z))
-                        .map(|z| herdr::PaneId(pane(z))),
+                    zoomed: zoom_tile.map(|z| herdr::PaneId(pane(z))),
                     label,
                     known: Vec::new(),
                     park_unknown: false,
@@ -550,7 +578,10 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
         rebuild(&tab.root, tree, &others)
     };
     let kind = tab.layout.kind;
-    let (zoomed, focused) = (tab.zoomed, tab.focused);
+    let zoomed = tab.zoomed;
+    // What we'd have herdr zoom: a pane herdr shows for us (Monocle with a
+    // browser focused shows the terminal focused last) isn't a change.
+    let expected_zoom = zoom_tile(tab, &|t| live.contains(&t));
     if new_root != tab.root {
         changed |= session.apply_tree(tab_id, new_root).unwrap_or(false);
     }
@@ -560,13 +591,17 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
         .focused_pane_id
         .as_ref()
         .and_then(|p| tile_of(p.as_str()));
+    // herdr doesn't zoom a tab's only pane: nothing to read from it then.
+    if live.len() < 2 {
+        return changed;
+    }
     match (kind, layout.zoomed, herdr_focus) {
         (LayoutKind::Monocle, false, _) => {
             changed |= session
                 .toggle_layout(tab_id, LayoutKind::Monocle)
                 .unwrap_or(false);
         }
-        (LayoutKind::Monocle, true, Some(f)) if f != focused => {
+        (LayoutKind::Monocle, true, Some(f)) if Some(f) != expected_zoom => {
             changed |= session.set_tab_focus(tab_id, f).unwrap_or(false);
         }
         (LayoutKind::Monocle, ..) => {}
@@ -597,6 +632,132 @@ struct Pending {
     failures: u32,
 }
 
+/// What a pull found, comparing herdr's tab with the tree recorded after our
+/// own last write there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pulled {
+    /// Nothing changed, or only what we wrote ourselves.
+    Echo,
+    /// Panes came or went, nothing else changed: splits and closes have
+    /// their own paths (ADR 0009); the record follows.
+    Membership,
+    /// Someone changed the layout in herdr: the core absorbs it.
+    Change,
+    /// Someone changed the layout, but herdr's panes and the tab's don't
+    /// match yet (a split on its way): keep the record and look again.
+    Wait,
+}
+
+fn pane_set(node: &herdr::LayoutNode) -> std::collections::BTreeSet<String> {
+    node.panes().iter().map(|p| p.0.clone()).collect()
+}
+
+/// `node` with only the panes in `keep`; a split losing a side collapses.
+fn prune_panes(
+    node: &herdr::LayoutNode,
+    keep: &std::collections::BTreeSet<String>,
+) -> Option<herdr::LayoutNode> {
+    match node {
+        herdr::LayoutNode::Pane { pane_id } => pane_id
+            .as_ref()
+            .filter(|p| keep.contains(p.as_str()))
+            .map(|_| node.clone()),
+        herdr::LayoutNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => match (prune_panes(first, keep), prune_panes(second, keep)) {
+            (Some(a), Some(b)) => Some(herdr::LayoutNode::split(*direction, *ratio, a, b)),
+            (one, None) | (None, one) => one,
+        },
+    }
+}
+
+/// Compares `now` with `before`, the tree recorded after our own last write,
+/// over the panes both have: a ratio, swap or zoom changed among them is
+/// someone's change whatever else came or went meanwhile. `expected` is the
+/// tab's panes as Azulejo has them, from its last target: a change waits
+/// until herdr's panes match them, so the core can map it onto tiles.
+pub(crate) fn judge(
+    before: &herdr::TabLayout,
+    now: &herdr::TabLayout,
+    expected: Option<&std::collections::BTreeSet<String>>,
+) -> Pulled {
+    if herdr::same_layout(before, now) {
+        return Pulled::Echo;
+    }
+    let (b, n) = (pane_set(&before.root), pane_set(&now.root));
+    let common: std::collections::BTreeSet<String> = b.intersection(&n).cloned().collect();
+    let same_members = b == n;
+    let tree_changed = match (
+        prune_panes(&before.root, &common),
+        prune_panes(&now.root, &common),
+    ) {
+        (Some(x), Some(y)) => !herdr::same_tree(&x, &y, herdr::ECHO_TOLERANCE),
+        _ => false,
+    };
+    // A split clears herdr's zoom: zoom only counts with the same panes.
+    let zoom_changed = same_members
+        && (before.zoomed != now.zoomed
+            || (now.zoomed && before.focused_pane_id != now.focused_pane_id));
+    if !tree_changed && !zoom_changed {
+        return Pulled::Membership;
+    }
+    let ready = match expected {
+        Some(e) => *e == n,
+        None => same_members,
+    };
+    if ready { Pulled::Change } else { Pulled::Wait }
+}
+
+/// Our own split landed (the worker's `pane.split`): the record gets it, so
+/// a change made in herdr right after isn't mistaken for it.
+pub(crate) fn record_split(
+    layout: &mut herdr::TabLayout,
+    target: &herdr::PaneId,
+    direction: herdr::SplitDirection,
+    ratio: f64,
+    new: &herdr::PaneId,
+) -> bool {
+    fn walk(
+        node: &mut herdr::LayoutNode,
+        target: &herdr::PaneId,
+        direction: herdr::SplitDirection,
+        ratio: f64,
+        new: &herdr::PaneId,
+    ) -> bool {
+        match node {
+            herdr::LayoutNode::Pane { pane_id } if pane_id.as_ref() == Some(target) => {
+                let leaf = node.clone();
+                *node = herdr::LayoutNode::split(
+                    direction,
+                    ratio,
+                    leaf,
+                    herdr::LayoutNode::pane(new.as_str()),
+                );
+                true
+            }
+            herdr::LayoutNode::Pane { .. } => false,
+            herdr::LayoutNode::Split { first, second, .. } => {
+                walk(first, target, direction, ratio, new)
+                    || walk(second, target, direction, ratio, new)
+            }
+        }
+    }
+    // A pull may have read herdr after the split landed but before the
+    // worker said so: the record has the pane already.
+    if layout.root.panes().contains(&new) {
+        return false;
+    }
+    let done = walk(&mut layout.root, target, direction, ratio, new);
+    if done {
+        // herdr clears zoom on a split.
+        layout.zoomed = false;
+    }
+    done
+}
+
 /// One machine's mirror task: debounced pushes and pulls, one at a time.
 pub(crate) async fn run<P: HerdrPort>(
     machine: Machine,
@@ -607,8 +768,13 @@ pub(crate) async fn run<P: HerdrPort>(
 ) {
     let mut pushes: HashMap<TabId, Pending> = HashMap::new();
     let mut pulls: HashMap<herdr::TabId, Instant> = HashMap::new();
-    // herdr's tree after our last push or pull, per herdr tab.
+    // herdr's tree right after our last write (push, split) or pull, per
+    // herdr tab.
     let mut synced: HashMap<herdr::TabId, herdr::TabLayout> = HashMap::new();
+    // Each herdr tab's panes as Azulejo has them (its last target).
+    let mut expected: HashMap<herdr::TabId, std::collections::BTreeSet<String>> = HashMap::new();
+    // Changes waiting for herdr's panes to match the tab's, since when.
+    let mut waiting: HashMap<herdr::TabId, Instant> = HashMap::new();
     loop {
         let next = pushes
             .values()
@@ -628,6 +794,9 @@ pub(crate) async fn run<P: HerdrPort>(
                 pushes.remove(&tab);
             }
             Some(Some(MirrorMsg::Target(tab, Some(target)))) => {
+                if let Some(h) = &target.tab {
+                    expected.insert(h.clone(), pane_set(&target.root));
+                }
                 let unknown_since = pushes.get(&tab).and_then(|p| p.unknown_since);
                 pushes.insert(
                     tab,
@@ -642,7 +811,34 @@ pub(crate) async fn run<P: HerdrPort>(
             Some(Some(MirrorMsg::Pull(tab))) => {
                 pulls.insert(tab, Instant::now() + PULL_QUIET);
             }
-            Some(Some(MirrorMsg::Reset)) => synced.clear(),
+            Some(Some(MirrorMsg::Split {
+                tab,
+                target,
+                direction,
+                ratio,
+                new,
+            })) => {
+                if let Some(layout) = synced.get_mut(&tab) {
+                    record_split(layout, &target, direction, ratio, &new);
+                }
+            }
+            Some(Some(MirrorMsg::NewTab {
+                tab,
+                workspace,
+                pane,
+            })) => {
+                synced.entry(tab.clone()).or_insert(herdr::TabLayout {
+                    workspace_id: workspace,
+                    tab_id: tab,
+                    zoomed: false,
+                    focused_pane_id: Some(pane.clone()),
+                    root: herdr::LayoutNode::pane(pane.as_str()),
+                });
+            }
+            Some(Some(MirrorMsg::Reset)) => {
+                synced.clear();
+                waiting.clear();
+            }
             None => {
                 let now = Instant::now();
                 // Pulls first: a change made in herdr is read before a push
@@ -654,13 +850,36 @@ pub(crate) async fn run<P: HerdrPort>(
                     .collect();
                 for tab in due {
                     pulls.remove(&tab);
-                    if pull(&machine, &*port, &tab, &mut synced, &out, &log).await {
-                        // The core's next target reflects it; a push queued
-                        // before would undo it.
-                        for p in pushes.values_mut() {
-                            if p.target.tab.as_ref() == Some(&tab) {
-                                p.due = p.due.max(now + PUSH_QUIET);
+                    let give_up = waiting
+                        .get(&tab)
+                        .is_some_and(|since| now - *since >= UNKNOWN_GRACE);
+                    let pulled = pull(
+                        &machine,
+                        &*port,
+                        &tab,
+                        (&mut synced, expected.get(&tab), give_up),
+                        &out,
+                        &log,
+                    )
+                    .await;
+                    match pulled {
+                        Pulled::Change | Pulled::Wait => {
+                            if pulled == Pulled::Wait {
+                                waiting.entry(tab.clone()).or_insert(now);
+                                pulls.insert(tab.clone(), now + RETRY_PULL);
+                            } else {
+                                waiting.remove(&tab);
                             }
+                            // The core's next target reflects it; a push
+                            // queued before would undo it.
+                            for p in pushes.values_mut() {
+                                if p.target.tab.as_ref() == Some(&tab) {
+                                    p.due = p.due.max(now + PUSH_QUIET);
+                                }
+                            }
+                        }
+                        Pulled::Echo | Pulled::Membership => {
+                            waiting.remove(&tab);
                         }
                     }
                 }
@@ -686,11 +905,25 @@ pub(crate) async fn run<P: HerdrPort>(
                     // before a TUI drag doesn't undo it.
                     if let Some(h) = p.target.tab.clone()
                         && synced.contains_key(&h)
-                        && pull(&machine, &*port, &h, &mut synced, &out, &log).await
                     {
-                        p.due = now + PUSH_QUIET;
-                        pushes.insert(tab, p);
-                        continue;
+                        let pulled = pull(
+                            &machine,
+                            &*port,
+                            &h,
+                            (&mut synced, expected.get(&h), false),
+                            &out,
+                            &log,
+                        )
+                        .await;
+                        if matches!(pulled, Pulled::Change | Pulled::Wait) {
+                            if pulled == Pulled::Wait {
+                                waiting.entry(h.clone()).or_insert(now);
+                                pulls.insert(h, now + RETRY_PULL);
+                            }
+                            p.due = now + PUSH_QUIET;
+                            pushes.insert(tab, p);
+                            continue;
+                        }
                     }
                     if p.unknown_since.is_some_and(|t| now - t >= UNKNOWN_GRACE) {
                         p.target.park_unknown = true;
@@ -702,26 +935,19 @@ pub(crate) async fn run<P: HerdrPort>(
                             p.target.tab,
                             p.target.root,
                             match &result {
-                                Ok(o) => format!("{} writes, {:?}", o.writes, o.layout.root),
+                                Ok(o) => format!(
+                                    "{} writes, {:?} zoomed {}",
+                                    o.writes, o.layout.root, o.layout.zoomed
+                                ),
                                 Err(e) => e.to_string(),
                             }
                         ));
                     }
                     match result {
+                        // herdr's answer to our last write: what we record,
+                        // refusals (a lone pane's zoom) included.
                         Ok(outcome) => {
-                            let mut layout = outcome.layout;
-                            // Changed in herdr between our writes and our
-                            // read: record what we wrote, so the pull that
-                            // follows sees the change instead of an echo.
-                            if !herdr::satisfies(&layout, &p.target) {
-                                layout.root = p.target.root.clone();
-                                layout.zoomed = p.target.zoomed.is_some();
-                                if p.target.zoomed.is_some() {
-                                    layout.focused_pane_id = p.target.zoomed.clone();
-                                }
-                                pulls.insert(layout.tab_id.clone(), now + PULL_QUIET);
-                            }
-                            synced.insert(layout.tab_id.clone(), layout);
+                            synced.insert(outcome.layout.tab_id.clone(), outcome.layout);
                         }
                         Err(herdr::MirrorError::Unknown(_)) => {
                             p.unknown_since.get_or_insert(now);
@@ -744,16 +970,25 @@ pub(crate) async fn run<P: HerdrPort>(
     }
 }
 
-/// Reads a herdr tab and compares it with what was recorded. Returns whether
-/// someone changed its layout there (and the core was told).
+/// How soon a pull that's waiting for herdr's panes to match looks again.
+const RETRY_PULL: Duration = Duration::from_millis(150);
+
+/// Reads a herdr tab and [`judge`]s it against the record. On a change the
+/// core is told and the record follows; while it waits the record stays,
+/// unless `give_up` (after [`UNKNOWN_GRACE`]): then herdr's tree is taken as
+/// the record and the next push decides.
 async fn pull<P: HerdrPort>(
     machine: &Machine,
     port: &P,
     tab: &herdr::TabId,
-    synced: &mut HashMap<herdr::TabId, herdr::TabLayout>,
+    (synced, expected, give_up): (
+        &mut HashMap<herdr::TabId, herdr::TabLayout>,
+        Option<&std::collections::BTreeSet<String>>,
+        bool,
+    ),
     out: &impl Fn(Internal),
     log: &impl Fn(String),
-) -> bool {
+) -> Pulled {
     let layout = match port.layout_export(tab.0.clone()).await {
         Ok(layout) => layout,
         Err(e) => {
@@ -761,39 +996,38 @@ async fn pull<P: HerdrPort>(
             if !e.contains("not_found") && !e.contains("not found") {
                 log(format!("herdr: reading tab {tab}: {e}"));
             }
-            return false;
+            return Pulled::Echo;
         }
     };
     let Some(before) = synced.get(tab) else {
         // Nothing to compare with: Azulejo's next push decides.
         synced.insert(tab.clone(), layout);
-        return false;
+        return Pulled::Echo;
     };
-    if herdr::same_layout(before, &layout) {
-        return false; // our own write coming back
+    let mut pulled = judge(before, &layout, expected);
+    if pulled == Pulled::Wait && give_up {
+        pulled = Pulled::Membership;
     }
-    let leaves = |l: &herdr::TabLayout| {
-        let mut p: Vec<String> = l.root.panes().iter().map(|p| p.0.clone()).collect();
-        p.sort();
-        p
-    };
-    let same_panes = leaves(before) == leaves(&layout);
-    if debug() {
+    if debug() && pulled != Pulled::Echo {
         log(format!(
-            "mirror: pulled {tab}: {:?} (was {:?}){}",
-            layout.root,
-            before.root,
-            if same_panes { ", absorbing" } else { "" }
+            "mirror: pulled {tab}: {:?} zoomed {} (was {:?} zoomed {}): {pulled:?}",
+            layout.root, layout.zoomed, before.root, before.zoomed
         ));
     }
-    synced.insert(tab.clone(), layout.clone());
-    if same_panes {
-        out(Internal::MirrorPulled {
-            machine: machine.clone(),
-            layout: Box::new(layout),
-        });
+    match pulled {
+        Pulled::Echo | Pulled::Wait => {}
+        Pulled::Membership => {
+            synced.insert(tab.clone(), layout);
+        }
+        Pulled::Change => {
+            synced.insert(tab.clone(), layout.clone());
+            out(Internal::MirrorPulled {
+                machine: machine.clone(),
+                layout: Box::new(layout),
+            });
+        }
     }
-    same_panes
+    pulled
 }
 
 #[cfg(test)]

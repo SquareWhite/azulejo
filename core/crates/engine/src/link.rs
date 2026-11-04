@@ -1114,7 +1114,11 @@ pub(crate) async fn run_worker<P: HerdrPort>(
     machine: Machine,
     port: Arc<P>,
     mut effects: mpsc::UnboundedReceiver<Effect>,
-    (api_socket, mirror): (String, Arc<AtomicBool>),
+    (api_socket, mirror, mirror_tx): (
+        String,
+        Arc<AtomicBool>,
+        mpsc::UnboundedSender<crate::mirror::MirrorMsg>,
+    ),
     out: impl Fn(Internal),
     log: impl Fn(String),
 ) {
@@ -1172,6 +1176,7 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                         herdr: herdr_ws.clone(),
                     });
                 }
+                let mut via_split = false;
                 let terminal = match ensured.created_terminal {
                     // A new workspace's first pane already carries this tile's env.
                     Some(terminal) => Ok(terminal),
@@ -1194,11 +1199,29 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                                     })
                                 });
                         let split_off = match split {
-                            Some(spec) => port.split_terminal(spec).await.ok(),
+                            Some(spec) => {
+                                let (target, direction, ratio) =
+                                    (spec.target.clone(), spec.direction, spec.ratio);
+                                let made = port.split_terminal(spec).await.ok();
+                                // Our own write: the mirror records it.
+                                if let Some(t) = &made {
+                                    let _ = mirror_tx.send(crate::mirror::MirrorMsg::Split {
+                                        tab: t.tab_id.clone(),
+                                        target,
+                                        direction,
+                                        ratio: ratio.unwrap_or(0.5),
+                                        new: t.pane_id.clone(),
+                                    });
+                                }
+                                made
+                            }
                             None => None,
                         };
                         match split_off {
-                            Some(t) => Ok(t),
+                            Some(t) => {
+                                via_split = true;
+                                Ok(t)
+                            }
                             None => {
                                 port.create_terminal(herdr::TerminalSpec {
                                     workspace_id: herdr::WorkspaceId(herdr_ws),
@@ -1213,6 +1236,16 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 };
                 match terminal {
                     Ok(t) => {
+                        // A new herdr tab holding just this pane: the
+                        // mirror's first record of it, so a change made
+                        // there before the first push is told apart.
+                        if !via_split {
+                            let _ = mirror_tx.send(crate::mirror::MirrorMsg::NewTab {
+                                tab: t.tab_id.clone(),
+                                workspace: t.workspace_id.clone(),
+                                pane: t.pane_id.clone(),
+                            });
+                        }
                         if made.len() > 4096 {
                             made.clear();
                         }
