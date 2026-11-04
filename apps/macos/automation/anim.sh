@@ -29,6 +29,9 @@ script="$results/anim-${mode#--}${style:+-$style}.azs"
 mkdir -p "$(dirname "$script")"
 
 "$root/apps/macos/dev.sh" --reset >/dev/null 2>&1 || true
+# --slow appends [sidebar] collapsed = "hidden" to the dev config, which
+# --reset keeps: start from the generated one, so a second run sees a rail.
+rm -f "$root/.dev/$AZJ_DEV_NAME/config/azulejo/config.toml"
 rm -rf "$out"
 mkdir -p "$out"
 
@@ -54,7 +57,10 @@ if [[ "$mode" == "--slow" ]]; then
   step 03-swap alt+shift+h                     # the focused tile sits on the right
   step 04-zoom alt+shift+m
   step 05-unzoom alt+shift+m
-  step 06-rotate alt+o
+  step 06-rotate alt+o                         # Bismuth rotate: master left -> top
+  step 06e-rotate-right alt+o                  # -> right
+  step 06f-rotate-bottom alt+o                 # -> bottom
+  step 06g-rotate-left alt+o                   # -> left again
   step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
   step 06c-monocle alt+backslash               # tile -> monocle
   step 06d-three-column alt+backslash          # monocle -> three column
@@ -91,7 +97,7 @@ else
     "ctrl+alt+shift+l" "ctrl+alt+shift+h"   # resize: divider right, then back
     "alt+h" "alt+shift+l" "alt+shift+h"     # from the master: swap into the stack and back
     "alt+shift+m" "alt+shift+m"             # zoom, unzoom
-    "alt+o" "alt+o"                         # rotate, rotate back
+    "alt+o" "alt+o" "alt+o" "alt+o"         # rotate: a full clockwise turn
     "alt+enter"                             # promote
     "alt+l" "alt+j" "alt+h"                 # focus moves (ring only)
     "alt+shift+e"                           # equalize

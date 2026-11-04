@@ -1,0 +1,257 @@
+# Every default layout chord against Bismuth (docs/keybindings.md, "Bismuth
+# mapping"): a Tile tab with four terminals, then spot checks in Three Column
+# and Monocle. In-process on the dev profile (no OS input); the log traces
+# the layout after every key (kind, parameters, order, focus, weights, rects):
+#   AZJ_DEV_NAME=bz just mac-bismuth
+# Tiles are named by creation order (t1 is the first terminal). Fresh dev
+# state: one window, one workspace, one tab, one terminal tile.
+
+log start
+delivery direct
+until terminal.phase attached 10000
+expect kind tile
+trace on
+
+# --- splits: each new tile goes to the end of the order and takes focus ---
+key ctrl+cmd+t                # split_auto
+until tiles 2 3000
+key ctrl+cmd+t
+until tiles 3 3000
+key ctrl+cmd+t
+until tiles 4 3000
+expect order t1,t2,t3,t4
+expect focus 4
+key ctrl+cmd+v                # split_right: direction ignored, appended
+until tiles 5 3000
+expect order t1,t2,t3,t4,t5
+key ctrl+cmd+shift+t          # split_down: appended too
+until tiles 6 3000
+expect order t1,t2,t3,t4,t5,t6
+wait 800
+
+# --- close: the tile now in that place takes focus, else the one before ---
+key alt+w                     # t6 is last: focus goes to t5
+until tiles 5 3000
+expect order t1,t2,t3,t4,t5
+key alt+k                     # t4
+key alt+w                     # t4 closes: t5 now holds its place and takes focus
+until tiles 4 3000
+expect order t1,t2,t3,t5
+expect focus 4
+wait 500
+
+# --- focus: geometric, ties to the most recently focused ---
+key alt+h                     # stack → master
+expect focus 1
+key alt+l                     # master → the stack tile used last (t5)
+expect focus 4
+key alt+k                     # up the stack
+expect focus 3
+key alt+k
+expect focus 2
+key alt+k                     # top of the stack: nothing above
+expect focus 2
+key alt+j
+expect focus 3
+key alt+h
+key alt+l                     # back to t3, the one used last
+expect focus 3
+
+# --- swap: two tiles trade places in the order ---
+key alt+shift+h               # t3 ↔ master
+expect order t3,t2,t1,t5
+expect focus 1
+key alt+shift+l               # and back: of the stack, t1 was focused last
+expect order t1,t2,t3,t5
+key alt+shift+j               # t3 ↔ t5 (below)
+expect order t1,t2,t5,t3
+key alt+shift+k
+expect order t1,t2,t3,t5
+
+# --- resize: the edge moves that way; at the tab's edge the far one does ---
+key alt+h                     # master
+key ctrl+alt+shift+l          # master's right edge right: ratio up
+expect ratio 0.55
+key ctrl+alt+shift+h          # no left edge: the right one moves left
+expect ratio 0.50
+key alt+l                     # t3, in the middle of the stack
+key ctrl+alt+shift+j          # its bottom edge down: t3 grows, t5 shrinks
+key ctrl+alt+shift+k          # its top edge up: t3 grows, t2 shrinks
+key alt+j                     # t5, bottom of the stack
+key ctrl+alt+shift+j          # no bottom edge: its top edge moves down
+key ctrl+alt+shift+l          # no right edge: its left edge moves right (master grows)
+expect ratio 0.55
+key ctrl+alt+shift+h
+expect ratio 0.50
+key alt+shift+e               # equalize: every weight back to 1
+key alt+k
+
+# --- push to master ---
+key alt+enter                 # t3 to the front; focus stays on it
+expect order t3,t1,t2,t5
+expect focus 1
+key alt+l                     # the stack tile used last: t5
+expect focus 4
+key alt+enter
+expect order t5,t3,t1,t2
+
+# --- rotate: the whole layout, a quarter turn clockwise at a time ---
+key alt+o
+expect orientation top
+key alt+o
+expect orientation right
+key alt+o
+expect orientation bottom
+key alt+o
+expect orientation left
+
+# --- rotate part: with two masters ---
+key alt+equal                 # two masters, stacked
+expect masters 2
+key alt+shift+o               # masters side by side
+expect part yes
+key alt+o                     # master area on top: masters stacked
+expect orientation top
+key alt+o                     # on the right: side by side, t5 on the outer edge
+expect orientation right
+key alt+o                     # at the bottom: stacked, t5 on the bottom edge
+expect orientation bottom
+key alt+o                     # back to the left
+expect orientation left
+key alt+shift+o
+expect part no
+key alt+minus
+expect masters 1
+key alt+minus                 # no masters: every tile in the stack
+expect masters 0
+key alt+equal
+key alt+equal
+key alt+equal
+key alt+equal                 # every tile a master
+key alt+minus
+key alt+minus
+key alt+minus
+expect masters 1
+
+# --- master area ---
+key alt+shift+equal
+expect ratio 0.55
+key alt+shift+minus
+key alt+shift+minus
+expect ratio 0.45
+key alt+shift+equal
+expect ratio 0.50
+
+# --- move one place along the order, wrapping ---
+key alt+h                     # t5, the master
+key alt+shift+bracketright
+expect order t3,t5,t1,t2
+key alt+shift+bracketleft
+expect order t5,t3,t1,t2
+key alt+shift+bracketleft     # first: wraps round to the end, the rest move up
+expect order t3,t1,t2,t5
+key alt+shift+bracketright    # last: wraps round to the front
+expect order t5,t3,t1,t2
+
+# --- zoom ---
+key alt+shift+m
+expect zoomed yes
+key alt+shift+m
+expect zoomed no
+
+# --- layouts: cycle and toggles ---
+key alt+bracketright          # tile → monocle
+expect kind monocle
+key alt+bracketleft           # and back
+expect kind tile
+key alt+backslash             # tile → monocle
+expect kind monocle
+key alt+backslash             # → three column
+expect kind three_column
+key alt+shift+backslash       # → monocle
+key alt+shift+backslash       # → tile
+expect kind tile
+key alt+t                     # already Tile: back to the previous kind (monocle)
+key alt+t                     # and Tile again
+expect kind tile
+key alt+z                     # monocle
+expect kind monocle
+key alt+z                     # back
+expect kind tile
+key alt+shift+t               # freeze to manual
+expect kind manual
+key alt+o                     # manual: the tree flips master left ↔ top
+key alt+o
+key alt+shift+t               # back to tile
+expect kind tile
+
+# --- Three Column: columns weigh 0.4 : 0.6 : 0.4 (2/7, 3/7, 2/7) ---
+key alt+backslash
+key alt+backslash
+expect kind three_column
+expect ratio 0.60
+key alt+h                     # centre → left stack
+key alt+h                     # nothing further left
+key alt+l                     # → centre
+key alt+l                     # → right stack
+key alt+k
+key alt+j
+key alt+h                     # → the centre (t5)
+key ctrl+alt+shift+l          # the centre grows: + 0.05 · (2 − 0.6)
+expect ratio 0.67
+key ctrl+alt+shift+h          # and shrinks (its right edge moves left)
+expect ratio 0.60
+key alt+l                     # right stack
+key ctrl+alt+shift+h          # its left edge moves left: the centre shrinks
+expect ratio 0.53
+key ctrl+alt+shift+l          # no right edge: its left edge moves right
+expect ratio 0.61                # Bismuth's maths: not quite back (0.6035, 0.534, 0.607)
+key alt+shift+h               # right stack ↔ centre
+key alt+shift+l
+key alt+h
+key alt+h                     # left stack, two tiles
+key ctrl+alt+shift+j
+key ctrl+alt+shift+k
+key alt+shift+e
+key alt+shift+equal
+key alt+shift+minus
+key alt+equal
+key alt+minus
+key alt+minus                 # at least one master
+key alt+o                     # nothing to rotate
+key alt+shift+o
+key alt+enter
+key alt+shift+bracketright
+key alt+shift+bracketleft
+key alt+shift+m
+key alt+shift+m
+key ctrl+cmd+t                # a new tile goes to the end
+until tiles 5 3000
+key alt+w
+until tiles 4 3000
+
+# --- Monocle ---
+key alt+backslash             # three column → tile
+key alt+backslash             # → monocle
+expect kind monocle
+expect visible 1
+key alt+l                     # next in the order
+key alt+j                     # next
+key alt+h                     # previous
+key alt+k                     # previous
+key alt+shift+l
+key alt+shift+h
+key ctrl+alt+shift+l          # nothing to resize
+key alt+o
+key alt+shift+o
+key alt+equal
+key alt+minus
+key alt+enter
+key alt+shift+bracketright
+key alt+shift+m
+key alt+shift+m
+key ctrl+cmd+t
+until tiles 5 3000
+key alt+w
+until tiles 4 3000
+shot 99-end

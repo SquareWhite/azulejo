@@ -346,7 +346,7 @@ final class TileContainerView: NSView {
             case .scale:
                 scaleMotion(layer, from: m.from, to: m.to, fadeIn: m.new, duration: duration)
             case .crop where kind == "rotate":
-                crossFade(m.view, from: m.from, wasShown: !m.new, duration: duration)
+                crossFade(m.view, from: m.from, wasShown: !m.new, cards: Array(frames.values), duration: duration)
             case .crop:
                 cropMotion(m.view, id: m.id, from: m.from, to: m.to, fadeIn: m.new,
                            snapshotAt: snapshotAt[m.id], duration: duration)
@@ -496,8 +496,11 @@ final class TileContainerView: NSView {
 
     /// Crop, tall rotate: sliding every tile across the tab looks wrong, so
     /// the tile fades in at its new place (its snapshot at 1:1, top-left)
-    /// while a ghost of its last frame fades out at the old one.
-    private func crossFade(_ view: NSView, from: CGRect, wasShown: Bool, duration: CFTimeInterval) {
+    /// while a ghost of its last frame fades out at the old one. `cards`: every
+    /// tile's new frame; the ghost only shows inside them, so the old card's
+    /// text never floats over a gutter of the new layout (a quarter turn moves
+    /// the gutters: Bismuth's four-way rotate, ADR 0010).
+    private func crossFade(_ view: NSView, from: CGRect, wasShown: Bool, cards: [CGRect], duration: CFTimeInterval) {
         guard let layer = view.layer else { return }
         let fade = fadeAnimation(from: 0, to: layer.opacity)
         Motion.configure(fade, duration: duration)
@@ -510,27 +513,35 @@ final class TileContainerView: NSView {
         aware.revealWhenFresh(clock: clock)
         // The ghost stands for the card as it was on screen, so a tile that
         // wasn't (back from Monocle or zoom) leaves none. It's clipped to the
-        // old card: a snapshot bigger than it never draws past its edges.
+        // old card, so a snapshot bigger than it never draws past its edges,
+        // and to the new cards, so it never shows over a gutter: one piece
+        // per new card it overlaps (no mask layer, which the app's own
+        // captures, `render(in:)`, would skip).
         guard wasShown, let contents = aware.snapshotContents else { return }
-        let ghost = CALayer()
-        ghost.frame = from
-        ghost.masksToBounds = true
-        ghost.cornerRadius = Design.Radius.tile
-        ghost.zPosition = 0.5
-        ghost.opacity = 0
-        let image = CALayer()
-        image.frame = CGRect(x: aware.contentLeft, y: from.height - aware.headerInset - size.height,
-                             width: size.width, height: size.height)
-        image.contents = contents
-        image.contentsGravity = .resize
-        image.contentsScale = window?.backingScaleFactor ?? 2
-        image.backgroundColor = layer.backgroundColor
-        ghost.addSublayer(image)
-        let out = fadeAnimation(from: 1, to: 0)
-        Motion.configure(out, duration: duration)
-        ghost.add(out, forKey: Self.motionKey)
-        // Not by tile: the tile itself is already where it shows.
-        addGhost(ghost, for: nil)
+        let shot = CGRect(x: aware.contentLeft, y: from.height - aware.headerInset - size.height,
+                          width: size.width, height: size.height)
+        for card in cards {
+            let piece = card.intersection(from)
+            guard !piece.isNull, piece.width > 0, piece.height > 0 else { continue }
+            let ghost = CALayer()
+            ghost.frame = piece
+            ghost.masksToBounds = true
+            ghost.cornerRadius = Design.Radius.tile
+            ghost.zPosition = 0.5
+            ghost.opacity = 0
+            let image = CALayer()
+            image.frame = shot.offsetBy(dx: from.minX - piece.minX, dy: from.minY - piece.minY)
+            image.contents = contents
+            image.contentsGravity = .resize
+            image.contentsScale = window?.backingScaleFactor ?? 2
+            image.backgroundColor = layer.backgroundColor
+            ghost.addSublayer(image)
+            let out = fadeAnimation(from: 1, to: 0)
+            Motion.configure(out, duration: duration)
+            ghost.add(out, forKey: Self.motionKey)
+            // Not by tile: the tile itself is already where it shows.
+            addGhost(ghost, for: nil)
+        }
     }
 
     /// Outline: the tile sits at its new place, hidden; an outline moves

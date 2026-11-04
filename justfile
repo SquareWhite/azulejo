@@ -81,6 +81,12 @@ mac-layouts: mac
     apps/macos/dev.sh --reset
     out=.dev/out/layouts; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/layouts"; fi; apps/macos/dev.sh --automation apps/macos/automation/layouts.azs --out "$out"
 
+# Every default layout chord against Bismuth (docs/keybindings.md, "Bismuth mapping"): the
+# layout traced after each key, in Tile, Three Column and Monocle; in-process, dev profile
+mac-bismuth: mac
+    apps/macos/dev.sh --reset
+    out=.dev/out/bismuth; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/bismuth"; fi; apps/macos/dev.sh --automation apps/macos/automation/bismuth.azs --out "$out"
+
 # Key and focus suite (2.11): chords and first responder across tiles, the ⌘K
 # menu, layouts, tabs, herdr changes and input methods; in-process, dev profile
 mac-focus: mac
