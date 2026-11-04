@@ -45,9 +45,11 @@ struct WorkspaceModel: Decodable, Equatable {
     var machine: String?
     /// The repository and branch the sidebar shows (F26).
     var git: GitModel?
+    /// The folder set with `workspace.set_repo`, if any.
+    var repo: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, cwd, tabs, machine, git
+        case id, name, cwd, tabs, machine, git, repo
         case activeTab = "active_tab"
     }
 

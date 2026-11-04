@@ -28,6 +28,10 @@ import AppKit
 ///     remember key           note a state value now…
 ///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
+///     menu workspace N|tile [invoke TITLE]   build a right-click menu, log
+///                            its items, run one (see `MenuAutomation`);
+///                            `menu answer TEXT` answers the next prompt,
+///                            `menu shot NAME` shoots it drawn open
 ///     core {json}            run a core command (`{"method": …, "params": …}`)
 ///     tile verb [arg]        hand a verb to the focused tile (AutomatableTile)
 ///     until key value [ms]   wait until `expect key value` holds (default 5000)
@@ -133,6 +137,14 @@ final class Automation {
         case "delivery": directDelivery = arg == "direct"; record("delivery \(arg)"); delay = 0
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
+        case "menu":
+            if arg.hasPrefix("shot ") {
+                menuShot(String(arg.dropFirst(5)))
+            } else if let problem = MenuAutomation.run(arg, app: app) {
+                failures.append("line \(step): menu \(arg): \(problem)")
+            }
+            record("menu \(arg)")
+            for note in notes where note.hasPrefix("menu ") { record("      · \(note)") }
         case "sidebar":
             if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
@@ -222,7 +234,31 @@ final class Automation {
         }
     }
 
-    private func shot(_ name: String) {
+    /// `menu shot NAME`: the window with the last menu built (`menu …`)
+    /// drawn open where a right-click would open it.
+    private func menuShot(_ name: String) {
+        guard let (menu, anchor) = MenuAutomation.last,
+              let window = app?.focusedController?.window, let view = window.contentView
+        else { return failures.append("line \(step): menu shot: build a menu first") }
+        let image = MenuRender.image(of: menu, appearance: view.effectiveAppearance)
+        // Below the click, a little in: as a right-click near the anchor's
+        // top left shows it (window coordinates are bottom-up).
+        let origin = NSPoint(x: min(anchor.minX + 24, view.bounds.width - image.size.width - 8),
+                             y: max(8, anchor.maxY - 14 - image.size.height))
+        shot(name) { ctx in
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
+            shadow.shadowBlurRadius = 12
+            shadow.shadowOffset = NSSize(width: 0, height: -4)
+            shadow.set()
+            image.draw(in: NSRect(origin: origin, size: image.size))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    private func shot(_ name: String, overlay: ((CGContext) -> Void)? = nil) {
         guard let view = app?.focusedController?.window.contentView else { return }
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
@@ -236,6 +272,7 @@ final class Automation {
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
             ctx.scaleBy(x: CGFloat(image.width) / view.bounds.width, y: CGFloat(image.height) / view.bounds.height)
             Self.drawTitlebarButtons(of: window, in: ctx)
+            overlay?(ctx)
             if let composed = ctx.makeImage() { output = NSBitmapImageRep(cgImage: composed) }
         }
         let url = out.appendingPathComponent("\(name).png")
@@ -510,6 +547,7 @@ final class Automation {
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(SidebarAutomation.state(controller)) { $1 }
+        s.merge(MenuAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(controller.chromeState()) { $1 }
         return s
     }

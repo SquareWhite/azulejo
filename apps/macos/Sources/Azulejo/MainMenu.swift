@@ -55,8 +55,10 @@ enum MainMenu {
             .separator(),
             std("Quit Azulejo", #selector(NSApplication.terminate(_:)), "q"),
         ]))
+        // ⌘W closes the workspace and ⌘⇧W the tab (keymap), so Close Window
+        // has no chord of its own unless `close_window` is bound.
         let closeWindow = chords["close_window"] == nil
-            ? std("Close Window", #selector(MenuTarget.closeWindow(_:)), "w", [.command, .shift])
+            ? std("Close Window", #selector(MenuTarget.closeWindow(_:)), "")
             : item("Close Window", "close_window")
         closeWindow.target = target
         main.addItem(menu("File", [
@@ -64,10 +66,10 @@ enum MainMenu {
             item("New Workspace", "new_workspace"),
             item("New Tab", "new_tab"),
             .separator(),
-            item("Close Tile", "close_tile"),
-            item("Kill Tile (and its herdr pane)", "kill_tile"),
-            item("Close Tab", "close_tab"),
             item("Close Workspace", "close_workspace"),
+            item("Close Tab", "close_tab"),
+            item("Close Tile", "close_tile"),
+            item("Kill Tile…", "kill_tile"),
             closeWindow,
         ]))
         main.addItem(menu("Edit", [
@@ -112,10 +114,13 @@ enum MainMenu {
             .separator(),
             item("Next Workspace", "next_workspace"),
             item("Previous Workspace", "previous_workspace"),
-            item("Last Workspace", "last_workspace"),
+            item("Last Workspace", "switch_workspace_last"),
+            item("Previous Active Workspace", "last_workspace"),
+            .separator(),
             item("Next Tab", "next_tab"),
             item("Previous Tab", "previous_tab"),
-            item("Last Tab", "last_tab"),
+            item("Last Tab", "switch_tab_last"),
+            item("Previous Active Tab", "last_tab"),
             .separator(),
             std("Bring All to Front", #selector(NSApplication.arrangeInFront(_:)), ""),
         ])
@@ -125,7 +130,7 @@ enum MainMenu {
     }
 
     /// Shows a keymap chord (`"ctrl+cmd+v"`) as the item's key equivalent.
-    private static func apply(_ chord: String, to item: NSMenuItem) {
+    static func apply(_ chord: String, to item: NSMenuItem) {
         var parts = chord.split(separator: "+").map(String.init)
         guard let key = parts.popLast(), let equivalent = keyEquivalent(key) else { return }
         var mods: NSEvent.ModifierFlags = []

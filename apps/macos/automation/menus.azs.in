@@ -1,0 +1,141 @@
+# Right-click menus, in-process (menus.sh fills in @DIR@: fixture folders
+# alpha, beta and a notes.md). `menu …` builds the menu a right-click would
+# show, logs it and runs an item through the menu itself; no mouse events.
+# Copy items write to the automation's private pasteboard, Reveal only logs.
+
+log menus
+seen-visible off
+sidebar mode agents
+until sidebar.machines Local ● 5000
+
+core {"method":"workspace.rename","params":{"name":"alpha"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/alpha"}}
+key cmd+t
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"beta"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/beta"}}
+key cmd+1
+expect workspace 1
+until workspace.names alpha|beta 3000
+
+log === workspace row: items and chords (catalogue), acting on a row that isn't the active one
+menu workspace 2
+expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Open Folder in Files Tile|Copy Path|-|Close Workspace [cmd+w]
+wait 300
+menu shot menus-workspace
+menu answer gamma
+menu workspace 2 invoke Rename…
+until workspace.names alpha|gamma 3000
+expect workspace 1
+menu workspace 2 invoke Copy Path
+expect menu.copied @DIR@/beta
+menu workspace 2 invoke Reveal Folder in Finder
+expect menu.revealed @DIR@/beta
+menu answer cancel
+menu workspace 2 invoke Rename…
+expect workspace.names alpha|gamma
+menu workspace 2 invoke New Tab
+until workspace 2 3000
+until tabs 2 3000
+wait 800
+
+log === workspace row: Open Folder in Files Tile, beside the row's focused tile
+menu workspace 1 invoke Open Folder in Files Tile
+until workspace 1 3000
+until tiles 2 3000
+until tile.kind files 3000
+
+log === tile header: a terminal (cwd known, bound to herdr)
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@/alpha"}}}
+until tiles 3 3000
+wait 1500
+menu tile
+expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Copy Working Directory|Reveal in Finder|-|Close Tile [alt+w]|Kill Pane…
+menu shot menus-tile
+menu tile invoke Copy Working Directory
+expect menu.copied @DIR@/alpha
+menu tile invoke Reveal in Finder
+expect menu.revealed @DIR@/alpha
+menu answer build
+menu tile invoke Rename…
+until tile.header.title build 3000
+menu tile invoke Copy Title
+expect menu.copied build
+menu tile invoke Zoom
+expect zoomed yes
+menu tile
+expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m] (on)|Rename…|-|Copy Title|Copy Working Directory|Reveal in Finder|-|Close Tile [alt+w]|Kill Pane…
+menu tile invoke Zoom
+expect zoomed no
+menu tile invoke Split Right
+until tiles 4 3000
+wait 1500
+menu answer no
+menu tile invoke Kill Pane…
+wait 500
+expect tiles 4
+sh {herdr} --session {session} pane list >{out}/panes-before-close.json
+menu tile invoke Close Tile
+until tiles 3 3000
+wait 800
+sh {herdr} --session {session} pane list >{out}/panes-after-tile-close.json
+
+log === tile header: files and preview kinds
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"files","root":"@DIR@/alpha"}}}
+until tiles 4 3000
+until tile.kind files 3000
+menu tile
+expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Reveal in Finder|-|Close Tile [alt+w]
+menu tile invoke Reveal in Finder
+expect menu.revealed @DIR@/alpha
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/notes.md"}}}
+until tiles 5 3000
+until tile.kind preview 3000
+menu tile
+expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Reveal in Finder|-|Close Tile [alt+w]
+menu tile invoke Close Tile
+until tiles 4 3000
+
+log === browser: the tile's items merged into the chrome's menu
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"browser","url":"about:blank"}}}
+until tiles 5 3000
+until tile.kind browser 3000
+menu tile
+expect menu.items Web Inspector|Copy URL|Open in Default Browser|-|Reload from Origin|-|Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|-|Close Tile [alt+w]
+menu tile invoke Copy URL
+expect menu.copied about:blank
+menu tile invoke Split Down
+until tiles 6 3000
+
+log === close-detach: the workspace goes, herdr keeps its workspace and panes
+sh {herdr} --session {session} workspace list >{out}/workspaces-before.json
+sh {herdr} --session {session} pane list >{out}/panes-before.json
+menu workspace 2 invoke Close Workspace
+until workspaces 1 3000
+expect workspace.names alpha
+wait 1500
+sh {herdr} --session {session} workspace list >{out}/workspaces-after.json
+sh {herdr} --session {session} pane list >{out}/panes-after.json
+expect workspace.names alpha
+
+log === cmd+w closes the workspace from a browser tile and from a preview tile
+key cmd+t
+until workspaces 2 3000
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
+until tile.kind browser 3000
+key cmd+w
+expect key.last action:close_workspace
+until workspaces 1 3000
+key cmd+t
+until workspaces 2 3000
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/notes.md"}}}
+until tile.kind preview 3000
+key cmd+w
+expect key.last action:close_workspace
+until workspaces 1 3000
+
+log === the app's last workspace: cmd+w leaves a fresh one, the window stays
+key cmd+w
+until workspace.names workspace 2 3000
+expect windows 1
+until tiles 1 3000
