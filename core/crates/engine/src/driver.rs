@@ -97,21 +97,33 @@ pub struct Core {
 impl Core {
     /// A core without herdr: terminal tiles stay unbound.
     pub fn start(opts: CoreOptions) -> Core {
-        Self::spawn::<azulejo_herdr::Client>(opts, None)
+        Self::spawn::<azulejo_herdr::Client>(opts, None, MachineState::Connecting)
     }
 
     /// A core that keeps terminal tiles bound to herdr panes through `port`.
+    /// Local reads `connecting` until the core has checked the panes its
+    /// restored tiles were bound to: shells hold those tiles' attaches until
+    /// then, since a herdr that (re)started gave every pane a new terminal.
     pub fn start_with_herdr<P: HerdrPort>(opts: CoreOptions, port: P) -> Core {
-        Self::spawn(opts, Some(port))
+        Self::spawn(opts, Some(port), MachineState::Connecting)
     }
 
-    fn spawn<P: HerdrPort>(opts: CoreOptions, port: Option<P>) -> Core {
+    /// Like [`Core::start_with_herdr`], for a herdr server that was already
+    /// running (the caller just reached it). Its panes are most likely the
+    /// ones the saved session names, so Local reads `connected` at once and
+    /// restored tiles attach without waiting for the check; a pane that did
+    /// change is rebound when the check lands.
+    pub fn start_with_running_herdr<P: HerdrPort>(opts: CoreOptions, port: P) -> Core {
+        Self::spawn(opts, Some(port), MachineState::Connected)
+    }
+
+    fn spawn<P: HerdrPort>(opts: CoreOptions, port: Option<P>, local: MachineState) -> Core {
         let herdr_socket = port.as_ref().and_then(HerdrPort::socket);
         let (tx, rx) = mpsc::channel();
         let self_tx = tx.clone();
         let thread = thread::Builder::new()
             .name("azulejo-core".into())
-            .spawn(move || run(opts, port, &rx, self_tx))
+            .spawn(move || run(opts, port, local, &rx, self_tx))
             .expect("spawn core thread");
         Core {
             tx,
@@ -259,6 +271,7 @@ fn load_engine(opts: &CoreOptions) -> Engine {
 fn run<P: HerdrPort>(
     opts: CoreOptions,
     port: Option<P>,
+    local: MachineState,
     rx: &mpsc::Receiver<Msg>,
     self_tx: mpsc::Sender<Msg>,
 ) {
@@ -317,7 +330,7 @@ fn run<P: HerdrPort>(
             MachineInfo {
                 id: LOCAL_MACHINE.into(),
                 label: "Local".into(),
-                state: MachineState::Connecting,
+                state: local,
                 message: None,
             },
             port,
@@ -550,6 +563,24 @@ fn run<P: HerdrPort>(
                 }
                 let _ = reply.send(result);
             }
+            Msg::Internal(Internal::Announce(machine, generation)) => {
+                if !herdr.is_current(&machine, generation) {
+                    continue;
+                }
+                // Only news when the machine wasn't connected (a resync after
+                // lost events changes nothing, nor does a herdr that was
+                // already running at start).
+                if let Some(event) = herdr.track(&machine, &StreamItem::Connected) {
+                    if machine.is_none() {
+                        let status = Event::HerdrStatus {
+                            connected: true,
+                            message: None,
+                        };
+                        listeners.retain(|l| l.send(status.clone()).is_ok());
+                    }
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
+            }
             Msg::Internal(internal) => {
                 let surveyed = match &internal {
                     Internal::Surveyed(m, _, _) | Internal::SurveyFailed(m) => Some(m.clone()),
@@ -584,25 +615,25 @@ fn run<P: HerdrPort>(
                     // A removed machine's stream, still draining.
                     continue;
                 }
-                let status = match &item {
-                    StreamItem::Connected | StreamItem::Resync => Some(Event::HerdrStatus {
-                        connected: true,
-                        message: None,
-                    }),
-                    StreamItem::Disconnected(why) => Some(Event::HerdrStatus {
-                        connected: false,
-                        message: Some(why.clone()),
-                    }),
-                    StreamItem::Event(_) => None,
-                };
+                let connected = matches!(item, StreamItem::Connected | StreamItem::Resync);
+                if !matches!(item, StreamItem::Event(_)) {
+                    herdr.next_generation(&machine);
+                }
+                // Going down is news at once, but only once: the stream says
+                // so after every failed retry. Coming back is announced after
+                // the bound tiles are checked (`Internal::Announce`).
                 // `herdr.status` stays Local's; every machine gets
                 // `machine.status` (ADR 0011).
-                if machine.is_none()
-                    && let Some(event) = status
+                if let StreamItem::Disconnected(why) = &item
+                    && let Some(event) = herdr.track(&machine, &item)
                 {
-                    listeners.retain(|l| l.send(event.clone()).is_ok());
-                }
-                if let Some(event) = herdr.track(&machine, &item) {
+                    if machine.is_none() {
+                        let status = Event::HerdrStatus {
+                            connected: false,
+                            message: Some(why.clone()),
+                        };
+                        listeners.retain(|l| l.send(status.clone()).is_ok());
+                    }
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
                 if let StreamItem::Event(azulejo_herdr::HerdrEvent::PaneUpdated(_)) = &item {
@@ -621,8 +652,19 @@ fn run<P: HerdrPort>(
                         &mut repos,
                     );
                 }
-                for effect in reaction.effects {
-                    herdr.send(&machine, effect);
+                if connected {
+                    let (checks, rest): (Vec<Effect>, Vec<Effect>) = reaction
+                        .effects
+                        .into_iter()
+                        .partition(|e| matches!(e, Effect::Reresolve { .. }));
+                    for effect in rest {
+                        herdr.send(&machine, effect);
+                    }
+                    herdr.check_bound(&machine, checks, link::Check::Connected);
+                } else {
+                    for effect in reaction.effects {
+                        herdr.send(&machine, effect);
+                    }
                 }
                 if reaction.survey {
                     herdr.request_survey(&machine);
@@ -744,6 +786,11 @@ struct Link<P> {
     processes: Arc<tokio::sync::Notify>,
     /// Set once the first survey is in and restore work has been queued.
     restored: bool,
+    /// Counts the event stream's connects and drops; an
+    /// [`Internal::Announce`] from an older one is stale.
+    generation: u64,
+    /// The post-connect check of bound tiles ([`link::check_bound`]).
+    check: Option<tokio::task::JoinHandle<()>>,
     survey: SurveyState,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -864,6 +911,10 @@ impl<P: HerdrPort> Links<P> {
             )));
         }
         let _ = effects_tx.send(Effect::Survey);
+        let checks: Vec<Effect> = link::restore_effects(engine.session(), &machine)
+            .into_iter()
+            .filter(|e| matches!(e, Effect::Reresolve { .. }))
+            .collect();
         self.links.insert(
             machine.clone(),
             Link {
@@ -873,11 +924,16 @@ impl<P: HerdrPort> Links<P> {
                 processes,
                 creating: Default::default(),
                 restored: false,
+                generation: 0,
+                check: None,
                 survey: SurveyState::InFlight,
                 tasks,
             },
         );
-        self.info.insert(machine, info.clone());
+        self.info.insert(machine.clone(), info.clone());
+        // Restored tiles wait for this before they attach: check them now,
+        // without waiting for the event stream.
+        self.check_bound(&machine, checks, link::Check::Added);
         Event::MachineStatus { machine: info }
     }
 
@@ -899,10 +955,57 @@ impl<P: HerdrPort> Links<P> {
 
     fn drop_link(&mut self, machine: &Machine) {
         if let Some(link) = self.links.remove(machine) {
-            for task in link.tasks {
+            for task in link.tasks.into_iter().chain(link.check) {
                 task.abort();
             }
         }
+    }
+
+    /// The event stream connected or dropped: whatever was being announced
+    /// for the last connection is stale now.
+    fn next_generation(&mut self, machine: &Machine) {
+        if let Some(link) = self.links.get_mut(machine) {
+            link.generation += 1;
+        }
+    }
+
+    fn is_current(&self, machine: &Machine, generation: u64) -> bool {
+        self.links
+            .get(machine)
+            .is_some_and(|l| l.generation == generation)
+    }
+
+    /// Checks `machine`'s bound tiles beside its worker, then announces the
+    /// machine connected ([`link::check_bound`]). Replaces a check still
+    /// running for an earlier connection.
+    fn check_bound(&mut self, machine: &Machine, checks: Vec<Effect>, when: link::Check) {
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        let Some(link) = self.links.get_mut(machine) else {
+            return;
+        };
+        if let Some(old) = link.check.take() {
+            old.abort();
+        }
+        let out = self.out.clone();
+        let log = self.log.clone();
+        let prefix = self
+            .info
+            .get(machine)
+            .filter(|_| machine.is_some())
+            .map(|m| format!("{}: ", m.label))
+            .unwrap_or_default();
+        link.check = Some(runtime.spawn(link::check_bound(
+            machine.clone(),
+            link.port.clone(),
+            checks,
+            (when, link.generation),
+            move |internal| {
+                let _ = out.send(Msg::Internal(internal));
+            },
+            move |line| log(format!("{prefix}{line}")),
+        )));
     }
 
     /// Asks `machine`'s process poller to look now (a pane changed).

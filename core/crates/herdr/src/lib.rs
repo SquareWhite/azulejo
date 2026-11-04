@@ -33,7 +33,7 @@ pub use event::{HerdrEvent, Subscription};
 pub use machine::{
     MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
 };
-pub use server::{Herdr, Session};
+pub use server::{Herdr, ServerOrigin, Session};
 pub use stream::{EventStream, StreamItem};
 pub use transport::{BridgeCommand, Transport};
 pub use types::*;

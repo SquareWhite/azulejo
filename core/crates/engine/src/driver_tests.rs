@@ -636,6 +636,90 @@ fn resync_reresolves_and_marks_lost_panes() {
     assert!(!terminals(&after)[0].2);
 }
 
+/// Shells attach when herdr says it's back (`herdr.status`). After a herdr
+/// restart every pane has a new terminal, so the tiles must be rebound to
+/// them first, or shells attach to terminals that are gone.
+#[test]
+fn herdr_back_is_announced_after_tiles_are_rebound() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    split(&core);
+    wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
+    let events = core.subscribe();
+    core.session().unwrap();
+
+    // herdr goes down; the stream says so after every failed retry.
+    for _ in 0..3 {
+        fake.send(herdr::StreamItem::Disconnected("connection refused".into()));
+    }
+    // It comes back with a fresh shell in each pane: new terminal IDs.
+    let mut fresh = Vec::new();
+    {
+        let mut s = fake.state();
+        let mut respawned = Vec::new();
+        for (i, p) in s.panes.iter_mut().enumerate() {
+            let old = p.terminal_id.0.clone();
+            p.terminal_id = herdr::TerminalId(format!("term_fresh{i}"));
+            fresh.push(p.terminal_id.0.clone());
+            respawned.push((old, herdr::Resolved::Respawned(pane_info(p))));
+        }
+        s.resolve.extend(respawned);
+    }
+    fake.send(herdr::StreamItem::Resync);
+
+    let mut statuses = Vec::new();
+    let mut rebound = 0;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !statuses.contains(&true) {
+        assert!(Instant::now() < deadline, "statuses {statuses:?}");
+        match events.recv_timeout(Duration::from_millis(50)) {
+            Ok(Event::HerdrStatus { connected, .. }) => {
+                if connected {
+                    assert_eq!(rebound, 2, "back only once both tiles are rebound");
+                }
+                statuses.push(connected);
+            }
+            Ok(Event::TileUpdated { tile, .. }) => {
+                if let TileContent::Terminal { herdr: Some(h), .. } = &tile.content
+                    && fresh.contains(&h.terminal_id)
+                {
+                    rebound += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(statuses, [false, true], "going down is said once");
+    let mut ids: Vec<String> = terminals(&core.session().unwrap())
+        .into_iter()
+        .map(|(_, h, _)| h.unwrap().terminal_id)
+        .collect();
+    ids.sort();
+    assert_eq!(ids, fresh);
+}
+
+/// A herdr that was already running is connected from the start: restored
+/// tiles needn't wait for the check (their panes are most likely there).
+/// One the core had to start reads `connecting` until the check is in,
+/// which runs at once, without waiting for the event stream.
+#[test]
+fn local_starts_connected_only_with_a_running_herdr() {
+    let core = Core::start_with_running_herdr(opts(None), Fake::default());
+    assert_eq!(
+        machines(&core)[0].state,
+        azulejo_protocol::MachineState::Connected
+    );
+    core.shutdown();
+
+    let core = Core::start_with_herdr(opts(None), Fake::default());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while machines(&core)[0].state != azulejo_protocol::MachineState::Connected {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    core.shutdown();
+}
+
 fn exited(fake: &Fake, pane_id: &str) {
     fake.state().panes.retain(|p| p.pane_id.0 != pane_id);
     fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
