@@ -327,6 +327,41 @@ fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
 }
 
 #[test]
+fn a_collapsed_sidebar_is_a_rail_unless_hidden() {
+    use azulejo_protocol::SidebarState;
+    assert_eq!(Config::defaults(MAC).sidebar.collapsed, SidebarState::Rail);
+
+    let config = user("[sidebar]\ncollapsed = \"hidden\"\n", MAC);
+    assert_eq!(config.sidebar.collapsed, SidebarState::Hidden);
+    assert!(config.diagnostics.is_empty());
+
+    let config = user("[sidebar]\ncollapsed = \"rail\"\n", MAC);
+    assert_eq!(config.sidebar.collapsed, SidebarState::Rail);
+    assert!(config.diagnostics.is_empty());
+
+    for bad in ["\"full\"", "true", "\"narrow\""] {
+        let config = user(&format!("[sidebar]\ncollapsed = {bad}\n"), MAC);
+        assert_eq!(
+            config.sidebar.collapsed,
+            SidebarState::Rail,
+            "{bad} keeps the default"
+        );
+        assert!(config.has_errors(), "{bad}");
+    }
+
+    let config = user("[sidebar]\nwidth = 40\n", MAC);
+    assert!(!config.has_errors());
+    assert!(
+        config
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown setting `sidebar.width`")),
+        "{:?}",
+        config.diagnostics
+    );
+}
+
+#[test]
 fn a_terminal_closes_when_its_shell_exits_unless_kept() {
     use azulejo_protocol::OnExit;
     assert_eq!(Config::defaults(MAC).terminal.on_exit, OnExit::Close);

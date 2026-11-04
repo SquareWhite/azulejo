@@ -162,7 +162,7 @@ expect kind tile
 expect sidebar visible
 key cmd+a
 expect key.last action:toggle_sidebar
-expect sidebar hidden
+expect sidebar rail
 key cmd+a
 expect sidebar visible
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}

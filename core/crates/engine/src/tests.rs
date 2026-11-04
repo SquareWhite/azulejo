@@ -886,3 +886,89 @@ fn layout_get_reports_manual_tabs_with_tree_rects() {
     assert_eq!(state.rects.len(), 2);
     assert!(state.rects.iter().all(|p| p.visible));
 }
+
+fn set_sidebar(engine: &mut Engine, visible: bool) -> Vec<Event> {
+    let window = engine.session().windows[0].id;
+    engine
+        .execute(Command::WindowSetSidebar(WindowSetSidebar {
+            window,
+            visible,
+        }))
+        .unwrap()
+        .events
+}
+
+fn sidebar_update(events: &[Event]) -> (bool, SidebarState) {
+    match events {
+        [
+            Event::WindowUpdated {
+                sidebar_hidden,
+                sidebar,
+                ..
+            },
+        ] => (*sidebar_hidden, *sidebar),
+        other => panic!("expected one window.updated, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_collapsed_sidebar_is_a_rail_by_default() {
+    let mut engine = Engine::new();
+    assert_eq!(engine.session().windows[0].sidebar, SidebarState::Full);
+    let events = set_sidebar(&mut engine, false);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Rail));
+    let events = set_sidebar(&mut engine, true);
+    assert_eq!(sidebar_update(&events), (false, SidebarState::Full));
+    // Collapsing twice changes nothing the second time.
+    set_sidebar(&mut engine, false);
+    assert!(set_sidebar(&mut engine, false).is_empty());
+}
+
+#[test]
+fn the_collapsed_setting_moves_collapsed_sidebars_over() {
+    let mut engine = Engine::new();
+    set_sidebar(&mut engine, false);
+    let events = engine.set_sidebar_collapsed(SidebarState::Hidden);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Hidden));
+    // Open, then collapsed again: hidden now.
+    set_sidebar(&mut engine, true);
+    let events = set_sidebar(&mut engine, false);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Hidden));
+    // Back to a rail; an open sidebar stays open.
+    let events = engine.set_sidebar_collapsed(SidebarState::Rail);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Rail));
+    set_sidebar(&mut engine, true);
+    assert!(
+        engine
+            .set_sidebar_collapsed(SidebarState::Hidden)
+            .is_empty()
+    );
+    assert_eq!(engine.session().windows[0].sidebar, SidebarState::Full);
+    // `Full` isn't a collapsed form: it counts as a rail.
+    engine.set_sidebar_collapsed(SidebarState::Full);
+    let events = set_sidebar(&mut engine, false);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Rail));
+}
+
+#[test]
+fn a_sidebar_saved_before_the_rail_comes_back_collapsed() {
+    // State written before the rail: `sidebar_hidden` alone.
+    let mut saved = serde_json::to_value(Engine::new().session()).unwrap();
+    saved["windows"][0]["sidebar_hidden"] = true.into();
+    assert!(saved["windows"][0].get("sidebar").is_none());
+    let session: Session = serde_json::from_value(saved).unwrap();
+    let mut engine = Engine::with_session(session);
+    assert_eq!(engine.session().windows[0].sidebar, SidebarState::Rail);
+    // The config says hidden: it follows.
+    let events = engine.set_sidebar_collapsed(SidebarState::Hidden);
+    assert_eq!(sidebar_update(&events), (true, SidebarState::Hidden));
+    // It saves the form next to the old flag.
+    let saved = serde_json::to_value(engine.session()).unwrap();
+    assert_eq!(saved["windows"][0]["sidebar_hidden"], true);
+    assert_eq!(saved["windows"][0]["sidebar"], "hidden");
+    // `window.list` says how it shows.
+    let Reply::Windows { windows } = engine.execute(Command::WindowList).unwrap().reply else {
+        panic!("expected windows");
+    };
+    assert_eq!(windows[0].sidebar, SidebarState::Hidden);
+}
