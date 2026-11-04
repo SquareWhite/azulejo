@@ -95,11 +95,16 @@ sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} azjneedle
 key cmd+f
 expect tile.find.query azjneedle
 until tile.find.status 1 of 1 5000
+expect tile.find.controls count,steps,close
 window-size 480 320
 wait 1000
 shot n1h-min-find
+# V19: the controls drop out whole; the query keeps the keyboard.
+expect tile.find.controls -
+expect responder terminal-find
 window-size 1440 900
 wait 800
+expect tile.find.controls count,steps,close
 key escape
 expect responder terminal
 

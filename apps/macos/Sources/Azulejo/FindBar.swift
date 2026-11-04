@@ -96,6 +96,8 @@ final class FindBar: NSView {
     var isOpen: Bool { !isHidden }
     var query: String { field.stringValue }
     private(set) var status = ""
+    /// Automation: the controls laid out ("count,steps,close", or "-").
+    private(set) var shownControls = "count,steps,close"
 
     /// The field (its field editor) has the keyboard.
     var holdsKeyboard: Bool {
@@ -205,26 +207,57 @@ final class FindBar: NSView {
         super.layout()
         let w = bounds.width, h = bounds.height
         let button: CGFloat = 22, gap: CGFloat = 2, margin: CGFloat = 10
+        let iconSide: CGFloat = 12, inset: CGFloat = 8, iconGap: CGFloat = 6, countGap: CGFloat = 6
+        let countW = count.stringValue.isEmpty ? 0
+            : ceil((count.stringValue as NSString).size(withAttributes: [.font: Design.Font.detail]).width) + 4
+
+        // Narrow tiles: the controls drop out whole, never overlapping, so
+        // the query keeps `findFieldMin` of room: first the count (it moves
+        // to the field's tooltip), then previous / next (enter and
+        // shift+enter still step), then close (escape still closes).
+        var showCount = countW > 0, showSteps = true, showClose = true
+        func fieldRoom() -> CGFloat {
+            let buttons = (showClose ? button : 0) + (showSteps ? 2 * (button + gap) : 0)
+            let pillW = w - 2 * margin - (buttons > 0 ? buttons + 8 : 0)
+            return pillW - 2 * inset - iconSide - iconGap - (showCount ? countW + countGap : 0)
+        }
+        let least = Design.Space.findFieldMin
+        if fieldRoom() < least { showCount = false }
+        if fieldRoom() < least { showSteps = false }
+        if fieldRoom() < least { showClose = false }
+        count.isHidden = !showCount
+        previous.isHidden = !showSteps
+        next.isHidden = !showSteps
+        close.isHidden = !showClose
+        pill.toolTip = showCount || status.isEmpty ? nil : status
+        let shown = [showCount ? "count" : nil, showSteps ? "steps" : nil, showClose ? "close" : nil].compactMap { $0 }
+        shownControls = shown.isEmpty ? "-" : shown.joined(separator: ",")
+
         let y = (h - button) / 2
-        close.frame = NSRect(x: w - margin - button, y: y, width: button, height: button)
-        next.frame = NSRect(x: close.frame.minX - gap - button, y: y, width: button, height: button)
-        previous.frame = NSRect(x: next.frame.minX - gap - button, y: y, width: button, height: button)
+        var right = w - margin
+        if showClose {
+            close.frame = NSRect(x: right - button, y: y, width: button, height: button)
+            right = close.frame.minX - gap
+        }
+        if showSteps {
+            next.frame = NSRect(x: right - button, y: y, width: button, height: button)
+            previous.frame = NSRect(x: next.frame.minX - gap - button, y: y, width: button, height: button)
+            right = previous.frame.minX - gap
+        }
         let fieldH = Design.Space.browserFieldHeight
-        pill.frame = NSRect(x: margin, y: (h - fieldH) / 2,
-                            width: max(40, previous.frame.minX - 8 - margin), height: fieldH)
+        let pillRight = showClose || showSteps ? right + gap - 8 : w - margin
+        pill.frame = NSRect(x: margin, y: (h - fieldH) / 2, width: max(0, pillRight - margin), height: fieldH)
         hairline.frame = NSRect(x: 0, y: h - Design.Border.hairline, width: w, height: Design.Border.hairline)
 
         let pw = pill.bounds.width, ph = pill.bounds.height
-        let iconSide: CGFloat = 12, inset: CGFloat = 8, iconGap: CGFloat = 6
         icon.frame = NSRect(x: inset, y: (ph - iconSide) / 2, width: iconSide, height: iconSide)
-        let countW = count.stringValue.isEmpty ? 0
-            : ceil((count.stringValue as NSString).size(withAttributes: [.font: Design.Font.detail]).width) + 4
         let countH = count.intrinsicContentSize.height
-        count.frame = NSRect(x: pw - inset - countW, y: (ph - countH) / 2, width: countW, height: countH)
+        let shownCountW = showCount ? countW : 0
+        count.frame = NSRect(x: pw - inset - shownCountW, y: (ph - countH) / 2, width: shownCountW, height: countH)
         let textH = field.intrinsicContentSize.height
         let fieldX = inset + iconSide + iconGap
-        field.frame = NSRect(x: fieldX, y: (ph - textH) / 2,
-                             width: max(0, count.frame.minX - 6 - fieldX), height: textH)
+        let fieldRight = showCount ? count.frame.minX - countGap : pw - inset
+        field.frame = NSRect(x: fieldX, y: (ph - textH) / 2, width: max(0, fieldRight - fieldX), height: textH)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -438,6 +471,7 @@ final class TerminalFinder {
             "tile.find": bar.isOpen ? "open" : "closed",
             "tile.find.query": bar.query.isEmpty ? "-" : bar.query,
             "tile.find.status": bar.status.isEmpty ? "-" : bar.status,
+            "tile.find.controls": bar.shownControls,
             "tile.find.scroll": "\(lastOffset)",
             "tile.find.revealed": lastOffset > 0 ? "yes" : "no",
             "tile.find.highlights": "\(highlights)",
@@ -573,6 +607,7 @@ final class WebFinder {
             "tile.find": bar.isOpen ? "open" : "closed",
             "tile.find.query": bar.query.isEmpty ? "-" : bar.query,
             "tile.find.status": bar.status.isEmpty ? "-" : bar.status,
+            "tile.find.controls": bar.shownControls,
         ]
     }
 }

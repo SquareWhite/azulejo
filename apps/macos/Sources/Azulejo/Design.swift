@@ -221,6 +221,7 @@ enum Design {
         static let sidebarFooterHeight: CGFloat = 36
         static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
+        static let findFieldMin: CGFloat = 60
         static let browserBannerHeight: CGFloat = 30
         static let browserBannerButtonMin: CGFloat = 240
     }
