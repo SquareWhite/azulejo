@@ -127,6 +127,9 @@ if [[ "${asked:-0}" -gt 0 ]]; then
   echo "captures: $asked asked, $taken system (screencapture), $rendered in-app"
   [[ "$taken" -lt "$asked" ]] && echo "  (system captures missing: is the screen locked? the -app.png renders cover the motion)"
 fi
+stale="$(grep -c '  STALE ' "$out/automation.log" 2>/dev/null || true)"
+[[ "${stale:-0}" -gt 0 ]] && echo "stale terminal frames in captures: $stale (STALE lines in automation.log)"
+true
 "$root/apps/macos/dev.sh" --reset >/dev/null 2>&1 || true
 echo "stats: $out/anim-stats.json"
 exit $status

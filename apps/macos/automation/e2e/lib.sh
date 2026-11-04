@@ -74,6 +74,11 @@ run_azs() {
     echo "FAIL azs:$name ($(cat "$out/$name/result" 2>/dev/null | cut -c1-400))" | tee -a "$checks"
   fi
   cp "$applog" "$out/$name/app.log" 2>/dev/null || true
+  # Captures say when a terminal showed an old frame (Automation.checkFreshness).
+  local stale
+  stale="$(grep -c '  STALE ' "$out/$name/automation.log" 2>/dev/null || true)"
+  [[ "${stale:-0}" -gt 0 ]] && note "azs:$name: $stale stale terminal frame(s) in captures (STALE in automation.log)"
+  return 0
 }
 
 wait_ping() { for _ in $(seq 200); do azj core ping >/dev/null 2>&1 && return 0; sleep 0.05; done; return 1; }

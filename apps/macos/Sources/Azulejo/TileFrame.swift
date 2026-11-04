@@ -126,9 +126,10 @@ class TileFrame: NSView, TileView {
     // MARK: Corners in motion
 
     /// Crop motion animates this frame's bounds (a clip over 1:1 content);
-    /// the caps follow the visible rect from `from` to `to` (bounds
-    /// coordinates) with the motion's timing.
+    /// the caps and the header strip follow the visible rect from `from` to
+    /// `to` (bounds coordinates) with the motion's timing.
     func animateCorners(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        animateHeader(from: from, to: to, duration: duration, holdAtEnd: holdAtEnd)
         let position = CABasicAnimation(keyPath: "position")
         position.fromValue = NSValue(point: CGPoint(x: from.midX, y: from.midY))
         position.toValue = NSValue(point: CGPoint(x: to.midX, y: to.midY))
@@ -145,7 +146,44 @@ class TileFrame: NSView, TileView {
         corners.add(group, forKey: Self.cornerMotionKey)
     }
 
-    func stopCornerMotion() { corners.removeAnimation(forKey: Self.cornerMotionKey) }
+    func stopCornerMotion() {
+        corners.removeAnimation(forKey: Self.cornerMotionKey)
+        header.layer?.removeAnimation(forKey: Self.cornerMotionKey)
+    }
+
+    /// The header strip is chrome, not content: it rides the top of the
+    /// visible rect. Content sticks to the edge that moves least, so a tile
+    /// growing upwards (a swap out of the stack) would otherwise show its
+    /// body with the strip still cut off above the clip (B4b). The strip
+    /// spans the visible width, its title centred in it (left-aligned when
+    /// it has controls, as at rest).
+    private func animateHeader(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        guard !header.isHidden, let layer = header.layer else { return }
+        let h = header.frame.height, w = header.frame.width
+        guard h > 0, w > 0 else { return }
+        let a = layer.anchorPoint
+        let centred = header.centred
+        func strip(_ clip: CGRect) -> (position: CGPoint, bounds: CGRect) {
+            let frame = CGRect(x: clip.minX, y: clip.maxY - h, width: clip.width, height: h)
+            let bounds = CGRect(x: centred ? (w - clip.width) / 2 : 0, y: 0, width: clip.width, height: h)
+            return (Motion.position(of: frame, anchorPoint: a), bounds)
+        }
+        let start = strip(from), end = strip(to)
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: start.position)
+        position.toValue = NSValue(point: end.position)
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: start.bounds)
+        bounds.toValue = NSValue(rect: end.bounds)
+        let group = CAAnimationGroup()
+        group.animations = [position, bounds]
+        if holdAtEnd {
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+        }
+        Motion.configure(group, duration: duration)
+        layer.add(group, forKey: Self.cornerMotionKey)
+    }
 
     private static let cornerMotionKey = "azj.corners"
 
@@ -269,6 +307,9 @@ final class TileHeaderView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Title and icon centred in the strip (no controls on the right).
+    var centred: Bool { accessory == nil }
 
     func setAccessory(_ view: NSView) {
         accessory?.removeFromSuperview()

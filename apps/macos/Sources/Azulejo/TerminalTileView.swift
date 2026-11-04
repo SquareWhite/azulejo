@@ -64,6 +64,13 @@ final class TerminalTileView: NSView, TileView {
     private var freezeImage: NSView?
     private var freezeFills = true
     private var freezeBefore: IOSurfaceRef?
+    /// When the snapshot went up and when its motion ended, for the reveal log.
+    private var frozenAt: CFTimeInterval = 0
+    private var motionEndedAt: CFTimeInterval?
+    /// Bumped by every motion that freezes (or keeps frozen) this tile.
+    private var motionToken = 0
+    /// How long after a motion the reveal waits for a fresh frame at most.
+    static let revealDeadline: CFTimeInterval = 0.25
     /// PTY resizes are at most one per 50 ms while frozen (key repeat).
     private var lastSurfaceResize: CFTimeInterval = 0
     private var pendingSurfaceResize: DispatchWorkItem?
@@ -81,6 +88,7 @@ final class TerminalTileView: NSView, TileView {
     static func install(core: Core, log: @escaping (String) -> Void) {
         Self.core = core
         Self.log = log
+        TerminalSurfaceView.log = log
         guard TerminalRuntime.start(log: log) != nil else { return }
         TileViews.register(.terminal) { tile in TerminalTileView(tile) }
         installDebugHook()
@@ -299,6 +307,7 @@ final class TerminalTileView: NSView, TileView {
         }
         // Sized by setFrameSize, so motion controls when the PTY resizes.
         view.autoresizingMask = []
+        view.logName = Short.id(tileID)
         view.onExit = { [weak self, weak view] in
             guard let self, let view, view === self.surface else { return }
             self.surfaceExited(readOnly: readOnly)
@@ -680,6 +689,7 @@ extension TerminalTileView: MotionAware {
 
     @discardableResult
     func motionWillStart(freeze: Bool, fill: Bool) -> Bool {
+        motionToken += 1  // a reveal timer from an earlier motion no longer applies
         if self.freeze != nil { return true }  // mid-motion: keep the first snapshot
         guard freeze, let surface, let image = surface.snapshot() else { return false }
         let scale = window?.backingScaleFactor ?? 2
@@ -702,6 +712,8 @@ extension TerminalTileView: MotionAware {
         freezeImage = picture
         freezeFills = fill
         freezeBefore = surface.presentedSurface
+        frozenAt = CACurrentMediaTime()
+        motionEndedAt = nil
         return true
     }
 
@@ -720,7 +732,7 @@ extension TerminalTileView: MotionAware {
         clock.add { [weak self] _ in
             guard let self, self.freeze != nil else { return false }
             if self.liveFrameReady() {
-                self.unfreeze()
+                self.unfreeze(reason: "fresh")
                 return false
             }
             return true
@@ -730,20 +742,31 @@ extension TerminalTileView: MotionAware {
     func motionDidEnd(clock: MotionClock) {
         guard freeze != nil else { return }
         flushSurfaceResize()
-        let deadline = CACurrentMediaTime() + 0.25
+        motionEndedAt = CACurrentMediaTime()
+        let deadline = CACurrentMediaTime() + Self.revealDeadline
         clock.add { [weak self] now in
             guard let self, self.freeze != nil else { return false }
             if self.liveFrameReady() || now > deadline {
-                self.unfreeze()
+                self.unfreeze(reason: now > deadline ? "deadline" : "fresh")
                 return false
             }
             return true
+        }
+        // The clock runs on the display link, which doesn't tick while the
+        // screen is locked or the display sleeps (and may not while the
+        // window is hidden). libghostty keeps drawing then, so the snapshot
+        // must still go: a plain timer takes it down shortly after the
+        // deadline if the clock hasn't.
+        let token = motionToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealDeadline + 0.05) { [weak self] in
+            guard let self, self.freeze != nil, self.motionToken == token else { return }
+            self.unfreeze(reason: "timer, no display-link tick")
         }
     }
 
     func motionCancelled() {
         flushSurfaceResize()
-        unfreeze()
+        unfreeze(reason: "cancelled")
     }
 
     /// The live surface has drawn a new frame at its current pixel size.
@@ -758,13 +781,65 @@ extension TerminalTileView: MotionAware {
         return sized && fresh
     }
 
-    private func unfreeze() {
+    private func unfreeze(reason: String) {
+        if freeze != nil { logReveal(reason) }
         freezeImage?.removeFromSuperview()
         freeze?.removeFromSuperview()
         freeze = nil
         freezeImage = nil
         freezeFills = true
         freezeBefore = nil
+    }
+
+    /// What a capture of this tile shows right now (automation): the live
+    /// surface or its motion snapshot, and whether that's current. `stale`
+    /// lists what makes it not current; empty when it is. `moving`: a motion
+    /// is in flight, so a snapshot is expected.
+    func captureFreshness(moving: Bool) -> [String: Any] {
+        let now = CACurrentMediaTime()
+        var info: [String: Any] = ["tile": Short.id(tileID), "phase": phaseName]
+        var stale: [String] = []
+        if freeze != nil {
+            info["shows"] = "snapshot"
+            let since = now - (motionEndedAt ?? frozenAt)
+            if !moving, since > Self.revealDeadline + 0.1 {
+                stale.append("its motion snapshot is still up \(Int(since * 1000)) ms after "
+                    + (motionEndedAt == nil ? "freezing" : "the motion ended"))
+            }
+        } else {
+            info["shows"] = surface == nil ? "overlay" : "live"
+        }
+        if let surface {
+            let px = surface.lastPixelSize
+            info["surface_px"] = "\(Int(px.width))x\(Int(px.height))"
+            info["presented_px"] = surface.presentedSizeText
+            if surface.resizedAt > 0 { info["ms_since_resize"] = Int((now - surface.resizedAt) * 1000) }
+            if surface.lastFrameSeenAt > 0 { info["ms_since_frame_seen"] = Int((now - surface.lastFrameSeenAt) * 1000) }
+            if !surface.presentedAtSize {
+                stale.append("the live surface shows a \(surface.presentedSizeText) px frame but is "
+                    + "\(Int(px.width))x\(Int(px.height)) px: libghostty hasn't drawn since the resize")
+            }
+        }
+        info["stale"] = stale
+        return info
+    }
+
+    /// One line per reveal: why, when, and whether the live surface it
+    /// uncovers has drawn at its size (`STALE` when it hasn't).
+    private func logReveal(_ reason: String) {
+        let now = CACurrentMediaTime()
+        var line = "terminal \(Short.id(tileID)): revealed (\(reason)) "
+        if let end = motionEndedAt {
+            line += "\(Int((now - end) * 1000)) ms after the motion ended"
+        } else {
+            line += "mid-motion, \(Int((now - frozenAt) * 1000)) ms after freezing"
+        }
+        if let surface {
+            let px = surface.lastPixelSize
+            line += "; live frame \(surface.presentedSizeText) px for \(Int(px.width))x\(Int(px.height))"
+            if !surface.presentedAtSize { line += " STALE" }
+        }
+        Self.log(line)
     }
 }
 

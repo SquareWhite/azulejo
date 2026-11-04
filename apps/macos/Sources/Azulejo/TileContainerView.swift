@@ -37,6 +37,10 @@ final class TileContainerView: NSView {
 
     let clock = MotionClock()
     private var link: CADisplayLink?
+    /// Display-link ticks so far; a motion that saw none ran with the
+    /// display asleep or the screen locked.
+    private(set) var linkTicks = 0
+    private var ticksAtMotionStart = 0
 
     override var isFlipped: Bool { false }
 
@@ -296,9 +300,10 @@ final class TileContainerView: NSView {
         motionEnds = CACurrentMediaTime() + duration + tail
         MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, motionEnds)
         Perf.motionStarted = CACurrentMediaTime()
+        ticksAtMotionStart = linkTicks
         removeGhosts()
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen) }
+        CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen, via: "completion") }
         for m in movers {
             guard let layer = m.view.layer else { continue }
             switch style {
@@ -635,8 +640,12 @@ final class TileContainerView: NSView {
         (view as? TileFrame)?.stopCornerMotion()
     }
 
-    private func motionEnded(_ gen: Int) {
+    private func motionEnded(_ gen: Int, via: String) {
         guard gen == generation else { return }
+        if !frozen.isEmpty || linkTicks == ticksAtMotionStart {
+            Motion.log("motion \(gen) ended (\(via)): \(frozen.count) frozen terminal(s), "
+                + "\(linkTicks - ticksAtMotionStart) display-link tick(s)")
+        }
         finishLeaving()
         removeGhosts()
         for view in subviews where view !== ring { view.layer?.zPosition = 0 }
@@ -721,6 +730,18 @@ final class TileContainerView: NSView {
         }
     }
 
+    /// Automation: what each visible terminal shows right now (live surface
+    /// or motion snapshot) and whether it's current, for captures that would
+    /// otherwise pass off an old frame as the app's state.
+    func captureFreshness() -> (tiles: [[String: Any]], ticks: Int) {
+        let moving = CACurrentMediaTime() < motionEnds
+        let shown = Set(visibleTiles)
+        let tiles = views.filter { shown.contains($0.key) }.sorted { $0.key < $1.key }.compactMap { _, view in
+            ((view as? TileFrame)?.content as? TerminalTileView)?.captureFreshness(moving: moving)
+        }
+        return (tiles, linkTicks - ticksAtMotionStart)
+    }
+
     /// Automation: each tile's on-screen frame right now (mid-motion: the
     /// presentation), as "x,y,w,h" by tile id suffix.
     var describeVisualFrames: String {
@@ -786,6 +807,7 @@ final class TileContainerView: NSView {
     }
 
     @objc private func tick(_ link: CADisplayLink) {
+        linkTicks += 1
         let now = CACurrentMediaTime()
         if now <= motionEnds + 0.02 {
             MotionStats.shared.tick(link.timestamp, now: now)
