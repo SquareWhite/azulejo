@@ -1,5 +1,11 @@
 # Azulejo end-to-end test plan (macOS, v1)
 
+> **Re-run on Nov 4, 2026** ([report](e2e-report-2026-11-04.md)) against `main` at `947bb22`, after the five E2E-fix merges. New in this copy:
+> - A9 adds `polish.sh` (visual polish captures), A10 adds `e2e/stale-check.sh` (screen-on check for V1; run it only with the screen unlocked).
+> - Phase B/C cases N1–N6 (section 3a) cover the features the fixes added (⌘F in each tile kind, `azj preview open` from a terminal, error wording, tab overflow, the badge in the header, the config banner row) and the places where several fixes meet: the find bar under motion, a herdr restart, ⌘K and a tab switch. Script: `apps/macos/automation/e2e/fixes.sh` (`run-all.sh` runs it as `fixes`).
+> - Phase D adds `scripts/nfr/reconnect.sh` (herdr restart and launch with herdr stopped, repeated).
+> - The report gains a "Since the previous run" table: each earlier finding as FIXED, STILL OPEN or REGRESSED, with evidence.
+
 Nov 3, 2026. Covers `main` after M2.5 (D.1–D.9) is merged. The goal is to check that everything in M1, M2 and M2.5 works together in the real app, and that it looks like the mockup. This is a verification pass: it finds and documents problems. It doesn't fix them.
 
 > **Changes in this copy (E2E run, Nov 3–4, 2026).** Factual fixes only; the report says what each case found.
@@ -52,8 +58,8 @@ Run each one and record pass/fail, duration and any flake. Re-run a failure up t
 | A6 | `just mac-automation` (keys.azs) |
 | A7 | `just mac-layouts` |
 | A8 | `just mac-focus` (38+ scenarios) |
-| A9 | `apps/macos/automation/{browser,preview,files,restore,headers,machines,sidebar,toolbar,chrome}.sh`, `focus/focus.sh`, and the `.azs` scripts not covered above (attention and palette run inside `chrome.sh`; browser-relaunch and headers-relaunch inside `browser.sh` and `headers.sh`) |
-| A10 | `apps/macos/automation/anim.sh` (crop stress): 0 dropped ticks expected, exact PTY resize counts |
+| A9 | `apps/macos/automation/{browser,preview,files,restore,headers,machines,sidebar,toolbar,chrome,polish}.sh`, `focus/focus.sh` (47 scenarios since ⌘F: S39–S47), and the `.azs` scripts not covered above (attention and palette run inside `chrome.sh`; browser-relaunch and headers-relaunch inside `browser.sh` and `headers.sh`). Run `polish.sh` with an `e2e-*` `AZJ_DEV_NAME` (its default is `polish-g`) |
+| A10 | `apps/macos/automation/anim.sh` (crop stress): 0 dropped ticks expected, exact PTY resize counts, no `STALE` capture. With the screen unlocked only: `apps/macos/automation/e2e/stale-check.sh` (every reveal from the display link, a first frame at every new size, no stale capture) |
 | A11 | `just test-dogfood`, `just test-cli-installer` (only if they stay inside temp dirs; check the recipes before running) |
 
 ## 3. Phase B: user journeys
@@ -139,6 +145,43 @@ Each journey runs on a fresh dev profile, driven in-process and through `azj`. E
 ### B15. Stability
 - Kill the WebContent process and the QuickLook process. Terminal tiles keep running, and the crashed tile shows its banner and recovers.
 
+## 3a. New features and where the fixes meet (added Nov 4)
+
+`apps/macos/automation/e2e/fixes.sh` (dev instance `e2e-fix`) runs N1–N6 in-process, then relaunches the app in the background for the `azj` checks. Every capture goes next to the azs log; look at them, don't just count PASS lines.
+
+### N1. ⌘F find bar
+- N1a: ⌘F in a terminal, type a query, then a layout cycle and a swap in slow motion with the bar open. The bar keeps its query and the keyboard; capture mid-motion: the bar, header strip and badge ride with the card.
+- N1b: stop and restart the dev session's herdr under an open bar. The tile shows `waiting`, reattaches, and the bar keeps the keyboard; typing doesn't reach the PTY.
+- N1c: ⌘K over an open bar, then Esc. The keyboard goes back to the bar.
+- N1d: a tab switch and back with the bar open; the bar is still open.
+- N1e: ⌘F in a preview's Source mode finds in the source.
+- N1f: ⌘F in a Quick Look preview (PNG) flashes that find isn't available there; no bar opens.
+- N1g: ⌘F on a failed browser page: the error banner and the bar stack without overlap.
+- N1h: the bar at the 480×320 minimum, and in a narrow tile: nothing overlaps.
+- S39–S47 in `focus.sh` cover the basics in each kind (terminal, browser, preview, files filter).
+
+### N2. `azj preview open` from a terminal
+- From inside a terminal tile (`$AZULEJO_TILE_ID`): `azj preview open --path plan.md`, again with `main.rs`, and with a missing file. Each exits 0; record where each lands and whether focus stays in the terminal. The missing file shows "File not found" and waits for the file.
+- `azj preview open --tile <id>` on a terminal, a preview and a browser: a new tile beside non-previews, the same tile for a preview.
+
+### N3. Error wording
+- HUD: focus, resize and swap with no neighbour say "No tile to the right", "No divider to the right to move", in sentence case, with no IDs.
+- `azj`: unknown param (top level and nested), params on a method that takes none, no such tile and workspace, the wrong tile kind, a bad enum value, an unknown method. The message names no raw ID; the IDs follow it as data. Note whether `--json` errors are JSON.
+
+### N4. Tab overflow
+- 14 tabs: the strip scrolls, edges with hidden tabs fade (`tab.overflow`), the selected tab scrolls into view (`ctrl+4`, `ctrl+9`).
+- A tab with attention scrolled out of view: is it signalled at the edge?
+- At 480×320 (with the config banner up). Closing back to 4 tabs: `tab.overflow` is `none`.
+
+### N5. Agent badge in the header
+- Working, blocked, done (working → idle on an unfocused tile) and none, side by side: each badge in its header strip's right end, title clear of it.
+- At 760×480: narrow tiles show the dot alone.
+- A slow swap of a tile with a badge: the badge rides with the header strip.
+
+### N6. Config banner row
+- A broken config with a badge and an open find bar: the banner takes its own row under the toolbar, the tiles move down, the bar keeps the keyboard.
+- With 14 tabs and at 480×320. Fixing the file removes the banner and the tile area (`chrome.tiles`) comes back to where it was.
+
 ## 4. Phase C: does it look right
 
 Compare against `docs/design/mockup-v1.png`, the region notes in `docs/design/README.md`, and D.9's `capture-v1.png` / `compare-v1.md`.
@@ -168,6 +211,7 @@ Compare against `docs/measurements.md`, and flag anything more than 10% worse:
 - memory with 4 terminals (`scripts/nfr/memory.sh`)
 - crop stress dropped ticks and PTY resize counts (A10)
 - preview reload latency (B6)
+- herdr reconnect, repeated (`scripts/nfr/reconnect.sh 5`): herdr restart → reattached, launch with herdr stopped
 
 The machine is busy, so record the load average next to each number.
 

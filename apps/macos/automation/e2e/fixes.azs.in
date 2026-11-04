@@ -1,0 +1,279 @@
+# N1–N6 (e2e 11-04): the features the Nov 3 fixes added, and the places where
+# several fixes meet: the find bar (⌘F) under motion, a herdr restart, ⌘K and a
+# tab switch; `azj preview open` from a terminal; error wording in the HUD;
+# the agent badge in the header; tab overflow; the config banner row.
+# fixes.sh fills @FX@ (fixtures), @AZJ@, @OUT@, @HD@ (e2e/hd) and @SITE@.
+log N fixes suite
+delivery direct
+seen-visible off
+window-size 1440 900
+until terminal.phase attached 10000
+
+# ---------------------------------------------------------------- tab 1 (Tile)
+type echo azj''needle; seq 1 60
+key enter
+sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} 60
+key ctrl+cmd+t
+until tiles 2 3000
+until terminal.phase attached 10000
+key alt+h
+expect focus 1
+
+log === N1a the find bar keeps its query and the keyboard through layout motion
+key cmd+f
+expect key.last action:find
+expect responder terminal-find
+type azjneedle
+until tile.find.status 1 of 1 5000
+capture n1a-before 0
+anim duration 1500
+key alt+backslash
+capture n1a-cycle-mid 600
+wait 2300
+expect tile.find open
+expect tile.find.query azjneedle
+expect responder terminal-find
+key alt+backslash
+wait 2300
+key alt+t
+wait 2300
+expect responder terminal-find
+key alt+shift+l
+capture n1a-swap-mid 600
+wait 2300
+anim duration default
+expect tile.find open
+expect responder terminal-find
+until tile.find.status 1 of 1 5000
+capture n1a-after 0
+
+log === N1b a herdr restart under an open find bar: the bar keeps the keyboard
+sh @HD@ {session} server stop >/dev/null 2>&1
+wait 1500
+remember terminal.phase
+sh nohup @HD@ {session} server >/dev/null 2>&1 &
+wait 1000
+until terminal.phase attached 10000
+wait 2000
+expect tile.find open
+expect responder terminal-find
+type x
+expect tile.find.query azjneedlex
+remember tile.find.status
+key backspace
+capture n1b-after-restart 300
+wait 500
+
+log === N1c cmd+k over an open find bar, then escape: the bar gets the keyboard back
+key cmd+k
+until palette all 2000
+key escape
+until palette closed 2000
+expect tile.find open
+expect responder terminal-find
+
+log === N1d a tab switch with the bar open
+key cmd+shift+t
+until tabs 2 3000
+until terminal.phase attached 10000
+key ctrl+1
+until tab 1 2000
+wait 500
+expect tile.find open
+remember responder
+key cmd+f
+expect responder terminal-find
+key escape
+expect tile.find closed
+expect responder terminal
+
+log === N1h the find bar at the minimum window size
+# herdr's restart (N1b) gave the pane a fresh shell: print the needle again.
+type echo azj''needle
+key enter
+sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} azjneedle
+key cmd+f
+expect tile.find.query azjneedle
+until tile.find.status 1 of 1 5000
+window-size 480 320
+wait 1000
+shot n1h-min-find
+window-size 1440 900
+wait 800
+key escape
+expect responder terminal
+
+# ------------------------------------------------- tab 2 (manual): previews
+key ctrl+2
+until tab 2 2000
+core {"method":"layout.set","params":{"kind":"manual"}}
+wait 500
+
+log === N2 azj preview open from a terminal: twice, then a missing file
+core {"method":"terminal.send_text","params":{"text":"cd @FX@; @AZJ@ preview open --path plan.md > @OUT@/open1.out 2>&1; echo exit=$status >> @OUT@/open1.out; @AZJ@ preview open --path main.rs > @OUT@/open2.out 2>&1; echo exit=$status >> @OUT@/open2.out; @AZJ@ preview open --path nope.md > @OUT@/open3.out 2>&1; echo exit=$status >> @OUT@/open3.out\n"}}
+wait 3500
+remember tiles
+remember focus
+expect focus 1
+shot n2-preview-open-twice
+
+log === N1e cmd+f in a preview's Source mode
+# Each open lands right beside the terminal: nope.md | main.rs | plan.md.
+key alt+l
+key alt+l
+key alt+l
+until tile.kind preview 3000
+remember tile.path
+tile mode source
+until tile.source source 3000
+wait 500
+key cmd+f
+expect key.last action:find
+expect responder preview-find
+type step
+until tile.find.status 1 of 1 5000
+capture n1e-find-source 300
+wait 500
+key escape
+expect tile.find closed
+expect responder preview-page
+
+log === N1f cmd+f in a Quick Look preview says find isn't available
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@FX@/shot.png"}}}
+until tile.mode native-image 5000
+wait 800
+key cmd+f
+expect key.last action:find
+expect tile.find closed
+capture n1f-find-quicklook 120
+wait 800
+
+log === N1g cmd+f on a failed browser page: banner and bar together
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
+until tile.kind browser 5000
+wait 2000
+core {"method":"browser.open","params":{"url":"https://example.invalid/failed/page"}}
+wait 2500
+remember tile.banner
+remember tile.address
+key cmd+f
+expect responder browser-find
+type example
+wait 1000
+remember tile.find.status
+capture n1g-find-failed-page 0
+wait 300
+key escape
+expect responder browser-page
+
+# ----------------------------------------------------- tab 3: HUD error wording
+key cmd+shift+t
+until tabs 3 3000
+until terminal.phase attached 10000
+log === N3 HUD messages for refused moves name no IDs
+key alt+l
+capture n3-hud-focus 120
+wait 1500
+key ctrl+alt+shift+l
+capture n3-hud-resize 120
+wait 1500
+key alt+shift+l
+capture n3-hud-swap 120
+wait 1500
+
+# ------------------------------------------------------ tab 4 (Tile): badges
+key cmd+shift+t
+until tabs 4 3000
+until terminal.phase attached 10000
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+until tiles 4 5000
+wait 2500
+log === N5 the agent badge sits in the header strip
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent codex --state blocked
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent claude --state working
+wait 500
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent claude --state idle
+until agents working,blocked!,done!,none 5000
+remember agents
+remember badges
+wait 600
+shot n5-badges
+window-size 760 480
+wait 1000
+shot n5-badges-narrow
+window-size 1440 900
+wait 800
+key alt+h
+anim duration 1500
+key alt+shift+l
+capture n5-badge-swap-mid 650
+wait 2300
+anim duration default
+
+log === N6 the config banner row, with a badge and the find bar open
+key alt+h
+expect focus 1
+remember chrome.tiles
+key cmd+f
+type azj
+sh cp {config} {config}.orig
+sh printf '\nthis is [not toml\n' >> {config}
+until banner.shown yes 4000
+wait 600
+expect responder terminal-find
+expect tile.find open
+shot n6-banner-badge-find
+key escape
+expect responder terminal
+
+# --------------------------------------------- tab overflow (banner still up)
+log === N4 tab overflow: 14 tabs, attention on a hidden tab, the selected tab in view
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+until tabs 14 6000
+wait 1500
+remember tab.overflow
+remember tab.statuses
+shot n4-overflow-last
+key ctrl+4
+until tab 4 2000
+wait 800
+remember tab.overflow
+shot n4-overflow-tab4
+window-size 480 320
+wait 1000
+remember tab.overflow
+shot n4-overflow-min-banner
+window-size 1440 900
+wait 800
+sh cp {config}.orig {config}
+until banner.shown no 4000
+wait 600
+unchanged chrome.tiles
+key ctrl+9
+until tab 14 2000
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+key cmd+w
+until tabs 4 6000
+wait 800
+remember tab.overflow
+shot n4-overflow-gone
