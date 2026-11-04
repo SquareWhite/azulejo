@@ -129,6 +129,10 @@ if [[ $bg -eq 1 ]]; then envs+=(--env "AZULEJO_BACKGROUND=1"); fi
 # `open` doesn't pass our environment on: hand the core's debug switches over
 # (AZJ_DEBUG_MIRROR=1 logs every mirror push and pull to the app log).
 if [[ -n "${AZJ_DEBUG_MIRROR:-}" ]]; then envs+=(--env "AZJ_DEBUG_MIRROR=$AZJ_DEBUG_MIRROR"); fi
+# Reflow motion tuning (Motion.reflowInterval, Motion.reflowLead).
+for v in AZJ_REFLOW_MS AZJ_REFLOW_LEAD_MS; do
+  if [[ -n "${!v:-}" ]]; then envs+=(--env "$v=${!v}"); fi
+done
 if [[ -n "$automation" ]]; then
   rm -f "$out/result"
   envs+=(--env "AZULEJO_AUTOMATION=$automation" --env "AZULEJO_AUTOMATION_OUT=$out")

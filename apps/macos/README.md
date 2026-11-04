@@ -131,12 +131,17 @@ every tile appears on screen.
 
 - `reflow` (default): content lays out live, like a window being
   drag-resized. Each moving tile's frame steps along the curve once per
-  display frame, and a terminal's grid follows it: its PTY resizes when the
-  tile has gained or lost a whole cell and the last resize was 33 ms ago, then
-  once more to the exact size at the end (ADR 0004, Nov 4 reflow amendment).
-  So text rewraps and TUIs redraw as the tile moves, a few times per motion
-  (≈ 3–4 SIGWINCHes per terminal in a 200 ms motion), about 50–100 ms
-  behind the frame because the redraw goes through herdr. libghostty's
+  display frame, and a terminal's grid follows it 100 ms ahead: its PTY
+  resizes to the size the tile will have 100 ms on, when that's a whole cell
+  more or less and the last resize was 33 ms ago, and takes the exact final
+  size once that's within reach, before the motion ends (ADR 0004, Nov 4
+  reflow and reflow-lead amendments). The lead covers the redraw's trip
+  through libghostty and herdr (herdr's attach client only looks at its size
+  every 100 ms), so text lands with the frame (median 18 ms ahead, at worst
+  ~55 ms behind) instead of 50–160 ms behind it, and the last redraw lands
+  with the motion's end. `apps/macos/automation/reflow-lag.sh` measures it.
+  So text rewraps and TUIs redraw as the tile moves, one or two times per
+  motion (herdr's 100 ms poll caps it). libghostty's
   renderer thread draws each new size, so the main thread never waits on the
   GPU; until it has, the last frame stays at the top left. A terminal whose
   pane starts mid-motion (a split) is born at its final size. Closing tiles
