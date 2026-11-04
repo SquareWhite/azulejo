@@ -68,11 +68,8 @@ check "N3 no such workspace" grep -q 'no such workspace' "$e"
 check "N3 wrong kind in words" bash -c "sed -n '/### wrong-kind:/,/^exit/p' '$e' | grep -qi \"that's a\""
 check "N3 the errors carry the IDs as data after the message" bash -c "grep -A3 '### no-such-tile --json' '$e' | grep -q 'tile_01AAAA'"
 # With --json, is the error itself JSON (code, message, data) for scripts?
-if grep -A1 '### no-such-tile --json' "$e" | tail -1 | grep -q '^{'; then
-  note "N3 azj --json prints errors as JSON"
-else
-  note "N3 azj --json prints errors as plain text, not JSON"
-fi
+check "N3 azj --json prints an error as a JSON object (code, message, data)" bash -c \
+  "grep -A1 '### no-such-tile --json' '$e' | tail -1 | jq -e '.code == \"not_found\" and (.message | type == \"string\") and (.data | type == \"object\")' >/dev/null"
 # Every human message (the line azj prints first) is free of raw IDs.
 python3 - "$e" <<'PY' | tee -a "$checks"
 import re, sys

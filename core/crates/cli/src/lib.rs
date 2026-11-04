@@ -4,15 +4,21 @@
 //! protocol's JSON Schema (see [`spec`]). Run inside an Azulejo terminal tile,
 //! commands act on that tile, its tab and its workspace unless told otherwise;
 //! `--no-caller` makes them act on whatever is focused instead.
+//!
+//! `--json` prints results as raw JSON on stdout. Errors go there too, as one
+//! object shaped like the API's errors: `{"code": "not_found", "message": …,
+//! "data": {…}}`, where `data` is `{}` when there's nothing to add. Without
+//! `--json`, errors are `azj: …` lines on stderr. Either way the exit code
+//! says what kind of failure it was (see [`exit`]).
 
 pub mod args;
 pub mod output;
 pub mod spec;
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use azulejo_api::{Client, ClientError};
+use azulejo_api::{Client, ClientError, RpcError};
 use azulejo_protocol::ErrorCode;
 use serde_json::{Map, Value};
 
@@ -72,7 +78,9 @@ struct Globals {
     socket: Option<PathBuf>,
 }
 
-fn split_globals(args: Vec<String>) -> Result<(Globals, Vec<String>), String> {
+/// Splits the global options off `args`. The globals come back even when the
+/// rest is an error, so it can still be reported as JSON.
+fn split_globals(args: Vec<String>) -> (Globals, Result<Vec<String>, Failure>) {
     let mut g = Globals::default();
     let mut rest = Vec::new();
     let mut iter = args.into_iter();
@@ -85,16 +93,133 @@ fn split_globals(args: Vec<String>) -> Result<(Globals, Vec<String>), String> {
             "--json" => g.json = true,
             "-h" | "--help" => g.help = true,
             "--no-caller" => g.no_caller = true,
-            "--socket" => {
-                g.socket = Some(iter.next().ok_or("--socket needs a path")?.into());
-            }
+            "--socket" => match iter.next() {
+                Some(path) => g.socket = Some(path.into()),
+                None => {
+                    let e = Failure::usage(ErrorCode::InvalidParams, "--socket needs a path")
+                        .about("param", "socket");
+                    return (g, Err(e));
+                }
+            },
             _ => match arg.strip_prefix("--socket=") {
                 Some(path) => g.socket = Some(path.into()),
                 None => rest.push(arg),
             },
         }
     }
-    Ok((g, rest))
+    (g, Ok(rest))
+}
+
+/// Why `azj` failed: an error in the API's shape (`code`, `message`, `data`),
+/// its exit code, and the lines a person sees.
+#[derive(Debug)]
+struct Failure {
+    code: ErrorCode,
+    message: String,
+    data: Map<String, Value>,
+    exit: i32,
+    /// Printed as `azj: <line>` on stderr without `--json`.
+    lines: Vec<String>,
+}
+
+impl Failure {
+    /// Bad arguments, caught by `azj` itself.
+    fn usage(code: ErrorCode, message: impl Into<String>) -> Failure {
+        let message = message.into();
+        Failure {
+            code,
+            lines: vec![message.clone()],
+            message,
+            data: Map::new(),
+            exit: exit::USAGE,
+        }
+    }
+
+    /// The core refused the command.
+    fn rpc(e: &RpcError) -> Failure {
+        Failure {
+            code: e.kind.unwrap_or_else(|| code_for_rpc(e.code)),
+            message: e.message.clone(),
+            data: e.data.clone(),
+            exit: exit::API_ERROR,
+            lines: vec![e.to_string()],
+        }
+    }
+
+    /// Any client error: the core's refusal, or no core at `socket`.
+    fn client(e: &ClientError, socket: &Path) -> Failure {
+        if let ClientError::Rpc(e) = e {
+            return Failure::rpc(e);
+        }
+        let mut lines = vec![e.to_string()];
+        if matches!(e, ClientError::NotRunning { .. }) {
+            lines.push(
+                "start Azulejo, or point AZULEJO_SOCKET (or --socket) at its socket".to_owned(),
+            );
+        }
+        let code = match e {
+            ClientError::Protocol(_) => ErrorCode::Internal,
+            _ => ErrorCode::Unavailable,
+        };
+        Failure {
+            code,
+            message: e.to_string(),
+            data: Map::new(),
+            exit: exit::UNREACHABLE,
+            lines,
+        }
+        .about("socket", socket.display().to_string())
+    }
+
+    /// Says it in other words, for people and programs alike.
+    fn retold(mut self, message: String) -> Failure {
+        self.lines = vec![message.clone()];
+        self.message = message;
+        self
+    }
+
+    /// Adds `key` to what the error is about.
+    fn about(mut self, key: &str, value: impl Into<Value>) -> Failure {
+        self.data.insert(key.to_owned(), value.into());
+        self
+    }
+
+    /// Prints the failure and returns its exit code. With `--json` it's an
+    /// error object on stdout, where results go; otherwise text on stderr.
+    fn report(self, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+        if json {
+            let object = serde_json::json!({
+                "code": self.code,
+                "message": self.message,
+                "data": self.data,
+            });
+            let _ = writeln!(out, "{object}");
+        } else {
+            for line in &self.lines {
+                let _ = writeln!(err, "azj: {line}");
+            }
+        }
+        self.exit
+    }
+}
+
+/// The protocol error code for JSON-RPC code `code`, for servers that don't
+/// send one.
+fn code_for_rpc(code: i64) -> ErrorCode {
+    use ErrorCode::*;
+    [
+        ParseError,
+        InvalidRequest,
+        MethodNotFound,
+        InvalidParams,
+        NotFound,
+        InvalidState,
+        Unsupported,
+        Unavailable,
+    ]
+    .into_iter()
+    .find(|c| i64::from(c.rpc_code()) == code)
+    .unwrap_or(Internal)
 }
 
 /// Subcommands that are another method under a friendlier name.
@@ -111,33 +236,48 @@ const SHORTCUTS: &[(&str, &str)] = &[("ping", "core.ping"), ("version", "core.ve
 
 /// Runs `azj` with `args` (without the program name). Returns the exit code.
 pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
-    let (globals, mut args) = match split_globals(args) {
-        Ok(v) => v,
-        Err(e) => return usage_error(err, &e),
-    };
+    let (globals, args) = split_globals(args);
+    match args.and_then(|args| dispatch(args, &globals, env, out)) {
+        Ok(code) => code,
+        Err(e) => e.report(globals.json, out, err),
+    }
+}
+
+fn dispatch(
+    mut args: Vec<String>,
+    globals: &Globals,
+    env: &Env,
+    out: &mut dyn Write,
+) -> Result<i32, Failure> {
     let specs = spec::methods();
     let socket = globals.socket.clone().unwrap_or_else(|| env.socket.clone());
 
     let Some(first) = args.first().cloned() else {
+        if globals.json && !globals.help {
+            return Err(Failure::usage(
+                ErrorCode::InvalidRequest,
+                "no command; run `azj help` for the list",
+            ));
+        }
         let _ = write!(out, "{}", help_overview(&specs));
-        return if globals.help { exit::OK } else { exit::USAGE };
+        return Ok(if globals.help { exit::OK } else { exit::USAGE });
     };
     match first.as_str() {
         "help" => {
             args.remove(0);
-            return help_for(&specs, &args, out, err);
+            return help_for(&specs, &args, out);
         }
         "methods" => {
             for s in &specs {
                 let _ = writeln!(out, "{}", s.method);
             }
-            return exit::OK;
+            return Ok(exit::OK);
         }
         "schema" => {
             let _ = writeln!(out, "{}", azulejo_protocol::api_schema_text().trim_end());
-            return exit::OK;
+            return Ok(exit::OK);
         }
-        "call" => return raw_call(&args[1..], &socket, &globals, out, err),
+        "call" => return raw_call(&args[1..], &socket, globals, out),
         // `azj events [--follow]` and `azj events subscribe` stream events.
         "events"
             if !globals.help
@@ -150,7 +290,7 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
             } else {
                 1
             };
-            return follow_events(&args[skip..], &specs, &socket, &globals, out, err);
+            return follow_events(&args[skip..], &specs, &socket, globals, out);
         }
         _ => {}
     }
@@ -160,12 +300,12 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
     } else {
         if args.len() < 2 || args[1].starts_with('-') {
             if globals.help || args.len() == 1 {
-                return help_for(&specs, &args[..1], out, err);
+                return help_for(&specs, &args[..1], out);
             }
-            return usage_error(
-                err,
-                &format!("`azj {first}` needs an action; try `azj help {first}`"),
-            );
+            return Err(Failure::usage(
+                ErrorCode::InvalidRequest,
+                format!("`azj {first}` needs an action; try `azj help {first}`"),
+            ));
         }
         let action = args[1].replace('_', "-");
         let method = ALIASES
@@ -176,23 +316,22 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
         (method, args[2..].to_vec())
     };
     let Some(spec) = specs.iter().find(|s| s.method == method) else {
-        return usage_error(
-            err,
-            &format!(
+        return Err(Failure::usage(
+            ErrorCode::MethodNotFound,
+            format!(
                 "unknown command `{}`; run `azj help` for the list",
                 args[..2.min(args.len())].join(" ")
             ),
-        );
+        )
+        .about("method", method));
     };
     if globals.help {
         let _ = write!(out, "{}", help_method(spec));
-        return exit::OK;
+        return Ok(exit::OK);
     }
 
-    let mut params = match args::parse_params(spec, &rest) {
-        Ok(p) => p,
-        Err(e) => return usage_error(err, &e),
-    };
+    let mut params =
+        args::parse_params(spec, &rest).map_err(|e| Failure::usage(ErrorCode::InvalidParams, e))?;
     // The core runs elsewhere (its own working directory), so relative paths
     // only mean something here, except those relative to a tile's root.
     if let Ok(cwd) = std::env::current_dir() {
@@ -204,40 +343,29 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
         );
     }
 
-    let mut client = match Client::connect(&socket) {
-        Ok(c) => c,
-        Err(e) => return unreachable(err, &e),
-    };
+    let mut client = Client::connect(&socket).map_err(|e| Failure::client(&e, &socket))?;
 
     let mut filled = Vec::new();
     if !globals.no_caller {
-        match fill_caller(spec, &mut params, env, &mut client) {
-            Ok(f) => filled = f,
-            Err(e) => {
-                let _ = writeln!(err, "azj: {e}");
-                return exit::API_ERROR;
-            }
-        }
+        filled = fill_caller(spec, &mut params, env, &mut client, &socket)?;
     }
 
     let params = (!params.is_empty()).then_some(Value::Object(params));
     match client.call(&spec.method, params) {
         Ok(result) => {
-            print_result(&result, &globals, out);
-            exit::OK
+            print_result(&result, globals, out);
+            Ok(exit::OK)
         }
-        Err(ClientError::Rpc(e)) => {
-            let _ = writeln!(err, "azj: {e}");
-            if e.kind == Some(ErrorCode::NotFound) && !filled.is_empty() {
-                let _ = writeln!(
-                    err,
-                    "azj: {} came from this terminal's environment; pass --no-caller to act on the focused one",
+        Err(e) => {
+            let mut failure = Failure::client(&e, &socket);
+            if failure.code == ErrorCode::NotFound && !filled.is_empty() {
+                failure.lines.push(format!(
+                    "{} came from this terminal's environment; pass --no-caller to act on the focused one",
                     filled.join(", ")
-                );
+                ));
             }
-            exit::API_ERROR
+            Err(failure)
         }
-        Err(e) => unreachable(err, &e),
     }
 }
 
@@ -316,22 +444,6 @@ fn print_result(result: &Value, globals: &Globals, out: &mut dyn Write) {
     }
 }
 
-fn usage_error(err: &mut dyn Write, msg: &str) -> i32 {
-    let _ = writeln!(err, "azj: {msg}");
-    exit::USAGE
-}
-
-fn unreachable(err: &mut dyn Write, e: &ClientError) -> i32 {
-    let _ = writeln!(err, "azj: {e}");
-    if matches!(e, ClientError::NotRunning { .. }) {
-        let _ = writeln!(
-            err,
-            "azj: start Azulejo, or point AZULEJO_SOCKET (or --socket) at its socket"
-        );
-    }
-    exit::UNREACHABLE
-}
-
 /// `azj events [--follow] [--filter NAME]… [--workspace ID] [--tile ID]
 /// [--count N] [--json]`: prints events as they happen, one per line, until
 /// interrupted (or until `--count` events). `--follow` is the default and only
@@ -339,11 +451,13 @@ fn unreachable(err: &mut dyn Write, e: &ClientError) -> i32 {
 fn follow_events(
     args: &[String],
     specs: &[MethodSpec],
-    socket: &PathBuf,
+    socket: &Path,
     globals: &Globals,
     out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> i32 {
+) -> Result<i32, Failure> {
+    let bad_count = || {
+        Failure::usage(ErrorCode::InvalidParams, "--count needs a number").about("param", "count")
+    };
     let mut count: Option<u64> = None;
     let mut rest = Vec::new();
     let mut iter = args.iter();
@@ -352,41 +466,31 @@ fn follow_events(
             "--follow" | "-f" => {}
             "--count" | "-n" => match iter.next().and_then(|n| n.parse().ok()) {
                 Some(n) => count = Some(n),
-                None => return usage_error(err, "--count needs a number"),
+                None => return Err(bad_count()),
             },
             other => match other.strip_prefix("--count=").map(str::parse) {
                 Some(Ok(n)) => count = Some(n),
-                Some(Err(_)) => return usage_error(err, "--count needs a number"),
+                Some(Err(_)) => return Err(bad_count()),
                 None => rest.push(arg.clone()),
             },
         }
     }
     let Some(spec) = specs.iter().find(|s| s.method == "events.subscribe") else {
-        return usage_error(err, "this azj doesn't know `events.subscribe`");
+        return Err(Failure::usage(
+            ErrorCode::MethodNotFound,
+            "this azj doesn't know `events.subscribe`",
+        ));
     };
-    let params = match args::parse_params(spec, &rest) {
-        Ok(p) => p,
-        Err(e) => return usage_error(err, &e),
-    };
-    let mut client = match Client::connect(socket) {
-        Ok(c) => c,
-        Err(e) => return unreachable(err, &e),
-    };
+    let params =
+        args::parse_params(spec, &rest).map_err(|e| Failure::usage(ErrorCode::InvalidParams, e))?;
+    let failed = |e: ClientError| Failure::client(&e, socket);
+    let mut client = Client::connect(socket).map_err(failed)?;
     let params = (!params.is_empty()).then_some(Value::Object(params));
-    let subscription = match client.subscribe(params) {
-        Ok(id) => id,
-        Err(ClientError::Rpc(e)) => {
-            let _ = writeln!(err, "azj: {e}");
-            return exit::API_ERROR;
-        }
-        Err(e) => return unreachable(err, &e),
-    };
+    let subscription = client.subscribe(params).map_err(failed)?;
     let mut seen = 0;
     while count.is_none_or(|n| seen < n) {
-        let message = match client.next_notification(None) {
-            Ok(Some(m)) => m,
-            Ok(None) => continue,
-            Err(e) => return unreachable(err, &e),
+        let Some(message) = client.next_notification(None).map_err(failed)? else {
+            continue;
         };
         let params = &message["params"];
         if params["subscription"] != subscription {
@@ -399,48 +503,42 @@ fn follow_events(
         };
         if writeln!(out, "{line}").and_then(|_| out.flush()).is_err() {
             // The reader went away (e.g. `| head`).
-            return exit::OK;
+            return Ok(exit::OK);
         }
         if message["method"] == "events.event" {
             seen += 1;
         }
     }
-    exit::OK
+    Ok(exit::OK)
 }
 
 /// `azj call <method> [json-params]`: the escape hatch.
 fn raw_call(
     args: &[String],
-    socket: &PathBuf,
+    socket: &Path,
     globals: &Globals,
     out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> i32 {
+) -> Result<i32, Failure> {
     let Some(method) = args.first() else {
-        return usage_error(err, "usage: azj call <method> [json-params]");
+        return Err(Failure::usage(
+            ErrorCode::InvalidRequest,
+            "usage: azj call <method> [json-params]",
+        ));
     };
     let params = match args.get(1) {
-        Some(text) => match serde_json::from_str::<Value>(text) {
-            Ok(v) => Some(v),
-            Err(e) => return usage_error(err, &format!("params aren't valid JSON: {e}")),
-        },
+        Some(text) => Some(serde_json::from_str::<Value>(text).map_err(|e| {
+            Failure::usage(
+                ErrorCode::InvalidParams,
+                format!("params aren't valid JSON: {e}"),
+            )
+        })?),
         None => None,
     };
-    let mut client = match Client::connect(socket) {
-        Ok(c) => c,
-        Err(e) => return unreachable(err, &e),
-    };
-    match client.call(method, params) {
-        Ok(result) => {
-            print_result(&result, globals, out);
-            exit::OK
-        }
-        Err(ClientError::Rpc(e)) => {
-            let _ = writeln!(err, "azj: {e}");
-            exit::API_ERROR
-        }
-        Err(e) => unreachable(err, &e),
-    }
+    let failed = |e: ClientError| Failure::client(&e, socket);
+    let mut client = Client::connect(socket).map_err(failed)?;
+    let result = client.call(method, params).map_err(failed)?;
+    print_result(&result, globals, out);
+    Ok(exit::OK)
 }
 
 /// Where the calling terminal lives, looked up lazily.
@@ -459,7 +557,8 @@ fn fill_caller(
     params: &mut Map<String, Value>,
     env: &Env,
     client: &mut Client,
-) -> Result<Vec<String>, String> {
+    socket: &Path,
+) -> Result<Vec<String>, Failure> {
     // Which params to fill. `tile.list`'s workspace is a filter, not a target.
     let wants: Vec<&str> = spec
         .params
@@ -493,7 +592,7 @@ fn fill_caller(
         if let Some(tile) = &info.tile {
             let found = client
                 .call("tile.get", Some(serde_json::json!({ "tile": tile })))
-                .map_err(|e| format!("AZULEJO_TILE_ID={tile} can't be looked up ({e}); pass --no-caller to act on the focused tile"))?;
+                .map_err(|e| Failure::client(&e, socket).retold(format!("AZULEJO_TILE_ID={tile} can't be looked up ({e}); pass --no-caller to act on the focused tile")))?;
             let get = |k: &str| found.get(k).and_then(Value::as_str).map(str::to_owned);
             info.tab = get("tab");
             info.window = get("window");
@@ -501,9 +600,9 @@ fn fill_caller(
         } else if let Some(pane) = &env.herdr_pane
             && same_herdr_session(env, client)
         {
-            let session = client
-                .call("session.get", None)
-                .map_err(|e| format!("can't look up herdr pane {pane}: {e}"))?;
+            let session = client.call("session.get", None).map_err(|e| {
+                Failure::client(&e, socket).retold(format!("can't look up herdr pane {pane}: {e}"))
+            })?;
             if let Some(found) =
                 find_herdr_pane(&session["session"], pane, env.herdr_workspace.as_deref())
             {
@@ -600,6 +699,9 @@ fn help_overview(specs: &[MethodSpec]) -> String {
          \x20 --json          print the raw JSON result\n\
          \x20 --no-caller     act on the focused tile, not the terminal azj runs in\n\
          \x20 --socket PATH   socket to use (default: $AZULEJO_SOCKET, else the app's)\n\n\
+         errors go to stderr as `azj: …` lines. With --json, an error is one\n\
+         {\"code\", \"message\", \"data\"} object on stdout, like the API's errors.\n\
+         exit codes: 0 ok, 1 the core refused, 2 bad arguments, 3 can't reach Azulejo\n\n\
          commands:\n",
     );
     for spec in specs {
@@ -624,26 +726,23 @@ fn first_sentence(d: &str) -> &str {
         .trim_end_matches('.')
 }
 
-fn help_for(
-    specs: &[MethodSpec],
-    args: &[String],
-    out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> i32 {
+fn help_for(specs: &[MethodSpec], args: &[String], out: &mut dyn Write) -> Result<i32, Failure> {
+    let no_command =
+        |what: String| Failure::usage(ErrorCode::MethodNotFound, format!("no command {what}"));
     match args {
         [] => {
             let _ = write!(out, "{}", help_overview(specs));
-            exit::OK
+            Ok(exit::OK)
         }
         [group] => {
             let matching: Vec<&MethodSpec> = specs.iter().filter(|s| s.group == *group).collect();
             if matching.is_empty() {
-                return usage_error(err, &format!("no command group `{group}`"));
+                return Err(no_command(format!("group `{group}`")));
             }
             for spec in matching {
                 let _ = writeln!(out, "{}", help_method(spec));
             }
-            exit::OK
+            Ok(exit::OK)
         }
         [group, action, ..] => {
             let action = action.replace('_', "-");
@@ -655,9 +754,9 @@ fn help_for(
             match specs.iter().find(|s| s.method == method) {
                 Some(spec) => {
                     let _ = write!(out, "{}", help_method(spec));
-                    exit::OK
+                    Ok(exit::OK)
                 }
-                None => usage_error(err, &format!("no command `{group} {action}`")),
+                None => Err(no_command(format!("`{group} {action}`"))),
             }
         }
     }
