@@ -26,7 +26,7 @@ key cmd+k
 key r
 key o
 key t
-expect palette.top Rotate layout
+expect palette.top Rotate layout clockwise
 key alt+h
 expect palette all
 expect focus 2
