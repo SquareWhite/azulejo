@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# hd SESSION ARGS…: herdr on a named throwaway e2e session with a clean
+# HERDR_* environment. Refuses herdr's default session, any session not named
+# azj-dev-e2e*, and `herdr update`.
+set -euo pipefail
+session="${1:?session}"; shift
+case "$session" in default | "") echo "hd: refusing herdr's default session" >&2; exit 2 ;; esac
+case "$session" in azj-dev-e2e*) ;; *) echo "hd: only azj-dev-e2e* sessions" >&2; exit 2 ;; esac
+[[ "${1:-}" == update ]] && { echo "hd: never herdr update" >&2; exit 2; }
+# The server itself starts with a clean environment (ADR 0006), so panes
+# don't inherit ours.
+if [[ "$*" == server ]]; then
+  exec env -i HOME="$HOME" PATH="$PATH" USER="$USER" SHELL=/bin/zsh LANG=en_US.UTF-8 \
+    herdr --session "$session" server
+fi
+exec env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID -u HERDR_ENV \
+  herdr --session "$session" "$@"

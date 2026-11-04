@@ -1,0 +1,16 @@
+# B9 part 2: two of the panes were closed in herdr while the app was away.
+log B9 ended relaunch
+delivery direct
+until tiles 3 8000
+wait 2500
+# Focus comes back on the last tile (an ended one).
+until terminal.phase ended 5000
+shot 01-session-ended
+terminal respawn
+until terminal.phase attached 8000
+expect tiles 3
+key alt+h
+until terminal.phase ended 5000
+terminal close
+until tiles 2 3000
+shot 02-after-respawn-close

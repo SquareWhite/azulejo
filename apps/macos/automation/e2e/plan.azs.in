@@ -1,0 +1,49 @@
+# B6: an agent in a terminal tile opens plan.md with `azj preview open`, then
+# edits it from the same terminal; the preview follows. Then Preview | Source,
+# and PNG / MP4 / PDF through QuickLook. plan.sh fills @FX@ and @AZJ@.
+log B6 plan review
+delivery direct
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+wait 1500
+core {"method":"terminal.send_text","params":{"text":"cd @FX@; env | grep '^AZULEJO_' | sort > @OUT@/tile-env.txt; @AZJ@ preview open --path plan.md > @OUT@/open.out 2>&1; echo exit=$status >> @OUT@/open.out\n"}}
+wait 2500
+sh cat {out}/open.out
+# `preview open` needs a preview tile; the documented way from a terminal is a
+# split with preview content (relative path, resolved against the caller?).
+core {"method":"terminal.send_text","params":{"text":"@AZJ@ tile split --right --kind preview --path plan.md > @OUT@/split.out 2>&1; echo exit=$status >> @OUT@/split.out\n"}}
+wait 2500
+# Whatever the command did, a preview of plan.md must be on screen now.
+until tile.kind preview 3000
+until tile.content markdown 3000
+expect tiles 2
+shot 01-opened-from-tile
+key alt+h
+expect focus 1
+# Edit from the terminal: five saves, each logged by the app with its time.
+core {"method":"terminal.send_text","params":{"text":"for i in 1 2 3 4 5; python3 -c 'import time,sys; open(\"plan.md\",\"a\").write(\"\\n- [ ] edit %s\\n\" % sys.argv[1]); print(\"%.6f\" % time.time())' $i >> @OUT@/edits.txt; sleep 1; end\n"}}
+wait 7000
+key alt+l
+until tile.kind preview 2000
+tile js document.body.innerText.includes('edit 5')
+until tile.js 1 2000
+shot 02-after-edits
+# --- Preview | Source ---
+tile mode source
+until tile.source source 3000
+wait 500
+shot 03-source
+# --- QuickLook kinds ---
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@FX@/shot.png"}}}
+until tile.mode native-image 5000
+wait 1500
+capture 04-png 0
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@FX@/clip.mp4"}}}
+until tile.path @FX@/clip.mp4 5000
+wait 1500
+capture 05-mp4 0
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@FX@/doc.pdf"}}}
+until tile.mode native-pdf 5000
+wait 1500
+capture 06-pdf 0
+shot 07-all

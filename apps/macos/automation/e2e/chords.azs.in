@@ -1,0 +1,248 @@
+# B2: every [keys.macos] default chord through the key router, checking the
+# router's verdict (key.last) and the layout it leaves. Rendered by chords.sh
+# (@PLAN@ → a markdown file, @SITE@ → the local browser fixture).
+log B2 chords
+delivery direct
+until terminal.phase attached 10000
+expect tiles 1
+expect kind tile
+wait 800
+# --- splits (dynamic Tile tab: every split appends to the stack) ---
+key ctrl+cmd+t
+expect key.last action:split_auto
+until tiles 2 3000
+key ctrl+cmd+t
+key ctrl+cmd+t
+until tiles 4 3000
+expect masters 1
+key ctrl+cmd+v
+expect key.last action:split_right
+until tiles 5 3000
+key ctrl+cmd+shift+t
+expect key.last action:split_down
+until tiles 6 3000
+wait 1500
+# --- close detaches: the herdr pane stays (F14) ---
+sh test "$({herdr} --session {session} pane list | /opt/homebrew/bin/jq '.result.panes | length')" = 6
+key alt+w
+expect key.last action:close_tile
+until tiles 5 3000
+key alt+w
+until tiles 4 3000
+wait 500
+sh test "$({herdr} --session {session} pane list | /opt/homebrew/bin/jq '.result.panes | length')" = 6
+# --- focus ---
+key alt+h
+expect key.last action:focus_tile_left
+expect focus 1
+key alt+l
+expect key.last action:focus_tile_right
+key alt+j
+expect key.last action:focus_tile_down
+key alt+k
+expect key.last action:focus_tile_up
+key alt+]
+expect key.last action:cycle_tile_next
+remember focus
+key alt+[
+expect key.last action:cycle_tile_previous
+key alt+]
+unchanged focus
+# --- swap ---
+key alt+h
+expect focus 1
+key alt+shift+l
+expect key.last action:swap_tile_right
+key alt+shift+h
+expect key.last action:swap_tile_left
+expect focus 1
+key alt+l
+key alt+shift+j
+expect key.last action:swap_tile_down
+key alt+shift+k
+expect key.last action:swap_tile_up
+# --- resize chords and sticky resize mode ---
+key alt+h
+expect ratio 0.50
+key ctrl+alt+shift+l
+expect key.last action:resize_tile_right
+expect ratio 0.55
+key ctrl+alt+shift+h
+expect key.last action:resize_tile_left
+expect ratio 0.50
+key alt+l
+key ctrl+alt+shift+j
+expect key.last action:resize_tile_down
+key ctrl+alt+shift+k
+expect key.last action:resize_tile_up
+key alt+h
+key ctrl+alt+r
+expect key.last action:resize_mode
+key l
+expect key.last resize
+expect ratio 0.55
+key l
+expect key.last resize
+expect ratio 0.60
+key h
+expect ratio 0.55
+key x
+expect key.last resize
+key escape
+key alt+l
+expect key.last action:focus_tile_right
+key alt+h
+expect ratio 0.55
+key ctrl+alt+shift+h
+# --- zoom ---
+key alt+shift+m
+expect key.last action:zoom_tile
+expect zoomed yes
+key alt+shift+m
+expect zoomed no
+# --- tall ops ---
+key alt+l
+key alt+enter
+expect key.last action:promote_tile
+expect focus 1
+key alt+o
+expect key.last action:rotate_layout
+expect orientation top
+key alt+o
+expect orientation left
+key alt+shift+e
+expect key.last action:equalize_layout
+# --- dynamic layouts ---
+key alt+equal
+expect key.last action:increase_masters
+expect masters 2
+key alt+shift+o
+expect key.last action:rotate_part
+expect part yes
+key alt+shift+o
+expect part no
+key alt+minus
+expect key.last action:decrease_masters
+expect masters 1
+key alt+shift+equal
+expect key.last action:grow_master_area
+expect ratio 0.55
+key alt+shift+minus
+expect key.last action:shrink_master_area
+expect ratio 0.50
+remember focus
+key alt+shift+bracketright
+expect key.last action:move_position_next
+expect focus 2
+key alt+shift+bracketleft
+expect key.last action:move_position_previous
+expect focus 1
+key alt+backslash
+expect key.last action:cycle_layout_next
+expect kind monocle
+key alt+backslash
+expect kind three_column
+key alt+shift+backslash
+expect key.last action:cycle_layout_previous
+expect kind monocle
+key alt+t
+expect key.last action:toggle_layout_tile
+expect kind tile
+key alt+z
+expect key.last action:toggle_layout_monocle
+expect kind monocle
+key alt+z
+expect kind tile
+key alt+shift+t
+expect key.last action:toggle_layout_manual
+expect kind manual
+key alt+shift+t
+expect kind tile
+# --- cmd+a: sidebar in a terminal, select-all elsewhere ---
+expect sidebar visible
+key cmd+a
+expect key.last action:toggle_sidebar
+expect sidebar hidden
+key cmd+a
+expect sidebar visible
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
+until tile.kind browser 3000
+wait 1500
+key cmd+a
+expect key.last passed
+expect sidebar visible
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@PLAN@"}}}
+until tile.kind preview 3000
+wait 1000
+key cmd+a
+expect key.last passed
+expect sidebar visible
+key alt+w
+until tiles 5 3000
+key alt+w
+until tiles 4 3000
+# --- ctrl+b reaches the PTY (doubled), the attach client stays ---
+key alt+h
+remember resizes
+key ctrl+b
+expect key.last passed
+key q
+wait 800
+expect terminal.phase attached
+expect tiles 4
+key ctrl+c
+# --- ctrl+d: the shell exits and its tile closes, no dialog ---
+wait 300
+key ctrl+d
+expect key.last passed
+until tiles 3 4000
+expect windows 1
+# --- tabs ---
+key cmd+shift+t
+expect key.last action:new_tab
+until tabs 2 3000
+key ctrl+1
+expect key.last action:switch_tab(1)
+expect tab 1
+key ctrl+9
+expect key.last action:last_tab
+expect tab 2
+key ctrl+tab
+expect key.last action:next_tab
+expect tab 1
+key ctrl+shift+tab
+expect key.last action:previous_tab
+expect tab 2
+key cmd+w
+expect key.last action:close_tab
+until tabs 1 3000
+# --- workspaces ---
+key cmd+t
+expect key.last action:new_workspace
+until workspaces 2 3000
+expect workspace 2
+key cmd+1
+expect key.last action:switch_workspace(1)
+expect workspace 1
+key cmd+9
+expect key.last action:last_workspace
+expect workspace 2
+key alt+0
+expect key.last action:last_workspace
+expect workspace 1
+key cmd+2
+expect workspace 2
+# --- menus and misc ---
+key cmd+k
+expect key.last action:quick_open
+expect palette all
+key escape
+expect palette closed
+key cmd+f
+expect key.last action:find
+key cmd+,
+expect key.last action:open_config
+key cmd+n
+expect key.last action:new_window
+until windows 2 3000
+shot 99-end

@@ -1,0 +1,87 @@
+# B5: agent supervision. Four terminals; herdr reports one blocked, one
+# working, one idle. Every indicator must follow within 1 s. Then
+# subscription churn, tile.seen, and the working ring with motion on and off.
+log B5 agents
+delivery direct
+seen-visible off
+until terminal.phase attached 10000
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+until tiles 4 3000
+wait 2000
+# Warm up herdr's agent subscriptions (they open once each tile is bound).
+sh for p in {pane:1} {pane:2} {pane:3}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state idle; done
+wait 400
+sh for p in {pane:1} {pane:2} {pane:3}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state idle; done
+until agents idle,idle,idle,none 5000
+key alt+l
+# Focus is on tile 4 (no agent). Now the timed reports: each `until` has 1 s.
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state working
+until agents idle,working,idle,none 1000
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state blocked
+until agents blocked!,working,idle,none 1000
+until tab.statuses blocked 1000
+until sidebar.statuses blocked 1000
+until sidebar.footer working=0,blocked=1,idle=0,done=0 1000
+until dock 1 1000
+until tab.markers ●1 1000
+until sidebar.markers ●1 1000
+wait 300
+shot 01-blocked-working-idle
+# --- subscription churn: tiles come and go while states change ---
+key ctrl+cmd+t
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
+key alt+w
+key ctrl+cmd+t
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state blocked
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state working
+key ctrl+cmd+t
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state blocked
+key alt+w
+key alt+w
+until tiles 4 3000
+until agents blocked!,working,blocked!,none 2000
+expect dock 2
+# --- tile.seen clears attention without moving focus ---
+expect focus 4
+key alt+k
+expect focus 3
+wait 300
+# Focusing a tile counts as looking at it.
+expect agents blocked!,working,blocked,none
+# Blocked again while focused, window not on screen: attention stays lit…
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
+until agents blocked!,working,working,none 2000
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state blocked
+until agents blocked!,working,blocked!,none 2000
+wait 300
+expect agents blocked!,working,blocked!,none
+# …until the window counts as visible and the shell sends tile.seen.
+seen-visible on
+until agents blocked!,working,blocked,none 3000
+key alt+h
+until agents blocked,working,blocked,none 3000
+seen-visible off
+# --- working ring: turns while motion is on ---
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
+sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
+until sidebar.statuses working 2000
+wait 300
+capture ring-on-a 0
+wait 310
+capture ring-on-b 0
+wait 300
+# …and holds still with motion off (the same switch Reduce Motion flips).
+anim enabled false
+sh for p in {pane:1} {pane:2} {pane:3}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state blocked; done
+until sidebar.statuses blocked 2000
+sh for p in {pane:1} {pane:2} {pane:3}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state working; done
+until sidebar.statuses working 2000
+wait 300
+capture ring-off-a 0
+wait 310
+capture ring-off-b 0
+wait 300
+anim enabled default
+shot 02-end
