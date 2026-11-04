@@ -2212,7 +2212,7 @@
           "type": "object"
         },
         {
-          "description": "The core's link to herdr came up or dropped. After `connected: true`,\nshells reattach terminal tiles that gave up waiting. Not saved.",
+          "description": "The core's link to Local's herdr came up or dropped; sent only when\nthat changes. `connected: true` comes once the core has re-checked\nevery bound tile's pane (a herdr restart gives each pane a new\nterminal), so shells reattach waiting terminal tiles to current\npanes. Not saved.",
           "properties": {
             "data": {
               "properties": {
