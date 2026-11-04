@@ -139,8 +139,12 @@ tile appears on screen.
   the moving edge reveals or cuts it off. A shrinking terminal shows its
   snapshot at 1:1 until the motion ends; a growing one shows live content as
   soon as it has drawn at the new size. New tiles sweep in with the divider,
-  closing tiles shrink away from the neighbour taking their space, and the
-  tall rotate cross-fades.
+  closing tiles shrink away from the neighbour taking their space, and every
+  other change (rotate, layout switches, masters, promote…) moves each tile
+  from its old frame to its new one. Going into Monocle the focused tile
+  grows over the others as they fade and shrink a little; coming out, they
+  grow back in. Only tab switches and focus moves between Monocle's stacked
+  tiles fade (ADR 0004, Nov 4 amendment).
 - `scale`: a transform scales the whole tile, so text stretches mid-motion.
 - `outline`: tiles jump to their new place hidden, outlines move instead, and
   content fades in over 80 ms at the end.

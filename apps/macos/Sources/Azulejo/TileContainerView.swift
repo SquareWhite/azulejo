@@ -7,9 +7,11 @@ import QuartzCore
 ///
 /// Layout changes animate (F4, `Motion`): each tile jumps to its final frame
 /// at the start — one PTY resize per terminal, hidden under its snapshot
-/// (ADR 0004) — and a transform carries it there visually. A change that
-/// arrives mid-motion starts from where every tile appears on screen, so
-/// holding a key never queues up motion. The container's own size changes
+/// (ADR 0004) — and Core Animation carries it there visually, from its old
+/// frame to its new one (rotates and layout switches included; see
+/// `runMotion`). A change that arrives mid-motion starts from where every
+/// tile appears on screen, snapshots and fades included, so holding a key
+/// never queues up motion. The container's own size changes
 /// with the window chrome (the sidebar) the same way (`setChromeFrame`).
 ///
 /// Focus shows by dimming every unfocused tile (`applyDim`); there's no
@@ -84,11 +86,19 @@ final class TileContainerView: NSView, ThemeAware {
 
         // Where everything appears right now (mid-motion: the presentation).
         let before = animate && sameTab ? Perf.measure("tiles.visual") { visualFrames() } : [:]
+        // And where frozen snapshots show and how faded tiles caught
+        // mid-fade are: a change that brings one back carries on from there
+        // (Monocle in and straight out again).
+        let shownBefore = animate && sameTab ? Perf.measure("tiles.snapshots") { snapshotsOnScreen() } : [:]
+        let opacityBefore = animate && sameTab ? fadingOpacities() : [:]
         let previousFocus = tab?.focused
         let tilesBefore = tab?.tiles.count ?? 0
         let zoomBefore = tab?.zoomed
         let axisBefore = tab?.root.rootAxis
-        Perf.measure("tiles.finishLeaving") { finishLeaving() }
+        let layoutBefore = tab?.kind
+        // Tiles on their way off the screen keep going (a refresh mid-motion
+        // doesn't cut their fade short); the motion that ends last drops them.
+        let fadingOut = Set(leaving.filter { !$0.closed }.compactMap { ($0.view as? any TileView)?.tileID })
 
         if switching, animate { addTabTransition(to: window) }
 
@@ -126,11 +136,17 @@ final class TileContainerView: NSView, ThemeAware {
         for (id, view) in views {
             if visible.contains(id) {
                 if view.superview !== self {
-                    addSubview(view)
+                    Perf.measure("tiles.attach") { addSubview(view) }
+                    appearing.insert(id)
+                } else if fadingOut.contains(id) {
+                    // Wanted back mid-fade: it turns round where it shows.
+                    leaving.removeAll { $0.view === view }
                     appearing.insert(id)
                 }
             } else if view.superview === self {
-                if animate, sameTab, let from = before[id] {
+                if fadingOut.contains(id), animate, sameTab {
+                    continue  // already on its way out
+                } else if animate, sameTab, let from = before[id] {
                     hiding.append((view, from))
                 } else {
                     view.removeFromSuperview()
@@ -142,12 +158,16 @@ final class TileContainerView: NSView, ThemeAware {
             var kind = Self.kind(tilesBefore: tilesBefore, tilesAfter: tab?.tiles.count ?? 0,
                                  zoomBefore: zoomBefore, zoomAfter: tab?.zoomed,
                                  focusChanged: previousFocus != tab?.focused)
-            if kind == "layout", let axisBefore, let after = tab?.root.rootAxis, after != axisBefore {
+            if kind == "layout" || kind == "focus", zoomBefore == nil, tab?.zoomed == nil,
+               let monocle = Self.monocleKind(before: layoutBefore, after: tab?.kind, focus: kind) {
+                kind = monocle
+            } else if kind == "layout", let axisBefore, let after = tab?.root.rootAxis, after != axisBefore {
                 kind = "rotate"
             }
             Perf.measure("tiles.runMotion") {
                 runMotion(kind: kind, before: before, appearing: appearing, created: created,
-                          closing: closing, hiding: hiding, t0: t0)
+                          closing: closing, hiding: hiding, shownBefore: shownBefore,
+                          opacityBefore: opacityBefore, t0: t0)
             }
         } else {
             cancelMotion()
@@ -193,9 +213,10 @@ final class TileContainerView: NSView, ThemeAware {
         // A closing tile's fade lives in the old coordinates: finish it.
         finishLeaving()
         let before = visualFrames().mapValues { $0.offsetBy(dx: shift.x, dy: shift.y) }
+        let shown = snapshotsOnScreen().mapValues { $0.offsetBy(dx: shift.x, dy: shift.y) }
         frame = new
         runMotion(kind: "sidebar", before: before, appearing: [], created: [], closing: [], hiding: [],
-                  shift: shift, t0: t0)
+                  shownBefore: shown, opacityBefore: [:], shift: shift, t0: t0)
     }
 
     /// Tile IDs on screen: the zoomed tile alone, the focused one in a
@@ -248,32 +269,65 @@ final class TileContainerView: NSView, ThemeAware {
 
     // MARK: Motion
 
+    /// One tile in a motion: where it shows now (`from`) and where it goes.
+    /// `fadeFrom`: it comes onto the screen, fading in from that opacity.
+    private struct Mover {
+        let id: String
+        let view: NSView
+        let from: CGRect
+        let to: CGRect
+        let fadeFrom: Float?
+    }
+
     /// `shift`: how far this view itself moved since `before` was taken
     /// (a chrome change), so where a snapshot shows can be found.
+    /// `shownBefore`: where each frozen terminal's snapshot showed when
+    /// `before` was taken; `opacityBefore`: tiles caught mid-fade.
+    ///
+    /// Every change of frames is a move, on the motion's curve and length:
+    /// a rotate, a layout switch, masters, promote and the rest carry each
+    /// tile from its old frame to its new one, position and size together.
+    /// Monocle (ADR 0010): going in, the focused tile grows to fill the tab
+    /// over the others, which fade and shrink a little where they are;
+    /// coming out, it shrinks to its slot while they grow back in. A focus
+    /// switch inside Monocle dissolves the next tile in over the last one,
+    /// quickly (`Motion.stackDuration`): the tiles are stacked in one place,
+    /// so there's no path to move along, and no terminal resizes.
     private func runMotion(kind: String, before: [String: CGRect], appearing: Set<String>, created: Set<String>,
                            closing: [(NSView, CGRect)], hiding: [(NSView, CGRect)],
+                           shownBefore: [String: CGRect], opacityBefore: [String: Float],
                            shift: CGPoint = .zero, t0: CFTimeInterval) {
         let shown = Set(visibleTiles)
-        let frames = tileFrames().filter { shown.contains($0.key) }
+        // Every tile's final frame, hidden ones too (Monocle sizes them all).
+        let finals = tileFrames()
+        let frames = finals.filter { shown.contains($0.key) }
+        let style = Motion.style
+        let stacked = kind == "monocle_focus"
 
         // Who moves, from where. A tile already on its way to the same frame
         // keeps its animation.
-        var movers: [(id: String, view: NSView, from: CGRect, to: CGRect, new: Bool)] = []
+        var movers: [Mover] = []
         for (id, to) in frames {
             guard let view = views[id] else { continue }
             if let from = before[id], !appearing.contains(id) {
                 // The frame is the target of any motion in flight: unchanged
                 // means it's there already, or on its way.
-                if !Self.close(view.frame, to) { movers.append((id, view, from, to, false)) }
+                if !Self.close(view.frame, to) {
+                    movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: nil))
+                }
             } else if created.contains(id) {
-                let from = Motion.style == .scale
+                let from = style == .scale
                     ? growFrom(to: to, before: before, frames: frames)
                     : sweepFrom(to: to, before: before, frames: frames)
-                movers.append((id, view, from, to, true))
+                movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: 0))
+            } else if let from = before[id] {
+                // Turned round while fading out: back from where it shows.
+                movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: opacityBefore[id] ?? 0))
             } else {
-                // Back on screen (unzoom): fade in where it belongs.
-                let from = Motion.style == .scale ? to.insetBy(dx: to.width * 0.03, dy: to.height * 0.03) : to
-                movers.append((id, view, from, to, true))
+                // Back on screen (out of Monocle or zoom): it fades and grows
+                // in at its place. Switching tiles in Monocle: in place.
+                let from = stacked || style == .outline ? to : Self.tucked(to)
+                movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: 0))
             }
         }
         let layoutMoves = !movers.isEmpty || !closing.isEmpty || !hiding.isEmpty
@@ -291,33 +345,45 @@ final class TileContainerView: NSView, ThemeAware {
         }
         let retarget = CACurrentMediaTime() < motionEnds
         if retarget { MotionStats.shared.retargeted() } else { resizeCheck = [:]; resizeKind = kind }
-        let duration = Motion.duration
-        let style = Motion.style
+        let duration = stacked ? Motion.stackDuration : Motion.duration
 
-        // 1. Snapshot every terminal that ends at a new size, before it resizes.
-        //    Crop and outline keep it at 1:1, so note where it shows now.
+        // 1. Snapshot every terminal that ends at a new size, before it
+        //    resizes: tiles that move, come back or go (Monocle sizes hidden
+        //    tiles to the whole tab). Crop and outline keep it at 1:1, so
+        //    note where it shows now; one already up (mid-motion) stays.
         var snapshotAt: [String: CGRect] = [:]
-        for m in movers where !m.new && m.view.frame.size != m.to.size {
-            guard let aware = m.view as? MotionAware else { continue }
-            let (frame, bounds) = geometry(m.view)
-            // Mid-motion: where the snapshot shows now. Otherwise it rests
-            // where freezing put it (below a tile's header strip, F28).
-            let showing = aware.snapshotFrame
-            guard Perf.measure("motion.snapshot", { aware.motionWillStart(freeze: true, fill: style == .scale) })
-            else { continue }
-            let shown = showing ?? aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
-            snapshotAt[m.id] = Motion.toContainer(shown, frame: frame.offsetBy(dx: shift.x, dy: shift.y),
-                                                  bounds: bounds, flipped: m.view.isFlipped)
-            frozen[ObjectIdentifier(aware)] = aware
-            if resizeCheck[m.id] == nil {
-                resizeCheck[m.id] = (aware.surfaceResizes, 0, m.view.frame.size)
+        func freeze(_ id: String, _ view: NSView, to: CGRect?, onScreen: Bool) {
+            guard let aware = view as? MotionAware else { return }
+            if resizeCheck[id] == nil { resizeCheck[id] = (aware.surfaceResizes, 0, view.frame.size) }
+            if let to, view.frame.size != to.size {
+                guard Perf.measure("motion.snapshot", { aware.motionWillStart(freeze: true, fill: style == .scale) })
+                else { return }
+                frozen[ObjectIdentifier(aware)] = aware
+                // One resize per motion that changes its size, retargets too.
+                resizeCheck[id]?.expected += 1
             }
-            // One resize per motion that changes its size, retargets too.
-            resizeCheck[m.id]?.expected += 1
+            guard onScreen else { return }
+            if let at = shownBefore[id] {
+                snapshotAt[id] = at
+            } else if let rest = aware.snapshotFrame {
+                // Freezing put it where the live content was (below a tile's
+                // header strip, F28); that, where the tile shows now.
+                let (frame, bounds) = geometry(view)
+                snapshotAt[id] = Motion.toContainer(rest, frame: frame.offsetBy(dx: shift.x, dy: shift.y),
+                                                    bounds: bounds, flipped: view.isFlipped)
+            }
         }
-        for m in movers where !m.new {
-            if let aware = m.view as? MotionAware, resizeCheck[m.id] == nil {
-                resizeCheck[m.id] = (aware.surfaceResizes, 0, m.view.frame.size)
+        Perf.measure("motion.freeze") {
+            for m in movers where !created.contains(m.id) {
+                freeze(m.id, m.view, to: m.to, onScreen: before[m.id] != nil)
+            }
+            for (view, _) in hiding {
+                guard let id = (view as? any TileView)?.tileID else { continue }
+                freeze(id, view, to: finals[id], onScreen: true)
+            }
+            for (view, _) in closing {
+                guard let id = (view as? any TileView)?.tileID, let at = shownBefore[id] else { continue }
+                snapshotAt[id] = at
             }
         }
 
@@ -331,12 +397,13 @@ final class TileContainerView: NSView, ThemeAware {
             CATransaction.commit()
         }
 
-        // The z positions set below (leaving tiles under the rest, a zoomed
-        // tile over its neighbours) in the subview order
+        // The z positions set below (leaving tiles under the rest, the
+        // zoomed or focused tile over its neighbours) in the subview order
         // too: anything that draws the layer tree in list order, as the app's
         // own captures do (`render(in:)` ignores zPosition), would otherwise
         // show a fading tile over the one growing into its space (V20).
-        restack(back: closing.map(\.0) + hiding.map(\.0), front: tab?.zoomed.flatMap { views[$0] })
+        let front = (tab?.zoomed ?? tab?.focused).flatMap { views[$0] }
+        restack(back: closing.map(\.0) + hiding.map(\.0), front: front)
 
         // 3. Carry everything there visually.
         generation += 1
@@ -348,29 +415,46 @@ final class TileContainerView: NSView, ThemeAware {
         ticksAtMotionStart = linkTicks
         removeGhosts()
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen, via: "completion") }
+        CATransaction.setCompletionBlock { [weak self] in
+            Perf.measure("motion.end") { self?.motionEnded(gen, via: "completion") }
+        }
         for m in movers {
             guard let layer = m.view.layer else { continue }
             switch style {
             case .scale:
-                scaleMotion(layer, from: m.from, to: m.to, fadeIn: m.new, duration: duration)
-            case .crop where kind == "rotate":
-                crossFade(m.view, from: m.from, wasShown: !m.new, cards: Array(frames.values), duration: duration)
+                scaleMotion(layer, from: m.from, to: m.to, fadeFrom: m.fadeFrom, duration: duration)
             case .crop:
-                cropMotion(m.view, id: m.id, from: m.from, to: m.to, fadeIn: m.new,
+                cropMotion(m.view, from: m.from, to: m.to, fadeFrom: m.fadeFrom,
                            snapshotAt: snapshotAt[m.id], duration: duration)
             case .outline:
                 outlineMotion(m.view, id: m.id, from: m.from, to: m.to, duration: duration)
             }
-            // The zoomed tile travels over its neighbours.
-            layer.zPosition = tab?.zoomed == m.id ? 1 : 0
+            // The zoomed or focused tile travels over its neighbours.
+            layer.zPosition = m.view === front ? 1 : 0
         }
-        for (view, from) in closing { leave(view, from: from, closed: true, frames: frames, duration: duration) }
-        for (view, from) in hiding { leave(view, from: from, closed: false, frames: frames, duration: duration) }
+        for (view, from) in closing {
+            let id = (view as? any TileView)?.tileID ?? ""
+            leave(view, from: from, to: collapse(from, frames: frames), closed: true, fades: true,
+                  snapshotAt: snapshotAt[id], opacity: nil, duration: duration)
+        }
+        for (view, from) in hiding {
+            // Monocle's next tile dissolves in over this one, which stays
+            // put until it's covered; anything else fades and shrinks a
+            // little where it is, under the tile taking the space.
+            let id = (view as? any TileView)?.tileID ?? ""
+            leave(view, from: from, to: stacked ? from : Self.tucked(from), closed: false, fades: !stacked,
+                  snapshotAt: snapshotAt[id], opacity: opacityBefore[id], duration: duration)
+        }
         CATransaction.commit()
 
         MotionStats.shared.started(kind: kind, setup: CACurrentMediaTime() - t0)
         wake()
+    }
+
+    /// A little inside `frame`: where a tile leaving the screen shrinks to,
+    /// and where one coming back grows from.
+    private static func tucked(_ frame: CGRect) -> CGRect {
+        frame.insetBy(dx: frame.width * 0.03, dy: frame.height * 0.03)
     }
 
     /// Reorders the subviews: `back` first, `front` last. Setting `subviews`
@@ -445,21 +529,23 @@ final class TileContainerView: NSView, ThemeAware {
     }
 
     /// Scale: a transform carries the tile from `from` (content stretches).
-    private func scaleMotion(_ layer: CALayer, from: CGRect, to: CGRect, fadeIn: Bool, duration: CFTimeInterval) {
+    private func scaleMotion(_ layer: CALayer, from: CGRect, to: CGRect, fadeFrom: Float?, duration: CFTimeInterval) {
         let group = CAAnimationGroup()
         let move = CABasicAnimation(keyPath: "transform")
         move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: to, anchor: layer.anchorPoint))
         move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
         group.animations = [move]
-        if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
+        if let fadeFrom { group.animations?.append(fadeAnimation(from: fadeFrom, to: layer.opacity)) }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
     }
 
     /// Crop: the tile's bounds and position animate, so its frame is a clip
     /// over content at 1:1. Content sticks to the edge that moves least. A
-    /// frozen terminal's snapshot stays exactly where it shows now.
-    private func cropMotion(_ view: NSView, id: String, from: CGRect, to: CGRect, fadeIn: Bool,
+    /// frozen terminal's snapshot stays exactly where it shows now; one
+    /// coming back onto the screen (out of Monocle) shows its last frame at
+    /// its content's top left until live content has drawn at its new size.
+    private func cropMotion(_ view: NSView, from: CGRect, to: CGRect, fadeFrom: Float?,
                             snapshotAt: CGRect?, duration: CFTimeInterval) {
         guard let layer = view.layer else { return }
         layer.masksToBounds = true
@@ -469,14 +555,20 @@ final class TileContainerView: NSView, ThemeAware {
         let end = CGRect(origin: .zero, size: to.size)
         let group = CAAnimationGroup()
         group.animations = clipAnimations(layer, from: from, fromBounds: start, to: to, toBounds: end)
-        if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
+        if let fadeFrom { group.animations?.append(fadeAnimation(from: fadeFrom, to: layer.opacity)) }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
         // The card's rounded corners follow the moving clip (D.5).
         (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: false)
 
-        guard let aware = view as? MotionAware, let shown = snapshotAt else { return }
-        let picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
+        guard let aware = view as? MotionAware, let rest = aware.snapshotFrame else { return }
+        let picture: CGRect
+        if let shown = snapshotAt {
+            picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
+        } else {
+            let top = flipped ? aware.headerInset : to.height - aware.headerInset - rest.height
+            picture = CGRect(x: aware.contentLeft, y: top, width: rest.width, height: rest.height)
+        }
         aware.placeSnapshot(picture, cover: start.union(end).union(picture))
         // Growing: live content (laid out at the final size) is never
         // stretched, so it can show as soon as it has drawn.
@@ -501,56 +593,6 @@ final class TileContainerView: NSView, ThemeAware {
         fade.fromValue = from
         fade.toValue = to
         return fade
-    }
-
-    /// Crop, tall rotate: sliding every tile across the tab looks wrong, so
-    /// the tile fades in at its new place (its snapshot at 1:1, top-left)
-    /// while a ghost of its last frame fades out at the old one. `cards`: every
-    /// tile's new frame; the ghost only shows inside them, so the old card's
-    /// text never floats over a gutter of the new layout (a quarter turn moves
-    /// the gutters: Bismuth's four-way rotate, ADR 0010).
-    private func crossFade(_ view: NSView, from: CGRect, wasShown: Bool, cards: [CGRect], duration: CFTimeInterval) {
-        guard let layer = view.layer else { return }
-        let fade = fadeAnimation(from: 0, to: layer.opacity)
-        Motion.configure(fade, duration: duration)
-        layer.add(fade, forKey: Self.motionKey)
-        guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { return }
-        let size = picture.size
-        let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - size.height
-        aware.placeSnapshot(CGRect(x: aware.contentLeft, y: top, width: size.width, height: size.height),
-                            cover: view.bounds)
-        aware.revealWhenFresh(clock: clock)
-        // The ghost stands for the card as it was on screen, so a tile that
-        // wasn't (back from Monocle or zoom) leaves none. It's clipped to the
-        // old card, so a snapshot bigger than it never draws past its edges,
-        // and to the new cards, so it never shows over a gutter: one piece
-        // per new card it overlaps (no mask layer, which the app's own
-        // captures, `render(in:)`, would skip).
-        guard wasShown, let contents = aware.snapshotContents else { return }
-        let shot = CGRect(x: aware.contentLeft, y: from.height - aware.headerInset - size.height,
-                          width: size.width, height: size.height)
-        for card in cards {
-            let piece = card.intersection(from)
-            guard !piece.isNull, piece.width > 0, piece.height > 0 else { continue }
-            let ghost = CALayer()
-            ghost.frame = piece
-            ghost.masksToBounds = true
-            ghost.cornerRadius = Design.Radius.tile
-            ghost.zPosition = 0.5
-            ghost.opacity = 0
-            let image = CALayer()
-            image.frame = shot.offsetBy(dx: from.minX - piece.minX, dy: from.minY - piece.minY)
-            image.contents = contents
-            image.contentsGravity = .resize
-            image.contentsScale = window?.backingScaleFactor ?? 2
-            image.backgroundColor = layer.backgroundColor
-            ghost.addSublayer(image)
-            let out = fadeAnimation(from: 1, to: 0)
-            Motion.configure(out, duration: duration)
-            ghost.add(out, forKey: Self.motionKey)
-            // Not by tile: the tile itself is already where it shows.
-            addGhost(ghost, for: nil)
-        }
     }
 
     /// Outline: the tile sits at its new place, hidden; an outline moves
@@ -597,32 +639,50 @@ final class TileContainerView: NSView, ThemeAware {
         return ghost
     }
 
-    /// Fades a tile out under the rest; closed tiles go for good afterwards.
-    /// Crop: its clip shrinks away from the neighbours taking its space.
-    /// Scale: it shrinks slightly. Outline: its outline does, content hidden.
-    private func leave(_ view: NSView, from: CGRect, closed: Bool, frames: [String: CGRect], duration: CFTimeInterval) {
+    /// Takes a tile off the screen under the rest; closed tiles go for good
+    /// afterwards. `fades`: it fades out (from `opacity`, when it was caught
+    /// mid-fade); otherwise it stays put until the motion ends, covered by
+    /// the tile dissolving in over it (Monocle). `snapshotAt`: where its
+    /// frozen terminal's snapshot shows now.
+    /// Crop: its clip shrinks to `target` (away from the neighbours taking a
+    /// closed tile's space; a little, where it is, for a hidden one), content
+    /// at 1:1. Scale: it shrinks slightly. Outline: its outline does,
+    /// content hidden.
+    private func leave(_ view: NSView, from: CGRect, to target: CGRect, closed: Bool, fades: Bool,
+                       snapshotAt: CGRect?, opacity: Float?, duration: CFTimeInterval) {
         guard let layer = view.layer else {
             view.removeFromSuperview()
             return
         }
         stopMotion(view)
         let model = view.frame
-        let target = closed ? collapse(from, frames: frames) : from
+        let startOpacity = opacity ?? layer.opacity
+        // Staying put, one caught mid-fade holds where it was, so what shows
+        // through it doesn't change at once.
+        let fade: [CAAnimation] = fades ? [fadeAnimation(from: startOpacity, to: 0)]
+            : opacity.map { [fadeAnimation(from: $0, to: $0)] } ?? []
         let group = CAAnimationGroup()
         switch Motion.style {
         case .scale:
-            let shrunk = from.insetBy(dx: from.width * 0.04, dy: from.height * 0.04)
+            let shrunk = fades ? from.insetBy(dx: from.width * 0.04, dy: from.height * 0.04) : from
             let move = CABasicAnimation(keyPath: "transform")
             move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: model, anchor: layer.anchorPoint))
             move.toValue = NSValue(caTransform3D: Motion.transform(from: shrunk, to: model, anchor: layer.anchorPoint))
-            group.animations = [move, fadeAnimation(from: layer.opacity, to: 0)]
+            group.animations = [move] + fade
         case .crop:
+            layer.masksToBounds = true
             let anchor = Motion.anchors(from: from, to: target)
-            let start = Motion.cropBounds(clip: from.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
-            let end = Motion.cropBounds(clip: target.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
-            group.animations = clipAnimations(layer, from: from, fromBounds: start, to: target, toBounds: end)
-                + [fadeAnimation(from: layer.opacity, to: 0) as CAAnimation]
+            let flipped = view.isFlipped
+            let start = Motion.cropBounds(clip: from.size, content: model.size, anchor: anchor, flipped: flipped)
+            let end = Motion.cropBounds(clip: target.size, content: model.size, anchor: anchor, flipped: flipped)
+            group.animations = clipAnimations(layer, from: from, fromBounds: start, to: target, toBounds: end) + fade
             (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: true)
+            // A snapshot stays where it shows now: Monocle has already sized
+            // a hidden terminal to the whole tab, under its last frame.
+            if let aware = view as? MotionAware, let shown = snapshotAt {
+                let picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
+                aware.placeSnapshot(picture, cover: start.union(end).union(picture))
+            }
         case .outline:
             group.animations = [fadeAnimation(from: 0, to: 0)]
             if closed {
@@ -644,10 +704,35 @@ final class TileContainerView: NSView, ThemeAware {
         Motion.configure(group, duration: duration)
         layer.zPosition = -1
         layer.add(group, forKey: Self.motionKey)
+        leaving.removeAll { $0.view === view }
         leaving.append((view, closed))
     }
 
-    // MARK: Ghosts (outline motion, cross-fades)
+    /// Tiles caught mid-fade (in or out) and their opacity on screen now.
+    private func fadingOpacities() -> [String: Float] {
+        var out: [String: Float] = [:]
+        for (id, view) in views where view.superview === self {
+            guard let layer = view.layer, layer.animation(forKey: Self.motionKey) != nil,
+                  let p = layer.presentation(), p.opacity < 0.999
+            else { continue }
+            out[id] = p.opacity
+        }
+        return out
+    }
+
+    /// Where each frozen terminal's snapshot shows right now, in this
+    /// view's coordinates.
+    private func snapshotsOnScreen() -> [String: CGRect] {
+        var out: [String: CGRect] = [:]
+        for (id, view) in views where view.superview === self {
+            guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { continue }
+            let (frame, bounds) = geometry(view)
+            out[id] = Motion.toContainer(picture, frame: frame, bounds: bounds, flipped: view.isFlipped)
+        }
+        return out
+    }
+
+    // MARK: Ghosts (outline motion)
 
     private var ghosts: [CALayer] = []
     /// Outline ghosts by tile, so a motion that retargets starts from where
@@ -681,7 +766,15 @@ final class TileContainerView: NSView, ThemeAware {
         finishLeaving()
         removeGhosts()
         for view in subviews { view.layer?.zPosition = 0 }
-        for aware in frozen.values { aware.motionDidEnd(clock: clock) }
+        for aware in frozen.values {
+            // Off the screen now (hidden by Monocle): nothing shows it, so
+            // the snapshot goes at once.
+            if (aware as? NSView)?.superview === self {
+                aware.motionDidEnd(clock: clock)
+            } else {
+                aware.motionCancelled()
+            }
+        }
         frozen = [:]
         for (id, check) in resizeCheck {
             guard let view = views[id], let aware = view as? MotionAware else { continue }
@@ -842,6 +935,17 @@ final class TileContainerView: NSView, ThemeAware {
         if tilesAfter < tilesBefore { return "close" }
         if zoomBefore != zoomAfter { return zoomAfter == nil ? "unzoom" : "zoom" }
         return focusChanged ? "focus" : "layout"
+    }
+
+    /// Into or out of Monocle, or between its stacked tiles (`focus` is the
+    /// kind so far); nil when Monocle isn't involved.
+    private static func monocleKind(before: LayoutKind?, after: LayoutKind?, focus kind: String) -> String? {
+        switch (before == .monocle, after == .monocle) {
+        case (false, true): "monocle_in"
+        case (true, false): "monocle_out"
+        case (true, true): kind == "focus" ? "monocle_focus" : nil
+        case (false, false): nil
+        }
     }
 
     // MARK: Frame clock

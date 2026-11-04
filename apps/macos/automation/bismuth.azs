@@ -12,6 +12,20 @@ until terminal.phase attached 10000
 expect kind tile
 trace on
 
+# --- nothing there: a lone tile has no neighbour and no divider; keys do
+# nothing and say nothing (no HUD flash), though the API still refuses ---
+remember hud.flashes
+key alt+l
+key alt+h
+key alt+j
+key alt+k
+key alt+shift+l
+key alt+shift+k
+key ctrl+alt+shift+l
+key ctrl+alt+shift+j
+unchanged hud.flashes
+expect hud.flashes 0
+
 # --- splits: each new tile goes to the end of the order and takes focus ---
 key ctrl+cmd+t                # split_auto
 until tiles 2 3000
@@ -45,12 +59,18 @@ key alt+h                     # stack → master
 expect focus 1
 key alt+l                     # master → the stack tile used last (t5)
 expect focus 4
+remember hud.flashes
+key alt+l                     # the right edge: nothing there, nothing said
+expect focus 4
+unchanged hud.flashes
 key alt+k                     # up the stack
 expect focus 3
 key alt+k
 expect focus 2
-key alt+k                     # top of the stack: nothing above
+key alt+k                     # top of the stack: nothing above, silently
 expect focus 2
+key alt+shift+k               # no swap up either
+unchanged hud.flashes
 key alt+j
 expect focus 3
 key alt+h
@@ -180,6 +200,13 @@ key alt+z                     # back
 expect kind tile
 key alt+shift+t               # freeze to manual
 expect kind manual
+remember hud.flashes
+key alt+l                     # the stack tile used last
+key alt+l                     # past the right edge of a manual tab: silent
+key alt+h                     # the master again
+key alt+h                     # past the left edge
+expect focus 1
+unchanged hud.flashes
 key alt+o                     # manual: the tree flips master left ↔ top
 key alt+o
 key alt+shift+t               # back to tile
@@ -191,7 +218,9 @@ key alt+backslash
 expect kind three_column
 expect ratio 0.60
 key alt+h                     # centre → left stack
-key alt+h                     # nothing further left
+remember hud.flashes
+key alt+h                     # nothing further left: silent
+unchanged hud.flashes
 key alt+l                     # → centre
 key alt+l                     # → right stack
 key alt+k
@@ -254,4 +283,6 @@ key ctrl+cmd+t
 until tiles 5 3000
 key alt+w
 until tiles 4 3000
+# Every chord above was a real one or ran into an edge: no flashes at all.
+expect hud.flashes 0
 shot 99-end

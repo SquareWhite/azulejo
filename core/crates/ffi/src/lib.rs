@@ -255,7 +255,7 @@ pub unsafe extern "C" fn azj_core_send(core: *mut AzjCore, command_json: *const 
 }
 
 /// Runs a JSON command and returns its result as JSON: `{"ok":true,"reply":…}`
-/// or `{"ok":false,"error":{"code","message"}}`. Its events still arrive
+/// or `{"ok":false,"error":{"code","message","data"?}}`. Its events still arrive
 /// through the callback. Free the result with `azj_string_free`; NULL only on a
 /// bad handle.
 ///
@@ -738,7 +738,9 @@ mod tests {
                 c"{\"method\":\"layout.focus\",\"params\":{\"direction\":\"left\"}}".as_ptr(),
             ));
             assert_eq!(refused["ok"], false);
-            assert!(refused["error"]["code"].is_string());
+            assert_eq!(refused["error"]["code"], "invalid_state");
+            // What the shell keys its silence on (nothing to the left).
+            assert_eq!(refused["error"]["data"]["reason"], "no_neighbour");
 
             let bad = take(azj_core_execute(core, c"nope".as_ptr()));
             assert_eq!(bad["error"]["code"], "parse_error");

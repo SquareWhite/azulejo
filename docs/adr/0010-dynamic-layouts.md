@@ -175,6 +175,7 @@ Checked against `docs/keybindings.md`: none of these are owned by Hammerspoon (`
 
 - The macOS shell rebuilds from `session.get`, which carries the tab's tree and `layout` but not `rects`. For Tile and Three Column it draws the derived tree, which reproduces the rects exactly (a model invariant checks this after every op). For Monocle it gives every tile the full tab and shows only the focused one, so a focus switch restacks without resizing a terminal. `layout.changed` still carries `rects` for API clients; an overlapping kind added later would move the shell onto them.
 - Directional focus now breaks ties by most recently focused in manual tabs too, as decided above. In a tall layout, focusing right from the master lands on the stack tile used last rather than the middle one.
+- Switching kinds, rotating and every parameter change animate as moves from each tile's old frame to its new one; Monocle in and out grow and shrink the focused tile over the others, and a focus switch in Monocle dissolves between the stacked tiles with no PTY resize (ADR 0004, Nov 4 amendment).
 - `layout = "tall"` with a `ratio` outside 0.2–0.8 is now an error in layout files; older files with such ratios need `layout = "rows"`/`"columns"` or an explicit `root`.
 
 ## Decisions (Nov 3, 2026)

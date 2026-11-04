@@ -823,6 +823,14 @@ final class BrowserBanner: NSView, ThemeAware {
 
 // MARK: - Find (⌘F)
 
+/// The toolbar is the browser's header strip (it hides the frame's), so it
+/// rides the top of a moving clip as the header does, the find bar under it.
+extension BrowserTileView: RidesClipTop {
+    var clipTopStrips: [NSView] {
+        finder.bar.isOpen && finder.bar.superview != nil ? [toolbar, finder.bar] : [toolbar]
+    }
+}
+
 extension BrowserTileView: Findable {
     var findBar: FindBar? { finder.bar }
 
