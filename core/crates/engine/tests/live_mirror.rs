@@ -933,3 +933,183 @@ fn quick_splits_into_a_tile_stack_stay_even() {
     assert_eq!(tab_root(&s), tab_root(&s2));
     core.shutdown();
 }
+
+/// Turns the focused tab a quarter turn (`alt+o`) and waits until herdr
+/// shows the turned tree and keeps it: pushed, and not pulled back. Returns
+/// the tab's tree and herdr's, in tile IDs.
+fn turn_and_follow(herdr: &TempHerdr, core: &Core, what: &str) -> (Node, String) {
+    let before = tab_root(&core.session().unwrap()).clone();
+    core.execute(Command::LayoutRotate(
+        azulejo_protocol::LayoutRotate::default(),
+    ))
+    .unwrap();
+    let (s, layout) = wait_mirrored(herdr, core, what);
+    let root = tab_root(&s).clone();
+    assert_ne!(root, before, "{what}: the tree turned");
+    // Still there a while later: no pull undid it, no absorb froze it.
+    std::thread::sleep(Duration::from_millis(500));
+    let later = core.session().unwrap();
+    assert_eq!(tab_root(&later), &root, "{what}: pulled back");
+    assert_eq!(
+        tab_layout(&later).kind,
+        tab_layout(&s).kind,
+        "{what}: kind changed"
+    );
+    assert_eq!(herdr.tabs(), 1, "{what}: the staging tab is gone");
+    (root, as_tiles(&s, &layout.root))
+}
+
+/// The focused tab and herdr's tree for it, once they agree.
+fn settled(herdr: &TempHerdr, core: &Core, what: &str) -> (Node, String) {
+    let (s, layout) = wait_mirrored(herdr, core, what);
+    (tab_root(&s).clone(), as_tiles(&s, &layout.root))
+}
+
+/// A tab adopted from herdr is manual (ADR 0010 §5). `alt+o` turns its
+/// tree, a 2×2 grid here, four ways; herdr's own tree follows every turn
+/// and ends where it started, and so it does again after a resize made in
+/// herdr was pulled in.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn rotating_an_adopted_grid_four_times_is_followed_in_herdr() {
+    let herdr = TempHerdr::start();
+    // The user's own herdr: a 2×2 grid split in the TUI.
+    herdr.cli(&["workspace", "create", "--label", "grid"]);
+    let panes = || herdr.rt.block_on(herdr.client.panes()).unwrap();
+    let p1 = panes()[0].pane_id.0.clone();
+    herdr.cli(&["pane", "split", &p1, "--direction", "right"]);
+    let p2 = panes()
+        .into_iter()
+        .find(|p| p.pane_id.0 != p1)
+        .unwrap()
+        .pane_id
+        .0;
+    herdr.cli(&["pane", "split", &p1, "--direction", "down"]);
+    herdr.cli(&["pane", "split", &p2, "--direction", "down"]);
+    assert_eq!(panes().len(), 4);
+    let terms = herdr.terminals();
+
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), herdr.client.clone());
+    core.set_mirror_layout(true);
+    wait_session(&core, "the grid adopted", |s| all_bound(s, 4));
+    let start = settled(&herdr, &core, "adopted grid");
+    assert_eq!(
+        tab_layout(&core.session().unwrap()).kind,
+        LayoutKind::Manual,
+        "adopted tabs are manual"
+    );
+    let corner = |root: &Node, tile: TileId| {
+        let r = root
+            .rects()
+            .into_iter()
+            .find(|(t, _)| *t == tile)
+            .unwrap()
+            .1;
+        (r.x > 0.25, r.y > 0.25)
+    };
+    let top_left = start.0.rects()[0].0;
+    assert_eq!(corner(&start.0, top_left), (false, false));
+
+    let mut corners = Vec::new();
+    let mut last = start.clone();
+    for turn in 1..=4 {
+        last = turn_and_follow(&herdr, &core, &format!("grid turn {turn}"));
+        corners.push(corner(&last.0, top_left));
+    }
+    // Top left → top right → bottom right → bottom left → home.
+    assert_eq!(
+        corners,
+        [(true, false), (true, true), (false, true), (false, false)]
+    );
+    assert_eq!(
+        last, start,
+        "four turns: the same tree in Azulejo and herdr"
+    );
+    assert_eq!(herdr.terminals(), terms, "nothing killed");
+
+    // A resize in herdr comes in, and four turns still go all the way round.
+    let tab = pane_of(&core.session().unwrap(), top_left).tab_id;
+    herdr
+        .rt
+        .block_on(herdr.client.set_split_ratio(&HerdrTab(tab), &[], 0.3))
+        .unwrap();
+    wait_session(&core, "the resize pulled in", |s| {
+        root_ratio(tab_root(s)).is_some_and(|r| (r - 0.3).abs() < 1e-3)
+    });
+    let start = settled(&herdr, &core, "after the pull");
+    let mut last = start.clone();
+    for turn in 1..=4 {
+        last = turn_and_follow(&herdr, &core, &format!("grid turn {turn} after the pull"));
+    }
+    assert_eq!(last.1, start.1, "herdr's tree back where it was");
+    let mut want = start.0.clone();
+    want.snap_ratios();
+    assert_eq!(last.0, want, "Azulejo's tree back where it was");
+    assert_eq!(herdr.terminals(), terms, "nothing killed");
+    core.shutdown();
+}
+
+/// Four turns of a Tile tab: master left → top → right → bottom → left,
+/// herdr following each one, the tab never freezing to manual.
+fn four_tile_turns(herdr: &TempHerdr, core: &Core, round: &str) {
+    use azulejo_model::Orientation;
+    let start = settled(herdr, core, round);
+    let mut last = start.clone();
+    let mut seen = Vec::new();
+    for turn in 1..=4 {
+        last = turn_and_follow(herdr, core, &format!("Tile turn {turn} {round}"));
+        let now = core.session().unwrap();
+        assert_eq!(tab_layout(&now).kind, LayoutKind::Tile, "not frozen");
+        seen.push(tab_layout(&now).params.tile.orientation);
+    }
+    assert_eq!(
+        seen,
+        [
+            Orientation::Top,
+            Orientation::Right,
+            Orientation::Bottom,
+            Orientation::Left
+        ],
+        "{round}"
+    );
+    assert_eq!(last, start, "{round}: four turns, the same tree in both");
+}
+
+/// A Tile tab turns four ways with herdr following, and again after a
+/// master ratio set in herdr (the TUI's resize) was absorbed.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn rotating_a_tile_tab_four_times_is_followed_in_herdr() {
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = core(&herdr, &dir.path().join("state.json"), LayoutKind::Tile);
+    wait_session(&core, "first pane", |s| all_bound(s, 1));
+    for n in 2..=4 {
+        split(&core, Direction::Right);
+        wait_session(&core, "panes", |s| all_bound(s, n));
+    }
+    let terms = herdr.terminals();
+    four_tile_turns(&herdr, &core, "before a pull");
+
+    let tab = terminals(&core.session().unwrap())[0]
+        .1
+        .clone()
+        .unwrap()
+        .tab_id;
+    herdr
+        .rt
+        .block_on(herdr.client.set_split_ratio(&HerdrTab(tab), &[], 0.65))
+        .unwrap();
+    let s = wait_session(&core, "the master ratio pulled in", |s| {
+        (tab_layout(s).params.tile.ratio - 0.65).abs() < 1e-3
+    });
+    assert_eq!(
+        tab_layout(&s).kind,
+        LayoutKind::Tile,
+        "absorbed, not frozen"
+    );
+    four_tile_turns(&herdr, &core, "after a pull");
+    assert_eq!(herdr.terminals(), terms, "nothing killed");
+    core.shutdown();
+}

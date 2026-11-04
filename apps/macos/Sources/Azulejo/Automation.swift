@@ -25,8 +25,9 @@ import AppKit
 ///                            windows workspaces workspace tabs tab tiles
 ///                            focus zoomed sidebar axis ratio kind masters
 ///                            orientation part visible resizes dimmed
-///                            order layout
-///                            (dimmed: unfocused tiles dimmed, by place in
+///                            order layout tree rect.focused
+///                            (rect.focused: "x,y,wxh" in a 1000×1000 tab;
+///                            dimmed: unfocused tiles dimmed, by place in
 ///                            the tab, "2,3" or "none"; dim.strength: how
 ///                            much, "0.25")
 ///     remember key           note a state value now…
@@ -566,6 +567,12 @@ final class Automation {
                 break
             }
             s["layout"] = Self.layoutTrace(tab)
+            // The focused tile's rect in a 1000×1000 tab, top-left origin
+            // (`x,y,wxh`): follows one tile through a rotate.
+            let size: CGFloat = 1000
+            if let f = tab.root.frames(in: CGRect(x: 0, y: 0, width: size, height: size), gap: 0)[tab.focused] {
+                s["rect.focused"] = "\(Int(f.minX)),\(Int(size - f.maxY)),\(Int(f.width))x\(Int(f.height))"
+            }
             s["order"] = tab.order.map { Self.tileName($0, in: tab) }.joined(separator: ",")
             s["visible"] = "\(controller.tiles.visibleTileFrames().count)"
             s["dimmed"] = controller.tiles.dimmedTiles
