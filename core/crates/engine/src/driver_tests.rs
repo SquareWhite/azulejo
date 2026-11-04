@@ -29,6 +29,10 @@ struct FakeState {
     keys: Vec<(String, Vec<String>)>,
     reads: Vec<(String, herdr::ReadSource, Option<u32>)>,
     scrolled: Vec<(String, u64)>,
+    /// What `read` returns for `Recent` (the rows as on screen) instead of
+    /// the typed text, and the view `scroll_state` reports.
+    screen: Option<String>,
+    view: herdr::ScrollInfo,
     /// Makes every terminal I/O call fail, as when herdr is down.
     down: bool,
     /// What the user already runs in herdr before Azulejo connects.
@@ -288,10 +292,14 @@ impl HerdrPort for Fake {
             return Err("connection refused".into());
         }
         s.reads.push((pane_id.clone(), source, lines));
+        let text = match (&s.screen, source) {
+            (Some(screen), herdr::ReadSource::Recent) => screen.clone(),
+            _ => s.typed.get(&pane_id).cloned().unwrap_or_default(),
+        };
         Ok(herdr::ReadResult {
-            text: s.typed.get(&pane_id).cloned().unwrap_or_default(),
+            truncated: lines.is_some_and(|n| text.lines().count() > n as usize),
+            text,
             revision: 1,
-            truncated: lines.is_some(),
         })
     }
 
@@ -310,6 +318,14 @@ impl HerdrPort for Fake {
             max_offset_from_bottom: 100,
             viewport_rows: 40,
         })
+    }
+
+    async fn scroll_state(&self, _pane_id: String) -> Result<herdr::ScrollInfo, String> {
+        let s = self.state();
+        if s.down {
+            return Err("connection refused".into());
+        }
+        Ok(s.view)
     }
 
     async fn process_info(&self, pane_id: String) -> Result<herdr::ProcessInfo, String> {
@@ -840,6 +856,7 @@ fn terminal_io_goes_to_the_tiles_pane() {
             query: "ERROR".into(),
             case_sensitive: false,
             lines: None,
+            locate: false,
         }),
     );
     assert_eq!(
@@ -848,14 +865,19 @@ fn terminal_io_goes_to_the_tiles_pane() {
             matches: vec![
                 SearchMatch {
                     line: 1,
-                    text: "Error: boom".into()
+                    text: "Error: boom".into(),
+                    row: None,
+                    offset_from_bottom: None,
                 },
                 SearchMatch {
                     line: 2,
-                    text: "error again".into()
+                    text: "error again".into(),
+                    row: None,
+                    offset_from_bottom: None,
                 },
             ],
             truncated: false,
+            scroll: None,
         })
     );
     assert_eq!(
@@ -869,15 +891,100 @@ fn terminal_io_goes_to_the_tiles_pane() {
             query: "ERROR".into(),
             case_sensitive: true,
             lines: None,
+            locate: false,
         }),
     );
     assert_eq!(
         exact,
         Ok(Reply::Matches {
             matches: vec![],
-            truncated: false
+            truncated: false,
+            scroll: None,
         })
     );
+}
+
+#[test]
+fn terminal_search_locates_matches_for_the_find_bar() {
+    use azulejo_protocol::*;
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let (_, pane) = focused_pane(&core);
+    {
+        let mut s = fake.state();
+        // Typed lines; the long one wraps onto a second row on screen.
+        s.typed.insert(
+            pane.clone(),
+            "$ make\nbuilding a long line ERROR here\nok\nERROR again".into(),
+        );
+        s.screen = Some("$ make\nbuilding a long line\n ERROR here\nok\nERROR again\n".into());
+        s.view = herdr::ScrollInfo {
+            offset_from_bottom: 0,
+            max_offset_from_bottom: 100,
+            viewport_rows: 40,
+        };
+    }
+    let search = |locate| {
+        Command::TerminalSearch(TerminalSearch {
+            tile: None,
+            query: "error".into(),
+            case_sensitive: false,
+            lines: None,
+            locate,
+        })
+    };
+    let Ok(Reply::Matches {
+        matches, scroll, ..
+    }) = reply(&core, search(true))
+    else {
+        panic!("search failed")
+    };
+    assert_eq!(
+        scroll,
+        Some(ScrollState {
+            offset_from_bottom: 0,
+            max_offset_from_bottom: 100,
+            viewport_rows: 40,
+        })
+    );
+    let found: Vec<_> = matches
+        .iter()
+        .map(|m| (m.line, m.row, m.offset_from_bottom))
+        .collect();
+    // Line 3 sits on row 4, after the wrap; mid-view of 40 rows, near the
+    // top of the buffer, is as far up as the view goes.
+    assert_eq!(
+        found,
+        vec![(1, Some(1), Some(100)), (3, Some(4), Some(100))]
+    );
+    // Both reads cover the whole buffer: 100 rows above the view + 40.
+    let reads = fake.state().reads.clone();
+    assert_eq!(
+        reads[reads.len() - 2..],
+        [
+            (pane.clone(), herdr::ReadSource::RecentUnwrapped, Some(140)),
+            (pane.clone(), herdr::ReadSource::Recent, Some(140)),
+        ]
+    );
+
+    // Output that doesn't line up leaves the rows out, not wrong.
+    fake.state().screen = Some("something else\n".into());
+    let Ok(Reply::Matches { matches, .. }) = reply(&core, search(true)) else {
+        panic!("search failed")
+    };
+    assert_eq!(matches.len(), 2);
+    assert!(matches.iter().all(|m| m.row.is_none()), "{matches:?}");
+
+    // Without locate: one read, no rows.
+    let before = fake.state().reads.len();
+    let Ok(Reply::Matches {
+        matches, scroll, ..
+    }) = reply(&core, search(false))
+    else {
+        panic!("search failed")
+    };
+    assert_eq!(fake.state().reads.len(), before + 1);
+    assert!(scroll.is_none() && matches.iter().all(|m| m.row.is_none()));
 }
 
 #[test]

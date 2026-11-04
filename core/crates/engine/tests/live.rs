@@ -394,6 +394,7 @@ fn terminal_io_round_trips_through_a_real_pane() {
         query: "AZJ-MARKER-42".into(),
         case_sensitive: false,
         lines: Some(200),
+        locate: false,
     })) else {
         panic!("search failed")
     };
@@ -401,6 +402,36 @@ fn terminal_io_round_trips_through_a_real_pane() {
         matches.iter().any(|m| m.text.trim() == "azj-marker-42"),
         "{matches:?}"
     );
+
+    // Located, the marker's row is the one herdr shows it on.
+    let Ok(Reply::Matches {
+        matches,
+        scroll: Some(view),
+        ..
+    }) = reply(Command::TerminalSearch(TerminalSearch {
+        tile: Some(tile),
+        query: "azj-marker-42".into(),
+        case_sensitive: true,
+        lines: None,
+        locate: true,
+    }))
+    else {
+        panic!("locate failed")
+    };
+    let marker = matches
+        .iter()
+        .find(|m| m.text.trim() == "azj-marker-42")
+        .unwrap_or_else(|| panic!("{matches:?}"));
+    let row = marker.row.expect("located") as usize;
+    let Ok(Reply::Text { text: rows }) = reply(Command::TerminalRead(TerminalRead {
+        tile: Some(tile),
+        source: ReadSource::Recent,
+        lines: Some(10_000),
+    })) else {
+        panic!("read failed")
+    };
+    assert_eq!(rows.lines().nth(row).map(str::trim), Some("azj-marker-42"));
+    assert!(marker.offset_from_bottom.unwrap() <= view.max_offset_from_bottom);
 
     let Ok(Reply::Scroll(state)) = reply(Command::TerminalScroll(TerminalScroll {
         tile: Some(tile),
