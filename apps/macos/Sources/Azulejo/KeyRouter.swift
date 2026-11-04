@@ -122,7 +122,13 @@ final class KeyRouter {
                 // Only works in its context: the scope runs it, or declines
                 // and the chord goes on as typed.
                 let handler = scope ?? KeyScopes.focusedTile(in: controller)
-                guard handler?.perform(keyAction: name, event: event) == true else {
+                // `send_text` carries its text; a terminal types it.
+                let done = if let text = outcome["text"] as? String {
+                    (handler as? TerminalTileView)?.type(text: text) == true
+                } else {
+                    handler?.perform(keyAction: name, event: event) == true
+                }
+                guard done else {
                     lastOutcome = "declined:\(name)"
                     return passOn(event)
                 }

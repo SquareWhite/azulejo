@@ -73,7 +73,7 @@ use std::path::{Path, PathBuf};
 use azulejo_protocol::{InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation, SidebarState};
 use toml::de::{DeTable, DeValue};
 
-pub use action::{Action, PLANNED_METHODS, Target};
+pub use action::{Action, PLANNED_METHODS, SEND_TEXT, Target, control_key, quote_text};
 pub use catalogue::{INDEXED_ENTRIES, INTERNAL_METHODS, catalogue};
 pub use chord::{Chord, ChordPattern, Key, Mods, Platform};
 pub use diag::{Diagnostic, Location, Severity, Source};

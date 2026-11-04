@@ -111,6 +111,10 @@ pub enum Action {
     /// Take over a terminal another client holds (read-only view), or give
     /// it back.
     TakeOver,
+    /// Types this text into the pane as is, like kitty's `send_text` and
+    /// Ghostty's `text:` binds. Bound per chord (`"cmd+l" = { send_text =
+    /// "\u000c" }`), not by name; the text is interned (see [`intern`]).
+    SendText(&'static str),
     // Quick open (the ⌘K menu)
     PaletteClose,
     PaletteRun,
@@ -306,6 +310,69 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
     out
 }
 
+/// The name `send_text` bindings go by in listings, outcomes and messages.
+/// They bind a chord to text (`"shift+enter" = { send_text = "\n" }`) rather
+/// than an action to chords, so `send_text` isn't in [`names`].
+pub const SEND_TEXT: &str = "send_text";
+
+/// `text` with a `'static` lifetime, so [`Action::SendText`] stays `Copy`.
+/// Each distinct text is leaked once and shared from then on, so config
+/// reloads don't grow memory.
+pub(crate) fn intern(text: &str) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static TEXTS: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let mut texts = TEXTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(known) = texts.get(text) {
+        return known;
+    }
+    let leaked: &'static str = Box::leak(text.to_owned().into_boxed_str());
+    texts.insert(leaked);
+    leaked
+}
+
+/// `text` as a TOML basic string, the way a config line writes it
+/// (`"\n"`, `"\u000c"`). For listings and messages.
+pub fn quote_text(text: &str) -> String {
+    let mut out = String::from('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The key that types `text` when it's one control character (`"\u000c"`
+/// → `ctrl+l`), for titles.
+pub fn control_key(text: &str) -> Option<String> {
+    let mut chars = text.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        return None;
+    };
+    Some(match c as u32 {
+        0 => "ctrl+space".to_owned(),
+        0x09 => "tab".to_owned(),
+        0x0d => "enter".to_owned(),
+        0x1b => "escape".to_owned(),
+        0x7f => "backspace".to_owned(),
+        n @ 1..=0x1a => format!("ctrl+{}", char::from(b'a' + n as u8 - 1)),
+        _ => return None,
+    })
+}
+
 /// Methods the protocol doesn't have yet but the keymap already binds. Each is
 /// planned for M1 or later; [`Action::target`] names them so the shell can
 /// grey the action out until the core supports it.
@@ -314,6 +381,9 @@ pub const PLANNED_METHODS: &[&str] = &["tile.rename", "terminal.edit_scrollback"
 impl Action {
     /// The config-file name (`switch_tab` for `SwitchTab(3)`; see [`Action::index`]).
     pub fn name(self) -> String {
+        if let Action::SendText(_) = self {
+            return SEND_TEXT.to_owned();
+        }
         names()
             .into_iter()
             .find(|(_, spec)| match spec {
@@ -338,6 +408,14 @@ impl Action {
             })
     }
 
+    /// What `send_text` types, for [`Action::SendText`].
+    pub fn text(self) -> Option<&'static str> {
+        match self {
+            Action::SendText(text) => Some(text),
+            _ => None,
+        }
+    }
+
     /// The index of an indexed action (`SwitchTab(3)` → 3).
     pub fn index(self) -> Option<u8> {
         match self {
@@ -352,7 +430,7 @@ impl Action {
     pub fn context(self) -> Option<KeyContext> {
         use Action::*;
         Some(match self {
-            SendHerdrPrefix | TakeOver => KeyContext::Terminal,
+            SendHerdrPrefix | TakeOver | SendText(_) => KeyContext::Terminal,
             PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
             | PalettePageUp | PaletteComplete => KeyContext::Palette,
             FindNext | FindPrevious | FindClose => KeyContext::Find,
@@ -395,6 +473,7 @@ impl Action {
             | Minimize
             | SendHerdrPrefix
             | TakeOver
+            | SendText(_)
             | PaletteClose
             | PaletteRun
             | PaletteNext

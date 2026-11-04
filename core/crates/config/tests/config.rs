@@ -609,6 +609,207 @@ fn context_only_actions_land_in_their_context() {
     );
 }
 
+// ----- send_text -----
+
+fn text_at(config: &Config, c: &str) -> Option<&'static str> {
+    resolve(config, c, Some(TileKind::Terminal)).and_then(Action::text)
+}
+
+/// cmd+l types ctrl+l in terminals (kitty's cmd+l clears; under herdr only
+/// the shell can), and stays the address bar in browsers. shift+enter is no
+/// text by default: it reaches apps as a key (CSI 13;2u under the kitty
+/// keyboard protocol).
+#[test]
+fn send_text_defaults() {
+    let mac = Config::defaults(MAC);
+    assert_eq!(text_at(&mac, "cmd+l"), Some("\u{c}"));
+    assert_eq!(
+        resolve(&mac, "cmd+l", Some(TileKind::Browser)),
+        Some(Action::BrowserFocusAddress)
+    );
+    assert_eq!(resolve(&mac, "cmd+l", None), None);
+    assert_eq!(resolve(&mac, "shift+enter", Some(TileKind::Terminal)), None);
+    let linux = Config::defaults(LINUX);
+    assert_eq!(
+        text_at(&linux, "super+l"),
+        None,
+        "super+l locks the screen on Linux"
+    );
+    let action = resolve(&mac, "cmd+l", Some(TileKind::Terminal)).unwrap();
+    assert_eq!(action.name(), "send_text");
+    assert_eq!(action.context(), Some(KeyContext::Terminal));
+    assert_eq!(action.target(), Target::Shell);
+}
+
+/// A chord as the key and `{ send_text = … }` as the value, anywhere but
+/// another context; each line replaces only its own chord's text.
+#[test]
+fn send_text_binds_unbinds_and_lands_in_terminals() {
+    let config = user(
+        r#"
+[keys]
+"ctrl+alt+x" = { send_text = "global" }
+[keys.macos]
+"f5" = { send_text = "make\n" }
+[keys.terminal]
+"shift+enter" = { send_text = "\n" }
+[keys.macos.terminal]
+"cmd+l" = { send_text = "" }
+"alt+enter" = { send_text = "\u001b\r" }
+"#,
+        MAC,
+    );
+    let w = warnings(&config);
+    assert!(errors(&config).is_empty(), "{:#?}", config.diagnostics);
+    // alt+enter is promote_tile everywhere else: a clash, as for any
+    // terminal binding over a global one.
+    assert_eq!(w.len(), 1, "{w:#?}");
+    assert!(w[0].contains("`send_text` wins"), "{w:#?}");
+    assert_eq!(text_at(&config, "shift+enter"), Some("\n"));
+    assert_eq!(text_at(&config, "f5"), Some("make\n"));
+    assert_eq!(text_at(&config, "ctrl+alt+x"), Some("global"));
+    assert_eq!(text_at(&config, "alt+enter"), Some("\u{1b}\r"));
+    assert_eq!(
+        resolve(&config, "alt+enter", None),
+        Some(Action::PromoteTile),
+        "only terminals type it"
+    );
+    assert_eq!(
+        resolve(&config, "cmd+l", Some(TileKind::Terminal)),
+        None,
+        "unbound: cmd+l reaches the terminal as a key"
+    );
+    // Other terminal defaults stay.
+    assert_eq!(
+        resolve(&config, "ctrl+b", Some(TileKind::Terminal)),
+        Some(Action::SendHerdrPrefix)
+    );
+    // The same text twice is the same action.
+    assert_eq!(
+        resolve(&config, "shift+enter", Some(TileKind::Terminal)),
+        user(
+            "[keys.terminal]\n\"ctrl+j\" = { send_text = \"\\n\" }\n",
+            MAC
+        )
+        .keymap
+        .resolve(&chord("ctrl+j"), &Context::scope(KeyContext::Terminal))
+    );
+}
+
+/// TOML 1.1 strings: kitty's `\x1b` and `\e` both spell escape.
+#[test]
+fn send_text_takes_toml_escapes() {
+    let config = user(
+        "[keys.terminal]\n\"f6\" = { send_text = \"\\x1b[A\\e\\u001b\\t\" }\n",
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+    assert_eq!(text_at(&config, "f6"), Some("\u{1b}[A\u{1b}\u{1b}\t"));
+}
+
+#[test]
+fn send_text_mistakes_are_reported() {
+    let config = user(
+        r#"
+[keys.macos.browser]
+"cmd+l" = { send_text = "x" }
+[keys.macos.terminal]
+"shift+enter" = "\n"
+"ctrl+j" = { text = "\n" }
+"cmd+bogus" = { send_text = "x" }
+"#,
+        MAC,
+    );
+    let e = errors(&config);
+    let w = warnings(&config);
+    assert!(
+        w.iter().any(|m| m.contains("only works in terminal tiles")),
+        "{w:#?}"
+    );
+    assert!(
+        e.iter()
+            .any(|m| m.contains("to type text on `shift+enter`") && m.contains("send_text")),
+        "{e:#?}"
+    );
+    assert!(
+        w.iter().any(|m| m.contains("unknown setting `text`")),
+        "{w:#?}"
+    );
+    assert!(
+        e.iter().any(|m| m.contains("`ctrl+j` needs `send_text")),
+        "{e:#?}"
+    );
+    // Not a chord: an ordinary unknown table.
+    assert!(
+        w.iter().any(|m| m.contains("unexpected table `cmd+bogus`")),
+        "{w:#?}"
+    );
+    // Nothing took effect; the browser keeps its address bar.
+    let config_mac = Config::defaults(MAC);
+    for c in ["shift+enter", "ctrl+j"] {
+        assert_eq!(text_at(&config, c), text_at(&config_mac, c));
+    }
+    assert_eq!(
+        resolve(&config, "cmd+l", Some(TileKind::Browser)),
+        Some(Action::BrowserFocusAddress)
+    );
+}
+
+/// A text on a chord a terminal action already has: the usual clash
+/// warning, and the user's line wins over the default.
+#[test]
+fn send_text_clashes_like_any_binding() {
+    let config = user(
+        "[keys.macos.terminal]\n\"cmd+a\" = { send_text = \"a\" }\n\"ctrl+h\" = { send_text = \"\\u007f\" }\n",
+        MAC,
+    );
+    assert_eq!(text_at(&config, "cmd+a"), Some("a"));
+    let w = warnings(&config);
+    assert_eq!(w.len(), 1, "no ctrl+letter warning for a text: {w:#?}");
+    assert!(
+        w[0].contains("`send_text` and `toggle_sidebar`") && w[0].contains("`send_text` wins"),
+        "{w:#?}"
+    );
+}
+
+#[test]
+fn send_text_shows_in_the_listing_and_template() {
+    let config = user(
+        "[keys.macos.terminal]\n\"cmd+l\" = { send_text = \"clear\\n\" }\n\"shift+enter\" = { send_text = \"\\n\" }\n",
+        MAC,
+    );
+    let list = azulejo_config::key_listing(&config);
+    let row = |c: &str| {
+        list.iter()
+            .find(|k| k.action == "send_text" && k.current.iter().chain(&k.default).any(|x| x == c))
+            .unwrap_or_else(|| panic!("no send_text row for {c}: {list:#?}"))
+    };
+    let l = row("cmd+l");
+    assert_eq!(l.context, "terminal");
+    assert_eq!(l.default_text.as_deref(), Some("\u{c}"));
+    assert_eq!(l.text.as_deref(), Some("clear\n"));
+    assert_eq!(l.source, "user");
+    assert_eq!(l.title, "Type \"clear\\n\" into the pane");
+    let s = row("shift+enter");
+    assert!(s.default.is_empty());
+    assert_eq!(s.current, ["shift+enter"]);
+    assert_eq!(s.title, "Type \"\\n\" (ctrl+j) into the pane");
+    let defaults = azulejo_config::key_listing(&Config::defaults(MAC));
+    let d = defaults
+        .iter()
+        .find(|k| k.action == "send_text")
+        .expect("the cmd+l default is listed");
+    assert_eq!(
+        (d.source.as_str(), d.current.as_slice()),
+        ("default", &["cmd+l".to_owned()][..])
+    );
+    let template = azulejo_config::keys_template(MAC);
+    assert!(
+        template.contains("# \"cmd+l\" = { send_text = \"\\u000c\" }"),
+        "{template}"
+    );
+}
+
 #[test]
 fn every_context_can_be_rebound_and_unbound() {
     use KeyContext::*;
