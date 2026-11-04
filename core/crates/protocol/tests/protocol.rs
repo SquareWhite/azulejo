@@ -271,6 +271,8 @@ fn sample_commands() -> Vec<Command> {
             path: Some("/src/shop/.azulejo.toml".into()),
         }),
         Command::CommandsList,
+        Command::ConfigKeys,
+        Command::ConfigDefaults,
         Command::MachinesList,
     ]
 }
@@ -651,6 +653,20 @@ fn replies_round_trip() {
                 needs_tile: true,
                 prompt: None,
                 planned: false,
+                context: None,
+            }],
+        },
+        Reply::Keys {
+            platform: "macos".into(),
+            path: Some("/Users/me/.config/azulejo/config.toml".into()),
+            prefix: None,
+            keys: vec![KeyBinding {
+                action: "browser_back".into(),
+                context: "browser".into(),
+                title: "Browser: back".into(),
+                default: vec!["cmd+[".into()],
+                current: vec!["alt+left".into()],
+                source: "user".into(),
             }],
         },
         Reply::Machines {

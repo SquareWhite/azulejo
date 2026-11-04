@@ -258,6 +258,13 @@ impl App {
                 Err(_) => Vec::new(),
             }));
         }
+        {
+            let config = config.clone();
+            core.set_config_replies(Arc::new(move |command| {
+                let c = config.read().ok()?.clone();
+                config_reply(&c, command)
+            }));
+        }
         let watch = opts.config_path.as_deref().and_then(|path| {
             watch::watch(
                 path,
@@ -466,6 +473,27 @@ fn connect_herdr(
     Ok((client, info, origin))
 }
 
+/// `config.keys` and `config.defaults`, from the config in effect.
+fn config_reply(
+    config: &azulejo_config::Config,
+    command: &azulejo_protocol::Command,
+) -> Option<azulejo_protocol::Reply> {
+    use azulejo_protocol::{Command, Reply};
+    let platform = config.keymap.platform();
+    Some(match command {
+        Command::ConfigKeys => Reply::Keys {
+            platform: platform.name().to_owned(),
+            path: config.path.as_ref().map(|p| p.display().to_string()),
+            prefix: config.keymap.prefix_key().map(|k| k.display(platform)),
+            keys: azulejo_config::key_listing(config),
+        },
+        Command::ConfigDefaults => Reply::Text {
+            text: azulejo_config::keys_template(platform),
+        },
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,6 +646,56 @@ mod tests {
             "{r:?}"
         );
 
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn config_keys_and_defaults_follow_the_config() {
+        let dir = std::env::temp_dir().join(format!("azj-daemon-keys-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, "[keys.macos.browser]\nbrowser_back = \"alt+left\"\n").unwrap();
+        let app = App::start(Options {
+            config_path: Some(path.clone()),
+            platform: Platform::Macos,
+            ..in_memory()
+        })
+        .unwrap();
+        let reply = app
+            .core()
+            .execute(azulejo_protocol::Command::ConfigKeys)
+            .unwrap()
+            .reply;
+        let azulejo_protocol::Reply::Keys {
+            platform,
+            path: listed,
+            keys,
+            ..
+        } = reply
+        else {
+            panic!("{reply:?}")
+        };
+        assert_eq!(platform, "macos");
+        assert_eq!(listed.as_deref(), Some(path.display().to_string().as_str()));
+        let back = keys.iter().find(|k| k.action == "browser_back").unwrap();
+        assert_eq!(
+            (back.current.clone(), back.source.as_str()),
+            (vec!["alt+left".to_owned()], "user")
+        );
+        let reply = app
+            .core()
+            .execute(azulejo_protocol::Command::ConfigDefaults)
+            .unwrap()
+            .reply;
+        let azulejo_protocol::Reply::Text { text } = reply else {
+            panic!("{reply:?}")
+        };
+        assert!(text.contains("[keys.macos.browser]"), "{text}");
+        assert!(
+            text.contains("# browser_back = \"cmd+bracketleft\""),
+            "{text}"
+        );
         app.shutdown();
         let _ = std::fs::remove_dir_all(dir);
     }

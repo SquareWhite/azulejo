@@ -40,6 +40,8 @@ name = "azulejo-cli"
 version = "0.1.0"
 dependencies = [
  "azulejo-api",
+ "azulejo-config",
+ "azulejo-daemon",
  "azulejo-engine",
  "azulejo-protocol",
  "serde_json",

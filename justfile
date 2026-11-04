@@ -15,10 +15,15 @@ lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
     scripts/design-tokens --check
+    cargo run -q -p azulejo-config --bin azj-keys-doc -- --check docs/keybindings.md
 
 # Regenerate the macOS shell's Design.swift from shared/design/tokens.json
 design-tokens:
     scripts/design-tokens
+
+# Regenerate the keybinding reference in docs/keybindings.md from shared/config/keymap.default.toml
+keys-doc:
+    cargo run -q -p azulejo-config --bin azj-keys-doc -- docs/keybindings.md
 
 # herdr adapter and engine integration tests against a real herdr in throwaway sessions
 test-herdr:

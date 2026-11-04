@@ -229,6 +229,7 @@ const ALIASES: &[(&str, &str, &str)] = &[
     ("tile", "move", "layout.move"),
     ("tile", "resize", "layout.resize"),
     ("tile", "zoom", "layout.zoom"),
+    ("keys", "list", "config.keys"),
 ];
 
 /// Top-level shortcuts: `azj ping`, `azj version`.

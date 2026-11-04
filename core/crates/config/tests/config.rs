@@ -3,10 +3,17 @@ use std::path::Path;
 
 use azulejo_config::ghostty::GhosttyConfig;
 use azulejo_config::{
-    Action, Chord, Config, Context, KeyOutcome, KeyRouter, Keymap, PLANNED_METHODS, Platform,
-    PrefixState, Severity, Target, reload,
+    Action, Chord, Config, Context, KeyContext, KeyOutcome, KeyRouter, Keymap, PLANNED_METHODS,
+    Platform, PrefixState, Severity, Target, reload,
 };
 use azulejo_protocol::{Direction, METHODS, TileKind};
+
+/// Global, then every context.
+fn all_contexts() -> Vec<Option<KeyContext>> {
+    std::iter::once(None)
+        .chain(KeyContext::ALL.into_iter().map(Some))
+        .collect()
+}
 use proptest::prelude::*;
 
 const MAC: Platform = Platform::Macos;
@@ -21,10 +28,14 @@ fn user(text: &str, platform: Platform) -> Config {
 }
 
 fn resolve(config: &Config, c: &str, tile: Option<TileKind>) -> Option<Action> {
+    resolve_in(config, c, tile.map(KeyContext::from))
+}
+
+fn resolve_in(config: &Config, c: &str, scope: Option<KeyContext>) -> Option<Action> {
     config.keymap.resolve(
         &chord(c),
         &Context {
-            tile,
+            scope,
             prefix: PrefixState::Idle,
         },
     )
@@ -50,15 +61,8 @@ fn errors(config: &Config) -> Vec<String> {
 
 /// Every binding in every context, for comparing keymaps.
 fn snapshot(keymap: &Keymap) -> BTreeSet<String> {
-    let contexts = [
-        None,
-        Some(TileKind::Terminal),
-        Some(TileKind::Browser),
-        Some(TileKind::Preview),
-        Some(TileKind::Files),
-    ];
     let mut out = BTreeSet::new();
-    for tile in contexts {
+    for tile in all_contexts() {
         for (c, a) in keymap.bindings(tile) {
             out.insert(format!("{tile:?} {c} {a:?}"));
         }
@@ -128,15 +132,13 @@ fn defaults_follow_the_herdr_bindings_on_macos() {
 fn quick_open_owns_cmd_k_and_the_old_palettes_are_unbound() {
     for (platform, key) in [(MAC, "cmd+k"), (LINUX, "super+k")] {
         let config = Config::defaults(platform);
-        for tile in [
-            None,
-            Some(TileKind::Terminal),
-            Some(TileKind::Browser),
-            Some(TileKind::Preview),
-            Some(TileKind::Files),
-        ] {
+        // Everywhere but resize mode, which only has its own keys.
+        for tile in all_contexts()
+            .into_iter()
+            .filter(|c| *c != Some(KeyContext::Resize))
+        {
             assert_eq!(
-                resolve(&config, key, tile),
+                resolve_in(&config, key, tile),
                 Some(Action::QuickOpen),
                 "{platform:?} {tile:?}"
             );
@@ -172,14 +174,7 @@ fn every_default_action_maps_to_a_protocol_method_or_shell_action() {
     for platform in Platform::ALL {
         let config = user("[prefix]\nenabled = true\n", platform);
         let keymap = &config.keymap;
-        let contexts = [
-            None,
-            Some(TileKind::Terminal),
-            Some(TileKind::Browser),
-            Some(TileKind::Preview),
-            Some(TileKind::Files),
-        ];
-        let actions = contexts
+        let actions = all_contexts()
             .into_iter()
             .flat_map(|t| keymap.bindings(t).collect::<Vec<_>>())
             .chain(keymap.prefix_bindings())
@@ -233,22 +228,20 @@ fn stateless_actions_build_commands() {
                 | NextTab
                 | PreviousTab
                 | CloseWindow
-        )
+                // The shell sends these for whichever tile or panel has the
+                // keyboard.
+                | PreviewToggleSource
+                | FilesToggleHidden
+        ) || a.target() == Target::Shell
     };
     for platform in Platform::ALL {
         let config = user("[prefix]\nenabled = true\n", platform);
         let keymap = &config.keymap;
-        let actions = [
-            None,
-            Some(TileKind::Terminal),
-            Some(TileKind::Browser),
-            Some(TileKind::Preview),
-            Some(TileKind::Files),
-        ]
-        .into_iter()
-        .flat_map(|t| keymap.bindings(t).collect::<Vec<_>>())
-        .chain(keymap.prefix_bindings())
-        .map(|(_, a)| a);
+        let actions = all_contexts()
+            .into_iter()
+            .flat_map(|t| keymap.bindings(t).collect::<Vec<_>>())
+            .chain(keymap.prefix_bindings())
+            .map(|(_, a)| a);
         for action in actions {
             if needs_shell_or_state(action) {
                 continue;
@@ -377,13 +370,13 @@ fn cmd_a_toggles_the_sidebar_only_in_terminal_tiles() {
     assert!(
         !linux
             .keymap
-            .chords_for(Action::ToggleSidebar, Some(TileKind::Terminal))
+            .chords_for(Action::ToggleSidebar, Some(KeyContext::Terminal))
             .is_empty()
     );
     assert!(
         linux
             .keymap
-            .chords_for(Action::ToggleSidebar, Some(TileKind::Browser))
+            .chords_for(Action::ToggleSidebar, Some(KeyContext::Browser))
             .is_empty()
     );
 }
@@ -413,6 +406,245 @@ find = ""
     assert_eq!(
         resolve(&config, "alt+h", Some(TileKind::Browser)),
         Some(Action::FocusTile(Direction::Left))
+    );
+}
+
+// ----- mode and tile-local contexts -----
+
+#[test]
+fn mode_and_tile_contexts_resolve_their_defaults() {
+    use KeyContext::*;
+    for platform in Platform::ALL {
+        let config = Config::defaults(platform);
+        let cmd = |key: &str| match platform {
+            Platform::Macos => format!("cmd+{key}"),
+            Platform::Linux => format!("super+{key}"),
+        };
+        let at = |c: &str, ctx: KeyContext| resolve_in(&config, c, Some(ctx));
+        // Quick open: its own keys, and global chords underneath.
+        assert_eq!(at("escape", Palette), Some(Action::PaletteClose));
+        assert_eq!(at("enter", Palette), Some(Action::PaletteRun));
+        assert_eq!(at("ctrl+j", Palette), Some(Action::PaletteNext));
+        assert_eq!(at("up", Palette), Some(Action::PalettePrevious));
+        assert_eq!(at("tab", Palette), Some(Action::PaletteComplete));
+        assert_eq!(at(&cmd("k"), Palette), Some(Action::QuickOpen));
+        // Find bars: no tile context, so the terminal-only sidebar chord is
+        // select-all there.
+        assert_eq!(at("enter", Find), Some(Action::FindNext));
+        assert_eq!(at("shift+enter", Find), Some(Action::FindPrevious));
+        assert_eq!(at("escape", Find), Some(Action::FindClose));
+        assert_eq!(at(&cmd("a"), Find), None);
+        // Resize mode: only its own keys.
+        assert_eq!(at("h", Resize), Some(Action::ResizeTile(Direction::Left)));
+        assert_eq!(
+            at("right", Resize),
+            Some(Action::ResizeTile(Direction::Right))
+        );
+        assert_eq!(at("escape", Resize), Some(Action::ResizeModeExit));
+        assert_eq!(at("alt+h", Resize), None, "global chords don't apply");
+        // Tile-local actions only resolve in their tile kind.
+        let back = match platform {
+            Platform::Macos => "cmd+[",
+            Platform::Linux => "alt+left",
+        };
+        assert_eq!(at(back, Browser), Some(Action::BrowserBack));
+        assert_eq!(resolve_in(&config, back, None), None);
+        assert_eq!(at(back, Terminal), None);
+        assert_eq!(at("j", Files), Some(Action::FilesDown));
+        assert_eq!(at("space", Files), Some(Action::FilesQuickLook));
+        assert_eq!(at("j", Terminal), None);
+        assert_eq!(resolve_in(&config, "j", None), None);
+        assert_eq!(at("ctrl+b", Terminal), Some(Action::SendHerdrPrefix));
+        assert_eq!(resolve_in(&config, "ctrl+b", None), None);
+        assert!(
+            !config
+                .keymap
+                .chords_for(Action::PreviewToggleSource, Some(Preview))
+                .is_empty()
+        );
+    }
+    let mac = Config::defaults(MAC);
+    assert_eq!(resolve(&mac, "cmd+q", None), Some(Action::Quit));
+    assert_eq!(resolve(&mac, "cmd+m", None), Some(Action::Minimize));
+    assert_eq!(resolve(&mac, "alt+cmd+h", None), Some(Action::HideOthers));
+}
+
+/// The more specific context wins, and says so in a warning.
+#[test]
+fn context_bindings_beat_global_ones_with_a_warning() {
+    let config = user(
+        "[keys]\ncycle_tile_previous = \"cmd+[\"\ngoto = \"ctrl+j\"\n",
+        MAC,
+    );
+    assert_eq!(
+        resolve(&config, "cmd+[", None),
+        Some(Action::CycleTilePrevious)
+    );
+    assert_eq!(
+        resolve(&config, "cmd+[", Some(TileKind::Browser)),
+        Some(Action::BrowserBack)
+    );
+    assert_eq!(
+        resolve(&config, "cmd+[", Some(TileKind::Terminal)),
+        Some(Action::CycleTilePrevious)
+    );
+    assert_eq!(
+        resolve_in(&config, "ctrl+j", Some(KeyContext::Palette)),
+        Some(Action::PaletteNext)
+    );
+    assert_eq!(resolve(&config, "ctrl+j", None), Some(Action::Goto));
+    let w = warnings(&config);
+    // Plus the usual one about ctrl+j in terminals.
+    assert_eq!(w.len(), 3, "{w:#?}");
+    assert!(
+        w.iter().any(|m| m.contains("cmd+bracketleft")
+            && m.contains("in browser tiles")
+            && m.contains("`browser_back` wins")),
+        "{w:#?}"
+    );
+    assert!(
+        w.iter()
+            .any(|m| m.contains("ctrl+j") && m.contains("in quick open")),
+        "{w:#?}"
+    );
+    // The warning points at the user's line, so the banner can show it.
+    let d = config
+        .diagnostics
+        .iter()
+        .find(|d| d.message.contains("ctrl+j"))
+        .unwrap();
+    assert!(matches!(d.source, azulejo_config::Source::User(_)));
+    assert_eq!(d.location.unwrap().line, 3);
+
+    // A user's context section beats the default context section, and a
+    // context section beats the same context's action written globally.
+    let config = user(
+        "[keys]\npalette_next = \"ctrl+down\"\n[keys.macos.palette]\npalette_next = \"ctrl+alt+n\"\n",
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+    let palette = Some(KeyContext::Palette);
+    assert_eq!(
+        resolve_in(&config, "ctrl+alt+n", palette),
+        Some(Action::PaletteNext)
+    );
+    for old in ["down", "ctrl+n", "ctrl+j", "ctrl+down"] {
+        assert_eq!(resolve_in(&config, old, palette), None, "{old}");
+    }
+}
+
+#[test]
+fn context_only_actions_land_in_their_context() {
+    let config = user("[keys]\nbrowser_back = \"alt+left\"\n", MAC);
+    assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+    assert_eq!(
+        resolve(&config, "alt+left", Some(TileKind::Browser)),
+        Some(Action::BrowserBack)
+    );
+    assert_eq!(resolve(&config, "alt+left", None), None);
+    assert_eq!(resolve(&config, "cmd+[", Some(TileKind::Browser)), None);
+
+    // In another context, or after the prefix, they'd never fire: warned
+    // about and ignored.
+    let config = user(
+        "[keys.terminal]\npalette_next = \"x\"\n[prefix.keys]\nfind_next = \"n\"\n",
+        MAC,
+    );
+    let w = warnings(&config);
+    assert_eq!(w.len(), 2, "{w:#?}");
+    assert!(w[0].contains("only works in quick open"), "{w:?}");
+    assert!(w[1].contains("not after the prefix"), "{w:?}");
+    assert_eq!(resolve(&config, "x", Some(TileKind::Terminal)), None);
+    assert_eq!(
+        resolve_in(&config, "down", Some(KeyContext::Palette)),
+        Some(Action::PaletteNext),
+        "the default stays"
+    );
+}
+
+#[test]
+fn every_context_can_be_rebound_and_unbound() {
+    use KeyContext::*;
+    let config = user(
+        r#"
+[keys.macos.palette]
+palette_next = "none"
+palette_close = "ctrl+g"
+[keys.macos.find_bar]
+find_close = ""
+find_next = "ctrl+n"
+[keys.macos.resize]
+resize_mode_exit = "q"
+zoom_tile = "z"
+[keys.macos.files]
+files_down = "n"
+[keys.macos.browser]
+browser_reload = "none"
+browser_back = "alt+left"
+[keys.macos.preview]
+preview_toggle_source = "cmd+shift+u"
+[keys.macos.terminal]
+send_herdr_prefix = ""
+"#,
+        MAC,
+    );
+    assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+    let at = |c: &str, ctx: KeyContext| resolve_in(&config, c, Some(ctx));
+    assert_eq!(at("down", Palette), None);
+    assert_eq!(at("ctrl+g", Palette), Some(Action::PaletteClose));
+    assert_eq!(at("escape", Palette), None);
+    assert_eq!(at("escape", Find), None);
+    assert_eq!(at("ctrl+n", Find), Some(Action::FindNext));
+    assert_eq!(at("enter", Find), None);
+    assert_eq!(at("q", Resize), Some(Action::ResizeModeExit));
+    assert_eq!(at("escape", Resize), None);
+    assert_eq!(at("z", Resize), Some(Action::ZoomTile));
+    assert_eq!(at("h", Resize), Some(Action::ResizeTile(Direction::Left)));
+    assert_eq!(at("n", Files), Some(Action::FilesDown));
+    assert_eq!(at("j", Files), None);
+    assert_eq!(at("cmd+r", Browser), None);
+    assert_eq!(at("alt+left", Browser), Some(Action::BrowserBack));
+    assert_eq!(at("cmd+bracketleft", Browser), None);
+    assert_eq!(
+        at("cmd+shift+u", Preview),
+        Some(Action::PreviewToggleSource)
+    );
+    assert_eq!(at("alt+cmd+u", Preview), None);
+    assert_eq!(
+        at("ctrl+b", Terminal),
+        None,
+        "ctrl+b passes through as typed"
+    );
+}
+
+#[test]
+fn unknown_sections_name_the_contexts() {
+    let config = user("[keys.macos.find]\nfind_next = \"n\"\n", MAC);
+    let w = warnings(&config);
+    assert_eq!(w.len(), 1, "{w:#?}");
+    assert!(
+        w[0].contains("find_bar") && w[0].contains("palette"),
+        "{w:?}"
+    );
+}
+
+#[test]
+fn the_router_swallows_nothing_itself_in_resize_mode() {
+    // Resize mode resolves only its own keys; the shell swallows the rest.
+    let config = Config::defaults(MAC);
+    let mut router = KeyRouter::default();
+    let resize = Some(KeyContext::Resize);
+    assert_eq!(
+        router.handle(&config.keymap, chord("k"), resize),
+        KeyOutcome::Action(Action::ResizeTile(Direction::Up))
+    );
+    assert_eq!(
+        router.handle(&config.keymap, chord("x"), resize),
+        KeyOutcome::Unhandled
+    );
+    assert_eq!(
+        router.handle(&config.keymap, chord("enter"), resize),
+        KeyOutcome::Action(Action::ResizeModeExit)
     );
 }
 
@@ -589,11 +821,12 @@ fn duplicate_bindings_warn_and_the_user_wins() {
 
 #[test]
 fn shadowing_ctrl_b_and_control_keys_in_terminals_warns() {
-    let config = user("[keys]\ngoto = \"ctrl+b\"\nfind = \"ctrl+k\"\n", MAC);
+    let config = user("[keys]\ngoto = \"ctrl+b\"\nfind = \"ctrl+y\"\n", MAC);
     let w = warnings(&config);
     assert_eq!(w.len(), 2, "{w:#?}");
+    // ctrl+b types itself literally in terminals (send_herdr_prefix).
     assert!(w.iter().any(|m| m.contains("ctrl+b") && m.contains("goto")));
-    assert!(w.iter().any(|m| m.contains("ctrl+k") && m.contains("find")));
+    assert!(w.iter().any(|m| m.contains("ctrl+y") && m.contains("find")));
 
     // Fine outside terminals.
     let browser_only = user("[keys.browser]\nfind = \"ctrl+k\"\n", MAC);
@@ -606,10 +839,20 @@ fn shadowing_ctrl_b_and_control_keys_in_terminals_warns() {
 
 #[test]
 fn reserved_os_chords_warn() {
-    let mac = user("[keys]\nclose_tile = \"cmd+q\"\n", MAC);
+    let mac = user("[keys]\nclose_tile = \"cmd+space\"\n", MAC);
     let w = warnings(&mac);
     assert_eq!(w.len(), 1, "{w:#?}");
-    assert!(w[0].contains("Quit"));
+    assert!(w[0].contains("Spotlight"));
+    // cmd+q is the app's own Quit, so taking it is a plain clash with `quit`.
+    let quit = user("[keys]\nclose_tile = \"cmd+q\"\n", MAC);
+    let w = warnings(&quit);
+    assert_eq!(w.len(), 1, "{w:#?}");
+    assert!(
+        w[0].contains("`quit`") && w[0].contains("`close_tile` wins"),
+        "{w:?}"
+    );
+    let unbound = user("[keys]\nclose_tile = \"cmd+q\"\nquit = \"\"\n", MAC);
+    assert!(unbound.diagnostics.is_empty(), "{:#?}", unbound.diagnostics);
 
     let linux = user("[keys]\nclose_tile = \"super+l\"\n", LINUX);
     assert_eq!(warnings(&linux).len(), 1, "{:#?}", linux.diagnostics);
@@ -643,7 +886,7 @@ fn router_runs_prefix_sequences() {
     let config = user("[prefix]\nenabled = true\n", MAC);
     let keymap = &config.keymap;
     let mut router = KeyRouter::default();
-    let term = Some(TileKind::Terminal);
+    let term = Some(KeyContext::Terminal);
 
     assert_eq!(
         router.handle(keymap, chord("cmd+b"), term),
@@ -695,7 +938,7 @@ fn prefix_mode_is_off_by_default() {
     let config = Config::defaults(MAC);
     let mut router = KeyRouter::default();
     assert_eq!(
-        router.handle(&config.keymap, chord("cmd+b"), Some(TileKind::Terminal)),
+        router.handle(&config.keymap, chord("cmd+b"), Some(KeyContext::Terminal)),
         KeyOutcome::Unhandled
     );
     assert_eq!(
@@ -890,7 +1133,7 @@ proptest! {
     #[test]
     fn arbitrary_configs_never_panic(
         entries in proptest::collection::vec(
-            (prop_oneof![Just(""), Just("macos."), Just("linux."), Just("terminal."), Just("browser.")],
+            (prop_oneof![Just(""), Just("macos."), Just("linux."), Just("terminal."), Just("browser."), Just("macos.palette."), Just("resize.")],
              action_name(), chord_text()),
             0..8,
         ),
@@ -907,7 +1150,7 @@ proptest! {
             for d in &config.diagnostics {
                 prop_assert!(d.location.is_some(), "{d}");
             }
-            for (_, action) in config.keymap.bindings(Some(TileKind::Terminal)) {
+            for (_, action) in config.keymap.bindings(Some(KeyContext::Terminal)) {
                 let _ = action.target();
             }
         }

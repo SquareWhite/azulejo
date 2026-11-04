@@ -56,6 +56,7 @@ mod chord;
 mod diag;
 pub mod ghostty;
 mod keymap;
+mod listing;
 
 use std::path::{Path, PathBuf};
 
@@ -66,7 +67,11 @@ pub use action::{Action, PLANNED_METHODS, Target};
 pub use catalogue::{INDEXED_ENTRIES, INTERNAL_METHODS, catalogue};
 pub use chord::{Chord, ChordPattern, Key, Mods, Platform};
 pub use diag::{Diagnostic, Location, Severity, Source};
-pub use keymap::{Context, KeyOutcome, KeyRouter, Keymap, PrefixState};
+pub use keymap::{Context, KeyContext, KeyOutcome, KeyRouter, Keymap, PrefixState, Written};
+pub use listing::{
+    DOC_BEGIN, DOC_END, GLOBAL, chord_patterns, key_listing, keys_template, reference_markdown,
+    splice_reference,
+};
 
 use diag::Sink;
 use keymap::{Layer, LayerInfo, LayerParser};

@@ -610,3 +610,113 @@ fn json_errors_for_bad_arguments() {
         stderr(&o)
     );
 }
+
+/// `azj config keys` lists every action with its context, default and current
+/// chords and source; `azj config defaults` prints a template that parses.
+#[test]
+fn config_keys_and_defaults() {
+    use azulejo_config::Platform;
+    use azulejo_daemon::{App as Daemon, HerdrChoice, Options};
+    let dir = PathBuf::from(format!("/tmp/azj-cli-keys-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("config.toml");
+    std::fs::write(
+        &config,
+        "[keys.macos.palette]\npalette_next = \"ctrl+down\"\n[keys]\nquit = \"none\"\n",
+    )
+    .unwrap();
+    let socket = dir.join("azulejo.sock");
+    let daemon = Daemon::start(Options {
+        config_path: Some(config.clone()),
+        state_path: None,
+        socket_path: Some(socket.clone()),
+        api_required: true,
+        herdr: HerdrChoice::Off,
+        platform: Platform::Macos,
+        log: Arc::new(|line| eprintln!("test: {line}")),
+    })
+    .unwrap();
+
+    let listing = json_of(&azj(&socket, &[], &["--json", "config", "keys"]));
+    assert_eq!(listing["type"], "keys");
+    assert_eq!(listing["platform"], "macos");
+    assert_eq!(listing["path"], config.display().to_string());
+    let keys = listing["keys"].as_array().unwrap();
+    let row = |action: &str, context: &str| {
+        keys.iter()
+            .find(|k| k["action"] == action && k["context"] == context)
+            .unwrap_or_else(|| panic!("no {action} in {context}"))
+            .clone()
+    };
+    let next = row("palette_next", "palette");
+    assert_eq!(next["default"], json!(["down", "ctrl+n", "ctrl+j"]));
+    assert_eq!(next["current"], json!(["ctrl+down"]));
+    assert_eq!(next["source"], "user");
+    let quit = row("quit", "global");
+    assert_eq!(quit["default"], json!(["cmd+q"]));
+    assert_eq!(quit["current"], json!([]));
+    assert_eq!(quit["source"], "user");
+    let back = row("browser_back", "browser");
+    assert_eq!(back["current"], json!(["cmd+bracketleft"]));
+    assert_eq!(back["source"], "default");
+    assert_eq!(row("switch_tab", "global")["current"], json!(["ctrl+1..8"]));
+    for context in [
+        "global", "terminal", "browser", "preview", "files", "palette", "find_bar", "resize",
+    ] {
+        assert!(keys.iter().any(|k| k["context"] == context), "{context}");
+    }
+
+    // The table, and `azj keys list` as another name for it.
+    let table = azj(&socket, &[], &["config", "keys"]);
+    assert!(table.status.success(), "{}", stderr(&table));
+    let text = stdout(&table);
+    assert!(text.starts_with("macos keymap; config: "), "{text}");
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("palette_next "))
+        .unwrap();
+    let cells: Vec<&str> = line
+        .split("  ")
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            "palette_next",
+            "palette",
+            "down, ctrl+n, ctrl+j",
+            "ctrl+down",
+            "user"
+        ],
+        "{line}"
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("quit ") && l.contains(" - ")),
+        "{text}"
+    );
+    assert_eq!(stdout(&azj(&socket, &[], &["keys", "list"])), text);
+
+    // The template: every action, commented out, parseable as is.
+    let defaults = azj(&socket, &[], &["config", "defaults"]);
+    assert!(defaults.status.success(), "{}", stderr(&defaults));
+    let template = stdout(&defaults);
+    for section in [
+        "[keys.macos]",
+        "[keys.macos.palette]",
+        "[keys.macos.find_bar]",
+        "[keys.macos.resize]",
+    ] {
+        assert!(template.contains(section), "{section}");
+    }
+    assert!(template.contains("# palette_next = [\"down\", \"ctrl+n\", \"ctrl+j\"]"));
+    let parsed = azulejo_config::Config::from_toml(&template, None, Platform::Macos);
+    assert!(parsed.diagnostics.is_empty(), "{:#?}", parsed.diagnostics);
+    let raw = json_of(&azj(&socket, &[], &["--json", "config", "defaults"]));
+    assert_eq!(raw["type"], "text");
+
+    daemon.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
+}

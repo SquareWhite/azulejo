@@ -1366,6 +1366,32 @@
           "type": "object"
         },
         {
+          "description": "Every keymap action with its context, default and current chords, and\nwhether the user's config set it; replies `keys`.",
+          "properties": {
+            "method": {
+              "const": "config.keys",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A commented `[keys]` template with every action and its default\nchords, ready to paste into the config file; replies `text`.",
+          "properties": {
+            "method": {
+              "const": "config.defaults",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Local plus herdr's saved machines and their connection state;\nreplies `machines`.",
           "properties": {
             "method": {
@@ -1400,6 +1426,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "context": {
+          "description": "The only context the action works in (`browser`, `files`, `palette`,\n`find`, `resize`…); `None` when it works anywhere.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "id": {
           "description": "Stable id: the keymap action name (`split_right`, `switch_tab_3`), or\nthe method name for commands no key is bound to (`browser.open`).",
@@ -2862,6 +2895,49 @@
       ],
       "type": "object"
     },
+    "KeyBinding": {
+      "description": "One keymap action in one context, from `config.keys`.",
+      "properties": {
+        "action": {
+          "description": "The config name (`split_right`, `switch_tab`).",
+          "type": "string"
+        },
+        "context": {
+          "description": "`global`, `prefix` (after the prefix key), or the context section it\nsits in: `terminal`, `browser`, `preview`, `files`, `palette`, `find`\nor `resize`.",
+          "type": "string"
+        },
+        "current": {
+          "default": [],
+          "description": "The chords in effect now. Empty when unbound.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default": {
+          "default": [],
+          "description": "The bundled defaults' chords, in config syntax (`ctrl+1..8` for\nindexed actions). Empty when unbound by default.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "`default` (bundled keymap) or `user` (the config file sets it).",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "context",
+        "title",
+        "source"
+      ],
+      "type": "object"
+    },
     "LaggedNotification": {
       "properties": {
         "dropped": {
@@ -4137,6 +4213,45 @@
           "required": [
             "type",
             "commands"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The keymap, from `config.keys`.",
+          "properties": {
+            "keys": {
+              "items": {
+                "$ref": "#/$defs/KeyBinding"
+              },
+              "type": "array"
+            },
+            "path": {
+              "description": "The config file, if any.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "platform": {
+              "description": "`macos` or `linux`.",
+              "type": "string"
+            },
+            "prefix": {
+              "description": "The prefix key while prefix mode is on.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "keys",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "platform",
+            "keys"
           ],
           "type": "object"
         },
@@ -5952,6 +6067,8 @@
     "layout.apply",
     "layout.export",
     "commands.list",
+    "config.keys",
+    "config.defaults",
     "machines.list"
   ],
   "title": "Azulejo API",

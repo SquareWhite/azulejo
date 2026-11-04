@@ -134,6 +134,7 @@ fn commands_list_comes_from_whoever_holds_the_config() {
         needs_tile: false,
         prompt: None,
         planned: false,
+        context: None,
     };
     let list = vec![entry.clone()];
     core.set_commands(Arc::new(move || list.clone()));
