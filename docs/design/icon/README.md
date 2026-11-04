@@ -131,7 +131,48 @@ W in two-tone (a pale heart inside the woven star) and V in any palette are wort
 
 **How to choose.** Set `chosen` in `scripts/icon/draw.swift` to a mark and a palette, then run `just icon`. For example, `let chosen: Icon = .mark(.petalTiles, .twoTone)`. Marks: `bloom`, `quatrefoil`, `daisy`, `petalTiles`, `fourTiles`, `starFlower` (plus I–Q's `knot` … `cut`). Palettes: `glaze`, `indigo`, `cobalt`, `sky`, `manganese`, `verdigris`, `twoTone` (plus `gradient`, `flat`). `swift scripts/icon/draw.swift --woven DIR` writes just the two woven sheets.
 
-**The weave.** I, M, O and R–W are closed strands drawn at one weight, each strand in its own colour if it likes. `weave()` finds every place they cross, themselves included, and picks over or under so each strand alternates as it goes. Then it cuts a gap either side of the strand on top, only along the two passages at that crossing. Nothing is hand-placed, so a mark can change shape and stay woven.
+**The weave.** I, M, O and R–X are closed strands drawn at one weight, each strand in its own colour if it likes. `weave()` finds every place they cross, themselves included, and picks over or under so each strand alternates as it goes. Then it cuts a gap either side of the strand on top, only along the two passages at that crossing. Nothing is hand-placed, so a mark can change shape and stay woven.
+
+## Pinwheel (X)
+
+![X beside the maintainer's screenshot, then X1–X6](pinwheel.png)
+
+the maintainer's feedback on R–W (Nov 4, 2026): the one he likes is a 32 px rendering in woven-hero.png ([`pinwheel-liked-32px.png`](pinwheel-liked-32px.png)). That's **R, linked bloom, cobalt on glaze, at 32 px**, not U: U's 32 px has a sky-blue ring and pale petals, and this is one cobalt. Four chunky outlined tiles and one four-lobed loop, woven, so each lobe reads as a hook and the four hooks as a pinwheel. He likes that simplified form, not the full-size R.
+
+**X** is that 32 px rendering grown up. Its geometry is set in pixels of a 32 px icon at every size: tiles 1 to 11 px out from the centre, a 2 px line, 1.5 px corners, the loop `lobes(6 px, 0.32)` and a 1 px gap where strands cross. At 1024 that's a 64 px line and a 32 px gap, as smooth vectors with true over and under. X's own 32 px render matches R's pixel for pixel. At 16 px every line moves out to a pixel's centre, so the tiles and hooks stay crisp at 1 px.
+
+X1–X6 keep the spiral exactly, the same loop with the same over and under, and change the tiles round it. The loop is passed to `weave()` first, so it sets the over and under and the hooks turn the same way in every variant.
+
+| | What it is |
+| --- | --- |
+| **X · pinwheel** | R at 32 px, grown up: four 8 × 8 tiles, four hooks |
+| **X1 · pinwheel tiling** | Four 7 × 9 rectangles, each running on past the next one's end, so the outline turns like a windmill round the spiral |
+| X2 · master and stack | One tall tile holding two lobes, two tiles stacked beside it, like the app's default layout |
+| X3 · steps | Each tile's inner corner stays put while the tiles grow clockwise from top left: 7 × 7, 8 × 7, 8 × 8, 9 × 8 |
+| X4 · four-point star | Inner corners rounded wide, so the joints open into a four-point star at the centre, the hooks curling round it |
+| **X5 · pinwheel star** | Each tile turned 15° anticlockwise: the joints become blades and the gap a four-point pinwheel star |
+| X6 · big and small | Two 9 × 9 tiles on one diagonal and two 7 × 7 on the other, the big ones' outer corners rounded to sit in the icon's |
+
+[`pinwheel.png`](pinwheel.png) has the screenshot, X's 32 px and X at 1024 side by side at the top. Under them every X is at 256 px with 32 and 16 px at 1:1 and zoomed, on light and dark. At the bottom are X, X5 and X1 in white on cobalt and two-tone blue (the loop in sky blue).
+
+Departures from the brief's suggestions:
+
+- **The spiral is the same size in every variant**, so the tiles can't change much. Each tile has to hold a lobe that reaches 7 px out, and the icon ends 12.9 px out. The sizes vary between 7 and 9 px, and X1 and X6 run their long sides out to 12 px.
+- **X1** isn't four rectangles round a central square tile. Any edge near the spiral's waist, 4 px out on the axes, runs alongside the loop and leaves slivers. So the windmill turns in the tiles' outer ends, and the open centre is the square.
+- **X2** has one tall tile and two stacked, not three. A third tile's joint would run through a lobe.
+- **An eight-point star gap didn't work.** Its four diagonal points poke into the tiles right where the lobes are. Notched corners left the loop running alongside the notch, a mess of short cut ends. Tiles set on point (diamonds) put a crossing on every corner. So X4 and X5 are the two star gaps: a four-point star and a four-point pinwheel star.
+- **X5** turns anticlockwise. Turned clockwise, the loop crosses each tile at a corner and slices it into a flame.
+
+**Small sizes.** At 32 px every X is set in the same pixels as X, so the hooks read in all of them. X5 shows its turn at 32 px. At 16 px the turn moves a corner by less than a pixel and blurs every line, so X5's tiles stay square there. At 16 px, X2, X3 and X4 read best as tiles plus a spiral. X1 and X6 read a little looser, because their long sides crowd the edge.
+
+**Picks:**
+
+1. **X5 · pinwheel star.** The most movement: the tiles turn with the hooks, and the gap is a little turbine. Strong in white on cobalt. At 16 px it's X.
+2. **X1 · pinwheel tiling.** The windmill outline says "tiling" before you see the hooks. It's the closest to an actual tiling-window layout, and it reads well in two-tone.
+
+X itself is the safe one: exactly what the maintainer picked, made crisp.
+
+**How to choose.** Set `chosen` in `scripts/icon/draw.swift` and run `just icon`, for example `let chosen: Icon = .mark(.pinwheelStar, .glaze)`. Marks: `pinwheel` (X), `pinwheelTiling`, `masterStack`, `steps`, `astroid`, `pinwheelStar`, `bigSmall` (X1–X6). Any palette works, and `twoTone` draws the loop in sky blue. `swift scripts/icon/draw.swift --pinwheel docs/design/icon` writes just pinwheel.png.
 
 ## Liquid Glass, baked in
 
@@ -162,7 +203,7 @@ Icon Composer (with Xcode 26) saves a layered `.icon` document. `actool` compile
 
 ## Files and commands
 
-- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png, and `--woven DIR` just woven.png and woven-hero.png.
-- `just icon` (`scripts/icon/build.sh`): renders the iconset (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png and the woven sheets included) and `scripts/icon/AppIcon.sha256`.
+- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png, `--woven DIR` just woven.png and woven-hero.png, and `--pinwheel DIR` just pinwheel.png.
+- `just icon` (`scripts/icon/build.sh`): renders the iconset (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png, the woven sheets and pinwheel.png included) and `scripts/icon/AppIcon.sha256`.
 - `just lint` runs `scripts/icon/build.sh --check`. It fails when `draw.swift` or the `.icns` changed without a `just icon`. It compares hashes and doesn't re-render, so a different macOS version's antialiasing can't trip it.
 - `apps/macos/bundle.sh` (`just mac`) and `scripts/release/build-mac.sh` (`just release-mac`, `just dogfood`) copy the `.icns` into `Contents/Resources`. `Info.plist` sets `CFBundleIconFile` and `CFBundleIconName` to `AppIcon`.
