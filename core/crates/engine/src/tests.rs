@@ -458,13 +458,57 @@ fn rename_and_open_update_tiles() {
             path: Some("/tmp/plan.md".into())
         }
     );
-    let err = engine
+    // Another kind of tile gets a new preview beside it.
+    let outcome = engine
         .execute(Command::PreviewOpen(PreviewOpen {
             tile: Some(browser),
             path: "/tmp/plan.md".into(),
         }))
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidState);
+        .unwrap();
+    assert!(matches!(outcome.reply, Reply::Created(Created { tile: Some(t), .. }) if t != preview));
+}
+
+#[test]
+fn preview_open_from_a_terminal_opens_a_preview_to_its_right_and_keeps_focus() {
+    let mut engine = Engine::new();
+    let terminal = engine.session().focused_tile().unwrap();
+    let outcome = engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: Some(terminal),
+            path: "/work/plan.md".into(),
+        }))
+        .unwrap();
+    let Reply::Created(Created {
+        tile: Some(preview),
+        ..
+    }) = outcome.reply
+    else {
+        panic!("expected created, got {:?}", outcome.reply);
+    };
+    let s = engine.session();
+    assert_eq!(
+        s.tile(preview).unwrap().content,
+        TileContent::Preview {
+            path: Some("/work/plan.md".into())
+        }
+    );
+    assert_eq!(s.focused_tile(), Some(terminal));
+    let tab = s.tab(s.focus().tab.unwrap()).unwrap();
+    assert_eq!(tab.root.tiles(), vec![terminal, preview]);
+    assert!(!names(&outcome.events).contains(&"focus.changed".to_owned()));
+
+    // Focus elsewhere stays there too: naming another tile doesn't pull
+    // focus to it.
+    split(&mut engine, Direction::Down);
+    let focused = engine.session().focused_tile().unwrap();
+    engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: Some(terminal),
+            path: "/work/other.md".into(),
+        }))
+        .unwrap();
+    assert_eq!(engine.session().focused_tile(), Some(focused));
+    assert_eq!(engine.session().check_invariants(), Ok(()));
 }
 
 #[test]

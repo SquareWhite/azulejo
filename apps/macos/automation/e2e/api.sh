@@ -138,6 +138,12 @@ t = tabs[0]
 print(t.get("layout"), len(t.get("tile", [])))
 assert t.get("layout") == "tile" and len(t.get("tile", [])) == 4
 PY
+check "export writes no doubled slashes in paths" python3 - "$out/export-example.toml" <<'PY'
+import re, sys
+bad = [s for s in re.findall(r'"([^"]*)"', open(sys.argv[1]).read()) if "//" in s and "://" not in s]
+print(bad)
+assert not bad
+PY
 cat >"$fx/three.toml" <<'TOML'
 name = "three"
 layout = "three_column"
@@ -195,8 +201,9 @@ cat "$out/python.txt"
 check "python sync client create/read/close" grep -q "^sync ok" "$out/python.txt"
 check "python async client create/read/close" grep -q "^async ok" "$out/python.txt"
 
-say "API leniency: unknown params"
+say "API: unknown params are refused"
 azj call layout.split '{"direction":"right","kind":"browser","url":"http://x/"}' >"$out/unknown-params.txt" 2>&1 || true
 cat "$out/unknown-params.txt"
+check "layout.split with top-level kind/url is invalid_params naming the field" grep -q "invalid_params.*kind" "$out/unknown-params.txt"
 stop_app
 grep -c PASS "$checks" | sed 's/^/passed: /'; ! grep -q FAIL "$checks"

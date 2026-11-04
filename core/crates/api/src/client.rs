@@ -20,6 +20,8 @@ pub struct RpcError {
     pub message: String,
     /// The protocol's error code, when the server sent one.
     pub kind: Option<ErrorCode>,
+    /// The rest of the error's `data`: what it's about (`tile`, `param`…).
+    pub data: serde_json::Map<String, Value>,
 }
 
 impl std::fmt::Display for RpcError {
@@ -27,10 +29,23 @@ impl std::fmt::Display for RpcError {
         match self.kind {
             Some(kind) => {
                 let kind = serde_json::to_value(kind).unwrap_or_default();
-                write!(f, "{}: {}", kind.as_str().unwrap_or("error"), self.message)
+                write!(f, "{}: {}", kind.as_str().unwrap_or("error"), self.message)?;
             }
-            None => write!(f, "{} ({})", self.message, self.code),
+            None => write!(f, "{} ({})", self.message, self.code)?,
         }
+        // The message names no IDs; say which things it's about here.
+        if !self.data.is_empty() {
+            let about: Vec<String> = self
+                .data
+                .iter()
+                .map(|(k, v)| match v {
+                    Value::String(s) => format!("{k} {s}"),
+                    other => format!("{k} {other}"),
+                })
+                .collect();
+            write!(f, " ({})", about.join(", "))?;
+        }
+        Ok(())
     }
 }
 
@@ -124,6 +139,15 @@ impl Client {
                     .get("data")
                     .and_then(|d| d.get("code"))
                     .and_then(|c| serde_json::from_value(c.clone()).ok()),
+                data: err
+                    .get("data")
+                    .and_then(Value::as_object)
+                    .map(|d| {
+                        let mut d = d.clone();
+                        d.remove("code");
+                        d
+                    })
+                    .unwrap_or_default(),
             }));
         }
         response

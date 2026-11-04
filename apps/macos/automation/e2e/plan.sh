@@ -27,7 +27,7 @@ watcher=$!
 run_azs "$out/plan.azs" plan
 kill "$watcher" 2>/dev/null || true
 echo "--- azj preview open from the tile:"; cat "$out/plan/open.out" 2>/dev/null || true
-echo "--- azj tile split from the tile:"; cat "$out/plan/split.out" 2>/dev/null || true
+check "azj preview open from a terminal tile exits 0" grep -q '^exit=0$' "$out/plan/open.out"
 echo "--- tile env:"; cat "$out/plan/tile-env.txt" 2>/dev/null || true
 # Save → preview swap latency: each edit's write time vs the app's next swap.
 python3 - "$out/plan/edits.txt" "$out/plan/app.log" <<'PY' | tee -a "$checks"

@@ -30,21 +30,33 @@ pub enum ModelError {
     InvalidValue(String),
 }
 
+/// "to the right", "above"…
+fn towards(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Left => "to the left",
+        Direction::Right => "to the right",
+        Direction::Up => "above",
+        Direction::Down => "below",
+    }
+}
+
+/// Words for people: shells show these as they are, so they name no IDs.
+/// The IDs go in the API error's data (see the protocol's `Error`).
 impl fmt::Display for ModelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ModelError::WindowNotFound(id) => write!(f, "no window {id}"),
-            ModelError::WorkspaceNotFound(id) => write!(f, "no workspace {id}"),
-            ModelError::TabNotFound(id) => write!(f, "no tab {id}"),
-            ModelError::TileNotFound(id) => write!(f, "no tile {id}"),
-            ModelError::NothingFocused => write!(f, "nothing is focused"),
-            ModelError::NoNeighbour { tile, direction } => {
-                write!(f, "no tile {direction:?} of {tile}")
+            ModelError::WindowNotFound(_) => f.write_str("no such window"),
+            ModelError::WorkspaceNotFound(_) => f.write_str("no such workspace"),
+            ModelError::TabNotFound(_) => f.write_str("no such tab"),
+            ModelError::TileNotFound(_) => f.write_str("no such tile"),
+            ModelError::NothingFocused => f.write_str("nothing is focused"),
+            ModelError::NoNeighbour { direction, .. } => {
+                write!(f, "no tile {}", towards(*direction))
             }
-            ModelError::NoEdge { tile, direction } => {
-                write!(f, "{tile} has no divider on its {direction:?} edge")
+            ModelError::NoEdge { direction, .. } => {
+                write!(f, "no divider {} to move", towards(*direction))
             }
-            ModelError::DifferentTabs { a, b } => write!(f, "{a} and {b} are in different tabs"),
+            ModelError::DifferentTabs { .. } => f.write_str("the tiles are in different tabs"),
             ModelError::InvalidValue(message) => f.write_str(message),
         }
     }

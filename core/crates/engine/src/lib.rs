@@ -24,6 +24,7 @@ use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
     TileInfo, WindowSummary, WorkspaceSummary,
 };
+use serde_json::json;
 
 pub use diff::diff;
 pub use driver::{CommandsFn, Core, CoreOptions, LogFn};
@@ -387,14 +388,7 @@ impl Engine {
                 }
                 Reply::Ok
             }
-            Command::PreviewOpen(p) => {
-                let id = s.target(p.tile)?;
-                match &mut s.tile_mut(id)?.content {
-                    TileContent::Preview { path } => *path = Some(p.path),
-                    other => return Err(wrong_kind(id, other, "preview")),
-                }
-                Reply::Ok
-            }
+            Command::PreviewOpen(p) => preview_open(s, p)?,
             Command::PreviewSetMode(p) => {
                 let id = s.target(p.tile)?;
                 let tile = s.tile_mut(id)?;
@@ -571,8 +565,9 @@ impl Engine {
                         if !*ended {
                             return Err(Error::new(
                                 ErrorCode::InvalidState,
-                                format!("{id}'s herdr pane is still running"),
-                            ));
+                                "the terminal's herdr pane is still running",
+                            )
+                            .with_data(json!({ "tile": id })));
                         }
                         *herdr = None;
                         *ended = false;
@@ -648,16 +643,41 @@ impl Engine {
         match &self.session.tile(id)?.content {
             TileContent::Terminal { ended: true, .. } => Err(Error::new(
                 ErrorCode::InvalidState,
-                format!("{id}'s herdr pane has ended"),
-            )),
+                "the terminal's herdr pane has ended",
+            )
+            .with_data(json!({ "tile": id }))),
             TileContent::Terminal { herdr: None, .. } => Err(Error::new(
                 ErrorCode::Unavailable,
-                format!("{id} isn't attached to a herdr pane yet"),
-            )),
+                "the terminal isn't attached to a herdr pane yet",
+            )
+            .with_data(json!({ "tile": id }))),
             TileContent::Terminal { herdr: Some(h), .. } => Ok(h.clone()),
             other => Err(wrong_kind(id, other, "terminal")),
         }
     }
+}
+
+/// `preview.open`: a preview tile shows the path; any other tile gets a new
+/// preview tile to its right, and focus stays where it was (an agent in a
+/// terminal opening its plan keeps typing).
+fn preview_open(s: &mut Session, p: azulejo_protocol::PreviewOpen) -> Result<Reply, Error> {
+    let id = s.target(p.tile)?;
+    if let TileContent::Preview { path } = &mut s.tile_mut(id)?.content {
+        *path = Some(p.path);
+        return Ok(Reply::Ok);
+    }
+    let focused = s.focused_tile();
+    let tile = Tile::new(TileContent::Preview { path: Some(p.path) });
+    let new = tile.id;
+    s.split(id, azulejo_model::Direction::Right, tile)?;
+    s.focus_tile(id)?;
+    if let Some(focused) = focused.filter(|f| *f != id) {
+        s.focus_tile(focused)?;
+    }
+    Ok(Reply::Created(Created {
+        tile: Some(new),
+        ..Created::default()
+    }))
 }
 
 /// `files.open`: shows a path from a files tile in the tab's first preview
@@ -736,8 +756,9 @@ fn wrong_kind(id: TileId, content: &TileContent, want: &str) -> Error {
         .unwrap_or_default();
     Error::new(
         ErrorCode::InvalidState,
-        format!("{id} is a {kind} tile, not a {want} tile"),
+        format!("that's a {kind} tile, not a {want} tile"),
     )
+    .with_data(json!({ "tile": id, "kind": kind }))
 }
 
 fn tile_info(

@@ -353,11 +353,13 @@ fn run<P: HerdrPort>(
     };
 
     while let Ok(msg) = rx.recv() {
-        // A files panel isn't in the session: its paths open beside the
-        // focused tile.
+        // A files panel isn't in the session: its paths, made absolute
+        // against its root, open beside the focused tile.
         let msg = match msg {
             Msg::Command(Command::FilesOpen(mut p), reply) if files.is_panel(p.tile) => {
-                p.tile = None;
+                if let Some(panel) = p.tile.take() {
+                    p.path = files.absolute(panel, &p.path);
+                }
                 Msg::Command(Command::FilesOpen(p), reply)
             }
             other => other,
@@ -394,8 +396,9 @@ fn run<P: HerdrPort>(
                     path.map(|p| (id, PathBuf::from(p))).ok_or_else(|| {
                         Error::new(
                             ErrorCode::InvalidState,
-                            format!("{id} has no file yet; use preview.open"),
+                            "the preview has no file yet; use preview.open",
                         )
+                        .with_data(serde_json::json!({ "tile": id }))
                     })
                 });
                 match result {

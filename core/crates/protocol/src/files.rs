@@ -34,7 +34,8 @@ pub struct FilesSetRoot {
 pub struct FilesReveal {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
-    /// A file or folder under the tile's root: absolute or relative to it.
+    /// A file or folder under the tile's root: absolute, or relative to the
+    /// tile's root.
     pub path: String,
 }
 

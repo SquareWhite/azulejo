@@ -56,13 +56,16 @@ class ApiError(AzulejoError):
     """The core refused a request.
 
     `code` is the protocol's error code (`not_found`, `invalid_params`, …);
-    `rpc_code` the JSON-RPC number."""
+    `rpc_code` the JSON-RPC number. `message` is for people and names no
+    IDs; `data` says what the error is about (`{"tile": "tile_…"}`,
+    `{"param": "kind"}`), when the core says."""
 
-    def __init__(self, code: str, message: str, rpc_code: int):
+    def __init__(self, code: str, message: str, rpc_code: int, data: dict[str, Any] | None = None):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
         self.rpc_code = rpc_code
+        self.data = data or {}
 
 
 class ProtocolError(AzulejoError):
@@ -145,8 +148,9 @@ def _request(id_: int, method: str, params: dict[str, Any] | None) -> bytes:
 
 def _result(response: dict[str, Any]) -> Any:
     if (err := response.get("error")) is not None:
-        data = err.get("data") or {}
-        raise ApiError(str(data.get("code", "error")), str(err.get("message", "")), int(err.get("code", 0)))
+        data = dict(err.get("data") or {})
+        code = str(data.pop("code", "error"))
+        raise ApiError(code, str(err.get("message", "")), int(err.get("code", 0)), data)
     if "result" not in response:
         raise ProtocolError(f"response has no result: {response}")
     return response["result"]

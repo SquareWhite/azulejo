@@ -677,7 +677,7 @@
           "type": "object"
         },
         {
-          "description": "Shows `path` in a preview tile.",
+          "description": "Shows `path` in a preview tile. When `tile` is a preview tile it\nshows the file and replies `ok`. Any other tile (say, the terminal\n`azj` runs in) gets a new preview tile to its right, and the reply is\n`created` with it; focus stays where it was.",
           "properties": {
             "method": {
               "const": "preview.open",
@@ -1575,7 +1575,11 @@
         "code": {
           "$ref": "#/$defs/ErrorCode"
         },
+        "data": {
+          "description": "For programs: what the error is about, such as `{\"tile\": \"tile_…\",\n\"direction\": \"right\"}` or `{\"param\": \"kind\"}`. Over JSON-RPC these\nfields sit in the error's `data` beside `code`."
+        },
         "message": {
+          "description": "For people: shells show it as is, so it names no IDs.",
           "type": "string"
         }
       },
@@ -2639,7 +2643,7 @@
     "FilesReveal": {
       "properties": {
         "path": {
-          "description": "A file or folder under the tile's root: absolute or relative to it.",
+          "description": "A file or folder under the tile's root: absolute, or relative to the\ntile's root.",
           "type": "string"
         },
         "tile": {
@@ -3717,6 +3721,7 @@
     "PreviewOpen": {
       "properties": {
         "path": {
+          "description": "The file to show. `azj` makes a relative path absolute against its\nown working folder.",
           "type": "string"
         },
         "tile": {
@@ -3728,7 +3733,7 @@
               "type": "null"
             }
           ],
-          "description": "A preview tile; defaults to the focused tile."
+          "description": "The preview tile to show `path` in, or the tile to open a new preview\nbeside; defaults to the focused tile."
         }
       },
       "required": [

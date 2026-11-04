@@ -162,13 +162,18 @@ async fn run(
 }
 
 fn error_response(id: Value, err: &Error) -> Value {
+    let mut data = Map::new();
+    if let Some(Value::Object(fields)) = &err.data {
+        data.extend(fields.clone());
+    }
+    data.insert("code".into(), json!(err.code));
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "error": {
             "code": err.code.rpc_code(),
             "message": err.message,
-            "data": {"code": err.code},
+            "data": data,
         },
     })
 }
@@ -267,6 +272,58 @@ mod tests {
             let r = call(text).await.unwrap();
             assert_eq!(error_code(&r), (code, name.to_owned()), "{text}");
         }
+    }
+
+    #[tokio::test]
+    async fn unknown_params_are_refused_by_name() {
+        let r = call(
+            r#"{"jsonrpc":"2.0","id":1,"method":"layout.split","params":{"direction":"right","kind":"browser","url":"http://x/"}}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(error_code(&r), (-32602, "invalid_params".into()));
+        assert_eq!(r["error"]["data"]["param"], "kind");
+        assert!(
+            r["error"]["message"].as_str().unwrap().contains("`kind`"),
+            "{r}"
+        );
+        let r = call(
+            r#"{"jsonrpc":"2.0","id":2,"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","path":"/x"}}}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(r["error"]["data"]["param"], "content.path");
+        let r = call(r#"{"jsonrpc":"2.0","id":3,"method":"layout.get","params":{"tab":"tab_x"}}"#)
+            .await
+            .unwrap();
+        assert_eq!(error_code(&r), (-32602, "invalid_params".into()));
+    }
+
+    #[tokio::test]
+    async fn error_messages_are_words_and_ids_go_in_data() {
+        let r = call(
+            r#"{"jsonrpc":"2.0","id":1,"method":"layout.focus","params":{"direction":"right"}}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(error_code(&r), (-32002, "invalid_state".into()));
+        assert_eq!(r["error"]["message"], "no tile to the right");
+        assert_eq!(r["error"]["data"]["direction"], "right");
+        assert!(
+            r["error"]["data"]["tile"]
+                .as_str()
+                .unwrap()
+                .starts_with("tile_")
+        );
+
+        let missing = "tile_01JBX3K6Z8V9W0Q1R2S3T4V5W6";
+        let r = call(&format!(
+            r#"{{"jsonrpc":"2.0","id":2,"method":"tile.get","params":{{"tile":"{missing}"}}}}"#
+        ))
+        .await
+        .unwrap();
+        assert_eq!(r["error"]["message"], "no such tile");
+        assert_eq!(r["error"]["data"]["tile"], missing);
     }
 
     #[tokio::test]

@@ -511,6 +511,26 @@ fn a_panel_lists_watches_and_opens_outside_the_layout() {
                 path: Some(root.join("README.md").display().to_string())
             }));
 
+    // A relative path is relative to the panel's root, as for a tile.
+    core.execute(Command::FilesOpen(FilesOpen {
+        tile: Some(panel),
+        path: "src/main.rs".into(),
+        target: FilesOpenTarget::Preview,
+    }))
+    .unwrap();
+    let session = core.session().unwrap();
+    let shown = session
+        .tiles()
+        .find(|(_, t)| t.id == preview)
+        .map(|(_, t)| t.content.clone());
+    let Some(TileContent::Preview { path: Some(shown) }) = shown else {
+        panic!("unexpected {shown:?}");
+    };
+    assert_eq!(
+        std::path::Path::new(&shown).canonicalize().unwrap(),
+        root.join("src/main.rs").canonicalize().unwrap()
+    );
+
     // Pointing it elsewhere keeps its id; the same root is a no-op.
     assert_eq!(open_panel(&core, Some(panel), &root.join("src")), panel);
     assert_eq!(

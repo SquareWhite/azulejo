@@ -115,7 +115,10 @@ pub enum Command {
     /// restore see the live page. Unlike `browser.open` it asks for no load.
     #[serde(rename = "browser.state")]
     BrowserState(BrowserState),
-    /// Shows `path` in a preview tile.
+    /// Shows `path` in a preview tile. When `tile` is a preview tile it
+    /// shows the file and replies `ok`. Any other tile (say, the terminal
+    /// `azj` runs in) gets a new preview tile to its right, and the reply is
+    /// `created` with it; focus stays where it was.
     #[serde(rename = "preview.open")]
     PreviewOpen(PreviewOpen),
     /// A preview tile's rendered content; replies `preview`. Shells call it
@@ -375,6 +378,8 @@ impl Command {
             ));
         }
         let method = method.to_owned();
+        // serde would ignore params the method doesn't take.
+        crate::params::check(&method, value.get("params"))?;
         // `params` may be omitted when every field is optional.
         let value = match value {
             serde_json::Value::Object(mut map) if !map.contains_key("params") => {
@@ -787,9 +792,12 @@ pub struct PreviewSetMode {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PreviewOpen {
-    /// A preview tile; defaults to the focused tile.
+    /// The preview tile to show `path` in, or the tile to open a new preview
+    /// beside; defaults to the focused tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
+    /// The file to show. `azj` makes a relative path absolute against its
+    /// own working folder.
     pub path: String,
 }
 
