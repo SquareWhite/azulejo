@@ -206,14 +206,25 @@ fn structural(mut session: Value) -> Value {
     session
 }
 
+/// Waits until every terminal tile is bound and the session holds still:
+/// with the layout mirrored into herdr (ADR 0012) panes can still be moving
+/// between herdr tabs, and tiles rebinding, for a moment after that.
 fn wait_bound(world: &World, expected: usize) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);
+    let mut last: Option<Value> = None;
     loop {
         let session = world.session();
         let t = terminals(&session);
         if t.len() == expected && t.iter().all(|(_, pane, ended)| pane.is_some() && !ended) {
-            return session;
+            let now = structural(session.clone());
+            if last.as_ref() == Some(&now) {
+                return session;
+            }
+            last = Some(now);
+            std::thread::sleep(Duration::from_millis(600));
+            continue;
         }
+        last = None;
         assert!(
             Instant::now() < deadline,
             "terminal tiles never all bound: {t:?}"

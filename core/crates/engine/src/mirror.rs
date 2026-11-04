@@ -258,22 +258,40 @@ pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::M
 }
 
 /// Where a new terminal tile's pane is split off, so it's born in place:
-/// the pane beside it in its tab's tree (the split's direction and ratio).
-/// herdr always puts the new pane second; a tile that goes first is swapped
-/// into place by the next push. `None` when the tab has no pane on the
-/// machine yet: the terminal gets a herdr tab of its own.
-pub fn split_for(session: &Session, tile: TileId) -> Option<herdr::SplitSpec> {
+/// beside the terminal next to it in its tab's tree (the split's direction
+/// and ratio). herdr always puts the new pane second; a tile that goes first
+/// is swapped into place by the next push. `None` when the tab has no other
+/// terminal: the terminal gets a herdr tab of its own.
+pub fn split_for(session: &Session, tile: TileId) -> Option<SplitFrom> {
     let path = session.locate(tile).ok()?;
     let (_, ws_id, tab_id) = session.ids_at(path);
     let machine = session.workspace(ws_id).ok()?.machine.clone();
     let tab = session.tab(tab_id).ok()?;
-    let live = live_panes(tab, &machine);
-    // From the tile up: the nearest split whose other side holds a pane.
+    // Terminals that have a pane, or are getting one ahead of this tile.
+    let live: HashMap<TileId, Option<String>> = tab
+        .tiles
+        .iter()
+        .filter(|t| t.id != tile)
+        .filter_map(|t| match &t.content {
+            TileContent::Terminal {
+                herdr: Some(h),
+                ended: false,
+                ..
+            } if h.machine == machine => Some((t.id, Some(h.pane_id.clone()))),
+            TileContent::Terminal {
+                herdr: None,
+                ended: false,
+                ..
+            } => Some((t.id, None)),
+            _ => None,
+        })
+        .collect();
+    // From the tile up: the nearest split whose other side holds a terminal.
     fn find(
         node: &Node,
         tile: TileId,
-        live: &HashMap<TileId, &HerdrRef>,
-    ) -> Option<(String, Axis, f64)> {
+        live: &HashMap<TileId, Option<String>>,
+    ) -> Option<(TileId, Axis, f64)> {
         let Node::Split { axis, ratio, a, b } = node else {
             return None;
         };
@@ -294,16 +312,27 @@ pub fn split_for(session: &Session, tile: TileId) -> Option<herdr::SplitSpec> {
         } else {
             leaves.iter().rev().find(|t| live.contains_key(t))
         };
-        pick.map(|t| (live[t].pane_id.clone(), *axis, *ratio))
+        pick.map(|t| (*t, *axis, *ratio))
     }
-    let (pane, axis, ratio) = find(&tab.root, tile, &live)?;
-    Some(herdr::SplitSpec {
-        target: herdr::PaneId(pane),
+    let (anchor, axis, ratio) = find(&tab.root, tile, &live)?;
+    Some(SplitFrom {
+        tile: anchor,
+        pane: live[&anchor].clone(),
         direction: direction(axis),
-        ratio: Some(ratio),
-        cwd: None,
-        env: Vec::new(),
+        ratio,
     })
+}
+
+/// Where to split a new terminal's pane off (ADR 0012): beside `tile`'s
+/// pane, `pane` when it has one already, else the one the worker made for
+/// it just before (tiles made in a row, like three quick splits).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SplitFrom {
+    pub tile: TileId,
+    pub pane: Option<String>,
+    pub direction: herdr::SplitDirection,
+    /// The split's first child's share.
+    pub ratio: f64,
 }
 
 // ---- pull: herdr's changes into the model ----------------------------------

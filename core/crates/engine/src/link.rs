@@ -336,7 +336,7 @@ pub enum Effect {
         /// Where to split the pane off while mirroring the layout (ADR
         /// 0012): the pane beside the tile in its tab. `None` (or mirroring
         /// off) gives the terminal a herdr tab of its own.
-        split: Option<herdr::SplitSpec>,
+        split: Option<crate::mirror::SplitFrom>,
     },
     /// Kill a closed tile's pane (F14: only when the user asked to).
     KillTerminal { pane_id: String },
@@ -1119,6 +1119,9 @@ pub(crate) async fn run_worker<P: HerdrPort>(
 ) {
     // App workspace → herdr workspace, ahead of the engine's own copy.
     let mut workspaces: HashMap<WorkspaceId, String> = HashMap::new();
+    // Panes made here, by tile: a tile split off one made just before finds
+    // it here before the engine has bound it.
+    let mut made: HashMap<TileId, String> = HashMap::new();
     while let Some(effect) = effects.recv().await {
         match effect {
             Effect::CreateTerminal {
@@ -1176,19 +1179,24 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                         // so it's born in place. If that fails (the pane
                         // just went), a tab of its own; the next push moves
                         // it in.
-                        let split = split.filter(|_| mirror.load(Ordering::Relaxed));
-                        let made = match split {
-                            Some(spec) => port
-                                .split_terminal(herdr::SplitSpec {
-                                    cwd: cwd.clone(),
-                                    env: env.clone(),
-                                    ..spec
-                                })
-                                .await
-                                .ok(),
+                        let split =
+                            split
+                                .filter(|_| mirror.load(Ordering::Relaxed))
+                                .and_then(|s| {
+                                    let pane = s.pane.or_else(|| made.get(&s.tile).cloned())?;
+                                    Some(herdr::SplitSpec {
+                                        target: herdr::PaneId(pane),
+                                        direction: s.direction,
+                                        ratio: Some(s.ratio),
+                                        cwd: cwd.clone(),
+                                        env: env.clone(),
+                                    })
+                                });
+                        let split_off = match split {
+                            Some(spec) => port.split_terminal(spec).await.ok(),
                             None => None,
                         };
-                        match made {
+                        match split_off {
                             Some(t) => Ok(t),
                             None => {
                                 port.create_terminal(herdr::TerminalSpec {
@@ -1204,6 +1212,10 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 };
                 match terminal {
                     Ok(t) => {
+                        if made.len() > 4096 {
+                            made.clear();
+                        }
+                        made.insert(tile, t.pane_id.0.clone());
                         // herdr can't replace the shell, so the command is
                         // typed in; the PTY holds it until the shell reads.
                         if let Some(line) = command {

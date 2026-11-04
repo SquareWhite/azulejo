@@ -136,17 +136,28 @@ fn a_new_terminal_splits_off_the_pane_beside_it() {
     bind(&mut s, a, "w1:p1", "w1:t1");
     bind(&mut s, b, "w1:p2", "w1:t1");
     let spec = split_for(&s, c).unwrap();
-    assert_eq!(spec.target, "w1:p2".into());
+    assert_eq!((spec.tile, spec.pane.as_deref()), (b, Some("w1:p2")));
     assert_eq!(spec.direction, herdr::SplitDirection::Down);
-    // With B not bound either, the nearest pane is across the root split.
-    let (mut s, _, [a, _, c]) = manual_tab(terminal());
+    // B still getting its pane: C names B, and the worker finds the pane it
+    // made for B just before (three quick splits land in place).
+    let (mut s, _, [a, b, c]) = manual_tab(terminal());
     bind(&mut s, a, "w1:p1", "w1:t1");
     let spec = split_for(&s, c).unwrap();
-    assert_eq!(spec.target, "w1:p1".into());
+    assert_eq!((spec.tile, spec.pane), (b, None));
+    assert_eq!(spec.direction, herdr::SplitDirection::Down);
+    // A browser beside it: the nearest terminal is across the root split.
+    let (mut s, _, [a, b, _]) = manual_tab(browser());
+    bind(&mut s, a, "w1:p1", "w1:t1");
+    let spec = split_for(&s, b).unwrap();
+    assert_eq!((spec.tile, spec.pane.as_deref()), (a, Some("w1:p1")));
     assert_eq!(spec.direction, herdr::SplitDirection::Right);
-    // A tab's first terminal gets a herdr tab of its own.
-    let (s, _, [a, _, _]) = manual_tab(terminal());
-    assert_eq!(split_for(&s, a), None);
+    // A tab's only terminal gets a herdr tab of its own.
+    let mut s = Session::new();
+    let (_, ws) = s.create_window("main", None);
+    let only = terminal();
+    let id = only.id;
+    s.create_tab(ws, only, None).unwrap();
+    assert_eq!(split_for(&s, id), None);
 }
 
 #[test]
@@ -165,7 +176,7 @@ fn a_tile_stack_grows_by_splitting_its_last_pane() {
         bind(&mut s, ids[i], &format!("w1:p{}", i + 1), "w1:t1");
     }
     let spec = split_for(&s, ids[3]).unwrap();
-    assert_eq!(spec.target, "w1:p3".into(), "the stack's last pane");
+    assert_eq!(spec.pane.as_deref(), Some("w1:p3"), "the stack's last pane");
     assert_eq!(spec.direction, herdr::SplitDirection::Down);
 }
 
