@@ -60,7 +60,7 @@ Two departures from the brief's suggestions. M is "a ring through four rounded s
 - **J**: holds as a flower with corners at both sizes, with slimmer petals at 16.
 - **K**: at 16 px the four circles merge, so it's a ring in a frame: a tile, not much more.
 - **L**: the best of the B family small. At 16 px it's four blue tiles with a round hole where they meet.
-- **M**: busy at 32 px; at 16 a ring cut through four solid tiles, which reads as a target. The weakest.
+- **M**: reworked for small sizes (Nov 4, 2026). It was busy at 32 px, and at 16 a ring cut through four solid tiles read as a target. Now from 64 px down it's set in whole pixels, so the outlines land on the grid. At 32 px the tiles are bigger and bolder (2 px lines, 1 px gaps), and the ring is a little wider so each link reaches further into its tiles. At 16 px it drops the ring and the weave for four bold outlined squares: any ring left there made a target or a ⌘. From 128 px up it's unchanged.
 - **N**: four squares with notches; fine, if a little like an app grid.
 - **O**: a pinwheel at 32 px; at 16 a solid star, which is an octagon. Weak small.
 - **P**: a diamond with a white heart and corner quarters. Strong at both sizes, best in style 2.

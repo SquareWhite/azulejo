@@ -756,10 +756,19 @@ let flatGlaze = Palette(
 /// there's no room for a gap, so strands don't weave there.
 struct Pen {
   let lod: Int  // 0 from 128 px up, 1 at 64, 2 at 32, 3 at 16
-  init(px: Int) { lod = px <= 16 ? 3 : (px <= 32 ? 2 : (px <= 64 ? 1 : 0)) }
-  var w: CGFloat { [0.1, 0.11, 0.14, 0.24][lod] }
-  var gap: CGFloat { [0.05, 0.06, 0.085, 0][lod] }
+  let px: Int
+  var w: CGFloat
+  var gap: CGFloat
+  init(px: Int) {
+    self.px = px
+    lod = px <= 16 ? 3 : (px <= 32 ? 2 : (px <= 64 ? 1 : 0))
+    w = [0.1, 0.11, 0.14, 0.24][lod]
+    gap = [0.05, 0.06, 0.085, 0][lod]
+  }
   var small: Bool { lod >= 2 }
+  /// `n` pixels at this size, in tile space. The tile's centre sits on a
+  /// pixel corner at every size, so whole pixels from it land on the grid.
+  func pixels(_ n: CGFloat) -> CGFloat { n * 1024 / 412 / CGFloat(px) }
 }
 
 /// A closed strand flattened to points, with the arc length to each.
@@ -1123,20 +1132,38 @@ func drawJoined(_ g: CGContext, _ ink: CGColor, _ pen: Pen) {
 
 /// M (from B): a 2×2 of identical rounded squares, a ring woven through all
 /// four, over one side of each tile and under the other, like a chain.
+///
+/// At 64 px and below it's set in whole pixels so the outlines land on the
+/// grid: the tiles a little bigger and bolder, the ring a little wider so
+/// each link reaches further into its tiles. At 16 px there's no room for a
+/// weave (and a ring there made a target, or a ⌘), so it's four bold outlined
+/// tiles.
 func drawLinked(_ g: CGContext, _ ink: CGColor, _ pen: Pen) {
-  let o: CGFloat = 0.42  // tile centres at (±o, ±o)
-  let h: CGFloat = 0.28
-  let rc: CGFloat = 0.1
-  let r: CGFloat = 0.4  // the ring cuts across each tile's inner corner
+  var pen = pen
+  var o: CGFloat = 0.42  // tile centres at (±o, ±o)
+  var h: CGFloat = 0.28
+  var rc: CGFloat = 0.1
+  var r: CGFloat = 0.4  // the ring cuts across each tile's inner corner
+  if pen.lod > 0 {
+    // In pixels from the centre: the outlines' inner and outer edges, their
+    // weight, the corner radius and ring radius on the stroke's centre line,
+    // and the gap either side of a strand on top.
+    let (inner, outer, w, corner, ring, gap): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+      [(2, 20, 3, 3, 11, 1.5), (1, 11, 2, 1.5, 6.5, 1), (1, 6, 2, 1, 0, 0)][pen.lod - 1]
+    o = pen.pixels(inner + outer) / 2
+    h = pen.pixels(outer - inner - w) / 2
+    rc = pen.pixels(corner)
+    r = pen.pixels(ring)
+    pen.w = pen.pixels(w)
+    pen.gap = pen.pixels(gap)
+  }
+  let tiles = corners.map { k in roundSquare(CGPoint(x: k.x * o, y: k.y * o), h, rc) }
   if pen.lod == 3 {
-    // No room for a weave: solid tiles with the ring cut through them.
-    for k in corners { g.fill(roundSquare(CGPoint(x: k.x * o, y: k.y * o), h + pen.w / 2, rc + pen.w / 2), ink) }
-    g.punch(ring(.zero, r, pen.w * 0.8))
+    for t in tiles { g.fill(t.copy(strokingWithWidth: pen.w, lineCap: .round, lineJoin: .round, miterLimit: 4), ink) }
     return
   }
-  let strands = corners.map { k in roundSquare(CGPoint(x: k.x * o, y: k.y * o), h, rc) } + [disc(.zero, r)]
   // Going round, ring and tile take turns on top: a chain of four links.
-  weave(g, strands, ink, pen)
+  weave(g, tiles + [disc(.zero, r)], ink, pen)
 }
 
 /// N (from B): B's alternating tiles as solid and outline squares, and a disc
