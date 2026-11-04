@@ -138,6 +138,12 @@ t = tabs[0]
 print(t.get("layout"), len(t.get("tile", [])))
 assert t.get("layout") == "tile" and len(t.get("tile", [])) == 4
 PY
+check "export writes no doubled slashes in paths" python3 - "$out/export-example.toml" <<'PY'
+import re, sys
+bad = [s for s in re.findall(r'"([^"]*)"', open(sys.argv[1]).read()) if "//" in s and "://" not in s]
+print(bad)
+assert not bad
+PY
 cat >"$fx/three.toml" <<'TOML'
 name = "three"
 layout = "three_column"
