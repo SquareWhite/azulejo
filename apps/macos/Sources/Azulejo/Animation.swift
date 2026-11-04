@@ -7,8 +7,9 @@ import QuartzCore
 /// How motion works (ADR 0004): with `reflow` (the default) every moving
 /// tile's frame steps along the curve once per display frame on the main
 /// thread, like a window being drag-resized, and a terminal's grid follows
-/// it (`TerminalTileView`'s live resize: whole cells only, at most one PTY
-/// resize per `reflowInterval`, then an exact one at the end). The other
+/// it, `reflowLead` ahead (`TerminalTileView`'s live resize: whole cells
+/// only, at most one PTY resize per `reflowInterval`, the exact final size
+/// once the lead reaches the end). The other
 /// styles send every tile to its final frame at the start of a motion — so a
 /// terminal's PTY is resized exactly once, while a snapshot covers it — and
 /// Core Animation carries it visually from where it was to where it is.
@@ -71,6 +72,24 @@ enum Motion {
             return v / 1000
         }
         return 0.033
+    }()
+
+    /// Reflow: how far ahead of the frame a terminal's grid runs. A live
+    /// resize takes the size the tile will have this long from now (the
+    /// final size once that's past the end), because the redraw it asks for
+    /// lands about that late: libghostty holds a PTY resize 25 ms, herdr's
+    /// attach client looks at its size every 100 ms (0–100 ms, a fixed
+    /// sleep; SIGWINCH doesn't wake it), and herdr draws the pane's answer
+    /// about 19 ms after the pane resized. A grid that runs ahead is
+    /// clipped by the tile (growing) or shows the terminal's background
+    /// (shrinking), like one that trails, but the last redraw lands with the
+    /// motion's end instead of 50–150 ms after it. `AZJ_REFLOW_LEAD_MS`
+    /// overrides it (automation: `anim reflow-lead`); 0 follows the frame.
+    static var reflowLead: CFTimeInterval = {
+        if let v = ProcessInfo.processInfo.environment["AZJ_REFLOW_LEAD_MS"].flatMap(Double.init), v >= 0 {
+            return v / 1000
+        }
+        return 0.1
     }()
 
     /// Reflow: the most PTY resizes one motion of `duration` can cost a
@@ -293,6 +312,11 @@ protocol MotionAware: AnyObject {
     func liveResizeDidEnd()
     /// Reflow: whether moving resizes something (a running terminal).
     var resizesLive: Bool { get }
+    /// Reflow: the size the tile will have at `time` (`Motion.reflowLead`
+    /// ahead, or the final frame once that's past the end: `last`). Called
+    /// each display frame before the tile's frame steps; the content may
+    /// take that size early.
+    func liveResizeAhead(to size: CGSize, at time: CFTimeInterval, last: Bool)
     /// About to move. `freeze`: cover live content with a snapshot of the last
     /// frame (the tile changes size, or is closing). Returns whether it froze.
     /// `fill`: the snapshot follows the tile's bounds (scale style); otherwise
@@ -324,6 +348,7 @@ extension MotionAware {
     func liveResizeWillStart(final: CGSize) {}
     func liveResizeDidEnd() {}
     var resizesLive: Bool { false }
+    func liveResizeAhead(to size: CGSize, at time: CFTimeInterval, last: Bool) {}
     var headerInset: CGFloat { 0 }
     var contentLeft: CGFloat { 0 }
 }
@@ -363,6 +388,12 @@ final class MotionStats {
     /// Reflow: resizes on top of one per motion (the live ones).
     private(set) var liveResizes = 0
     private(set) var mismatches: [String] = []
+    /// Reflow: every live and final terminal resize (herdr pane, when asked,
+    /// when the tile's frame has that size, the grid), and when motions
+    /// ended, for `automation/reflow-lag.py` (text-to-frame lag against
+    /// SIGWINCH logs in the panes).
+    private var reflowResizes: [[Any]] = []
+    private var reflowEnds: [Double] = []
     private var lastTick: CFTimeInterval?
     /// When the last tick's callback ran (not its vsync timestamp): a missed
     /// tick blames whatever the main thread did between two callbacks.
@@ -385,6 +416,8 @@ final class MotionStats {
         actualResizes = 0
         liveResizes = 0
         mismatches = []
+        reflowResizes = []
+        reflowEnds = []
         lastTick = nil
         lastCallback = nil
         droppedByKind = [:]
@@ -400,6 +433,18 @@ final class MotionStats {
     }
 
     func retargeted() { retargets += 1 }
+
+    /// Reflow: a terminal's surface took a new size at `now`, the size its
+    /// tile has at `frameTime` (later, with a lead).
+    func reflowResized(pane: String, now: CFTimeInterval, frameTime: CFTimeInterval, grid: (Int, Int)) {
+        guard reflowResizes.count < 20_000 else { return }
+        reflowResizes.append([pane, now, frameTime, grid.0, grid.1])
+    }
+
+    func reflowEnded(at time: CFTimeInterval) {
+        guard reflowEnds.count < 5_000 else { return }
+        reflowEnds.append(time)
+    }
 
     /// A display-link tick during motion; `now` is when its callback ran.
     func tick(_ timestamp: CFTimeInterval, now: CFTimeInterval) {
@@ -476,6 +521,9 @@ final class MotionStats {
             "pty_resizes_live": liveResizes,
             "style": "\(Motion.style)",
             "reflow_interval_ms": round2(Motion.reflowInterval * 1000),
+            "reflow_lead_ms": round2(Motion.reflowLead * 1000),
+            "reflow_resizes": reflowResizes,
+            "reflow_ends": reflowEnds,
             "resize_mismatches": mismatches,
             "drop_causes_ms": dropCauses.mapValues(round2),
             "drops": drops,

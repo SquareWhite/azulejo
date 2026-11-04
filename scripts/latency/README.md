@@ -6,5 +6,6 @@
 - `osbench.swift`: the OS-input bench. It refuses to run without `--yes-post-real-keys`.
 - `herdr_rtt.py`: PTY echo round trip, direct vs `herdr terminal attach`.
 - `summarise.py`: prints the markdown tables.
+- `resize-probe.sh`: PTY resize -> SIGWINCH in a herdr pane -> redraw back at the attach client (no libghostty), in a throwaway session. Safe to run any time.
 
 Results and method: [docs/measurements.md](../../docs/measurements.md).

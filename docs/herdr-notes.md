@@ -250,6 +250,7 @@ The client always restores the host terminal (leaves the alt screen, turns mouse
 4. Forward DECCKM and focus reporting (1004), or re-encode keys server-side.
 5. `layout.apply` that reuses live `pane_id`s instead of replacing the tab.
 6. Clearer exit messages than "server shut down" for take-over and pane-ended cases (or a JSON exit reason).
+7. Wake the attach client's size poll on SIGWINCH. `resize_poll_loop` (`src/client/terminal_geometry.rs`, 0.9.1 and still on master) sleeps a fixed 100 ms between looks at the terminal size; the signal handler only sets a flag. A PTY resize reaches the pane 4–103 ms later (uniform, median 57–66 ms), and the pane sees at most one size per 100 ms however often the host resizes. That's most of the reflow motion lag (ADR 0004, reflow-lead amendment). No config knob; a signal-driven wake (or a ~10 ms poll while signalled) would cut it to a few ms. Also: the frame carrying the pane's first output after a resize reaches the client about 19 ms later (17–21 ms), against ~1.5 ms for the same output without a resize.
 
 ### Not determined
 

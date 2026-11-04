@@ -1067,6 +1067,8 @@ final class TileContainerView: NSView, ThemeAware {
     /// Steps every reflowing tile to where the curve puts it at `time`,
     /// whole device pixels, so a terminal's surface never sits between
     /// them. Its content lays out at that size (`liveResizeWillStart`).
+    /// A terminal hears `Motion.reflowLead` ahead first, so its grid can
+    /// run ahead of the frame by about as long as its redraw takes.
     private func driveReflow(at time: CFTimeInterval) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -1077,16 +1079,28 @@ final class TileContainerView: NSView, ThemeAware {
                 done = true
                 continue
             }
-            let e = CGFloat(Motion.progress(t))
-            func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * e }
-            let step = backingAlignedRect(
-                CGRect(x: mix(r.from.minX, r.to.minX), y: mix(r.from.minY, r.to.minY),
-                       width: mix(r.from.width, r.to.width), height: mix(r.from.height, r.to.height)),
-                options: .alignAllEdgesNearest)
+            if let aware = r.view as? MotionAware, aware.resizesLive {
+                let ahead = min(time + Motion.reflowLead, r.start + r.duration)
+                let last = ahead >= r.start + r.duration
+                let size = last ? r.to.size : Self.step(r, (ahead - r.start) / r.duration, in: self).size
+                aware.liveResizeAhead(to: size, at: ahead, last: last)
+            }
+            let step = Self.step(r, t, in: self)
             if r.view.frame != step { r.view.frame = step }
         }
         if done { finishReflow(at: time) }
         CATransaction.commit()
+    }
+
+    /// Where the curve puts a reflowing tile at `t` (0…1 of its time), on
+    /// whole device pixels.
+    private static func step(_ r: Reflow, _ t: Double, in view: NSView) -> CGRect {
+        let e = CGFloat(Motion.progress(t))
+        func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * e }
+        return view.backingAlignedRect(
+            CGRect(x: mix(r.from.minX, r.to.minX), y: mix(r.from.minY, r.to.minY),
+                   width: mix(r.from.width, r.to.width), height: mix(r.from.height, r.to.height)),
+            options: .alignAllEdgesNearest)
     }
 
     /// Puts reflowing tiles at their final frame and has their content take
@@ -1098,6 +1112,7 @@ final class TileContainerView: NSView, ThemeAware {
         CATransaction.setDisableActions(true)
         for (id, r) in reflowing where time >= r.start + r.duration {
             reflowing[id] = nil
+            if (r.view as? MotionAware)?.resizesLive == true { MotionStats.shared.reflowEnded(at: r.start + r.duration) }
             // A window resize mid-motion moved the target: the latest one.
             let to = finals[id] ?? r.to
             if r.view.frame != to { r.view.frame = to }

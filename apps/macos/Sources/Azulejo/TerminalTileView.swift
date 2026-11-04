@@ -89,8 +89,13 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     /// Reflow motion: the tile's frame changes every display frame and the
     /// surface follows it live (`liveResize`). `final`: the size the tile
     /// ends at. `hold`: the surface started mid-motion, at `final`, and
-    /// stays there (a new pane isn't born a few columns wide).
-    private var reflow: (final: CGSize, hold: Bool)?
+    /// stays there (a new pane isn't born a few columns wide). `ahead`: the
+    /// size the tile will have `Motion.reflowLead` from now (`time`), which
+    /// the surface takes instead of the tile's; `last` once that's the final
+    /// size.
+    private var reflow: (final: CGSize, hold: Bool, ahead: (size: CGSize, time: CFTimeInterval, last: Bool)?)?
+    /// The herdr pane the surface attached to, for reflow stats.
+    private var attachedPane = ""
 
     private static var core: Core?
     private static var log: (String) -> Void = { _ in }
@@ -211,28 +216,39 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     }
 
     /// Reflow: the tile's frame moves every display frame. The surface
-    /// takes the tile's size only when that changes the grid by a whole
-    /// cell or more and the last resize was `Motion.reflowInterval` ago, so
-    /// a terminal (and its TUI, through herdr) sees a few SIGWINCHes per
-    /// motion, never one per frame or per pixel. In between it keeps its
-    /// size, pinned to the tile's top left: the terminal's background shows
-    /// round a surface that's smaller than the tile, the tile clips one
-    /// that's bigger. libghostty's layer keeps its last frame top left while
-    /// the renderer thread draws the next one (no stretching), so nothing
-    /// here waits on the GPU.
+    /// takes the size the tile will have `Motion.reflowLead` from now (its
+    /// redraw, through herdr, lands about then), only when that changes the
+    /// grid by a whole cell or more and the last resize was
+    /// `Motion.reflowInterval` ago, so a terminal (and its TUI) sees a few
+    /// SIGWINCHes per motion, never one per frame or per pixel. Once that
+    /// size is the final one it takes it exactly, before the motion ends.
+    /// In between it keeps its size, pinned to the tile's top left: the
+    /// terminal's background shows round a surface that's smaller than the
+    /// tile, the tile clips one that's bigger (never a stretch).
+    /// libghostty's layer keeps its last frame top left while the renderer
+    /// thread draws the next one, so nothing here waits on the GPU.
     private func liveResize() {
         guard let surface, let reflow else { return }
         surface.liveResizing = true
         let current = surface.frame.size
-        let target = bounds.size
-        if !reflow.hold, target.width >= 20, target.height >= 20,
-           CACurrentMediaTime() - lastSurfaceResize >= Motion.reflowInterval {
+        let ahead = reflow.ahead
+        let target = ahead?.size ?? bounds.size
+        let now = CACurrentMediaTime()
+        if !reflow.hold, target.width >= 20, target.height >= 20, now - lastSurfaceResize >= Motion.reflowInterval {
             let cell = surface.cellSize ?? CGSize(width: 1, height: 1)
-            if abs(target.width - current.width) >= cell.width || abs(target.height - current.height) >= cell.height {
+            let change = ahead?.last == true
+                ? target != current
+                : abs(target.width - current.width) >= cell.width || abs(target.height - current.height) >= cell.height
+            if change {
                 Perf.measure("surface.live-resize") {
-                    surface.frame = CGRect(origin: .zero, size: target)
+                    surface.frame = CGRect(x: 0, y: bounds.height - target.height,
+                                           width: target.width, height: target.height)
                 }
-                lastSurfaceResize = CACurrentMediaTime()
+                lastSurfaceResize = now
+                if let grid = surface.gridSize {
+                    MotionStats.shared.reflowResized(pane: attachedPane, now: now, frameTime: ahead?.time ?? now,
+                                                     grid: grid)
+                }
                 return
             }
         }
@@ -428,6 +444,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
             return false
         }
         Self.attaches += 1
+        attachedPane = herdr.paneId
         // Sized by setFrameSize, so motion controls when the PTY resizes.
         view.autoresizingMask = []
         view.logName = Short.id(tileID)
@@ -878,10 +895,17 @@ extension TerminalTileView: MotionAware {
             // A snapshot from an earlier motion (Monocle hid this tile)
             // would cover the live text: it goes.
             if freeze != nil { motionCancelled() }
-            reflow = (final, hold: false)
+            reflow = (final, hold: false, ahead: nil)
         } else {
             reflow?.final = final
+            reflow?.ahead = nil
         }
+    }
+
+    func liveResizeAhead(to size: CGSize, at time: CFTimeInterval, last: Bool) {
+        guard reflow != nil else { return }
+        reflow?.ahead = (size, time, last)
+        liveResize()
     }
 
     func liveResizeDidEnd() {
@@ -890,8 +914,14 @@ extension TerminalTileView: MotionAware {
         if freeze != nil {
             resizeSurfaceCoalesced()
         } else {
-            // The exact size, drawn by the renderer thread too.
+            // The exact size, drawn by the renderer thread too (already
+            // there when the lead took it before the end).
+            let before = surface?.resizeCount
             applySurfaceSize(draw: false)
+            if let surface, surface.resizeCount != before, let grid = surface.gridSize {
+                let now = CACurrentMediaTime()
+                MotionStats.shared.reflowResized(pane: attachedPane, now: now, frameTime: now, grid: grid)
+            }
         }
         surface?.liveResizing = false
     }

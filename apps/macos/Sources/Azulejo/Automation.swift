@@ -49,6 +49,7 @@ import AppKit
 ///     anim enabled BOOL      force motion on or off; `default` follows config
 ///     anim style NAME        reflow|crop|scale|outline; `default` follows config
 ///     anim reflow-ms MS      reflow: shortest gap between a terminal's live resizes
+///     anim reflow-lead MS    reflow: how far ahead of the frame a terminal's grid runs
 ///     anim reset             clear motion stats
 ///     anim stats [name]      write motion stats → <out>/name.json (anim-stats)
 ///     anim expect-clean [N]  fail if more than N (default 0) frames dropped, or
@@ -356,6 +357,8 @@ final class Automation {
             Motion.styleOverride = value == "default" ? nil : value
         case "reflow-ms":
             if let ms = Double(value), ms >= 0 { Motion.reflowInterval = ms / 1000 }
+        case "reflow-lead":
+            if let ms = Double(value), ms >= 0 { Motion.reflowLead = ms / 1000 }
         case "reset":
             MotionStats.shared.reset()
         case "stats":
@@ -364,7 +367,8 @@ final class Automation {
             if let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
                 try? data.write(to: out.appendingPathComponent("\(name).json"))
             }
-            record("anim stats: \(summary.filter { $0.key != "resize_mismatches" })")
+            let quiet: Set = ["resize_mismatches", "reflow_resizes", "reflow_ends"]
+            record("anim stats: \(summary.filter { !quiet.contains($0.key) })")
         case "expect-clean":
             let summary = MotionStats.shared.summary()
             let dropped = summary["dropped_frames"] as? Int ?? -1
@@ -373,7 +377,7 @@ final class Automation {
             if dropped > allowed { failures.append("line \(step): \(dropped) dropped frame(s), allowed \(allowed)") }
             if !mismatches.isEmpty { failures.append("line \(step): \(mismatches.joined(separator: ", "))") }
         default:
-            failures.append("line \(step): anim needs duration|enabled|style|reflow-ms|reset|stats|expect-clean")
+            failures.append("line \(step): anim needs duration|enabled|style|reflow-ms|reflow-lead|reset|stats|expect-clean")
         }
         record("anim \(arg)")
     }

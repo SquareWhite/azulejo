@@ -410,3 +410,31 @@ Nov 4, 2026, Apple Silicon, 120 Hz, screen unlocked, load average about 3 (other
 - Before two fixes the first reflow run had 65 passes over a frame and 9 dropped ticks: libghostty's layer redrew synchronously on every live resize (`needsDisplayOnBoundsChange`, 2–4 ms each, all terminals on the same tick), and tile headers measured their text at every layout (0.12 ms per header per frame, now 0.03).
 - herdr: with `AZJ_DEBUG_MIRROR=1`, four terminals and eight sidebar toggles (158 live resizes) produced no herdr events and no mirror pushes or pulls; the run's totals (6 pushes, 13 events, all from the splits and one ratio change) match crop's.
 - `--slow` (1.5 s motions, reflow): 86 captures, 0 stray pixels outside the cards, 0 STALE frames.
+
+## Reflow lead (ADR 0004, Nov 4 reflow-lead amendment)
+
+Nov 4, 2026, Apple Silicon, 120 Hz, herdr 0.9.1, busy machine (other agents running).
+
+**One resize through herdr, no libghostty** (`scripts/latency/resize-probe.sh`: a PTY stands in for libghostty, `resize_pane.py` in the pane logs each SIGWINCH and redraws; one clock in both processes):
+
+| Hop | n | Median | p90 | Min–max (ms) |
+| --- | --- | --- | --- | --- |
+| PTY ioctl → SIGWINCH in the pane | 39 | 57–66 | 95–101 | 4–106, uniform |
+| Pane's redraw → bytes at the client, after a resize | 39 | 19 | 20 | 17–21 |
+| Same, no resize (SIGUSR1 redraw) | 30 | 1.5 | 1.6 | 0.8–22 |
+| Resizes every 8, 16 or 33 ms for 200 ms → SIGWINCHes in the pane | 10 × 3 | 2–3 per 200 ms, whatever the rate | | |
+
+- The uniform 0–100 ms is herdr's attach client: `resize_poll_loop` (`src/client/terminal_geometry.rs`) sleeps 100 ms between looks at the terminal size, and SIGWINCH only sets a flag. Same on herdr's master today. No config knob.
+- libghostty adds a fixed 25 ms before the PTY ioctl (`Coalesce.min_ms`, `termio/Thread.zig`; the first resize starts the timer, the latest size goes out when it fires).
+- So, per live resize: throttle 0–33 + 25 + 0–100 + ~19 + the program's redraw + ≤ 8 to present ≈ 55–185 ms.
+
+**In the app** (`apps/macos/automation/reflow-lag.sh`): three terminals run `winch-log.py`; sidebar toggles, divider moves and four rotates per round, 700 ms apart, three rounds per lead, the whole thing twice with leads alternating. `reflow-lag.py` matches each SIGWINCH to the app's resize to that grid; text shows at SIGWINCH + 27 ms (herdr's 19 plus a frame). Lag = when the text shows − when the frame had that size (+ trails).
+
+| Lead | Text vs frame, median (p10…p90), worst | Last redraw vs end, median, worst | PTY resizes / SIGWINCHes per terminal per motion |
+| --- | --- | --- | --- |
+| 0 (before) | +74 (+53…+123), +157 · +71 (+50…+122), +152 | +64, +158 · +65, +149 | 4.8 / 2.3–2.4 |
+| 75 | +13 (−20…+60), +82 · +12 (−19…+65), +83 | −5, +82 · +1, +83 | 2.5 / 1.6–1.7 |
+| **100 (default)** | −21 (−51…+22), +53 · −15 (−49…+33), +54 | −38, +54 · −24, +54 | 2.2 / 1.5 |
+| 125 | −42 (−78…+12), +35 · −39 (−72…+22), +33 | −50, +35 · −45, +32 | 2.0 / 1.3 |
+
+**Stress** (`anim.sh`, 105 motions, 11 retargets, leads alternating 0, 100, 0, 100): dropped ticks 1, 1, 0, 1; main-thread passes over a frame 0 in every run (p99 2.3 ms); PTY resizes 1,484 and 1,481 at lead 0, 735 and 735 at lead 100 (357 expected minimum), no mismatches.
