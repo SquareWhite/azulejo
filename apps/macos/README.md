@@ -100,6 +100,24 @@ keyboard back, and refreshes don't take it while the tree has it
 checks both views with fixture repositories (`sidebar mode|select|focus|files
 …` in scripts; `sidebar.*` state keys).
 
+## Right-click menus
+
+Workspace rows (Agents view) and tile header strips have standard NSMenus
+(`ContextMenus.swift`). Rows: Rename…, New Tab, Reveal Folder in Finder, Open
+Folder in Files Tile, Copy Path, Close Workspace (the folder items only when
+the workspace has a repository or cwd; Reveal and Open in Files Tile only on
+Local). Headers: Split Right, Split Down, Zoom, Rename…, Copy Title, Copy
+Working Directory (terminals), Reveal in Finder, Close Tile, and Kill Pane…
+for bound terminals (asks first). The browser has no header strip: these
+items follow the page's own in its chrome's menu. Every keymap item runs its
+action through `AppController.perform(action:target:)`, aimed at the row's
+workspace or the header's tile, and shows its chord from `commands.list`.
+A terminal's body keeps its own right-click (libghostty, mouse-reporting
+apps). `apps/macos/automation/menus.sh` builds both menus without a mouse
+(`menu workspace N|tile [invoke TITLE]`, `menu answer`, `menu shot`; state
+`menu.items`, `menu.copied`, `menu.revealed`, `workspace.names`), checks herdr
+keeps a closed workspace's panes, and that a relaunch doesn't bring it back.
+
 ## Layout motion (F4, PLAN 2.1)
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall

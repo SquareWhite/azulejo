@@ -287,14 +287,16 @@ fn title(action: Action) -> String {
         RotateAnticlockwise => "Rotate layout anticlockwise".into(),
         NewWorkspace => "New workspace".into(),
         SwitchWorkspace(i) => format!("Switch to workspace {i}"),
-        LastWorkspace => "Last workspace".into(),
+        SwitchWorkspaceLast => "Switch to last workspace".into(),
+        LastWorkspace => "Previous active workspace".into(),
         NextWorkspace => "Next workspace".into(),
         PreviousWorkspace => "Previous workspace".into(),
-        CloseWorkspace => "Close workspace".into(),
+        CloseWorkspace => "Close workspace (detach)".into(),
         RenameWorkspace => "Rename workspace…".into(),
         NewTab => "New tab".into(),
         SwitchTab(i) => format!("Switch to tab {i}"),
-        LastTab => "Last tab".into(),
+        SwitchTabLast => "Switch to last tab".into(),
+        LastTab => "Previous active tab".into(),
         NextTab => "Next tab".into(),
         PreviousTab => "Previous tab".into(),
         CloseTab => "Close tab".into(),
@@ -322,9 +324,10 @@ fn category(action: Action) -> &'static str {
         | CycleLayoutPrevious | ToggleLayout(_) | IncreaseMasters | DecreaseMasters
         | GrowMasterArea | ShrinkMasterArea | MovePositionNext | MovePositionPrevious
         | RotatePart | RotateClockwise | RotateAnticlockwise => "layout",
-        NewWorkspace | SwitchWorkspace(_) | LastWorkspace | NextWorkspace | PreviousWorkspace
-        | CloseWorkspace | RenameWorkspace => "workspace",
-        NewTab | SwitchTab(_) | LastTab | NextTab | PreviousTab | CloseTab | RenameTab => "tab",
+        NewWorkspace | SwitchWorkspace(_) | SwitchWorkspaceLast | LastWorkspace | NextWorkspace
+        | PreviousWorkspace | CloseWorkspace | RenameWorkspace => "workspace",
+        NewTab | SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab | CloseTab
+        | RenameTab => "tab",
         NewWindow | CloseWindow => "window",
         Find | EditScrollback => "terminal",
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
@@ -468,6 +471,39 @@ mod tests {
         assert!(get("goto").chords.is_empty());
         for e in &list {
             assert!(!e.title.is_empty() && !e.category.is_empty(), "{e:?}");
+        }
+    }
+
+    /// ⌘9 and ⌃9 go to the last workspace and tab in order, as in a browser;
+    /// the previously active ones keep alt+0 (and the palette). ⌘W closes
+    /// the workspace and ⌘⇧W the tab, as ⌘T and ⌘⇧T open them.
+    #[test]
+    fn last_and_close_chords_follow_the_browser() {
+        for (platform, cmd) in [(Platform::Macos, "cmd"), (Platform::Linux, "super")] {
+            let list = entries(platform);
+            let get = |id: &str| list.iter().find(|e| e.id == id).unwrap().clone();
+            let ws_last = get("switch_workspace_last");
+            assert_eq!(ws_last.chords, [format!("{cmd}+9")], "{platform:?}");
+            assert_eq!(ws_last.title, "Switch to last workspace");
+            assert_eq!(ws_last.method.as_deref(), Some("workspace.focus"));
+            let previous = get("last_workspace");
+            assert_eq!(previous.chords, ["alt+0"], "{platform:?}");
+            assert_eq!(previous.title, "Previous active workspace");
+            let tab_last = get("switch_tab_last");
+            assert_eq!(tab_last.chords, ["ctrl+9"], "{platform:?}");
+            assert_eq!(tab_last.title, "Switch to last tab");
+            let previous_tab = get("last_tab");
+            assert!(previous_tab.chords.is_empty(), "{previous_tab:?}");
+            assert_eq!(previous_tab.title, "Previous active tab");
+            assert_eq!(get("close_workspace").chords, [format!("{cmd}+w")]);
+            assert_eq!(
+                get("close_workspace").method.as_deref(),
+                Some("workspace.close")
+            );
+            assert_eq!(get("close_tab").chords, [format!("{cmd}+shift+w")]);
+            // Indexed switches stop at 8: 9 is "last".
+            assert!(get("switch_workspace_9").chords.is_empty());
+            assert!(get("switch_tab_9").chords.is_empty());
         }
     }
 }

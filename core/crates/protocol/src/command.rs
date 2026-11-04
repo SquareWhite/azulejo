@@ -51,6 +51,9 @@ pub enum Command {
     WorkspaceList(WorkspaceList),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreate),
+    /// Closes a workspace and its tabs. Its terminals detach (F14): herdr
+    /// keeps the workspace, tabs and panes running, and Azulejo doesn't adopt
+    /// them again. Closing a window's last workspace closes the window.
     #[serde(rename = "workspace.close")]
     WorkspaceClose(WorkspaceTarget),
     #[serde(rename = "workspace.focus")]
@@ -74,6 +77,7 @@ pub enum Command {
     /// Opens a tab with one tile (a terminal unless `content` says otherwise).
     #[serde(rename = "tab.create")]
     TabCreate(TabCreate),
+    /// Closes a tab and its tiles; terminals detach, as with `tile.close`.
     #[serde(rename = "tab.close")]
     TabClose(TabTarget),
     #[serde(rename = "tab.focus")]

@@ -84,11 +84,14 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `new_workspace` | `cmd+t` | herdr |
 | `new_tab` | `cmd+shift+t` | herdr |
 | `switch_workspace` 1–8 | `cmd+1..8` | herdr |
-| `last_workspace` | `cmd+9` and `alt+0` | herdr (natively now, no forwarding trick) |
+| `switch_workspace_last` (the last workspace in the sidebar) | `cmd+9` | browser convention: `cmd+9` is the last tab in Chrome and Safari |
+| `last_workspace` (the previously active workspace) | `alt+0` | herdr `last.py space` |
+| `close_workspace` (detaches, F14) | `cmd+w` | new: closes what `cmd+t` opens |
 | `switch_tab` 1–8 | `ctrl+1..8` | new (herdr's own suggestion for direct tab switching) |
-| `last_tab` | `ctrl+9` | herdr's `alt+9`, moved: Hammerspoon now owns `alt+9` |
+| `switch_tab_last` (the last tab in order) | `ctrl+9` | browser convention, as `cmd+9` |
+| `last_tab` (the previously active tab) | unbound | herdr's `alt+9`; Hammerspoon owns `alt+9`, so it's palette-only |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` | herdr |
-| `close_tab` | `cmd+w` | herdr |
+| `close_tab` | `cmd+shift+w` | was `cmd+w` (herdr); moved so it mirrors `cmd+shift+t` |
 | `toggle_sidebar` | `cmd+a`, **terminal tiles only** | herdr (see conflicts) |
 | `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
 | `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
@@ -97,7 +100,7 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
-Rename, close workspace, kill the herdr pane, help and edit-scrollback are left to the palette and to prefix mode. So are `toggle_layout_three_column`, `rotate_clockwise` and `rotate_anticlockwise` (four-way Tile rotation) and "Set layout…".
+Rename, kill the herdr pane, help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_clockwise` and `rotate_anticlockwise` (four-way Tile rotation) and "Set layout…".
 
 New tabs start as a dynamic Tile layout (`[layout] default`, ADR 0010), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
 
@@ -127,10 +130,10 @@ goto            = "cmd+p"
 | tile and layout actions (`alt+…`) | same as macOS, including the dynamic-layout chords |
 | `split_auto` / `split_down` / `split_right` | `ctrl+super+t` / `ctrl+super+shift+t` / `ctrl+super+v` |
 | `new_workspace` / `new_tab` | `super+t` / `super+shift+t` |
-| `switch_workspace` 1–8, `last_workspace` | `super+1..8`, `super+9` and `alt+0` |
-| `switch_tab` 1–8, `last_tab` | `ctrl+1..8`, `ctrl+9` |
+| `switch_workspace` 1–8, `switch_workspace_last`, `last_workspace` | `super+1..8`, `super+9`, `alt+0` |
+| `switch_tab` 1–8, `switch_tab_last` | `ctrl+1..8`, `ctrl+9` (`last_tab` unbound) |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` |
-| `close_tab` | `super+w` |
+| `close_workspace` / `close_tab` | `super+w` / `super+shift+w` |
 | `toggle_sidebar` | `super+a`, terminal tiles only |
 | `quick_open` / `find` | `super+k` / `super+f` (`command_palette` and `goto` unbound, as on macOS) |
 | `new_window` / `open_config` | `super+n` / `super+comma` |
@@ -152,8 +155,8 @@ The Linux terminal convention (kitty, GNOME Terminal, Ptyxis). It avoids every W
 | `split_auto` | `ctrl+shift+enter` | `ctrl+alt+t` opens a terminal in Ubuntu; kitty uses `ctrl+shift+enter` for "new window" |
 | `split_down` / `split_right` | `ctrl+shift+minus` / `ctrl+shift+backslash` | visual mnemonics, no 4-modifier chords |
 | `new_workspace` / `new_tab` | `ctrl+shift+t` / `ctrl+alt+shift+t` | |
-| `switch_workspace` 1–8, `last_workspace` | `alt+1..8`, `alt+9`/`alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
-| `close_tab` | `ctrl+shift+w` | |
+| `switch_workspace` 1–8, `switch_workspace_last`, `last_workspace` | `alt+1..8`, `alt+9`, `alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
+| `close_workspace` / `close_tab` | `ctrl+shift+w` / `ctrl+alt+shift+w` | mirrors `new_workspace` / `new_tab` |
 | `toggle_sidebar` | `ctrl+shift+b` | `ctrl+shift+a` is select-all in GTK terminals |
 | `quick_open` / `find` | `ctrl+shift+p` / `ctrl+shift+f` | VS Code's palette chord; `ctrl+p` is shell history and `ctrl+shift+k` is scroll-up in kitty |
 | `new_window` / `open_config` | `ctrl+shift+n` / `ctrl+comma` | |
@@ -197,11 +200,12 @@ To verify in 1.7: whether this still holds when the pane has the kitty keyboard 
 
 | Chord | Convention | Decision |
 | --- | --- | --- |
-| `cmd+w` | close window/tab | `close_tab`, consistent with the convention. Closing the last tab closes the window. Panes stay alive in herdr |
+| `cmd+w` / `cmd+shift+w` | close tab / close window | **`close_workspace` / `close_tab`** (Nov 4, 2026), mirroring `cmd+t` / `cmd+shift+t`. Both detach: herdr keeps the workspace, tabs and panes running, and Azulejo doesn't adopt them again, so there's no confirmation. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes the workspace in browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
 | `cmd+q` | quit | kept as quit. Safe: sessions live in herdr |
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | not bound. the maintainer's config avoids `cmd+m` for this reason |
 | `cmd+a` | select all | **Decided:** `toggle_sidebar` is bound **only when a terminal tile is focused**; in browser and preview tiles and text fields (address bar, palette) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` context section |
 | `cmd+t` / `cmd+shift+t` | new tab / reopen closed tab | used for workspace / tab, as in herdr. No clash because browser tiles have no inner tabs |
+| `cmd+9` / `ctrl+9` | last tab (browsers) | `switch_workspace_last` / `switch_tab_last`: the last in order, as in a browser. The previously active workspace is `alt+0` |
 | `cmd+p` | print | taken by `goto`. Printing a browser tile goes through the palette |
 | `cmd+k` | clear (Ghostty, Terminal.app) | not bound. A local clear does nothing under herdr's re-rendering. A later `clear_screen` action should send `ctrl+l` to the pane |
 | `ctrl+cmd+f` / `ctrl+cmd+q` / `ctrl+cmd+space` | full screen / lock screen / emoji | avoided |

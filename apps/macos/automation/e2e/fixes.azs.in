@@ -271,16 +271,16 @@ wait 600
 unchanged chrome.tiles
 key ctrl+9
 until tab 14 2000
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
-key cmd+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
+key cmd+shift+w
 until tabs 4 6000
 wait 800
 remember tab.overflow

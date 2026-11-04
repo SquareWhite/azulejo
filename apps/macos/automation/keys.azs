@@ -99,23 +99,32 @@ expect tabs 2
 expect tab 2
 key ctrl+1
 expect tab 1
-key ctrl+9                    # last tab
+key ctrl+9                    # last tab in order (browser-style)
 expect tab 2
 key ctrl+tab
 expect tab 1
 key ctrl+shift+tab
 expect tab 2
 shot 07-second-tab
-key cmd+w                     # close tab
+key cmd+shift+w               # close tab (mirrors cmd+shift+t)
 expect tabs 1
 
 # --- workspaces ---
 key cmd+t                     # new workspace
 expect workspaces 2
 expect workspace 2
+key cmd+t
+expect workspaces 3
 key cmd+1
 expect workspace 1
-key cmd+9                     # last workspace
+key cmd+9                     # last workspace in the sidebar (browser-style)
+expect workspace 3
+key cmd+2
+expect workspace 2
+key alt+0                     # the previously active workspace
+expect workspace 3
+key cmd+w                     # close workspace (detaches; mirrors cmd+t)
+expect workspaces 2
 expect workspace 2
 key cmd+1
 expect workspace 1

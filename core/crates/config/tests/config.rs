@@ -223,10 +223,12 @@ fn stateless_actions_build_commands() {
                 | CycleTileNext
                 | CycleTilePrevious
                 | SwitchWorkspace(_)
+                | SwitchWorkspaceLast
                 | LastWorkspace
                 | NextWorkspace
                 | PreviousWorkspace
                 | SwitchTab(_)
+                | SwitchTabLast
                 | LastTab
                 | NextTab
                 | PreviousTab
