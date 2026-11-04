@@ -1,10 +1,10 @@
-// Draws Azulejo's app icon: three candidates, the chosen one's dark and tinted
-// variants, the .iconset that scripts/icon/build.sh packs into AppIcon.icns,
-// and a contact sheet. Pure CoreGraphics, so it's reproducible on any Mac
+// Draws Azulejo's app icon: eight candidates (A–H), the chosen one's dark and
+// tinted variants, the .iconset that scripts/icon/build.sh packs into
+// AppIcon.icns, a contact sheet and a side-by-side of the candidates. Pure CoreGraphics, so it's reproducible on any Mac
 // with the Command Line Tools (docs/design/icon/README.md).
 //
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
-//   swift scripts/icon/draw.swift --docs DIR      # candidates, variants, sheet.png
+//   swift scripts/icon/draw.swift --docs DIR      # candidates, variants, sheet.png, options.png
 //
 // Geometry follows Apple's macOS icon template: a 1024 px canvas, an 824 px
 // rounded square (continuous corners, radius 185.4) centred in it, fully
@@ -41,6 +41,8 @@ struct Palette {
   var multiply: Bool
   var sheen: CGFloat  // top glaze sheen strength
   var shadow: CGFloat  // drop shadow opacity
+  /// A second pigment, for the candidates that use one (D's ochre, H's gold).
+  var accent: CGColor = rgb(0xE0A42A)
 }
 
 let tinGlaze = Palette(
@@ -55,6 +57,21 @@ let cobaltGround = Palette(
   ink: rgb(0xF7F2E6), line: rgb(0x0E2D6B), wash: rgb(0x8FB0E2),
   grout: rgb(0x173F88),
   multiply: false, sheen: 0.45, shadow: 0.5)
+
+/// Candidate F: a pale sky glaze, so the glass tiles over it have something
+/// to be translucent against. Not multiplied: frosted white has to stay white.
+let skyGlaze = Palette(
+  groundTop: rgb(0xEEF3FB), groundBottom: rgb(0xB9CDEB),
+  ink: rgb(0x1F4FA3), line: rgb(0x123578), wash: rgb(0x86A8DC),
+  grout: rgb(0xDCD4C2),
+  multiply: false, sheen: 0.5, shadow: 0.5)
+
+/// Candidate H: an ink-blue night glaze with white and pale gold on it.
+let nightGlaze = Palette(
+  groundTop: rgb(0x1C2D66), groundBottom: rgb(0x0B1435),
+  ink: rgb(0xF6F1E4), line: rgb(0x0B1435), wash: rgb(0x3B5BA8),
+  grout: rgb(0x0A1230),
+  multiply: false, sheen: 0.32, shadow: 0.55, accent: rgb(0xE8CB7E))
 
 /// Dark appearance: a night glaze, the blue lifted so it still reads.
 let dark = Palette(
@@ -156,6 +173,37 @@ func star4(_ c: CGPoint, _ r: CGFloat, pinch: CGFloat = 0.28) -> CGPath {
   return p
 }
 
+/// An eight-pointed star: two squares, one turned 45°, as one outline.
+func octagram(_ c: CGPoint, _ r: CGFloat) -> CGPath {
+  let p = CGMutablePath()
+  let inner = r * cos(.pi / 4) / cos(.pi / 8)
+  p.addLines(between: (0..<16).map { i -> CGPoint in
+    let a = CGFloat(i) * .pi / 8
+    let d = i % 2 == 0 ? r : inner
+    return CGPoint(x: c.x + d * cos(a), y: c.y + d * sin(a))
+  })
+  p.closeSubpath()
+  return p
+}
+
+/// An oval petal centred `at` from the origin along `angle`.
+func oval(angle: CGFloat, at r: CGFloat, length l: CGFloat, width w: CGFloat) -> CGPath {
+  var t = CGAffineTransform(rotationAngle: angle)
+  return CGPath(ellipseIn: CGRect(x: r - l / 2, y: -w / 2, width: l, height: w), transform: &t)
+}
+
+/// A polyline turned into a fillable outline, round caps and joins.
+func strokeShape(_ points: [CGPoint], _ width: CGFloat) -> CGPath {
+  let p = CGMutablePath()
+  p.addLines(between: points)
+  return p.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 4)
+}
+
+/// A circle's outline as a fillable ring.
+func ring(_ c: CGPoint, _ r: CGFloat, _ width: CGFloat) -> CGPath {
+  disc(c, r).copy(strokingWithWidth: width, lineCap: .butt, lineJoin: .round, miterLimit: 4)
+}
+
 let quarter: [CGFloat] = [0, .pi / 2, .pi, 3 * .pi / 2]
 let diagonals: [CGFloat] = quarter.map { $0 + .pi / 4 }
 let corners = [CGPoint(x: 1, y: 1), CGPoint(x: -1, y: 1), CGPoint(x: -1, y: -1), CGPoint(x: 1, y: -1)]
@@ -194,15 +242,46 @@ enum Candidate: String, CaseIterable {
   case classic = "a-classic"
   case cluster = "b-cluster"
   case minimal = "c-minimal"
+  case ochre = "d-ochre"
+  case prompt = "e-prompt"
+  case glass = "f-glass"
+  case split = "g-split"
+  case night = "h-night"
 
+  /// The contact sheet's row title (sheet.png keeps A–C as they were).
   var title: String {
     switch self {
     case .classic: "A · classic tile"
     case .cluster: "B · 2×2 cluster"
     case .minimal: "C · minimal, cobalt glaze"
+    default: letter + " · " + name
     }
   }
-  var palette: Palette { self == .minimal ? cobaltGround : tinGlaze }
+  var letter: String { String(rawValue.prefix(1)).uppercased() }
+  /// Two to four words, for options.png.
+  var name: String {
+    switch self {
+    case .classic: "Classic tile"
+    case .cluster: "2×2 cluster"
+    case .minimal: "Minimal cobalt"
+    case .ochre: "Lisbon blue & ochre"
+    case .prompt: "Prompt rosette"
+    case .glass: "Glass stack"
+    case .split: "Split layout"
+    case .night: "Night glaze"
+    }
+  }
+  var palette: Palette {
+    switch self {
+    case .minimal: cobaltGround
+    case .glass: skyGlaze
+    case .night: nightGlaze
+    default: tinGlaze
+    }
+  }
+  /// Whether the ink bleeds (a faint blurred copy under the motif). F's glass
+  /// draws its own depth instead.
+  var bleeds: Bool { self != .glass }
 }
 
 /// The default: see docs/design/icon/README.md for why.
@@ -321,6 +400,274 @@ func drawMinimal(_ g: CGContext, _ p: Palette, lod: Int) {
   g.fill(disc(.zero, lod == 2 ? 0.1 : 0.08), p.ink)
 }
 
+/// D: a Lisbon pattern tile in two pigments. A cobalt diamond holds an ochre
+/// eight-pointed star; ochre quarter discs in the corners and half-buds at the
+/// edges join up with the neighbouring tiles.
+func drawOchre(_ g: CGContext, _ p: Palette, lod: Int) {
+  for c in corners {
+    g.fill(disc(c, 0.5), p.accent)
+    if lod < 2 {
+      g.fill(ring(c, 0.5, lod == 0 ? 0.04 : 0.06), p.ink)
+      g.fill(disc(c, 0.24), p.ink)
+    }
+    if lod == 0 {
+      g.punch(ring(c, 0.36, 0.035))
+      g.punch(disc(c, 0.1))
+    }
+  }
+  if lod < 2 {
+    for m in edgeMids {
+      g.fill(disc(m, 0.13), p.accent)
+      g.fill(ring(m, 0.13, lod == 0 ? 0.03 : 0.05), p.ink)
+    }
+  }
+  g.fill(diamond(.zero, 0.86), p.ink)
+  if lod < 2 {
+    // A white line inside the diamond, and white petals on its axes.
+    let inner = diamond(.zero, 0.76)
+    g.punch(inner.copy(strokingWithWidth: lod == 0 ? 0.03 : 0.045, lineCap: .butt, lineJoin: .miter, miterLimit: 4))
+  }
+  if lod == 0 {
+    for a in quarter {
+      g.punch(petal(at: CGPoint(x: 0.54 * cos(a), y: 0.54 * sin(a)), angle: a, length: 0.17, width: 0.09))
+    }
+  }
+  let star = octagram(.zero, lod == 2 ? 0.56 : 0.5)
+  g.fill(star, p.accent)
+  if lod < 2 { g.stroke(star, p.line, lod == 0 ? 0.025 : 0.04) }
+  g.fill(disc(.zero, lod == 2 ? 0.2 : 0.19), p.ink)
+  g.punch(disc(.zero, lod == 2 ? 0.08 : 0.1))
+  if lod == 0 { g.fill(disc(.zero, 0.045), p.accent) }
+}
+
+/// E: a tile first. A scalloped cobalt medallion in a ring of beads, with the
+/// prompt, `>_`, left in bare glaze at its heart; in the corners, pale-blue
+/// quarters with chevrons pointing into them, which meet the next tile's.
+func drawPrompt(_ g: CGContext, _ p: Palette, lod: Int) {
+  for c in corners {
+    if lod == 2 {
+      g.fill(disc(c, 0.5), p.wash)
+      continue
+    }
+    g.fill(disc(c, 0.48), p.wash)
+    g.fill(ring(c, 0.48, lod == 0 ? 0.045 : 0.06), p.ink)
+    if lod == 0 { g.fill(disc(c, 0.3), p.ink) }
+  }
+  if lod == 0 {
+    for i in 0..<16 {
+      let a = CGFloat(i) * .pi / 8 + .pi / 16
+      g.fill(disc(CGPoint(x: 0.82 * cos(a), y: 0.82 * sin(a)), 0.035), p.ink)
+    }
+  }
+  if lod < 2 {
+    for (i, m) in edgeMids.enumerated() {
+      g.fill(petal(at: m, angle: quarter[i] + .pi, length: 0.12, width: 0.16), p.ink)
+    }
+  }
+  // The medallion: a disc on an eight-petal flower, long petals on the axes.
+  if lod < 2 {
+    for a in quarter {
+      g.fill(petal(angle: a, length: 0.8, width: 0.42), p.wash)
+      g.stroke(petal(angle: a, length: 0.8, width: 0.42), p.ink, lod == 0 ? 0.03 : 0.045)
+    }
+    for a in diagonals {
+      g.fill(petal(angle: a, length: 0.74, width: 0.3), p.ink)
+    }
+  }
+  g.fill(disc(.zero, lod == 2 ? 0.66 : 0.53), p.ink)
+  if lod == 0 { g.punch(ring(.zero, 0.46, 0.022)) }
+  // The prompt, in bare glaze.
+  let w: CGFloat = lod == 2 ? 0.19 : (lod == 1 ? 0.12 : 0.1)
+  let k: CGFloat = lod == 2 ? 1.2 : 1  // bigger and bolder when small
+  let h: CGFloat = 0.2 * k
+  let glyph = CGMutablePath()
+  glyph.addPath(strokeShape([CGPoint(x: -0.29 * k, y: h), CGPoint(x: -0.05 * k, y: 0), CGPoint(x: -0.29 * k, y: -h)], w))
+  glyph.addPath(strokeShape([CGPoint(x: 0.07 * k, y: -h), CGPoint(x: 0.3 * k, y: -h)], w))
+  g.punch(glyph)
+}
+
+/// F: three azulejo tiles stacked in depth, glass over glass. The back two are
+/// tinted panes, the front one frosted: each blurs what's behind it, casts its
+/// own shadow and catches the light along its rim.
+func drawGlass(_ g: CGContext, _ p: Palette, lod: Int) {
+  let unit = g.ctm.a / 412  // device pixels per 1024-canvas pixel
+  let side: CGFloat = 0.98
+  let step: CGFloat = 0.3
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+
+  func pane(_ c: CGPoint, tint: CGColor, motif: () -> Void) {
+    let rect = CGRect(x: c.x - side / 2, y: c.y - side / 2, width: side, height: side)
+    let shape = squircle(rect, side * 0.2)
+    // What's behind, before the pane's own shadow lands on it.
+    let behind = g.makeImage()!
+    // Shadow only: draw the pane opaque with a shadow, then cut the pane out.
+    g.saveGState()
+    g.setShadow(offset: CGSize(width: 0, height: -14 * unit), blur: 34 * unit, color: rgb(0x0B1E4A, 0.38))
+    g.fill(shape, rgb(0x000000))
+    g.restoreGState()
+    g.punch(shape)
+    // Frosting: what's behind, blurred, then the pane's tint.
+    g.saveGState()
+    g.addPath(shape)
+    g.clip()
+    g.saveGState()
+    g.concatenate(g.ctm.inverted())
+    g.draw(blurred(behind, sigma: 16 * unit), in: CGRect(x: 0, y: 0, width: g.width, height: g.height))
+    g.restoreGState()
+    g.fill(shape, tint)
+    g.drawLinearGradient(
+      CGGradient(
+        colorsSpace: cs, colors: [rgb(0xFFFFFF, 0.35), rgb(0xFFFFFF, 0.05), rgb(0xFFFFFF, 0)] as CFArray,
+        locations: [0, 0.5, 1])!,
+      start: CGPoint(x: rect.minX, y: rect.maxY), end: CGPoint(x: rect.maxX, y: rect.minY), options: [])
+    motif()
+    g.restoreGState()
+    // Rim light: bright top-left, faint, then catching again bottom-right.
+    g.saveGState()
+    g.addPath(shape)
+    g.setLineWidth(lod == 2 ? 0.06 : 0.025)
+    g.replacePathWithStrokedPath()
+    g.clip()
+    g.drawLinearGradient(
+      CGGradient(
+        colorsSpace: cs,
+        colors: [rgb(0xFFFFFF, 0.95), rgb(0xFFFFFF, 0.2), rgb(0xFFFFFF, 0.1), rgb(0xFFFFFF, 0.6)] as CFArray,
+        locations: [0, 0.45, 0.6, 1])!,
+      start: CGPoint(x: rect.minX, y: rect.maxY), end: CGPoint(x: rect.maxX, y: rect.minY), options: [])
+    g.restoreGState()
+  }
+
+  let back = CGPoint(x: -step, y: step)
+  let front = CGPoint(x: step, y: -step)
+  func quarters(_ c: CGPoint, _ r: CGFloat, _ color: CGColor) {
+    for k in corners {
+      g.fill(disc(CGPoint(x: c.x + k.x * side / 2, y: c.y + k.y * side / 2), r), color)
+    }
+  }
+  // Back: pale blue, white corner quarters and a ring.
+  pane(back, tint: rgb(0x86A8DC, lod == 2 ? 0.9 : 0.72)) {
+    if lod < 2 {
+      quarters(back, 0.15, rgb(0xFFFFFF, 0.75))
+      g.fill(ring(back, 0.26, 0.05), rgb(0xFFFFFF, 0.75))
+    }
+  }
+  // Middle: cobalt, white corner quarters and a four-petal flower (mostly
+  // seen blurred through the front pane).
+  pane(.zero, tint: rgb(0x1F4FA3, lod == 2 ? 0.95 : 0.84)) {
+    if lod < 2 {
+      quarters(.zero, 0.15, rgb(0xFFFFFF, 0.9))
+      for a in diagonals {
+        g.fill(petal(angle: a, length: 0.36, width: 0.17), rgb(0xFFFFFF, 0.9))
+      }
+    }
+  }
+  // Front: frosted white, a cobalt rosette and corner quarters.
+  pane(front, tint: rgb(0xFFFFFF, lod == 2 ? 0.78 : 0.6)) {
+    quarters(front, lod == 2 ? 0.2 : 0.17, p.ink)
+    if lod == 2 {
+      // Small, a four-petal rosette is a "+" button. A diamond with a white
+      // heart stays a tile.
+      g.fill(diamond(front, 0.27), p.ink)
+      g.fill(disc(front, 0.08), rgb(0xFFFFFF))
+      return
+    }
+    for a in quarter {
+      g.fill(petal(at: front, angle: a, length: 0.34, width: 0.15), p.ink)
+    }
+    for a in diagonals {
+      g.fill(petal(at: front, angle: a, length: 0.22, width: 0.09), p.wash)
+    }
+    g.fill(disc(front, 0.075), p.line)
+  }
+}
+
+/// G: one tile split by grout like the app's Tile layout, master on the left,
+/// a stack of two on the right. One rosette runs across all three panels and
+/// changes glaze with each: white on the cobalt master, cobalt on the white
+/// pane, dark blue on the pale-blue one.
+func drawSplit(_ g: CGContext, _ p: Palette, lod: Int) {
+  let panels: [(CGRect, CGColor?, CGColor?)] = [
+    (CGRect(x: -1.2, y: -1.2, width: 1.2, height: 2.4), p.ink, nil),  // master: the figure is bare glaze
+    (CGRect(x: 0, y: 0, width: 1.2, height: 1.2), nil, p.ink),
+    (CGRect(x: 0, y: -1.2, width: 1.2, height: 1.2), p.wash, p.line),
+  ]
+  for (rect, ground, ink) in panels {
+    g.saveGState()
+    g.clip(to: rect)
+    if let ground { g.fill(CGPath(rect: rect, transform: nil), ground) }
+    let figure: (CGPath) -> Void = { path in
+      if let ink { g.fill(path, ink) } else { g.punch(path) }
+    }
+    for c in corners {
+      figure(disc(c, lod == 2 ? 0.36 : 0.3))
+      if lod < 2 { figure(ring(c, 0.44, lod == 0 ? 0.035 : 0.05)) }
+    }
+    // The rosette, centred where the three panels meet. Small, its diagonal
+    // petals read as an "×", so it's one disc split three ways.
+    if lod == 2 {
+      figure(disc(.zero, 0.46))
+    } else {
+      figure(ring(.zero, 0.7, lod == 0 ? 0.035 : 0.05))
+      for a in diagonals {
+        figure(petal(angle: a, length: 0.62, width: 0.27))
+      }
+      for a in quarter {
+        figure(petal(angle: a, length: 0.44, width: 0.14))
+      }
+      figure(disc(.zero, 0.16))
+    }
+    if lod == 0 {
+      for m in edgeMids { figure(disc(m, 0.07)) }
+    }
+    g.restoreGState()
+  }
+  // Grout: bare glaze joints with a hairline of grout in them.
+  let w: CGFloat = lod == 2 ? 0.09 : 0.055
+  let joints = CGMutablePath()
+  joints.addRect(CGRect(x: -w / 2, y: -1.2, width: w, height: 2.4))
+  joints.addRect(CGRect(x: 0, y: -w / 2, width: 1.2, height: w))
+  g.punch(joints)
+  if lod < 2 {
+    let hair = CGMutablePath()
+    hair.addRect(CGRect(x: -w / 6, y: -1.2, width: w / 3, height: 2.4))
+    hair.addRect(CGRect(x: w / 6, y: -w / 6, width: 1.2, height: w / 3))
+    g.fill(hair, p.grout)
+  }
+}
+
+/// H: a night glaze. A white daisy of eight round petals with a gold heart,
+/// a ring of gold beads, white quarter rings round gold quarter discs in the
+/// corners.
+func drawNight(_ g: CGContext, _ p: Palette, lod: Int) {
+  for c in corners {
+    g.fill(disc(c, lod == 2 ? 0.34 : 0.24), p.accent)
+    if lod < 2 { g.fill(ring(c, 0.42, lod == 0 ? 0.06 : 0.08), p.ink) }
+    if lod == 0 { g.fill(ring(c, 0.56, 0.025), p.accent) }
+  }
+  if lod == 0 {
+    for i in 0..<24 {
+      let a = CGFloat(i) * .pi / 12
+      g.fill(disc(CGPoint(x: 0.76 * cos(a), y: 0.76 * sin(a)), 0.028), p.accent)
+    }
+  } else if lod == 1 {
+    g.fill(ring(.zero, 0.76, 0.04), p.accent)
+  }
+  if lod < 2 {
+    for m in edgeMids { g.fill(diamond(m, 0.1), p.ink) }
+  }
+  for a in quarter + diagonals {
+    g.fill(oval(angle: a, at: 0.4, length: lod == 2 ? 0.5 : 0.46, width: lod == 2 ? 0.26 : 0.22), p.ink)
+    if lod == 0 {
+      g.fill(oval(angle: a, at: 0.44, length: 0.2, width: 0.05), p.wash)
+    }
+  }
+  g.fill(disc(.zero, lod == 2 ? 0.24 : 0.2), p.accent)
+  if lod < 2 {
+    g.fill(ring(.zero, 0.2, 0.03), p.line)
+    g.fill(disc(.zero, 0.07), p.line)
+  }
+}
+
 // MARK: - Glass
 
 func bitmap(_ px: Int) -> CGContext {
@@ -344,6 +691,11 @@ func motifLayer(_ candidate: Candidate, _ p: Palette, px: Int, lod: Int) -> CGIm
   case .classic: drawClassic(g, p, lod: lod)
   case .cluster: drawCluster(g, p, lod: lod)
   case .minimal: drawMinimal(g, p, lod: lod)
+  case .ochre: drawOchre(g, p, lod: lod)
+  case .prompt: drawPrompt(g, p, lod: lod)
+  case .glass: drawGlass(g, p, lod: lod)
+  case .split: drawSplit(g, p, lod: lod)
+  case .night: drawNight(g, p, lod: lod)
   }
   return g.makeImage()!
 }
@@ -397,7 +749,7 @@ func render(_ candidate: Candidate, palette p: Palette, px: Int) -> CGImage {
   let canvas = CGRect(x: 0, y: 0, width: 1024, height: 1024)
   g.saveGState()
   if p.multiply { g.setBlendMode(.multiply) }
-  if lod == 0 {
+  if lod == 0 && candidate.bleeds {
     g.setAlpha(0.45)
     g.draw(blurred(art, sigma: 5 * s), in: canvas)
     g.setAlpha(1)
@@ -493,7 +845,9 @@ func drawNSImage(_ g: CGContext, _ image: NSImage, in rect: CGRect) {
 /// neighbour) to judge the pixels. Light background left, dark right.
 func writeSheet(_ url: URL) {
   struct Row { let name: String; let images: (Int) -> CGImage? ; let ns: NSImage? }
-  var rows: [Row] = Candidate.allCases.map { c in
+  // A–C only: with all eight plus the system rows it'd be ~4 MB. options.png
+  // shows every candidate side by side.
+  var rows: [Row] = [Candidate.classic, .cluster, .minimal].map { c in
     Row(name: c.title + (c == chosen ? "  (default)" : ""), images: { render(c, palette: c.palette, px: $0) }, ns: nil)
   }
   rows.append(Row(name: chosen.title + " · dark", images: { render(chosen, palette: dark, px: $0) }, ns: nil))
@@ -560,6 +914,63 @@ func writeSheet(_ url: URL) {
   writePNG(g.makeImage()!, url)
 }
 
+/// Every candidate side by side: a light row and a dark row, each icon at
+/// 256 px with its 32 and 16 px renders under it at 1:1, then the same two
+/// blown up (3× and 4×, nearest neighbour) to judge the pixels.
+func writeOptions(_ url: URL) {
+  let cell = 256
+  let gap = 40
+  let margin = 40
+  let header = 74
+  let labelH = 44
+  let smallH = 96  // the 3× zoom of the 32 px render
+  let rowH = labelH + cell + 22 + smallH + 40
+  let all = Candidate.allCases
+  let width = margin * 2 + all.count * cell + (all.count - 1) * gap
+  let height = header + rowH * 2
+  let ctx = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let rows: [(CGColor, NSColor, NSColor)] = [
+    (rgb(0xECECEF), NSColor(white: 0.12, alpha: 1), NSColor(white: 0.42, alpha: 1)),
+    (rgb(0x1E1F23), NSColor(white: 0.9, alpha: 1), NSColor(white: 0.6, alpha: 1)),
+  ]
+  // Header on the light band.
+  ctx.setFillColor(rows[0].0)
+  ctx.fill(CGRect(x: 0, y: height - header, width: width, height: header))
+  label(
+    ctx, "Azulejo app icon candidates · 256 px, then 32 and 16 px at 1:1, then 32 at 3× and 16 at 4×",
+    at: CGPoint(x: margin, y: height - 50), size: 22, color: rows[0].1, bold: true)
+  for (r, (bg, ink, dim)) in rows.enumerated() {
+    let top = height - header - r * rowH
+    ctx.setFillColor(bg)
+    ctx.fill(CGRect(x: 0, y: top - rowH, width: width, height: rowH))
+    for (i, c) in all.enumerated() {
+      let x = CGFloat(margin + i * (cell + gap))
+      let iconTop = CGFloat(top - labelH)
+      label(ctx, "\(c.letter)  \(c.name)", at: CGPoint(x: x + 4, y: iconTop + 8), size: 21, color: ink, bold: true)
+      if c == chosen {
+        label(ctx, "default", at: CGPoint(x: x + CGFloat(cell) - 66, y: iconTop + 10), size: 16, color: dim)
+      }
+      ctx.interpolationQuality = .high
+      ctx.draw(render(c, palette: c.palette, px: cell), in: CGRect(x: x, y: iconTop - CGFloat(cell), width: CGFloat(cell), height: CGFloat(cell)))
+      let smallTop = iconTop - CGFloat(cell) - 22
+      let i32 = render(c, palette: c.palette, px: 32)
+      let i16 = render(c, palette: c.palette, px: 16)
+      ctx.interpolationQuality = .none
+      var sx = x + 8
+      ctx.draw(i32, in: CGRect(x: sx, y: smallTop - 32, width: 32, height: 32))
+      sx += 32 + 14
+      ctx.draw(i16, in: CGRect(x: sx, y: smallTop - 16, width: 16, height: 16))
+      sx += 16 + 30
+      ctx.draw(i32, in: CGRect(x: sx, y: smallTop - 96, width: 96, height: 96))
+      sx += 96 + 14
+      ctx.draw(i16, in: CGRect(x: sx, y: smallTop - 64, width: 64, height: 64))
+    }
+  }
+  writePNG(ctx.makeImage()!, url)
+}
+
 func writeDocs(_ dir: URL) {
   try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   for c in Candidate.allCases {
@@ -568,6 +979,7 @@ func writeDocs(_ dir: URL) {
   writePNG(render(chosen, palette: dark, px: 1024), dir.appendingPathComponent("appearance-dark.png"))
   writePNG(render(chosen, palette: tinted, px: 1024), dir.appendingPathComponent("appearance-tinted.png"))
   writeSheet(dir.appendingPathComponent("sheet.png"))
+  writeOptions(dir.appendingPathComponent("options.png"))
 }
 
 // MARK: - Main
