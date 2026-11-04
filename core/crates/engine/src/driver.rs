@@ -648,7 +648,7 @@ fn run<P: HerdrPort>(
                 {
                     herdr.created(*tile);
                 }
-                let events = engine.apply_internal(internal);
+                let events = herdr.apply_internal(&mut engine, internal);
                 publish(
                     &engine,
                     &events,
@@ -713,7 +713,7 @@ fn run<P: HerdrPort>(
                     (opts.log)(format!("herdr event {e:?} → {:?}", reaction.internals));
                 }
                 for internal in reaction.internals {
-                    let events = engine.apply_internal(internal);
+                    let events = herdr.apply_internal(&mut engine, internal);
                     publish(
                         &engine,
                         &events,
@@ -931,14 +931,44 @@ impl<P: HerdrPort> Links<P> {
         before: &HashMap<azulejo_model::TabId, azulejo_model::Node>,
         session: &azulejo_model::Session,
     ) {
-        for (tab, now) in mirror::arrangements(session) {
+        let now = mirror::arrangements(session);
+        for (tab, root) in &now {
             if before
-                .get(&tab)
-                .is_none_or(|was| !mirror::same_arrangement(was, &now))
+                .get(tab)
+                .is_none_or(|was| !mirror::same_arrangement(was, root))
             {
-                self.authorise_tab(tab);
+                self.authorise_tab(*tab);
             }
         }
+        // Closed tabs need no intent.
+        self.intents.borrow_mut().retain(|t, _| now.contains_key(t));
+    }
+
+    /// Applies a result from herdr. A tile closed there (closed, exited, or
+    /// its workspace gone) re-tiles a dynamic tab by the tab's own rule:
+    /// that arrangement is Azulejo's, so it may go to herdr (ADR 0012,
+    /// amendment). A manual tab collapses as herdr's tree did, and nothing
+    /// else from herdr authorises anything.
+    fn apply_internal(&self, engine: &mut Engine, internal: Internal) -> Vec<Event> {
+        let closes = matches!(
+            internal,
+            Internal::ClosedElsewhere { .. } | Internal::HerdrWorkspaceClosed { .. }
+        );
+        let before = closes.then(|| mirror::arrangements(engine.session()));
+        let events = engine.apply_internal(internal);
+        if let Some(before) = before {
+            for ws in engine.session().windows.iter().flat_map(|w| &w.workspaces) {
+                for tab in ws.tabs.iter().filter(|t| t.is_dynamic()) {
+                    if before
+                        .get(&tab.id)
+                        .is_some_and(|was| !mirror::same_arrangement(was, &tab.root))
+                    {
+                        self.authorise_tab(tab.id);
+                    }
+                }
+            }
+        }
+        events
     }
 
     fn authorise_tab(&self, tab: azulejo_model::TabId) {

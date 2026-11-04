@@ -149,6 +149,10 @@ fn new_pane(s: &mut FakeState, workspace: &str) -> herdr::TerminalRef {
         terminal_id: herdr::TerminalId(format!("term_{n}")),
     };
     s.panes.push(t.clone());
+    s.trees.insert(
+        t.tab_id.0.clone(),
+        herdr::LayoutNode::pane(t.pane_id.as_str()),
+    );
     t
 }
 
@@ -2146,4 +2150,78 @@ fn herdrs_own_arrangement_is_followed_and_only_azulejo_ops_restructure_it() {
         std::thread::sleep(Duration::from_millis(10));
     }
     core.shutdown();
+}
+
+/// A tile closed in herdr: a dynamic tab re-tiles by its own rule, which is
+/// Azulejo's arrangement, so that push may restructure herdr; a manual tab
+/// collapses as herdr did and nothing may restructure it.
+#[test]
+fn a_close_retiles_a_dynamic_tab_in_herdr_but_never_a_manual_one() {
+    for kind in [
+        azulejo_model::LayoutKind::Tile,
+        azulejo_model::LayoutKind::Manual,
+    ] {
+        let fake = Fake::default();
+        let core = Core::start_with_herdr(opts(None), fake.clone());
+        core.set_layout_prefs(azulejo_model::LayoutPrefs {
+            default: kind,
+            ..azulejo_model::LayoutPrefs::default()
+        });
+        core.set_mirror_layout(true);
+        wait_until(&core, |s| all_bound(s) && terminals(s).len() == 1);
+        for n in 2..=4 {
+            split(&core);
+            wait_until(&core, |s| all_bound(s) && terminals(s).len() == n);
+        }
+        // Settled: herdr's tab holds all four, as Azulejo has them.
+        let home = |s: &Session| terminals(s)[0].1.clone().unwrap().tab_id;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let s = core.session().unwrap();
+            let tab = home(&s);
+            if fake
+                .state()
+                .trees
+                .get(&tab)
+                .is_some_and(|t| t.panes().len() == 4)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "{kind:?}: never mirrored");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+
+        // The first tile's pane (Tile's master) closes in herdr.
+        let s = core.session().unwrap();
+        let (first, gone) = (terminals(&s)[0].0, terminals(&s)[0].1.clone().unwrap());
+        let pushed = {
+            let mut st = fake.state();
+            st.panes.retain(|p| p.pane_id.as_str() != gone.pane_id);
+            let tab = gone.tab_id.clone();
+            let collapsed = herdr::prune_tree(&st.trees[&tab], &|p| p.as_str() != gone.pane_id);
+            st.trees.insert(tab, collapsed.unwrap());
+            st.pushes.len()
+        };
+        fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+            pane_id: herdr::PaneId(gone.pane_id.clone()),
+            workspace_id: herdr::WorkspaceId(gone.tab_id.split(':').next().unwrap().into()),
+        }));
+        wait_until(&core, |s| s.tile(first).is_err());
+        std::thread::sleep(Duration::from_millis(500));
+        let st = fake.state();
+        let after: Vec<bool> = st.pushes[pushed..].iter().map(|p| p.restructure).collect();
+        match kind {
+            azulejo_model::LayoutKind::Tile => assert!(
+                after.contains(&true),
+                "Tile re-tiled: its push may restructure ({after:?})"
+            ),
+            _ => assert!(
+                !after.contains(&true),
+                "manual: nothing restructures ({after:?})"
+            ),
+        }
+        drop(st);
+        core.shutdown();
+    }
 }
