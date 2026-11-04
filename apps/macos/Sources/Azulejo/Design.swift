@@ -27,9 +27,9 @@ enum Design {
         static let selectedStrong = dynamic("selectedStrong", dark: 0x3a3f4bff, light: 0xcdd3dcff)
         /// hairlines around cards, fields and toasts
         static let border = dynamic("border", dark: 0xffffff14, light: 0x0000001a)
-        /// names, titles, focused header
+        /// names, titles, tile header titles
         static let textPrimary = dynamic("textPrimary", dark: 0xd7dae0ff, light: 0x24292fff)
-        /// tab labels, unfocused header titles, details
+        /// tab labels, details, tile header icons
         static let textSecondary = dynamic("textSecondary", dark: 0x9da5b4ff, light: 0x57606aff)
         /// group labels, branches, subtitles, hidden files
         static let textMuted = dynamic("textMuted", dark: 0x7f848eff, light: 0x8c959fff)
@@ -37,10 +37,8 @@ enum Design {
         static let textOnAccent = dynamic("textOnAccent", dark: 0xffffffff, light: 0xffffffff)
         /// progress bars, matched characters, links
         static let accent = dynamic("accent", dark: 0x61afefff, light: 0x2f7fd8ff)
-        /// focus indicator around the focused tile (pending designer confirmation)
-        static let focus = dynamic("focus", dark: 0x61afef73, light: 0x2f7fd866)
-        /// focus indicator while the focused tile is zoomed
-        static let zoom = dynamic("zoom", dark: 0xd19a66ff, light: 0xc4721fff)
+        /// what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it
+        static let dimFill = dynamic("dimFill", dark: 0x1b1d23ff, light: 0xeceef1ff)
         static let statusWorking = dynamic("statusWorking", dark: 0x61afefff, light: 0x2f7fd8ff)
         static let statusBlocked = dynamic("statusBlocked", dark: 0xe5c07bff, light: 0xb8860bff)
         static let statusDone = dynamic("statusDone", dark: 0x98c379ff, light: 0x3f8f2fff)
@@ -71,10 +69,8 @@ enum Design {
         static let shadow = dynamic("shadow", dark: 0x000000ff, light: 0x000000ff)
         /// tile outlines during the outline animation style
         static let ghostFill = dynamic("ghostFill", dark: 0x8080801a, light: 0x8080801a)
-        /// tile header strip of unfocused tiles (mockup: bottom-row tiles)
-        static let header = dynamic("header", dark: 0x202329ff, light: 0xeef0f3ff)
-        /// tile header strip of the focused tile (mockup: the claude tile)
-        static let headerFocused = dynamic("headerFocused", dark: 0x21252bff, light: 0xf6f7f9ff)
+        /// tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329)
+        static let header = dynamic("header", dark: 0x21252bff, light: 0xf6f7f9ff)
         /// line under a tile's header strip
         static let headerHairline = dynamic("headerHairline", dark: 0x181a1fff, light: 0x0000001a)
         /// browser tile toolbar (back, forward, address, reload)
@@ -157,7 +153,6 @@ enum Design {
 
     /// Border widths, in points.
     enum Border {
-        static let focus: CGFloat = 1
         static let attention: CGFloat = 2
         static let hairline: CGFloat = 1
     }
@@ -169,7 +164,7 @@ enum Design {
         static let rowHover: CGFloat = 0.45
         static let footerZero: CGFloat = 0.45
         static let dimmed: CGFloat = 0.5
-        static let unfocusedTile: CGFloat = 0.72
+        static let unfocusedDim: CGFloat = 0.25
         static let badgePulse: CGFloat = 0.35
         static let bannerFill: CGFloat = 0.16
         static let bannerMix: CGFloat = 0.75

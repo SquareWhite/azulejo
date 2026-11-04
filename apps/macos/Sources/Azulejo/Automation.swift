@@ -24,7 +24,10 @@ import AppKit
 ///     expect tiles 3         assert on the focused window's state; keys:
 ///                            windows workspaces workspace tabs tab tiles
 ///                            focus zoomed sidebar axis ratio kind masters
-///                            orientation part visible resizes
+///                            orientation part visible resizes dimmed
+///                            (dimmed: unfocused tiles dimmed, by place in
+///                            the tab, "2,3" or "none"; dim.strength: how
+///                            much, "0.25")
 ///     remember key           note a state value now…
 ///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
@@ -369,8 +372,9 @@ final class Automation {
         }
         record("capture \(name) +\(Int(delay * 1000)) ms")
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, let tiles = self.app?.focusedController?.tiles else { return }
-            self.record("  frames \(name): \(tiles.describeVisualFrames)")
+            guard let self, let controller = self.app?.focusedController else { return }
+            self.record("  frames \(name): \(controller.tiles.describeVisualFrames)")
+            self.record("  chrome \(name): \(controller.describeChrome)")
         }
     }
 
@@ -539,6 +543,8 @@ final class Automation {
                 break
             }
             s["visible"] = "\(controller.tiles.visibleTileFrames().count)"
+            s["dimmed"] = controller.tiles.dimmedTiles
+            s["dim.strength"] = String(format: "%.2f", Motion.dimStrength)
             s["resizes"] = "\(controller.tiles.totalSurfaceResizes)"
         }
         if let tile = controller.tiles.focusedView as? AutomatableTile {

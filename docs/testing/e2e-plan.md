@@ -200,7 +200,8 @@ Compare against `docs/design/mockup-v1.png`, the region notes in `docs/design/RE
   - ⌘K menu: empty, filtered, `>` and `@`
 - **C4. Edge layouts.** Minimum window size, 1 tile, 9+ tiles, Monocle, Three Column, an empty workspace and an empty tab. Look for clipped text, overlapping controls, headers wider than their tiles and broken corner caps.
 - **C5. Appearance.** The theme is dark-only for now. Launch with the system set to light (through the app's own override or `-AppleInterfaceStyle`, never the system pref): nothing becomes unreadable.
-- **C6. Motion polish.** From the slow captures in B4: the focus indicator morphs smoothly, tab switches fade, and nothing flashes white or black between frames.
+- **C6. Motion polish.** From the slow captures in B4: the focus dim cross-fades smoothly, tab switches fade, the sidebar slides in step with the tiles, and nothing flashes white or black between frames.
+- **C7. Focus dim** (`e2e/dim.sh`, Nov 4). Unfocused tiles dim and the focused one doesn't, nothing dims in zoom, Monocle or with one tile, ⌘K and the Files panel change nothing, the cross-fade is mid-way when slowed and instant with motion off; then the same with `unfocused-split-opacity` and `-fill` in the dev profile's Ghostty config. Checked on the captures' pixels.
 
 Rate each finding **blocker**, **major**, **minor** or **designer question**.
 

@@ -753,11 +753,10 @@ fn animation_style_settings() {
     assert_eq!(defaults.animation.curve, Curve::EaseOut);
     assert_eq!(defaults.animation.style, Style::Crop);
     assert_eq!(defaults.animation.tab_switch, TabSwitch::Fade);
-    assert!(!defaults.animation.dim_inactive);
     assert_eq!(defaults.animation.reduce_motion, ReduceMotion::System);
 
     let config = user(
-        "[animation]\ncurve = \"linear\"\nstyle = \"outline\"\ntab_switch = \"slide\"\ndim_inactive = true\nreduce_motion = \"ignore\"\n",
+        "[animation]\ncurve = \"linear\"\nstyle = \"outline\"\ntab_switch = \"slide\"\nreduce_motion = \"ignore\"\n",
         MAC,
     );
     assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
@@ -766,20 +765,25 @@ fn animation_style_settings() {
     let scale = user("[animation]\nstyle = \"scale\"\n", MAC);
     assert_eq!(scale.animation.style, Style::Scale);
     assert_eq!(config.animation.tab_switch, TabSwitch::Slide);
-    assert!(config.animation.dim_inactive);
     assert_eq!(config.animation.reduce_motion, ReduceMotion::Ignore);
 
     // A bad value drops only that value; the default stays.
     let bad = user(
-        "[animation]\ncurve = \"bouncy\"\nstyle = \"wobble\"\ntab_switch = 3\ndim_inactive = \"yes\"\n",
+        "[animation]\ncurve = \"bouncy\"\nstyle = \"wobble\"\ntab_switch = 3\n",
         MAC,
     );
-    assert_eq!(errors(&bad).len(), 4);
+    assert_eq!(errors(&bad).len(), 3);
     assert_eq!(bad.animation.curve, Curve::EaseOut);
     assert_eq!(bad.animation.style, Style::Crop);
     assert_eq!(bad.animation.tab_switch, TabSwitch::Fade);
-    assert!(!bad.animation.dim_inactive);
     assert!(errors(&bad)[0].contains("\"ease_out\""));
+
+    // `dim_inactive` is retired: dimming unfocused tiles is the focus
+    // indicator now. The key only warns, whatever its value.
+    let retired = user("[animation]\ndim_inactive = true\n", MAC);
+    assert!(errors(&retired).is_empty());
+    assert_eq!(warnings(&retired).len(), 1);
+    assert!(warnings(&retired)[0].contains("unfocused-split-opacity"));
 }
 
 #[test]

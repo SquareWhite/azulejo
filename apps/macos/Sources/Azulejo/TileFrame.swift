@@ -45,6 +45,13 @@ class TileFrame: NSView, TileView {
     /// window colour drawn over the four corners. Rounded masking of a layer
     /// tree that holds a Metal surface or a web view costs an offscreen pass.
     let corners = CornerCapLayer()
+    /// The focus indicator: unfocused tiles fade towards `Motion.dimFill`
+    /// under this layer, header strip and all, while the focused tile stays
+    /// at full brightness (`setDim`). It sits under the corner caps and
+    /// follows the crop clip with them mid-motion.
+    private let dim = CALayer()
+    /// The dim's target opacity (0: not dimmed).
+    private(set) var dimLevel: CGFloat = 0
 
     /// Wraps `content`; tiles that take part in motion get a frame that does too.
     static func wrap(_ content: any TileView) -> TileFrame {
@@ -64,14 +71,23 @@ class TileFrame: NSView, TileView {
         header.isHidden = ownsChrome
         header.menuProvider = { [weak self] in self?.contextMenu() }
         // The header stays above the content, so a terminal's 1:1 motion
-        // snapshot (crop style) can't cover it mid-motion; the corner caps sit
-        // over both.
+        // snapshot (crop style) can't cover it mid-motion; the dim and then
+        // the corner caps sit over both, in a subview of their own that comes
+        // last. (As sublayers of this view they'd end up under the subviews'
+        // layers, which AppKit attaches later: fine on screen with a
+        // zPosition, wrong in captures, which draw in list order.)
         addSubview(content)
         addSubview(header)
-        corners.zPosition = 100
-        layer?.addSublayer(corners)
+        addSubview(overlays)
+        dim.opacity = 0
+        dim.actions = ["opacity": NSNull(), "position": NSNull(), "bounds": NSNull(), "backgroundColor": NSNull()]
+        overlays.layer?.addSublayer(dim)
+        overlays.layer?.addSublayer(corners)
         updateColors()
     }
+
+    /// Holds the dim and the corner caps over everything else in the card.
+    private let overlays = TileOverlaysView()
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
@@ -88,11 +104,39 @@ class TileFrame: NSView, TileView {
         // header.
         content.frame = NSRect(x: p, y: p, width: max(newSize.width - 2 * p, 0),
                                height: max(body - p - p / 2, 0))
+        // Same coordinates as this view's bounds, so the caps and the dim
+        // can follow a crop clip in them.
+        overlays.frame = NSRect(origin: .zero, size: newSize)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         corners.frame = CGRect(origin: .zero, size: newSize)
+        dim.frame = CGRect(origin: .zero, size: newSize)
         CATransaction.commit()
     }
+
+    // MARK: Focus dim
+
+    /// Dims the tile to `level` (0: full brightness), cross-fading over
+    /// `duration` with the motion curve, or at once when it's 0.
+    func setDim(_ level: CGFloat, duration: CFTimeInterval) {
+        let fill = Motion.dimFill
+        var colour: CGColor?
+        effectiveAppearance.performAsCurrentDrawingAppearance { colour = fill.cgColor }
+        if dim.backgroundColor != colour { dim.backgroundColor = colour }
+        guard level != dimLevel else { return }
+        let from = dim.presentation()?.opacity ?? dim.opacity
+        dimLevel = level
+        dim.opacity = Float(level)
+        dim.removeAnimation(forKey: Self.dimKey)
+        guard duration > 0 else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = Float(level)
+        Motion.configure(fade, duration: duration)
+        dim.add(fade, forKey: Self.dimKey)
+    }
+
+    private static let dimKey = "azj.dim"
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -121,14 +165,15 @@ class TileFrame: NSView, TileView {
             CATransaction.commit()
             corners.update(fill: Design.Color.window.cgColor, radius: Design.Radius.tile,
                            scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+            dim.backgroundColor = Motion.dimFill.cgColor
         }
     }
 
     // MARK: Corners in motion
 
     /// Crop motion animates this frame's bounds (a clip over 1:1 content);
-    /// the caps and the header strip follow the visible rect from `from` to
-    /// `to` (bounds coordinates) with the motion's timing.
+    /// the caps, the dim and the header strip follow the visible rect from
+    /// `from` to `to` (bounds coordinates) with the motion's timing.
     func animateCorners(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
         animateHeader(from: from, to: to, duration: duration, holdAtEnd: holdAtEnd)
         let position = CABasicAnimation(keyPath: "position")
@@ -145,10 +190,12 @@ class TileFrame: NSView, TileView {
         }
         Motion.configure(group, duration: duration)
         corners.add(group, forKey: Self.cornerMotionKey)
+        dim.add(group, forKey: Self.cornerMotionKey)
     }
 
     func stopCornerMotion() {
         corners.removeAnimation(forKey: Self.cornerMotionKey)
+        dim.removeAnimation(forKey: Self.cornerMotionKey)
         header.layer?.removeAnimation(forKey: Self.cornerMotionKey)
         header.badge?.layer?.removeAnimation(forKey: Self.cornerMotionKey)
     }
@@ -310,6 +357,9 @@ extension TileFrame: AutomatableTile {
         state["tile.header.subtitle"] = header.subtitleText
         state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
+        state["tile.dim"] = dimLevel > 0 ? "yes" : "no"
+        state["tile.overlays.top"] = subviews.last === overlays && layer?.sublayers?.last === overlays.layer
+            ? "yes" : "no"
         return state
     }
 }
@@ -317,8 +367,10 @@ extension TileFrame: AutomatableTile {
 /// The strip across the top of a tile: icon, bold title, " — " and a muted
 /// subtitle (a path keeps its last folder), then the tile's own controls. Centred
 /// like the mockup's terminal tiles; left-aligned when the tile puts controls
-/// on the right (preview, files). The focused tile's strip is a shade lighter
-/// (as the mockup's focused tile is), with a hairline underneath.
+/// on the right (preview, files); a hairline underneath. Every strip is drawn
+/// the same: the focused tile's is set apart by the dim over the others
+/// (`TileFrame.setDim`), which turns the mockup's focused strip colour into
+/// its unfocused one.
 @MainActor
 final class TileHeaderView: NSView {
     /// The tile's right-click menu (`TileFrame.contextMenu`).
@@ -330,13 +382,9 @@ final class TileHeaderView: NSView {
     private(set) var titleText = ""
     private(set) var subtitleText = ""
 
-    var focused = false {
-        didSet {
-            guard focused != oldValue else { return }
-            render()
-            updateColors()
-        }
-    }
+    /// Whether this is the focused tile's strip (automation; the strip looks
+    /// the same either way).
+    var focused = false
 
     init(kind: TileKind) {
         super.init(frame: .zero)
@@ -408,7 +456,7 @@ final class TileHeaderView: NSView {
     private func text(room: CGFloat) -> NSAttributedString {
         let text = NSMutableAttributedString(string: titleText, attributes: [
             .font: Design.Font.headerTitle,
-            .foregroundColor: focused ? Design.Color.textPrimary : Design.Color.textSecondary,
+            .foregroundColor: Design.Color.textPrimary,
         ])
         shownSubtitle = ""
         if !subtitleText.isEmpty {
@@ -518,11 +566,11 @@ final class TileHeaderView: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            layer?.backgroundColor = (focused ? Design.Color.headerFocused : Design.Color.header).cgColor
+            layer?.backgroundColor = Design.Color.header.cgColor
             hairline.backgroundColor = Design.Color.headerHairline.cgColor
             CATransaction.commit()
         }
-        icon.contentTintColor = focused ? Design.Color.textSecondary : Design.Color.textMuted
+        icon.contentTintColor = Design.Color.textSecondary
     }
 
     private static func symbol(_ kind: TileKind) -> String { Design.Icon.for(kind) }
@@ -611,6 +659,26 @@ final class PillToggle: NSView {
         selectedSegment = sender.tag
         onChange(sender.tag)
     }
+}
+
+/// The top of a tile card: the focus dim and the corner caps. Never takes
+/// clicks, and doesn't clip, so the caps can follow a crop clip that
+/// reaches past the card's resting bounds.
+@MainActor
+final class TileOverlaysView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        clipsToBounds = false
+        layer?.masksToBounds = false
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// The window colour over a card's four corners, clear in between: a

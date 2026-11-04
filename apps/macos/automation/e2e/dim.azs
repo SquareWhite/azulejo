@@ -1,0 +1,83 @@
+# Focus dim (the maintainer's feedback, Nov 4): no outline round the focused tile;
+# every other tile on screen dims, header strip included. Nothing dims with
+# one tile on screen (a lone tile, Monocle, zoom). The keyboard leaving the
+# tiles (⌘K, the sidebar's Files panel) keeps the last focused tile bright.
+# dim.sh checks the captures' pixels.
+log focus dim
+delivery direct
+until terminal.phase attached 10000
+core {"method":"workspace.set_repo","params":{"path":"@FX@"}}
+sidebar mode agents
+expect dim.strength @STRENGTH@
+expect dimmed none
+key ctrl+cmd+t
+until tiles 2 3000
+key ctrl+cmd+t
+until tiles 3 3000
+key ctrl+cmd+t
+until tiles 4 3000
+wait 1500
+expect focus 4
+expect dimmed 1,2,3
+expect tile.dim no
+capture dim-4-tiles 0
+wait 300
+key alt+h
+wait 400
+expect focus 1
+expect dimmed 2,3,4
+
+# Zoom: the zoomed tile alone on screen, nothing dims.
+key alt+shift+m
+wait 600
+expect zoomed yes
+expect dimmed none
+capture dim-zoom 0
+wait 300
+key alt+shift+m
+wait 600
+expect dimmed 2,3,4
+
+# Monocle: one tile on screen, nothing dims; back in Three Column, the rest dim.
+key alt+backslash
+wait 600
+expect kind monocle
+expect dimmed none
+capture dim-monocle 0
+wait 300
+key alt+backslash
+wait 600
+expect kind three_column
+expect dimmed 2,3,4
+
+# The keyboard outside the tiles: the last focused tile stays bright.
+key cmd+k
+expect responder palette
+expect focus 1
+expect dimmed 2,3,4
+capture dim-quickopen 0
+wait 300
+key escape
+wait 300
+sidebar mode files
+until sidebar.files.names README.md 5000
+sidebar focus
+expect sidebar.files.keyboard yes
+expect dimmed 2,3,4
+sidebar mode agents
+responder focus
+wait 300
+
+# The cross-fade: slowed (0.9 s at a 1.5 s motion), it's mid-way 150 ms
+# after focus moves; with motion off it's done at once.
+anim duration 1500
+key alt+l
+capture dim-fade-on 0
+wait 1500
+anim enabled false
+key alt+h
+capture dim-fade-off 0
+wait 300
+expect focus 1
+anim enabled default
+anim duration default

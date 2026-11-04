@@ -21,7 +21,7 @@ Nov 3, 2026. The mockup's scene built with fixture data by `apps/macos/automatio
 
 Tags: **designer question**, **quick fix**, **later**.
 
-1. **Focused tile outline.** Azulejo draws a 1 pt blue outline on the focused tile; the mockup shows none. *Designer question* (D.1 default, still pending).
+1. **Focused tile outline.** *Decided* (the maintainer, Nov 4): no outline, as in the mockup. Unfocused tiles dim instead: 25 % of the window colour over each, which turns the mockup's focused body and header colours into its unfocused ones (details in [README.md](README.md#focus-indicator-unfocused-tiles-dim-decided-nov-4-2026)). The capture shows it: the claude tile is focused, the other three are dimmed.
 2. **Agent badge.** "claude · working" (2.6) used to sit over the terminal's top-right corner and covered its text (e2e V8). Since Nov 4 it sits at the right end of the header strip, the header's title keeps clear of it, and a narrow tile shows the dot alone. The mockup still has no badge. *Designer question*: keep, show only for blocked or finished, or rely on the header?
 3. **Workspace status when tabs disagree.** The mockup shows azulejo as working while its "review" tab is blocked. Azulejo ranks blocked first, so the row shows blocked. *Designer question*: which state wins in the sidebar row?
 4. **Terminal text size.** The terminals use Ghostty's default font size because the user's Ghostty config is empty, which is larger than the mockup's (about 11 pt), so long lines wrap. *Designer question*: should Azulejo default to a smaller terminal size when the Ghostty config sets none? (*quick fix* once decided)
