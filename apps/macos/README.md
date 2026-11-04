@@ -46,6 +46,7 @@ name a herdr session other than `default`.
 - `AZULEJO_PIDFILE`: so `--stop` can send SIGTERM (the app quits properly: state flushed, socket removed)
 - `AZULEJO_BACKGROUND=1`: never `NSApp.activate()`; windows are ordered to the back
 - `AZULEJO_AUTOMATION` / `AZULEJO_AUTOMATION_OUT`: run a script, then quit
+- `AZJ_DEBUG_MIRROR`, when set in `dev.sh`'s environment: the core logs every mirror push and pull (ADR 0012) to the app log
 
 ## Automation (no OS input)
 
