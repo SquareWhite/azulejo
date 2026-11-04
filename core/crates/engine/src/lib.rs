@@ -17,8 +17,8 @@ mod repos;
 pub mod terminal;
 
 use azulejo_model::{
-    HerdrRef, LayoutPrefs, ModelError, PreviewMode, Session, TabId, Tile, TileContent, TileId,
-    WorkspaceId,
+    HerdrRef, LayoutPrefs, ModelError, PreviewMode, Session, SidebarState, TabId, Tile,
+    TileContent, TileId, WorkspaceId,
 };
 use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
@@ -56,6 +56,8 @@ pub struct Engine {
     /// workspace), with when: a survey requested before that still lists
     /// them and mustn't adopt them again.
     closed_reported: Vec<(azulejo_model::HerdrRef, u64)>,
+    /// What a collapsed sidebar shows as (`[sidebar] collapsed`).
+    sidebar_collapsed: SidebarState,
 }
 
 /// How many closed-here herdr panes `Session::detached_herdr` remembers.
@@ -83,12 +85,17 @@ impl Engine {
             info_reported: Default::default(),
             closed_reported: Vec::new(),
             fresh_tab: Some(tab),
+            sidebar_collapsed: SidebarState::Rail,
         }
     }
 
     /// Starts from a saved session.
+    /// A collapsed sidebar comes back as a rail until the config says
+    /// otherwise ([`Engine::set_sidebar_collapsed`]); state saved before the
+    /// rail only says "hidden".
     pub fn with_session(mut session: Session) -> Self {
         meta::refresh_headers(&mut session);
+        session.set_sidebar_collapsed(SidebarState::Rail);
         Self {
             session,
             placeholder: None,
@@ -96,7 +103,21 @@ impl Engine {
             agent_reported: Default::default(),
             info_reported: Default::default(),
             closed_reported: Vec::new(),
+            sidebar_collapsed: SidebarState::Rail,
         }
+    }
+
+    /// Applies `[sidebar] collapsed`: what collapsing a sidebar gives (a
+    /// rail, or hidden; `Full` counts as a rail), and every sidebar that's
+    /// collapsed now takes that form. Returns the events for any change.
+    pub fn set_sidebar_collapsed(&mut self, collapsed: SidebarState) -> Vec<Event> {
+        let before = self.session.clone();
+        self.sidebar_collapsed = match collapsed {
+            SidebarState::Hidden => SidebarState::Hidden,
+            SidebarState::Full | SidebarState::Rail => SidebarState::Rail,
+        };
+        self.session.set_sidebar_collapsed(self.sidebar_collapsed);
+        diff(&before, &self.session, false)
     }
 
     /// Applies the `[layout]` preferences (ADR 0010) and returns the events
@@ -173,6 +194,7 @@ impl Engine {
     }
 
     fn apply(&mut self, command: Command) -> Result<Reply, Error> {
+        let collapsed = self.sidebar_collapsed;
         let s = &mut self.session;
         let focus = s.focus();
         let nothing = || Error::from(ModelError::NothingFocused);
@@ -204,7 +226,7 @@ impl Engine {
                 Reply::Ok
             }
             Command::WindowSetSidebar(p) => {
-                s.set_window_sidebar(p.window, p.visible)?;
+                s.set_window_sidebar(p.window, p.visible, collapsed)?;
                 Reply::Ok
             }
             Command::WindowList => Reply::Windows {
@@ -217,6 +239,7 @@ impl Engine {
                         active_workspace: w.active_workspace,
                         workspaces: w.workspaces.iter().map(|ws| ws.id).collect(),
                         frame: w.frame,
+                        sidebar: w.sidebar,
                     })
                     .collect(),
             },

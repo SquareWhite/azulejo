@@ -327,6 +327,7 @@ fn sample_events() -> Vec<Event> {
             window,
             frame: None,
             sidebar_hidden: true,
+            sidebar: SidebarState::Rail,
         },
         Event::WorkspaceCreated {
             window,
@@ -569,6 +570,7 @@ fn replies_round_trip() {
                 active_workspace: WorkspaceId::new(),
                 workspaces: vec![WorkspaceId::new()],
                 frame: None,
+                sidebar: SidebarState::Rail,
             }],
         },
         Reply::Workspaces {
