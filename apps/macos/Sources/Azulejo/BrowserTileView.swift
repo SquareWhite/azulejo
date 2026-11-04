@@ -22,7 +22,7 @@ import WebKit
 /// New windows (`target=_blank`, `window.open`) open in the same tile.
 /// Downloads go to ~/Downloads with a banner.
 @MainActor
-final class BrowserTileView: NSView, TileView {
+final class BrowserTileView: NSView, TileView, KeyScope {
     let tileID: String
     let kind: TileKind = .browser
 
@@ -300,37 +300,27 @@ final class BrowserTileView: NSView, TileView {
 
     // MARK: Keys
 
-    /// Browser chords. The key router has already let these through because
-    /// the keymap doesn't bind them; only the tile holding the first responder
-    /// acts, since every view in the window sees key equivalents.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.type == .keyDown, containsFirstResponder, let chord = KeyRouter.chord(for: event) else {
-            return super.performKeyEquivalent(with: event)
-        }
-        return handle(chord: chord) || super.performKeyEquivalent(with: event)
-    }
-
-    /// Runs a browser chord; false if it isn't one.
-    @discardableResult
-    func handle(chord: String) -> Bool {
-        switch chord {
-        case "cmd+l": focusAddress()
-        case "cmd+r": retryOrReload()
-        case "cmd+shift+r": webView.reloadFromOrigin()
-        case "cmd+bracketleft": goBack()
-        case "cmd+bracketright": goForward()
-        case "alt+cmd+i": showInspector()
-        case "cmd+period": webView.stopLoading()
-        case "cmd+equal": webView.magnification = min(3, webView.magnification + 0.1)
-        case "cmd+minus": webView.magnification = max(0.5, webView.magnification - 0.1)
-        case "cmd+0": webView.magnification = 1
-        case "escape" where isEditingAddress:
-            address.stringValue = currentURL
-            window?.makeFirstResponder(webView)
+    /// The browser's keymap actions (`[keys.<platform>.browser]`: ⌘L, ⌘R,
+    /// ⌘[ / ⌘], zoom…). The key router resolves the chords while this tile
+    /// has the keyboard and hands the actions here.
+    func perform(keyAction name: String, event: NSEvent?) -> Bool {
+        switch name {
+        case "browser_focus_address": focusAddress()
+        case "browser_reload": retryOrReload()
+        case "browser_reload_from_origin": webView.reloadFromOrigin()
+        case "browser_back": goBack()
+        case "browser_forward": goForward()
+        case "browser_inspector": showInspector()
+        case "browser_stop": webView.stopLoading()
+        case "browser_zoom_in": webView.magnification = min(3, webView.magnification + 0.1)
+        case "browser_zoom_out": webView.magnification = max(0.5, webView.magnification - 0.1)
+        case "browser_zoom_reset": webView.magnification = 1
         default: return false
         }
         return true
     }
+
+    var keyScope: String { keyContext }
 
     private var containsFirstResponder: Bool {
         guard let responder = window?.firstResponder as? NSView else { return false }
@@ -342,8 +332,15 @@ final class BrowserTileView: NSView, TileView {
         return window?.firstResponder === editor
     }
 
+    /// Escape in the address bar (AppKit's cancel on the field, not a keymap
+    /// chord): put the page's URL back and return to the page.
+    private func cancelAddressEdit() {
+        address.stringValue = currentURL
+        window?.makeFirstResponder(webView)
+    }
+
     override func cancelOperation(_ sender: Any?) {
-        if isEditingAddress { handle(chord: "escape") } else { super.cancelOperation(sender) }
+        if isEditingAddress { cancelAddressEdit() } else { super.cancelOperation(sender) }
     }
 
     // MARK: Actions
@@ -404,12 +401,15 @@ final class BrowserTileView: NSView, TileView {
     private func moreMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(withTitle: "Web Inspector", action: #selector(showInspector), keyEquivalent: "i")
-            .keyEquivalentModifierMask = [.command, .option]
+        // Chords shown as the keymap has them (`[keys.<platform>.browser]`).
+        let chords = MainMenu.chords(in: app?.core.keymap() ?? [:], context: "browser")
+        let inspector = menu.addItem(withTitle: "Web Inspector", action: #selector(showInspector), keyEquivalent: "")
+        chords["browser_inspector"].map { MainMenu.apply($0, to: inspector) }
         menu.addItem(withTitle: "Copy URL", action: #selector(copyURL), keyEquivalent: "")
         menu.addItem(withTitle: "Open in Default Browser", action: #selector(openExternally), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Reload from Origin", action: #selector(reloadFromOrigin), keyEquivalent: "")
+        let origin = menu.addItem(withTitle: "Reload from Origin", action: #selector(reloadFromOrigin), keyEquivalent: "")
+        chords["browser_reload_from_origin"].map { MainMenu.apply($0, to: origin) }
         menu.items.forEach { $0.target = self }
         if let controller = app?.controller(for: window) {
             let tile = ContextMenus.tileItems(tileID, in: controller)
@@ -702,7 +702,7 @@ extension BrowserTileView: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegat
     // Escape in the address bar restores the page's URL.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard control === address, selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
-        handle(chord: "escape")
+        cancelAddressEdit()
         return true
     }
 }
@@ -846,11 +846,16 @@ extension BrowserTileView: AutomatableTile {
     func automate(_ verb: String, _ arg: String) -> String? {
         switch verb {
         case "key":
-            // The router's verdict first (must let browser chords through),
-            // then the tile's own handler, as performKeyEquivalent would.
-            let routed = app?.core.key(chord: arg, tile: keyContext)["outcome"] as? String ?? "?"
-            if routed == "action" || routed == "prefix_armed" { return "router consumed \(arg)" }
-            return handle(chord: arg) ? nil : "not a browser chord: \(arg)"
+            // The chord as the key router resolves it with this tile focused:
+            // browser actions run here; anything else isn't a browser chord.
+            // Escape is the address bar's own (AppKit's cancel).
+            if arg == "escape", isEditingAddress { cancelAddressEdit(); return nil }
+            let outcome = app?.core.key(chord: arg, context: keyScope) ?? [:]
+            guard outcome["outcome"] as? String == "action", let name = outcome["action"] as? String else {
+                return "not a browser chord: \(arg)"
+            }
+            guard outcome["context"] as? String == "browser" else { return "router consumed \(arg) (\(name))" }
+            return perform(keyAction: name, event: nil) ? nil : "\(name) declined"
         case "type":
             // Fill the address bar as if typed, then press enter.
             focusAddress()

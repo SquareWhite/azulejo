@@ -86,6 +86,10 @@ mac-layouts: mac
 mac-focus: mac
     apps/macos/automation/focus/focus.sh
 
+# Live rebinding of every keymap context through the dev profile's config file (no restart)
+mac-rebind: mac
+    apps/macos/automation/rebind.sh
+
 # The designer mockup's scene with fixture data, captured for docs/design (D.9)
 mac-mockup: mac
     apps/macos/automation/mockup.sh

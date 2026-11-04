@@ -440,6 +440,20 @@ mod tests {
         }
     }
 
+    /// The example in docs/keybindings.md ("Configuring") is a clean config.
+    #[test]
+    fn the_documented_example_is_clean() {
+        let doc = include_str!("../../../../docs/keybindings.md");
+        let start = doc.find("```toml\n").unwrap() + "```toml\n".len();
+        let example = &doc[start..start + doc[start..].find("```").unwrap()];
+        let config = Config::from_toml(example, None, Platform::Macos);
+        assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
+        assert_eq!(
+            config.keymap.chords_for(Action::Quit, None),
+            Vec::<Chord>::new()
+        );
+    }
+
     #[test]
     fn reference_lists_both_platforms() {
         let md = reference_markdown();

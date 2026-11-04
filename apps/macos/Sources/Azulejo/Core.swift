@@ -97,10 +97,12 @@ final class Core {
     }
 
     /// Routes a chord (`"alt+h"`) through the keymap, keeping prefix state.
-    func key(chord: String, tile: String?) -> [String: Any] {
+    /// `context` is the focused tile's kind or the mode that has the keyboard
+    /// (`"palette"`, `"find_bar"`, `"resize"`), nil for none.
+    func key(chord: String, context: String?) -> [String: Any] {
         if freed { return ["outcome": "error"] }
         var request: [String: Any] = ["chord": chord]
-        request["tile"] = tile ?? NSNull()
+        request["context"] = context ?? NSNull()
         guard let json = Self.encode(request) else { return ["outcome": "error"] }
         return take(azj_core_key(handle, json)) ?? ["outcome": "error"]
     }

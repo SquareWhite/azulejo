@@ -21,7 +21,7 @@ quit = ""                       # unbind it ("none" works too)
 [keys.macos]                    # one platform; beats [keys]
 split_right = "cmd+d"           # replaces the default chord(s) for this action
 promote_tile = ["alt+enter", "cmd+enter"]
-switch_workspace = "ctrl+1..8"  # digit ranges, for switch_workspace and switch_tab
+switch_tab = "ctrl+alt+1..8"   # digit ranges, for switch_workspace and switch_tab
 
 [keys.macos.browser]            # only while a browser tile has focus
 toggle_sidebar = "cmd+b"
