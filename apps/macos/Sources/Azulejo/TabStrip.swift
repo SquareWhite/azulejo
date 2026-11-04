@@ -53,7 +53,7 @@ final class TabStripView: NSView {
         fade.endPoint = CGPoint(x: 1, y: 0.5)
         addSubview(scroll)
         add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New tab")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.tabAdd, weight: .regular))
         add.isBordered = false
         add.contentTintColor = Design.Color.tabAdd
         add.refusesFirstResponder = true
@@ -113,6 +113,16 @@ final class TabStripView: NSView {
 
     private static func hasAgent(_ tab: TabModel) -> Bool { tab.tiles.contains { $0.agent != nil } }
 
+    /// The narrowest the strip gets: the selected tab (its icon at the
+    /// least) and "+". The search field gives way before the strip goes below it.
+    var minimumWidth: CGFloat {
+        let p = Design.Space.tabStripPadding, h = Design.Space.tabHeight
+        return p + (buttons.isEmpty ? 0 : h + Design.Space.tabSpacing) + h + p
+    }
+
+    /// Too narrow to scroll through tabs: only the selected one shows.
+    private var selectedOnly = false
+
     /// Width the strip wants: its tabs at their natural widths, "+", padding.
     var naturalWidth: CGFloat {
         let p = Design.Space.tabStripPadding
@@ -128,6 +138,26 @@ final class TabStripView: NSView {
         let addWidth = h
         let spacing = Design.Space.tabSpacing
         let room = max(0, bounds.width - 2 * p - addWidth - (buttons.isEmpty ? 0 : spacing))
+        // No room for even one tab at `tabFitMinWidth` (the minimum window
+        // size): the selected tab alone, shrunk, down to its icon. The others
+        // are a ⌘K or ctrl+number away.
+        if let selected = buttons.first(where: \.selected),
+           room < min(Design.Space.tabFitMinWidth, selected.naturalWidth) {
+            selectedOnly = true
+            for button in buttons { button.isHidden = button !== selected }
+            let width = max(min(selected.naturalWidth, room), h)
+            scroll.frame = NSRect(x: p, y: 0, width: width, height: bounds.height)
+            tabs.frame = NSRect(x: 0, y: 0, width: width, height: bounds.height)
+            selected.frame = NSRect(x: 0, y: y, width: width, height: h)
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+            add.frame = NSRect(x: p + width + spacing, y: y, width: addWidth, height: h)
+            revealSelected = false
+            updateFade()
+            return
+        }
+        selectedOnly = false
+        for button in buttons { button.isHidden = false }
         let gaps = CGFloat(max(0, buttons.count - 1)) * spacing
         let widths = Self.fit(buttons.map(\.naturalWidth), into: room - gaps, min: Design.Space.tabFitMinWidth)
         let total = widths.reduce(0, +) + gaps
@@ -171,8 +201,10 @@ final class TabStripView: NSView {
     }
 
     /// Automation: whether the tabs overflow, and which edges fade
-    /// ("none", "right", "left,right", "left").
+    /// ("none", "right", "left,right", "left"), or "selected" when only the
+    /// selected tab shows.
     var overflow: String {
+        if selectedOnly { return "selected" }
         let clip = scroll.contentView.bounds
         let edges = [clip.minX > 0.5 ? "left" : nil, clip.maxX < tabs.frame.width - 0.5 ? "right" : nil]
             .compactMap { $0 }
@@ -252,8 +284,10 @@ final class TabButton: NSView {
     /// The state icon. Filled symbols (blocked) draw their mark in the strip's
     /// colour on the state colour, as in the mockup, not one flat disc.
     static func icon(_ status: Design.Status) -> NSImage? {
-        guard status.symbol.hasSuffix(".fill") else { return Design.StatusIcon.image(status, pointSize: 12) }
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        guard status.symbol.hasSuffix(".fill") else {
+            return Design.StatusIcon.image(status, pointSize: Design.Symbol.tabStatus)
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.tabStatus, weight: .bold)
             .applying(.init(paletteColors: [Design.Color.tabStrip, status.color]))
         return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
             .withSymbolConfiguration(config)
@@ -283,7 +317,11 @@ final class TabButton: NSView {
     override func layout() {
         super.layout()
         let px = Design.Space.tabPaddingX
-        icon.frame = NSRect(x: px, y: (bounds.height - 14) / 2, width: 14, height: 14)
+        // Too narrow for a few letters of the name: the icon alone, centred.
+        let iconOnly = bounds.width < 2 * px + 14 + Design.Space.tabIconGap + 16
+        label.isHidden = iconOnly
+        icon.frame = NSRect(x: iconOnly ? (bounds.width - 14) / 2 : px, y: (bounds.height - 14) / 2,
+                            width: 14, height: 14)
         // The cell pads its text by ~2 pt: start that much early, end that much late.
         let textX = px + 14 + Design.Space.tabIconGap - 2
         let textHeight = ceil(label.intrinsicContentSize.height)

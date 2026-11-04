@@ -221,8 +221,28 @@ enum Design {
         static let sidebarFooterHeight: CGFloat = 36
         static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
+        static let findFieldMin: CGFloat = 60
         static let browserBannerHeight: CGFloat = 30
         static let browserBannerButtonMin: CGFloat = 240
+    }
+
+    /// SF Symbol point sizes.
+    enum Symbol {
+        static let header: CGFloat = 11
+        static let fieldIcon: CGFloat = 10
+        static let toolbarButton: CGFloat = 12
+        static let findButton: CGFloat = 11
+        static let tabAdd: CGFloat = 13
+        static let tabStatus: CGFloat = 12
+        static let searchIcon: CGFloat = 12
+        static let sidebarToggle: CGFloat = 14
+        static let sidebarRow: CGFloat = 12
+        static let sidebarAdd: CGFloat = 11
+        static let sidebarSegment: CGFloat = 11
+        static let footerStatus: CGFloat = 11
+        static let machineRing: CGFloat = 9
+        static let paletteKind: CGFloat = 12
+        static let paletteStatus: CGFloat = 11
     }
 
     /// UI fonts. Terminals use the user's Ghostty font, not these.

@@ -70,6 +70,11 @@ wait 2500
 remember tile.url
 remember tile.address
 remember tile.banner
+# V11: the tile says what failed, no lock for a host that never answered,
+# and the banner has its own row over the page.
+until tile.reported_title example.invalid 3000
+expect tile.address_icon globe
+remember tile.page_top
 shot 04-browser-failed
 window-size 480 320
 wait 1200

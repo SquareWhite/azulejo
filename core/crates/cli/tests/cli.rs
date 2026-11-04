@@ -69,7 +69,7 @@ fn stderr(o: &Output) -> String {
 }
 
 fn json_of(o: &Output) -> Value {
-    assert!(o.status.success(), "azj failed: {}", stderr(o));
+    assert!(o.status.success(), "azj failed: {}{}", stdout(o), stderr(o));
     serde_json::from_str(&stdout(o)).unwrap()
 }
 
@@ -511,4 +511,102 @@ fn events_flags_are_checked() {
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
     let o = azj(&app.socket, &[], &["events", "--workspace", "nope"]);
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+}
+
+/// Parses a `--json` error: one object on stdout, nothing on stderr, and the
+/// usual exit code.
+fn json_error(o: &Output, exit: i32) -> Value {
+    assert_eq!(o.status.code(), Some(exit), "{}{}", stdout(o), stderr(o));
+    assert_eq!(stderr(o), "", "--json errors go to stdout only");
+    let text = stdout(o);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    let error: Value = serde_json::from_str(&text).unwrap();
+    let keys: Vec<&String> = error.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["code", "data", "message"], "{error}");
+    assert!(error["message"].as_str().is_some_and(|m| !m.is_empty()));
+    assert!(error["data"].is_object(), "{error}");
+    error
+}
+
+#[test]
+fn json_errors_without_a_daemon_are_objects() {
+    let socket = Path::new("/tmp/azj-nothing-here/azulejo.sock");
+    for args in [
+        &["--json", "ping"][..],
+        &["--json", "call", "core.ping"],
+        &["--json", "events", "--count", "1"],
+    ] {
+        let error = json_error(&azj(socket, &[], args), 3);
+        assert_eq!(error["code"], "unavailable", "{args:?}");
+        assert_eq!(error["data"]["socket"], socket.display().to_string());
+        assert!(
+            error["message"].as_str().unwrap().contains("isn't running"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn json_errors_from_the_core_keep_its_code_and_data() {
+    let app = start();
+    let missing = "tile_01JBX3K6Z8V9W0Q1R2S3T4V5W6";
+    let error = json_error(
+        &azj(&app.socket, &[], &["--json", "tile", "get", missing]),
+        1,
+    );
+    assert_eq!(error["code"], "not_found");
+    assert_eq!(error["data"], json!({"tile": missing}));
+    assert!(
+        !error["message"].as_str().unwrap().contains(missing),
+        "the message names no IDs: {error}"
+    );
+
+    let error = json_error(&azj(&app.socket, &[], &["--json", "call", "nope.thing"]), 1);
+    assert_eq!(error["code"], "method_not_found");
+
+    // A stale caller from the environment.
+    let error = json_error(
+        &azj(
+            &app.socket,
+            &[("AZULEJO_TILE_ID", missing)],
+            &["--json", "tile", "get"],
+        ),
+        1,
+    );
+    assert_eq!(error["code"], "not_found");
+    assert_eq!(error["data"]["tile"], missing);
+}
+
+#[test]
+fn json_errors_for_bad_arguments() {
+    let app = start();
+    let cases: &[(&[&str], &str)] = &[
+        (&["--json"], "invalid_request"),
+        (&["--json", "tile", "--right"], "invalid_request"),
+        (&["--json", "nope", "thing"], "method_not_found"),
+        (&["--json", "help", "nope"], "method_not_found"),
+        (&["--json", "layout", "split"], "invalid_params"),
+        (&["--json", "call"], "invalid_request"),
+        (&["--json", "call", "core.ping", "{"], "invalid_params"),
+        (&["--json", "events", "--count", "lots"], "invalid_params"),
+        (&["--json", "ping", "--socket"], "invalid_params"),
+    ];
+    for (args, code) in cases {
+        let error = json_error(&azj(&app.socket, &[], args), 2);
+        assert_eq!(error["code"], *code, "{args:?}: {error}");
+    }
+    let error = json_error(&azj(&app.socket, &[], &["--json", "nope", "thing"]), 2);
+    assert_eq!(error["data"], json!({"method": "nope.thing"}));
+    let error = json_error(&azj(&app.socket, &[], &["--json", "events", "-n", "x"]), 2);
+    assert_eq!(error["data"], json!({"param": "count"}));
+
+    // Without --json it's still text on stderr.
+    let o = azj(&app.socket, &[], &["nope", "thing"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(stdout(&o), "");
+    assert!(
+        stderr(&o).starts_with("azj: unknown command"),
+        "{}",
+        stderr(&o)
+    );
 }

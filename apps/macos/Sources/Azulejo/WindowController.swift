@@ -287,7 +287,11 @@ final class ChromeLayoutView: NSView {
         var searchLeft = bounds.width - inset
         if let search {
             let room = max(0, bounds.width - inset - toolbarLeft)
-            let width = max(min(Design.Space.searchWidth, room * 0.4), min(Design.Space.searchMinWidth, room))
+            // The tab strip keeps room for the selected tab and "+" (N4c):
+            // in a narrow window the search shrinks below its minimum first.
+            let strip = tabBar.map { $0.minimumWidth + Design.Space.toolbarGap } ?? 0
+            let wanted = max(min(Design.Space.searchWidth, room * 0.4), min(Design.Space.searchMinWidth, room))
+            let width = max(min(wanted, room - strip), min(Design.Space.searchHeight, room))
             let height = Design.Space.searchHeight
             search.frame = NSRect(x: bounds.width - inset - width, y: rowMidY - height / 2, width: width, height: height)
             searchLeft = search.frame.minX
@@ -307,7 +311,10 @@ final class ChromeLayoutView: NSView {
         // and no terminal text. Terminals resize once when it shows and once
         // when it goes, which is rare (a broken config).
         if let banner, !banner.isHidden {
-            let height = min(banner.preferredHeight(width: rest.width), max(0, rest.height / 2))
+            // At most a fifth of the tile area (two lines at the minimum
+            // window size); a capped banner cuts its text and has the rest in
+            // its tooltip.
+            let height = banner.preferredHeight(width: rest.width, limit: max(32, rest.height / 5))
             banner.frame = NSRect(x: rest.minX, y: rest.maxY - height, width: rest.width, height: height)
             rest.size.height = max(0, rest.height - height - Design.Space.gutter)
         }

@@ -80,7 +80,7 @@ key ctrl+1
 until tab 1 2000
 wait 500
 expect tile.find open
-remember responder
+expect responder terminal-find
 key cmd+f
 expect responder terminal-find
 key escape
@@ -95,11 +95,16 @@ sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} azjneedle
 key cmd+f
 expect tile.find.query azjneedle
 until tile.find.status 1 of 1 5000
+expect tile.find.controls count,steps,close
 window-size 480 320
 wait 1000
 shot n1h-min-find
+# V19: the controls drop out whole; the query keeps the keyboard.
+expect tile.find.controls -
+expect responder terminal-find
 window-size 1440 900
 wait 800
+expect tile.find.controls count,steps,close
 key escape
 expect responder terminal
 
@@ -254,6 +259,9 @@ shot n4-overflow-tab4
 window-size 480 320
 wait 1000
 remember tab.overflow
+# N4c: the selected tab still shows; V25: the banner is capped.
+expect tab.overflow selected
+expect banner.capped yes
 shot n4-overflow-min-banner
 window-size 1440 900
 wait 800

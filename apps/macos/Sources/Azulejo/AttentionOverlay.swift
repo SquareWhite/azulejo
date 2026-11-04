@@ -55,18 +55,17 @@ enum AttentionStyle {
     }
 }
 
-/// Badges over the tiles: the agent's name and state at the right end of
-/// each terminal tile's header strip (clear of the terminal's text; the
-/// header keeps its title clear of the badge), and a thin coloured border on
-/// tiles that need a look. Lies over the tile container and passes every
-/// click through.
+/// Badges on the tiles: the agent's name and state at the right end of each
+/// terminal tile's header strip (clear of the terminal's text; the badge is
+/// the strip's subview, so it moves with it and the title keeps clear of
+/// it), and a thin coloured border on tiles that need a look. The overlay
+/// lies over the tile container and passes every click through.
 @MainActor
 final class AttentionOverlayView: NSView {
     /// A tile's header strip, so the badge can sit in it.
     var header: ((String) -> TileHeaderView?)?
+    /// Badges by tile; each lives in its tile's header strip.
     private var badges: [String: AgentBadgeView] = [:]
-    /// Headers holding room for a badge.
-    private var reserved: Set<String> = []
     private var borders: [String: NSView] = [:]
     /// What's drawn, for automation: tile id → "blocked!" / "working" / …
     private(set) var shown: [String: String] = [:]
@@ -97,24 +96,24 @@ final class AttentionOverlayView: NSView {
                   agent.status != .unknown || agent.attention
             else { continue }
             seen.insert(id)
-            let badge = badges[id] ?? {
-                let b = AgentBadgeView()
-                addSubview(b)
-                badges[id] = b
-                return b
-            }()
+            let badge = badges[id] ?? AgentBadgeView()
+            badges[id] = badge
             badge.apply(tile)
             // In the header strip's right end. A narrow tile gets the dot
             // alone, so the title keeps some room.
             badge.compact = false
             if badge.fittingSize.width > frame.width * 0.45 { badge.compact = true }
-            let size = badge.fittingSize
-            let strip = min(TileFrame.headerHeight, frame.height)
-            let inset = Design.Space.badgeInset
-            badge.frame = NSRect(x: frame.maxX - size.width - inset, y: frame.maxY - strip + (strip - size.height) / 2,
-                                 width: size.width, height: size.height)
-            header?(id)?.trailingInset = size.width + inset
-            reserved.insert(id)
+            if let strip = header?(id), !strip.isHidden {
+                // The strip lays it out and keeps its title clear of it.
+                strip.badge = badge
+            } else {
+                // A tile without a strip: over its top right corner.
+                if badge.superview !== self { addSubview(badge) }
+                let size = badge.fittingSize, inset = Design.Space.badgeInset
+                let top = min(TileFrame.headerHeight, frame.height)
+                badge.frame = NSRect(x: frame.maxX - size.width - inset, y: frame.maxY - top + (top - size.height) / 2,
+                                     width: size.width, height: size.height)
+            }
 
             let focused = tab?.focused == id
             if agent.attention, !focused || agent.status == .blocked {
@@ -136,12 +135,9 @@ final class AttentionOverlayView: NSView {
             state[Short.id(id)] = agent.status.rawValue + (agent.attention ? "!" : "")
         }
         for (id, badge) in badges where !seen.contains(id) {
+            if let strip = header?(id), strip.badge === badge { strip.badge = nil }
             badge.removeFromSuperview()
             badges[id] = nil
-        }
-        for id in reserved where !seen.contains(id) {
-            header?(id)?.trailingInset = 0
-            reserved.remove(id)
         }
         for (id, border) in borders where !seen.contains(id) {
             border.removeFromSuperview()

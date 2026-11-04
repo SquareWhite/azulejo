@@ -12,7 +12,9 @@ extension Core {
 /// A strip above the tiles for config problems after a reload (F25b). It
 /// takes its own row under the toolbar and the tiles move down for it, so it
 /// never covers a header or terminal text; dismiss with ×, and it goes away
-/// by itself after a later clean reload.
+/// by itself after a later clean reload. In a short window its height is
+/// capped (`preferredHeight`): it shows the first problem on as many lines as
+/// fit, cut with "…", and the whole message is in its tooltip (V25).
 @MainActor
 final class BannerView: NSView {
     static let maxLines = 4
@@ -21,6 +23,10 @@ final class BannerView: NSView {
     private let close = NSButton()
     /// What the banner says, for automation ("" when hidden).
     private(set) var message = ""
+    /// The first problem alone, for a capped banner.
+    private var short = ""
+    /// Automation: the banner shows `short`, cut to fit.
+    private(set) var capped = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -95,8 +101,12 @@ final class BannerView: NSView {
             lines = Array(lines.prefix(Self.maxLines - 1)) + ["… and \(extra) more"]
         }
         message = lines.joined(separator: "\n")
+        // Capped, the error itself matters more than "not applied".
+        let first = diagnostics.isEmpty ? lines.first : lines.first { !$0.hasPrefix("Config not applied") }
+        short = (applied ? "" : "Config not applied: ") + (first ?? "")
         text.stringValue = message
-        toolTip = path
+        capped = false
+        toolTip = [message, path].compactMap { $0 }.joined(separator: "\n\n")
         let tint = errors ? Design.Color.error : Design.Color.warning
         icon.stringValue = errors ? "⚠︎" : "ⓘ"
         icon.textColor = tint
@@ -117,9 +127,21 @@ final class BannerView: NSView {
         superview?.needsLayout = true
     }
 
-    /// Height for `width`, for the window's layout.
-    func preferredHeight(width: CGFloat) -> CGFloat {
+    /// Height for `width`, at most `limit`, for the window's layout. When
+    /// the whole message doesn't fit, the banner shows the first problem on
+    /// the lines that do, cut with "…"; the tooltip has it all.
+    func preferredHeight(width: CGFloat, limit: CGFloat = .greatestFiniteMagnitude) -> CGFloat {
         text.preferredMaxLayoutWidth = max(100, width - 80)
-        return max(32, text.fittingSize.height + 16)
+        text.maximumNumberOfLines = Self.maxLines
+        text.stringValue = message
+        capped = false
+        let full = max(32, text.fittingSize.height + 16)
+        guard full > limit, !short.isEmpty else { return full }
+        let line = ceil((Design.Font.bannerText.ascender - Design.Font.bannerText.descender
+            + Design.Font.bannerText.leading))
+        capped = true
+        text.stringValue = short
+        text.maximumNumberOfLines = max(1, Int((limit - 16) / max(line, 1)))
+        return max(32, min(limit, text.fittingSize.height + 16))
     }
 }

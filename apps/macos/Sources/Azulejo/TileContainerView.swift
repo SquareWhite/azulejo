@@ -296,6 +296,13 @@ final class TileContainerView: NSView {
             CATransaction.commit()
         }
 
+        // The z positions set below (leaving tiles under the rest, a zoomed
+        // tile over its neighbours, the ring on top) in the subview order
+        // too: anything that draws the layer tree in list order, as the app's
+        // own captures do (`render(in:)` ignores zPosition), would otherwise
+        // show a fading tile over the one growing into its space (V20).
+        restack(back: closing.map(\.0) + hiding.map(\.0), front: tab?.zoomed.flatMap { views[$0] })
+
         // 3. Carry everything there visually.
         generation += 1
         let gen = generation
@@ -340,6 +347,20 @@ final class TileContainerView: NSView {
 
         MotionStats.shared.started(kind: kind, setup: CACurrentMediaTime() - t0)
         wake()
+    }
+
+    /// Reorders the subviews: `back` first, `front` just under the ring, the
+    /// ring last. Setting `subviews` to the same views reorders them without
+    /// removing any, so first responder and surfaces stay put.
+    private func restack(back: [NSView], front: NSView?) {
+        let backIDs = Set(back.map(ObjectIdentifier.init))
+        let current = subviews
+        var ordered = current.filter { backIDs.contains(ObjectIdentifier($0)) }
+        ordered += current.filter { !backIDs.contains(ObjectIdentifier($0)) && $0 !== front && $0 !== ring }
+        if let front, front.superview === self, !backIDs.contains(ObjectIdentifier(front)) { ordered.append(front) }
+        if ring.superview === self { ordered.append(ring) }
+        guard ordered.count == current.count, !zip(ordered, current).allSatisfy({ $0 === $1 }) else { return }
+        subviews = ordered
     }
 
     /// A new tile grows out of the edge it shares with the tile it split from;

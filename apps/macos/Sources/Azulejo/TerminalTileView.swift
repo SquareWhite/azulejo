@@ -743,6 +743,8 @@ private extension NSView {
 // MARK: - Find (⌘F)
 
 extension TerminalTileView: Findable {
+    var findBar: FindBar? { finder?.bar }
+
     func beginFind() -> String? {
         guard model.herdr != nil, model.ended != true else { return "no herdr pane to search" }
         let finder = self.finder ?? makeFinder()

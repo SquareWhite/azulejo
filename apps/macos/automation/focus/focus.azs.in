@@ -520,4 +520,104 @@ until tile.rows 1
 key escape
 until responder files-tree
 expect responder.focused yes
+
+# --- an open find bar gets the keyboard back when its tile does (F5), in a tab of its own: T | V(B / P) ---
+key cmd+shift+t
+until tab 4
+until responder terminal 10000
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+
+log === S48 cmd+k then escape over a terminal's open find bar: the keyboard goes back to the bar
+type echo azj''needle
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjneedle
+key cmd+f
+expect responder terminal-find
+type azjneedle
+until tile.find.status 1 of 1 5000
+key cmd+k
+expect palette all
+expect responder palette
+key escape
+expect palette closed
+expect tile.find open
+expect responder terminal-find
+expect responder.focused yes
+type q
+expect tile.find.query azjneedleq
+sh @HERE@/pane-has.sh --not {herdr} {session} {pane} azjneedleq
+key backspace
+expect tile.find.query azjneedle
+
+log === S49 a tab switch and back with a terminal's bar open: the bar gets the keyboard back
+key ctrl+3
+expect tab 3
+until responder.focused yes
+key ctrl+4
+expect tab 4
+expect tile.find open
+until responder terminal-find 2000
+type r
+expect tile.find.query azjneedler
+sh @HERE@/pane-has.sh --not {herdr} {session} {pane} azjneedler
+key backspace
+# Escape still closes the bar and gives the terminal back.
+key escape
+expect tile.find closed
+expect responder terminal
+
+log === S50 a browser's bar gets the keyboard back after cmd+k and a tab switch
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
+until tile.title focus page 10000
+until responder browser-page
+key cmd+f
+expect responder browser-find
+type azulejo
+until tile.find.status 1 of 3 5000
+key cmd+k
+expect responder palette
+key escape
+expect palette closed
+expect responder browser-find
+key ctrl+3
+expect tab 3
+key ctrl+4
+expect tab 4
+until responder browser-find 2000
+expect tile.find.query azulejo
+type x
+expect tile.find.query azulejox
+key backspace
+key escape
+expect responder browser-page
+expect tile.find closed
+
+log === S51 a preview's bar does the same; moving to another tile and back brings it back too
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until responder preview-page 10000
+until tile.mode load 10000
+key cmd+f
+expect responder preview-find
+type focus
+until tile.find.status 1 of 1 5000
+key cmd+k
+expect responder palette
+key escape
+expect responder preview-find
+key ctrl+3
+expect tab 3
+key ctrl+4
+expect tab 4
+until responder preview-find 2000
+key alt+k
+until responder browser-page 2000
+key alt+j
+until responder preview-find 2000
+type s
+expect tile.find.query focuss
+key backspace
+key escape
+expect responder preview-page
+expect tile.find closed
 quit

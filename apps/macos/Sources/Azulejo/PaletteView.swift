@@ -408,7 +408,7 @@ final class PaletteListView: NSView {
                        respectFlipped: true, hints: nil)
             x += size + 8
         }
-        if let status = item.status, let image = SidebarView.icon(status, pointSize: 11) {
+        if let status = item.status, let image = SidebarView.icon(status, pointSize: Design.Symbol.paletteStatus) {
             let size = image.size
             image.draw(in: NSRect(x: x, y: rect.midY - size.height / 2, width: size.width, height: size.height),
                        from: .zero, operation: .sourceOver, fraction: item.enabled ? 1 : 0.35,
@@ -474,7 +474,7 @@ final class PaletteListView: NSView {
 
     static func icon(_ kind: PaletteItem.Kind) -> NSImage? {
         if let cached = icons[kind.symbol] { return cached }
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.paletteKind, weight: .regular)
             .applying(.init(paletteColors: [Design.Color.textSecondary]))
         guard let image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.label)?
             .withSymbolConfiguration(config) else { return nil }

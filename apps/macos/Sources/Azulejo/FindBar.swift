@@ -7,6 +7,12 @@ protocol Findable: AnyObject {
     /// Opens the tile's find bar (or its own filter) with the keyboard in it.
     /// Returns a message to flash when the tile has nothing to search.
     func beginFind() -> String?
+    /// The tile's find bar, if it has one (files tiles filter instead).
+    var findBar: FindBar? { get }
+}
+
+extension Findable {
+    var findBar: FindBar? { nil }
 }
 
 /// The find bar a tile shows under its header (⌘F): a field, "n of m",
@@ -19,6 +25,9 @@ protocol Findable: AnyObject {
 /// selects the query rather than toggling the sidebar. Everything else is
 /// typing. The field sits inside the tile, so the tile itself keeps refreshes
 /// (TileFocus) from taking the keyboard out of it; see `holdsKeyboard`.
+/// When something outside the tile takes the keyboard (the ⌘K menu, another
+/// tab, the sidebar) the bar remembers it had it (`keepsKeyboard`), and the
+/// tile gets it back into the bar when it's focused again (TileFocus).
 @MainActor
 final class FindBar: NSView {
     static let height = Design.Space.browserChromeHeight
@@ -49,7 +58,7 @@ final class FindBar: NSView {
         pill.wantsLayer = true
         pill.layer?.cornerRadius = Design.Radius.field
         icon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "Find")
-        icon.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        icon.symbolConfiguration = .init(pointSize: Design.Symbol.fieldIcon, weight: .regular)
         icon.contentTintColor = Design.Color.textMuted
 
         field.placeholderString = "Find"
@@ -87,11 +96,58 @@ final class FindBar: NSView {
     var isOpen: Bool { !isHidden }
     var query: String { field.stringValue }
     private(set) var status = ""
+    /// Automation: the controls laid out ("count,steps,close", or "-").
+    private(set) var shownControls = "count,steps,close"
 
     /// The field (its field editor) has the keyboard.
     var holdsKeyboard: Bool {
         guard let window, let editor = field.currentEditor() else { return false }
         return window.firstResponder === editor
+    }
+
+    /// The bar had the keyboard when it last left the tile, and nothing in
+    /// the tile (its terminal, page or address bar) has taken it since.
+    private(set) var keepsKeyboard = false
+    private var responderWatch: NSKeyValueObservation?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Off screen (another tab) the bar stops watching and remembers.
+        responderWatch = window?.observe(\.firstResponder) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.responderChanged() }
+        }
+    }
+
+    private func responderChanged() {
+        guard isOpen, let window else { return }
+        guard var view = window.firstResponder as? NSView else { return }
+        if let editor = view as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
+            view = field
+        }
+        if view.isDescendant(of: self) {
+            keepsKeyboard = true
+        } else if let tile = enclosingTile, view.isDescendant(of: tile) {
+            // The user moved on inside the tile: refocusing leaves that be.
+            keepsKeyboard = false
+        }
+    }
+
+    /// The tile card holding the bar.
+    private var enclosingTile: NSView? {
+        var view = superview
+        while let v = view {
+            if v is TileFrame { return v }
+            view = v.superview
+        }
+        return nil
+    }
+
+    /// Puts the keyboard back in the field, caret at the end of the query.
+    func takeKeyboard() {
+        guard let window, isOpen else { return }
+        if !holdsKeyboard { window.makeFirstResponder(field) }
+        let end = (field.stringValue as NSString).length
+        field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
     }
 
     /// Shows the bar and puts the keyboard in the field, selecting what's
@@ -107,6 +163,7 @@ final class FindBar: NSView {
     /// Hides the bar; the query stays for the next ⌘F.
     func hide() {
         isHidden = true
+        keepsKeyboard = false
     }
 
     /// "3 of 12", "No matches", or "" (nothing searched yet); `note` is
@@ -150,26 +207,57 @@ final class FindBar: NSView {
         super.layout()
         let w = bounds.width, h = bounds.height
         let button: CGFloat = 22, gap: CGFloat = 2, margin: CGFloat = 10
+        let iconSide: CGFloat = 12, inset: CGFloat = 8, iconGap: CGFloat = 6, countGap: CGFloat = 6
+        let countW = count.stringValue.isEmpty ? 0
+            : ceil((count.stringValue as NSString).size(withAttributes: [.font: Design.Font.detail]).width) + 4
+
+        // Narrow tiles: the controls drop out whole, never overlapping, so
+        // the query keeps `findFieldMin` of room: first the count (it moves
+        // to the field's tooltip), then previous / next (enter and
+        // shift+enter still step), then close (escape still closes).
+        var showCount = countW > 0, showSteps = true, showClose = true
+        func fieldRoom() -> CGFloat {
+            let buttons = (showClose ? button : 0) + (showSteps ? 2 * (button + gap) : 0)
+            let pillW = w - 2 * margin - (buttons > 0 ? buttons + 8 : 0)
+            return pillW - 2 * inset - iconSide - iconGap - (showCount ? countW + countGap : 0)
+        }
+        let least = Design.Space.findFieldMin
+        if fieldRoom() < least { showCount = false }
+        if fieldRoom() < least { showSteps = false }
+        if fieldRoom() < least { showClose = false }
+        count.isHidden = !showCount
+        previous.isHidden = !showSteps
+        next.isHidden = !showSteps
+        close.isHidden = !showClose
+        pill.toolTip = showCount || status.isEmpty ? nil : status
+        let shown = [showCount ? "count" : nil, showSteps ? "steps" : nil, showClose ? "close" : nil].compactMap { $0 }
+        shownControls = shown.isEmpty ? "-" : shown.joined(separator: ",")
+
         let y = (h - button) / 2
-        close.frame = NSRect(x: w - margin - button, y: y, width: button, height: button)
-        next.frame = NSRect(x: close.frame.minX - gap - button, y: y, width: button, height: button)
-        previous.frame = NSRect(x: next.frame.minX - gap - button, y: y, width: button, height: button)
+        var right = w - margin
+        if showClose {
+            close.frame = NSRect(x: right - button, y: y, width: button, height: button)
+            right = close.frame.minX - gap
+        }
+        if showSteps {
+            next.frame = NSRect(x: right - button, y: y, width: button, height: button)
+            previous.frame = NSRect(x: next.frame.minX - gap - button, y: y, width: button, height: button)
+            right = previous.frame.minX - gap
+        }
         let fieldH = Design.Space.browserFieldHeight
-        pill.frame = NSRect(x: margin, y: (h - fieldH) / 2,
-                            width: max(40, previous.frame.minX - 8 - margin), height: fieldH)
+        let pillRight = showClose || showSteps ? right + gap - 8 : w - margin
+        pill.frame = NSRect(x: margin, y: (h - fieldH) / 2, width: max(0, pillRight - margin), height: fieldH)
         hairline.frame = NSRect(x: 0, y: h - Design.Border.hairline, width: w, height: Design.Border.hairline)
 
         let pw = pill.bounds.width, ph = pill.bounds.height
-        let iconSide: CGFloat = 12, inset: CGFloat = 8, iconGap: CGFloat = 6
         icon.frame = NSRect(x: inset, y: (ph - iconSide) / 2, width: iconSide, height: iconSide)
-        let countW = count.stringValue.isEmpty ? 0
-            : ceil((count.stringValue as NSString).size(withAttributes: [.font: Design.Font.detail]).width) + 4
         let countH = count.intrinsicContentSize.height
-        count.frame = NSRect(x: pw - inset - countW, y: (ph - countH) / 2, width: countW, height: countH)
+        let shownCountW = showCount ? countW : 0
+        count.frame = NSRect(x: pw - inset - shownCountW, y: (ph - countH) / 2, width: shownCountW, height: countH)
         let textH = field.intrinsicContentSize.height
         let fieldX = inset + iconSide + iconGap
-        field.frame = NSRect(x: fieldX, y: (ph - textH) / 2,
-                             width: max(0, count.frame.minX - 6 - fieldX), height: textH)
+        let fieldRight = showCount ? count.frame.minX - countGap : pw - inset
+        field.frame = NSRect(x: fieldX, y: (ph - textH) / 2, width: max(0, fieldRight - fieldX), height: textH)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -196,7 +284,7 @@ final class FindBar: NSView {
         let b = NSButton(image: image, target: nil, action: nil)
         b.bezelStyle = .accessoryBarAction
         b.isBordered = false
-        b.symbolConfiguration = .init(pointSize: 11, weight: .medium)
+        b.symbolConfiguration = .init(pointSize: Design.Symbol.findButton, weight: .medium)
         b.contentTintColor = Design.Color.textSecondary
         b.toolTip = tip
         return b
@@ -383,6 +471,7 @@ final class TerminalFinder {
             "tile.find": bar.isOpen ? "open" : "closed",
             "tile.find.query": bar.query.isEmpty ? "-" : bar.query,
             "tile.find.status": bar.status.isEmpty ? "-" : bar.status,
+            "tile.find.controls": bar.shownControls,
             "tile.find.scroll": "\(lastOffset)",
             "tile.find.revealed": lastOffset > 0 ? "yes" : "no",
             "tile.find.highlights": "\(highlights)",
@@ -518,6 +607,7 @@ final class WebFinder {
             "tile.find": bar.isOpen ? "open" : "closed",
             "tile.find.query": bar.query.isEmpty ? "-" : bar.query,
             "tile.find.status": bar.status.isEmpty ? "-" : bar.status,
+            "tile.find.controls": bar.shownControls,
         ]
     }
 }

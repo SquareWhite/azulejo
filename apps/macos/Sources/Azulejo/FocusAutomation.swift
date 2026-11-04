@@ -136,6 +136,7 @@ enum FocusAutomation {
             "palette.query": controller.palette.isOpen ? controller.palette.field.stringValue : "-",
             "clipboard": TerminalRuntime.pasteboard.string(forType: .string) ?? "-",
             "banner.shown": controller.banner.isHidden ? "no" : "yes",
+            "banner.capped": controller.banner.capped ? "yes" : "no",
         ]
         let focused = app.session?.window(controller.windowID)?.workspace?.tab?.focused
         s["responder.focused"] = tile != nil && tile == focused ? "yes" : "no"
