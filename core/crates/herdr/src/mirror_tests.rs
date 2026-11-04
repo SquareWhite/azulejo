@@ -387,6 +387,7 @@ fn target(tab: Option<&str>, root: LayoutNode) -> MirrorTarget {
         label: None,
         known: Vec::new(),
         park_unknown: false,
+        restructure: true,
     }
 }
 
@@ -597,6 +598,139 @@ fn echo_comparison_allows_f32_rounding_but_not_a_cell() {
     assert!(!same_layout(&a, &b));
 }
 
+// ---- herdr's arrangement is never rewritten unasked (ADR 0012 amendment) ---
+
+/// A target that didn't come from an Azulejo op.
+fn follower(tab: Option<&str>, root: LayoutNode) -> MirrorTarget {
+    MirrorTarget {
+        restructure: false,
+        ..target(tab, root)
+    }
+}
+
+/// The 2×2 grid split in the TUI, and the shape it was once adopted in by
+/// mistake (master on top over three across).
+fn grid() -> LayoutNode {
+    right(
+        0.5,
+        down(0.5, p("w1:p1"), p("w1:p3")),
+        down(0.5, p("w1:p2"), p("w1:p4")),
+    )
+}
+
+fn master_over_three() -> LayoutNode {
+    down(
+        0.5,
+        p("w1:p1"),
+        right(1.0 / 3.0, p("w1:p3"), right(0.5, p("w1:p2"), p("w1:p4"))),
+    )
+}
+
+#[test]
+fn another_shape_not_asked_for_writes_nothing_and_hands_back_herdrs_tree() {
+    let sim = Sim::new(vec![("w1", grid())]);
+    let err = block(run(&sim, &follower(Some("w1:t1"), master_over_three()))).unwrap_err();
+    let MirrorError::Diverged(layout) = err else {
+        panic!("{err:?}")
+    };
+    assert_eq!(layout.root, grid());
+    assert!(sim.calls().is_empty(), "nothing written");
+    // Asked for by Azulejo, the same target rebuilds the tab.
+    let out = block(run(&sim, &target(Some("w1:t1"), master_over_three()))).unwrap();
+    assert!(same_tree(
+        &out.layout.root,
+        &master_over_three(),
+        RATIO_TOLERANCE
+    ));
+}
+
+#[test]
+fn panes_in_other_places_not_asked_for_arent_swapped() {
+    let sim = Sim::new(vec![("w1", right(0.5, p("w1:p1"), p("w1:p2")))]);
+    let err = block(run(
+        &sim,
+        &follower(Some("w1:t1"), right(0.5, p("w1:p2"), p("w1:p1"))),
+    ))
+    .unwrap_err();
+    assert!(matches!(err, MirrorError::Diverged(_)), "{err:?}");
+    assert!(sim.calls().is_empty());
+}
+
+#[test]
+fn without_restructure_ratios_and_zoom_still_go() {
+    let sim = Sim::new(vec![("w1", grid())]);
+    let mut t = follower(
+        Some("w1:t1"),
+        right(
+            0.4,
+            down(0.5, p("w1:p1"), p("w1:p3")),
+            down(0.5, p("w1:p2"), p("w1:p4")),
+        ),
+    );
+    t.zoomed = Some("w1:p4".into());
+    let out = block(run(&sim, &t)).unwrap();
+    assert!(satisfies(&out.layout, &t), "{out:?}");
+    let calls = sim.calls();
+    assert!(
+        calls
+            .iter()
+            .all(|c| c.starts_with("ratio") || c.starts_with("zoom")),
+        "{calls:?}"
+    );
+}
+
+#[test]
+fn without_restructure_a_merge_keeps_herdrs_arrangement_of_what_was_there() {
+    // A pane comes in from another tab (migration, ADR 0012); the two
+    // already there stay side by side as herdr has them.
+    let sim = Sim::new(vec![
+        ("w1", right(0.5, p("w1:p1"), p("w1:p2"))),
+        ("w1", p("w1:p3")),
+    ]);
+    let t = follower(
+        Some("w1:t1"),
+        right(0.5, p("w1:p1"), down(0.5, p("w1:p2"), p("w1:p3"))),
+    );
+    let out = block(run(&sim, &t)).unwrap();
+    assert!(satisfies(&out.layout, &t), "{out:?}");
+    // The same merge with the two the other way round is herdr's to keep.
+    let sim = Sim::new(vec![
+        ("w1", right(0.5, p("w1:p2"), p("w1:p1"))),
+        ("w1", p("w1:p3")),
+    ]);
+    let err = block(run(&sim, &t)).unwrap_err();
+    assert!(matches!(err, MirrorError::Diverged(_)), "{err:?}");
+    assert!(sim.calls().is_empty());
+}
+
+#[test]
+fn without_restructure_unknown_panes_are_never_parked() {
+    let sim = Sim::new(vec![("w1", right(0.5, p("w1:p1"), p("w1:p9")))]);
+    let mut t = follower(Some("w1:t1"), p("w1:p1"));
+    t.park_unknown = true;
+    let err = block(run(&sim, &t)).unwrap_err();
+    assert!(matches!(err, MirrorError::Unknown(_)), "{err:?}");
+    assert!(sim.calls().is_empty());
+}
+
+#[test]
+fn diverged_compares_only_the_panes_both_hold() {
+    let g = grid();
+    assert!(!diverged(&g, &g));
+    assert!(diverged(&g, &master_over_three()));
+    // Ratios alone aren't a different arrangement.
+    let mut r = g.clone();
+    if let LayoutNode::Split { ratio, .. } = &mut r {
+        *ratio = 0.3;
+    }
+    assert!(!diverged(&g, &r));
+    // A pane only herdr has, or only the target has, doesn't count.
+    let three = right(0.5, down(0.5, p("w1:p1"), p("w1:p3")), p("w1:p2"));
+    assert!(!diverged(&g, &three));
+    assert!(!diverged(&three, &g));
+    assert!(!diverged(&p("w1:p1"), &g));
+}
+
 // ---- property: any start, any target → the target, no pane lost ---------
 
 /// A random tree over `panes` (in order).
@@ -671,6 +805,7 @@ fn scenario() -> impl Strategy<Value = (Vec<LayoutNode>, Vec<bool>, MirrorTarget
                 label: None,
                 known,
                 park_unknown: false,
+                restructure: true,
             };
             (start, zooms, t)
         })
@@ -709,5 +844,36 @@ proptest! {
         let again = block(run(&sim, &MirrorTarget { tab: Some(out.layout.tab_id.clone()), ..t.clone() }))
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
         prop_assert_eq!(again.writes, 0, "{:?}", sim.calls());
+    }
+
+    /// Without `restructure` a push either reaches the target, keeping the
+    /// arrangement herdr had of the panes already in the tab, or writes
+    /// nothing at all and hands herdr's tree back.
+    #[test]
+    fn without_restructure_herdrs_arrangement_stays((start, zooms, t) in scenario()) {
+        let t = MirrorTarget { restructure: false, ..t };
+        let sim = Sim::new(start.into_iter().map(|r| ("w1", r)).collect());
+        {
+            let mut s = sim.0.lock().unwrap();
+            for (tab, z) in s.tabs.values_mut().zip(zooms) {
+                tab.zoomed = z && !matches!(tab.root, LayoutNode::Pane { .. });
+            }
+        }
+        let home = t.tab.as_ref().map(|tab| sim.0.lock().unwrap().tabs[tab.as_str()].root.clone());
+        let before = sim.terminals();
+        match block(run(&sim, &t)) {
+            Ok(out) => {
+                prop_assert!(same_tree(&out.layout.root, &t.root, RATIO_TOLERANCE));
+                if let Some(home) = &home {
+                    prop_assert!(!diverged(home, &t.root), "rearranged {home:?}");
+                }
+            }
+            Err(MirrorError::Diverged(layout)) => {
+                prop_assert_eq!(Some(layout.root), home);
+                prop_assert!(sim.calls().is_empty(), "wrote before giving up");
+            }
+            Err(e) => return Err(TestCaseError::fail(e.to_string())),
+        }
+        prop_assert_eq!(sim.terminals(), before);
     }
 }

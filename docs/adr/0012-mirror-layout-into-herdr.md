@@ -1,6 +1,8 @@
 # 0012: Mirror Azulejo's layout into herdr
 
-Status: accepted · Nov 4, 2026 · M2 (PLAN 2.16) · supersedes [0002](0002-herdr-mapping.md)'s tab-per-tile rule · amends [0008](0008-use-the-users-herdr-session.md), [0009](0009-changes-made-in-herdr.md), [0010](0010-dynamic-layouts.md)
+Status: accepted · Nov 4, 2026 · M2 (PLAN 2.16) · supersedes [0002](0002-herdr-mapping.md)'s tab-per-tile rule · amends [0008](0008-use-the-users-herdr-session.md), [0009](0009-changes-made-in-herdr.md), [0010](0010-dynamic-layouts.md) · amended Nov 4, 2026: only Azulejo changes herdr's structure (see "Amendment")
+
+> **Invariant (amendment, Nov 4, 2026): only Azulejo changes herdr's structure.** A push may swap panes or rebuild a herdr tab into another shape only to carry out an Azulejo op (a user op or a command in the app). A mismatch Azulejo didn't cause (adoption, splits and closes made in herdr, a reconnect, a relaunch) resolves as a pull, never a push: the tab follows herdr. Where the text below says a push "settles", "rearranges" or "wins" after a change made in herdr, the amendment at the end replaces it.
 
 ## Context
 
@@ -40,7 +42,7 @@ Azulejo drives the layout of every tab it shows; herdr's changes come back as op
 - **Pull (herdr → Azulejo).** The core subscribes to `layout_updated`. Per herdr tab, 100 ms after the last one it reads `layout.export` and compares it with **the tree it recorded after its own last push or pull**:
   - equal: it was our own write coming back; nothing happens;
   - same panes, different tree or zoom: someone changed it in herdr, so the core absorbs it (below);
-  - different panes: a split or a close, which ADR 0009 already turns into tiles; the record is updated and the tab's next push settles the arrangement.
+  - different panes: a split or a close, which ADR 0009 already turns into tiles; the record is updated. ~~The tab's next push settles the arrangement.~~ The tab takes herdr's arrangement of those panes (amendment).
 - **Absorbing a herdr change.** herdr's panes map to tiles. With the same shape as Azulejo's pruned tree, ratios carry over to the matching splits of the full tree and moved panes become swapped tiles. With a different shape, herdr's tree becomes the tab's tree and the tiles herdr doesn't have (browsers, other machines) go back beside their old neighbour. Then by kind:
   - **manual:** take it;
   - **Tile, Three Column:** fit order, ratio and weights to the new rectangles. If the layout rule reproduces them within 0.5 %, the tab absorbs it (a reorder, a master ratio, stack weights). Otherwise the tab **freezes to manual** with herdr's tree, remembering its kind for toggling back;
@@ -48,7 +50,7 @@ Azulejo drives the layout of every tab it shows; herdr's changes come back as op
   - **zoom** on or off in herdr zooms or unzooms the tile.
 - **No echo loops.** Push and pull for a machine run in one task, which records herdr's tree after every push and pull. Our own writes come back as `layout_updated`, the pull finds the recorded tree and stops. An absorbed change makes Azulejo's target equal herdr's tree within the tolerances, so the push that follows writes nothing. If Azulejo can't express the change exactly (a clamped ratio), one push corrects herdr and the next pull is an echo. It settles in one round.
 - **Changes racing our writes** (amended Nov 4, 2026, after the merge). The record is what herdr answered to our last write, never what we meant to write: a push records the reply to its zoom (a refused zoom included), and the worker tells the task about every split and every new tab it makes. A pull compares herdr with the record over the panes both have: a ratio, swap or zoom changed among them is a change, whatever panes came or went meanwhile. A change whose panes don't match the tab's yet (a split on its way) waits and is read again every 150 ms, up to 2 s, and the push for that tab waits with it. Before a push the task reads the tab; a change found there goes first.
-- **Waiting.** A tab doesn't push while one of its terminals is still getting its pane. A herdr tab holding a pane nobody here knows yet (split in the TUI, adoption pending) waits and retries; after 2 s that pane is moved out to its own herdr tab, never closed.
+- **Waiting.** A tab doesn't push while one of its terminals is still getting its pane. A herdr tab holding a pane nobody here knows yet (split in the TUI, adoption pending) waits and retries; after 2 s that pane is moved out to its own herdr tab, never closed (amended: only by a push carrying out an Azulejo op; otherwise the push keeps waiting for the adoption).
 
 ### Sizes
 
@@ -66,7 +68,7 @@ Azulejo drives the layout of every tab it shows; herdr's changes come back as op
 ### Adoption, closing, remote machines
 
 - **Adopted tabs** (ADR 0008) already mirror herdr's tree, so their first push writes nothing (or only a ratio Azulejo clamped). They stay manual (ADR 0010 §5) and now follow herdr both ways.
-- **Panes split off in herdr** (ADR 0009) land beside their sibling in a manual tab, which matches herdr exactly. In a dynamic tab they're inserted per `[layout] insert`, and the push rearranges herdr to match.
+- **Panes split off in herdr** (ADR 0009) land beside their sibling in a manual tab, which matches herdr exactly. ~~In a dynamic tab they're inserted per `[layout] insert`, and the push rearranges herdr to match.~~ Amended: the tab then takes herdr's tree from the survey, so a dynamic tab absorbs it or freezes to manual (`Session::apply_tree`), like any change made in herdr.
 - **Closing a tile** still detaches it (F14). Its pane moves out of the tab to a herdr tab of its own, unless it was the tab's last terminal (then the herdr tab simply stops being mirrored). Closing in herdr closes the tile (ADR 0009); the herdr tree has collapsed already, so the push only fixes ratios a dynamic layout rearranged.
 - **Remote machines** (ADR 0011) behave the same: each machine's link has its own mirror task, and a tab's target for machine M only holds M's panes.
 
@@ -88,7 +90,7 @@ It applies live on reload (unlike the rest of `[herdr]`). Off means no pushes, n
 - **The phone** below `mobile_width_threshold` (64 columns) draws herdr's single-column mobile layout, whatever the tree. Mirroring changes what it shows above that width, and the tab list (one per Azulejo tab rather than per tile).
 - **Animations** don't cause a storm. The model changes once per command and the shell only animates between states. A held resize key or a divider drag sends many commands, but the 150 ms quiet period collapses them into one push of the settled layout.
 - herdr's tab labels no longer name each terminal: a merged tab keeps the label of the tab it was built from.
-- **Changes made in herdr while Azulejo isn't running** have nothing to be compared with, so at the next start Azulejo's saved arrangement wins for ratios and order. Panes split or closed meanwhile still come in or go (ADR 0008, 0009).
+- **Changes made in herdr while Azulejo isn't running** have nothing to be compared with, so at the next start Azulejo's saved ratios win. ~~And order.~~ Amended: a different order or shape is herdr's, and the tab follows it. Panes split or closed meanwhile still come in or go (ADR 0008, 0009).
 - `AZJ_DEBUG_MIRROR=1` logs every push, every pulled change and the herdr events the core reacts to.
 
 ## Evidence
@@ -98,3 +100,39 @@ It applies live on reload (unlike the rest of `[herdr]`). Off means no pushes, n
 - `core/crates/model`: fitting Tile and Three Column to rectangles (`dynamic::fit`), with a property test that `fit(arrange(x))` reproduces `arrange(x)`.
 - `core/crates/engine/src/mirror.rs`: targets, absorbing herdr's changes, primary-tab choice; unit tests.
 - `core/crates/engine/tests/live_mirror.rs`: against real herdr in throwaway sessions (`just test-herdr`).
+
+## Amendment (Nov 4, 2026): only Azulejo changes herdr's structure
+
+### What went wrong
+
+Four panes split in herdr in a quick burst (herdr-grid.sh without its pauses), while the app was busy, were adopted in the wrong shape: a 2×2 grid came in as master on top over three across. The mirror then pushed that shape back into herdr and rebuilt the user's own grid. Spacing the splits 0.5 s apart hid it.
+
+- **Adoption guessed.** Each `pane_created` asks for a survey, and surveys coalesce, so a busy core sees a burst half made: the first pane alone, then all four. ADR 0009 places every new pane beside its sibling in herdr's tree, but in a burst that sibling is often a pane that isn't here yet either (in the grid, the two right-hand panes are each other's siblings). Those fell back to the tab's stack (`split_auto`), and the tab was built in that shape. Separately, `layout.export` is read after the snapshot, so a pane split off in between made the tree disagree with the panes and adoption laid them side by side.
+- **The mirror trusted the guess.** An adopted tab's first record was Azulejo's tree; the push saw a different shape in herdr and rebuilt it.
+
+Measured with `live_mirror.rs` `bursts_of_splits_in_herdr_keep_herdrs_shape*` (throwaway `azj-test-` sessions, Apple Silicon, herdr 0.9.1, 60 bursts each of a 2×2 grid, three columns and a nested tree): 5/60 wrong idle and 15/60 under load (three threads sending commands back to back, a pane retitling itself every 5 ms) through herdr's API; 0/60 through its CLI, whose ≈ 95 ms per call let each survey keep up. Every wrong adoption was then pushed into herdr.
+
+### Decision
+
+- **Invariant: only Azulejo changes herdr's structure.** A push may swap panes or rebuild a herdr tab into another shape only to carry out an Azulejo op: a command (from the app, the CLI or the API), a layout preference, a terminal Azulejo makes (herdr adds its pane second, and the push swaps it into place), or a dynamic tab re-tiling by its own rule after one of its tiles closed (wherever it was closed: the remaining arrangement was Azulejo's to begin with, and herdr's collapse of it isn't a layout anyone made). For a change that started in herdr, Azulejo follows herdr. A mismatch Azulejo didn't cause resolves as a pull, never a push.
+- **Intents.** The driver gives each tab an *intent*, a number it bumps whenever a command changes the tab's arrangement (its tree, ratios aside), a terminal is made for it, or a close re-tiles it as a dynamic tab. Every target carries the tab's latest intent. The mirror task lets a push restructure (`MirrorTarget::restructure`) only for an intent no successful push has carried out yet, so each op authorises one push. Adoption, panes split in herdr, closes in manual tabs, pulls, reconnects and relaunches never bump it.
+- **The planner enforces it.** Without `restructure`, a push compares herdr's tab with the target over the panes both hold. If they sit in another shape or order (`herdr::diverged`), it writes nothing and returns `MirrorError::Diverged` with herdr's tree; the core then makes the tab follow it (`Internal::MirrorFollow`, `mirror::follow`). Without `restructure` a push still sets ratios and zoom, still merges panes in from other tabs (migration) and moves out panes closed here or shown in another tab, all of which leave the panes that stay where herdr has them. It never parks a pane nobody knows yet: it waits for the adoption instead.
+- **Adoption converges on herdr's tree.** Every herdr tab a survey adopts or adds panes to then takes herdr's tree from that survey (`layout.export`, read after the snapshot), through `Session::apply_tree`: whatever the sibling placement guessed, the tab ends in herdr's shape. A tree naming a pane the snapshot doesn't have yet is used without it; the next survey brings the pane in.
+- **Dynamic tabs.** A pane split off in herdr into a Tile or Three Column tab no longer makes the push rearrange herdr: the tab absorbs herdr's tree when its rule can make it, and freezes to manual otherwise, as for any change made in herdr.
+- **Relaunch.** Azulejo's saved ratios still win at the next start; a different order or shape found in herdr is herdr's, and the tab follows it.
+
+### Consequences
+
+- An Azulejo op still turns, swaps and rebuilds herdr tabs as before; adopted tabs and changes made in the TUI are never rewritten into another shape.
+- A mismatch that slips past adoption costs one push that writes nothing and one pull: Azulejo shows the wrong shape for about 150 ms, herdr never does.
+- If an Azulejo op and a change made in herdr land in the same tab within one quiet period, the op's push carries both, as before. The pull before every push still reads herdr first.
+- With `AZJ_DEBUG_MIRROR=1` each push logs its intent and whether it may restructure.
+
+### Evidence
+
+- `core/crates/engine/tests/live_mirror.rs`: `bursts_of_splits_in_herdr_keep_herdrs_shape`, `…_under_load`, `cli_bursts_of_splits_in_herdr_keep_herdrs_shape_under_load` (`AZJ_BURST_ROUNDS`, default 20 rounds of three recipes): 0/60 wrong in each after the fix, and 0/150 in each with `AZJ_BURST_ROUNDS=50`; also with only the mirror's guard on (adoption left guessing), herdr was never rewritten. Each round checks Azulejo's adopted tree and herdr's tree, after both have been still for 600 ms, against the tree the splits made.
+- `core/crates/engine/src/adopt_tests.rs`: `a_burst_seen_half_made_still_ends_in_herdrs_tree` (every set of in-between stages a survey could catch, for the three recipes), `a_tree_newer_than_the_snapshot_is_taken_without_the_newer_pane`.
+- `core/crates/herdr/src/mirror_tests.rs`: `another_shape_not_asked_for_writes_nothing_and_hands_back_herdrs_tree`, `panes_in_other_places_not_asked_for_arent_swapped`, `without_restructure_*`, and the property test `without_restructure_herdrs_arrangement_stays` (random trees over random tabs: a push either keeps herdr's arrangement of the panes already there or writes nothing).
+- `core/crates/engine/src/mirror_tests.rs`: `only_an_azulejo_op_not_yet_carried_out_may_restructure_herdr` (the mirror task: no intent, no restructure; a diverged push becomes a follow; each intent restructures once), `a_tab_follows_herdrs_arrangement_and_keeps_its_browser`, `following_looks_only_at_the_panes_both_have`.
+- `core/crates/engine/src/driver_tests.rs`: `herdrs_own_arrangement_is_followed_and_only_azulejo_ops_restructure_it` (a running core: an adopted grid is never restructured, a swap made behind the core's back is followed, alt+o restructures), `a_close_retiles_a_dynamic_tab_in_herdr_but_never_a_manual_one`.
+- In the dev app (busy with `azj` commands back to back), 15 grids split through herdr's CLI with no pauses: all adopted as grids, none rewritten.

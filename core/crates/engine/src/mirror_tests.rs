@@ -488,3 +488,268 @@ fn monocle_with_one_terminal_and_a_browser_has_nothing_to_zoom() {
     assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Monocle);
     s.check_invariants().unwrap();
 }
+
+// ---- only Azulejo changes herdr's structure (ADR 0012, amendment) ---------
+
+/// The tab's terminals as herdr would lay them out.
+fn as_herdr(s: &Session, tab: TabId) -> herdr::LayoutNode {
+    let t = s.tab(tab).unwrap();
+    let live = live_panes(t, &None);
+    to_herdr(&prune(&t.root, &|x| live.contains_key(&x)).unwrap(), &|x| {
+        live[&x].pane_id.clone()
+    })
+}
+
+#[test]
+fn a_tab_follows_herdrs_arrangement_and_keeps_its_browser() {
+    let (mut s, tab, [_, b, c]) = mirrored(browser());
+    // Azulejo: A | (B / browser). herdr: B over A.
+    let theirs = down(0.4, p("w1:p2"), p("w1:p1"));
+    assert!(follow(&mut s, &None, tab, &export("w1:t1", theirs.clone())));
+    assert!(herdr::same_tree(&as_herdr(&s, tab), &theirs, 1e-9));
+    let root = &s.tab(tab).unwrap().root;
+    assert!(root.contains(c), "the browser stays");
+    // Beside B, as before.
+    assert!(
+        matches!(root, Node::Split { a, .. } if a.contains(b) && a.contains(c)),
+        "{root:?}"
+    );
+    s.check_invariants().unwrap();
+    // Already there: nothing changes.
+    assert!(!follow(&mut s, &None, tab, &export("w1:t1", theirs)));
+}
+
+#[test]
+fn following_looks_only_at_the_panes_both_have() {
+    let (mut s, tab, _) = mirrored(terminal());
+    let before = s.tab(tab).unwrap().root.clone();
+    // herdr has a pane nobody here shows yet (w1:p9) and lacks w1:p3; the
+    // rest is arranged as here: nothing to follow.
+    let theirs = right(0.5, p("w1:p1"), right(0.5, p("w1:p9"), p("w1:p2")));
+    assert!(!follow(&mut s, &None, tab, &export("w1:t1", theirs)));
+    assert_eq!(s.tab(tab).unwrap().root, before);
+    // The same with p1 and p2 the other way round: those two swap, and p3
+    // goes back beside its old neighbour.
+    let theirs = right(0.5, p("w1:p2"), right(0.5, p("w1:p9"), p("w1:p1")));
+    assert!(follow(&mut s, &None, tab, &export("w1:t1", theirs)));
+    let ours = as_herdr(&s, tab);
+    assert!(!herdr::diverged(&right(0.5, p("w1:p2"), p("w1:p1")), &ours));
+    assert_eq!(ours.panes().len(), 3);
+    s.check_invariants().unwrap();
+}
+
+/// A herdr port that only mirrors: it records every push and answers from a
+/// script; `layout_export` returns herdr's tree as the last answer left it.
+#[derive(Default)]
+struct PushPort {
+    pushes: std::sync::Mutex<Vec<herdr::MirrorTarget>>,
+    answers: std::sync::Mutex<
+        std::collections::VecDeque<Result<herdr::MirrorOutcome, herdr::MirrorError>>,
+    >,
+    tab: std::sync::Mutex<Option<herdr::TabLayout>>,
+}
+
+impl HerdrPort for PushPort {
+    async fn ensure_workspace(
+        &self,
+        _: Option<String>,
+        _: herdr::WorkspaceSpec,
+    ) -> Result<herdr::EnsuredWorkspace, String> {
+        unreachable!()
+    }
+    async fn create_terminal(&self, _: herdr::TerminalSpec) -> Result<herdr::TerminalRef, String> {
+        unreachable!()
+    }
+    async fn kill_terminal(&self, _: String) -> Result<(), String> {
+        unreachable!()
+    }
+    async fn reresolve(&self, _: herdr::TerminalRef) -> Result<herdr::Resolved, String> {
+        unreachable!()
+    }
+    async fn survey(&self) -> Result<herdr::Survey, String> {
+        unreachable!()
+    }
+    fn events(&self) -> mpsc::Receiver<herdr::StreamItem> {
+        mpsc::channel(1).1
+    }
+    async fn send_text(&self, _: String, _: String) -> Result<(), String> {
+        unreachable!()
+    }
+    async fn send_keys(&self, _: String, _: Vec<String>) -> Result<(), String> {
+        unreachable!()
+    }
+    async fn read(
+        &self,
+        _: String,
+        _: herdr::ReadSource,
+        _: Option<u32>,
+    ) -> Result<herdr::ReadResult, String> {
+        unreachable!()
+    }
+    async fn scroll(&self, _: String, _: u64) -> Result<herdr::ScrollInfo, String> {
+        unreachable!()
+    }
+    async fn scroll_state(&self, _: String) -> Result<herdr::ScrollInfo, String> {
+        unreachable!()
+    }
+    async fn layout_export(&self, _: String) -> Result<herdr::TabLayout, String> {
+        self.tab
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| "tab not_found".into())
+    }
+    async fn mirror(
+        &self,
+        target: herdr::MirrorTarget,
+    ) -> Result<herdr::MirrorOutcome, herdr::MirrorError> {
+        self.pushes.lock().unwrap().push(target);
+        let answer = self.answers.lock().unwrap().pop_front().expect("an answer");
+        match &answer {
+            Ok(o) => *self.tab.lock().unwrap() = Some(o.layout.clone()),
+            Err(herdr::MirrorError::Diverged(l)) => *self.tab.lock().unwrap() = Some(l.clone()),
+            Err(_) => {}
+        }
+        answer
+    }
+}
+
+/// Sends `msg` to a mirror task and gives it time to push.
+fn drive(tx: &mpsc::UnboundedSender<MirrorMsg>, msg: MirrorMsg) {
+    tx.send(msg).unwrap();
+    std::thread::sleep(PUSH_QUIET + Duration::from_millis(250));
+}
+
+#[test]
+fn only_an_azulejo_op_not_yet_carried_out_may_restructure_herdr() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let port = Arc::new(PushPort::default());
+    let told: Arc<std::sync::Mutex<Vec<Internal>>> = Default::default();
+    let (tx, rx) = mpsc::unbounded_channel();
+    {
+        let told = told.clone();
+        rt.spawn(run(
+            None,
+            port.clone(),
+            rx,
+            move |i| told.lock().unwrap().push(i),
+            |_| {},
+        ));
+    }
+    let tab = TabId::new();
+    let grid = right(
+        0.5,
+        down(0.5, p("w1:p1"), p("w1:p3")),
+        down(0.5, p("w1:p2"), p("w1:p4")),
+    );
+    let wrong = down(
+        0.5,
+        p("w1:p1"),
+        right(0.5, p("w1:p3"), right(0.5, p("w1:p2"), p("w1:p4"))),
+    );
+    let target = |root: herdr::LayoutNode| {
+        Some(Box::new(herdr::MirrorTarget {
+            tab: Some("w1:t1".into()),
+            root,
+            zoomed: None,
+            label: None,
+            known: Vec::new(),
+            park_unknown: false,
+            restructure: false,
+        }))
+    };
+    let ok = |root: &herdr::LayoutNode| {
+        Ok(herdr::MirrorOutcome {
+            layout: export("w1:t1", root.clone()),
+            moved: Vec::new(),
+            writes: 1,
+        })
+    };
+
+    // A tab adopted in the wrong shape (no Azulejo op behind it): the push
+    // may not restructure, herdr refuses to diverge, and the core is told
+    // to follow herdr's tree. Nothing is pushed again.
+    port.answers
+        .lock()
+        .unwrap()
+        .push_back(Err(herdr::MirrorError::Diverged(export(
+            "w1:t1",
+            grid.clone(),
+        ))));
+    drive(
+        &tx,
+        MirrorMsg::Target {
+            tab,
+            target: target(wrong.clone()),
+            intent: 0,
+        },
+    );
+    {
+        let pushes = port.pushes.lock().unwrap();
+        assert_eq!(pushes.len(), 1);
+        assert!(!pushes[0].restructure, "no Azulejo op, no restructure");
+    }
+    assert!(
+        matches!(&told.lock().unwrap()[..], [Internal::MirrorFollow { tab: t, layout, .. }] if *t == tab && layout.root == grid),
+        "{:?}",
+        told.lock().unwrap()
+    );
+
+    // A user op (intent 3): that push may restructure, once.
+    port.answers.lock().unwrap().push_back(ok(&wrong));
+    drive(
+        &tx,
+        MirrorMsg::Target {
+            tab,
+            target: target(wrong.clone()),
+            intent: 3,
+        },
+    );
+    assert!(port.pushes.lock().unwrap()[1].restructure);
+    // The target changes again without a new op (herdr's events, say): no
+    // restructure, even though intent 3 is still the tab's latest.
+    port.answers.lock().unwrap().push_back(ok(&grid));
+    drive(
+        &tx,
+        MirrorMsg::Target {
+            tab,
+            target: target(grid.clone()),
+            intent: 3,
+        },
+    );
+    assert!(!port.pushes.lock().unwrap()[2].restructure);
+    // The next op may again.
+    port.answers.lock().unwrap().push_back(ok(&wrong));
+    drive(
+        &tx,
+        MirrorMsg::Target {
+            tab,
+            target: target(wrong.clone()),
+            intent: 4,
+        },
+    );
+    assert!(port.pushes.lock().unwrap()[3].restructure);
+    assert_eq!(port.pushes.lock().unwrap().len(), 4);
+    assert_eq!(told.lock().unwrap().len(), 1, "followed once");
+    drop(tx);
+    rt.shutdown_background();
+}
+
+#[test]
+fn an_arrangement_is_compared_without_its_ratios() {
+    let (s, tab, [a, b, c]) = mirrored(terminal());
+    let root = s.tab(tab).unwrap().root.clone();
+    let mut resized = root.clone();
+    if let Node::Split { ratio, .. } = &mut resized {
+        *ratio = 0.3;
+    }
+    assert!(same_arrangement(&root, &resized));
+    let mut swapped = root.clone();
+    relabel(&mut swapped, &HashMap::from([(a, b), (b, a)]));
+    assert!(!same_arrangement(&root, &swapped));
+    let _ = c;
+}

@@ -8,7 +8,21 @@
 //!   herdr's tree after every push and pull, so our own writes coming back
 //!   are recognised and dropped.
 //! - [`absorb`] turns a tree changed in herdr into the tab's new
-//!   arrangement.
+//!   arrangement; [`follow`] does the same for a tab whose arrangement
+//!   came from herdr (adoption, a push herdr's tree refused).
+//!
+//! **Only Azulejo changes herdr's structure** (ADR 0012, amendment). A push
+//! may swap panes or rebuild a herdr tab in another shape only for an
+//! Azulejo op: every target carries the tab's latest *intent*, a number the
+//! driver bumps when a command (a user op, a command in the app) changes
+//! the tab's arrangement or makes a terminal for it. Each intent authorises
+//! one successful push ([`herdr::MirrorTarget::restructure`]). A target
+//! that changed for any other reason (adoption, a split or close made in
+//! herdr, a reconnect, a relaunch) may set ratios and zoom and move panes
+//! in or out, but when herdr's tab holds the same panes in another shape or
+//! order the push writes nothing and the tab follows herdr instead
+//! ([`Internal::MirrorFollow`]): a mismatch Azulejo didn't cause resolves
+//! as a pull, never a push.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -38,8 +52,14 @@ pub const UNKNOWN_GRACE: Duration = Duration::from_secs(2);
 /// What the core tells a machine's mirror task.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MirrorMsg {
-    /// A tab's target changed; `None` stops pushing it.
-    Target(TabId, Option<Box<herdr::MirrorTarget>>),
+    /// A tab's target changed; `None` stops pushing it. `intent` is the
+    /// tab's latest Azulejo op (see the module docs): a push may change
+    /// herdr's structure only for an intent no push has carried out yet.
+    Target {
+        tab: TabId,
+        target: Option<Box<herdr::MirrorTarget>>,
+        intent: u64,
+    },
     /// herdr said a tab's layout changed.
     Pull(herdr::TabId),
     /// The worker split `target` in herdr tab `tab`, making `new`: our own
@@ -255,6 +275,8 @@ pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::M
                     label,
                     known: Vec::new(),
                     park_unknown: false,
+                    // The mirror task decides, from the tab's intent.
+                    restructure: false,
                 },
                 homes: homes.into_iter().map(|(t, (n, _))| (t, n)).collect(),
                 rank,
@@ -283,6 +305,42 @@ pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::M
         out.insert(c.tab, c.target);
     }
     out
+}
+
+/// Every tab's tree, by tab: what [`same_arrangement`] compares before and
+/// after an Azulejo op.
+pub fn arrangements(session: &Session) -> HashMap<TabId, Node> {
+    session
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .flat_map(|w| &w.tabs)
+        .map(|t| (t.id, t.root.clone()))
+        .collect()
+}
+
+/// The same arrangement: the same splits in the same directions over the
+/// same tiles in the same places, whatever the ratios. Getting from one to
+/// the other in herdr takes no swap or move, only ratios.
+pub fn same_arrangement(a: &Node, b: &Node) -> bool {
+    match (a, b) {
+        (Node::Leaf { id: x }, Node::Leaf { id: y }) => x == y,
+        (
+            Node::Split {
+                axis: xa,
+                a: x1,
+                b: x2,
+                ..
+            },
+            Node::Split {
+                axis: ya,
+                a: y1,
+                b: y2,
+                ..
+            },
+        ) => xa == ya && same_arrangement(x1, y1) && same_arrangement(x2, y2),
+        _ => false,
+    }
 }
 
 /// Where a new terminal tile's pane is split off, so it's born in place:
@@ -545,38 +603,11 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
     if live.len() != panes.len() {
         return false; // the tab has a pane herdr's tab doesn't
     }
-    let Some(pruned) = prune(&tab.root, &|t| live.contains(&t)) else {
+    let Some(new_root) = followed_root(tab, machine, &layout.root) else {
         return false;
     };
     let tile_of = |p: &str| by_pane.get(p).copied();
     let mut changed = false;
-
-    let new_root = if same_shape(&pruned, &layout.root) {
-        let mut root = tab.root.clone();
-        let mut ratios = Vec::new();
-        ratio_changes(&pruned, &layout.root, &mut ratios);
-        for (path, r) in ratios {
-            set_ratio(&mut root, &path, r);
-        }
-        let ours = pruned.tiles();
-        let theirs: Vec<TileId> = panes.iter().filter_map(|p| tile_of(p)).collect();
-        if ours != theirs {
-            let map: HashMap<TileId, TileId> = ours.into_iter().zip(theirs).collect();
-            relabel(&mut root, &map);
-        }
-        root
-    } else {
-        let Some(tree) = from_herdr(&layout.root, &tile_of) else {
-            return false;
-        };
-        let others: Vec<TileId> = tab
-            .root
-            .tiles()
-            .into_iter()
-            .filter(|t| !live.contains(t))
-            .collect();
-        rebuild(&tab.root, tree, &others)
-    };
     let kind = tab.layout.kind;
     let zoomed = tab.zoomed;
     // What we'd have herdr zoom: a pane herdr shows for us (Monocle with a
@@ -616,6 +647,101 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
     changed
 }
 
+/// `tab`'s tree with herdr's arrangement of the panes both have: ratios and
+/// order carried over when herdr has the same shape, else herdr's tree with
+/// the tab's other tiles (browsers, panes on other machines or not in this
+/// herdr tab) put back beside their old neighbours. Panes herdr's tab holds
+/// that this tab doesn't show are left out. `None` when they share none.
+fn followed_root(tab: &Tab, machine: &Machine, herdr_root: &herdr::LayoutNode) -> Option<Node> {
+    let by_pane: HashMap<String, TileId> = live_panes(tab, machine)
+        .into_iter()
+        .map(|(t, h)| (h.pane_id.clone(), t))
+        .collect();
+    let theirs = herdr::prune_tree(herdr_root, &|p| by_pane.contains_key(p.as_str()))?;
+    let tile_of = |p: &str| by_pane.get(p).copied();
+    let shown: HashSet<TileId> = theirs
+        .panes()
+        .iter()
+        .filter_map(|p| tile_of(p.as_str()))
+        .collect();
+    let pruned = prune(&tab.root, &|t| shown.contains(&t))?;
+    if same_shape(&pruned, &theirs) {
+        let mut root = tab.root.clone();
+        let mut ratios = Vec::new();
+        ratio_changes(&pruned, &theirs, &mut ratios);
+        for (path, r) in ratios {
+            set_ratio(&mut root, &path, r);
+        }
+        let ours = pruned.tiles();
+        let order: Vec<TileId> = theirs
+            .panes()
+            .iter()
+            .filter_map(|p| tile_of(p.as_str()))
+            .collect();
+        if ours != order {
+            let map: HashMap<TileId, TileId> = ours.into_iter().zip(order).collect();
+            relabel(&mut root, &map);
+        }
+        Some(root)
+    } else {
+        let tree = from_herdr(&theirs, &tile_of)?;
+        let others: Vec<TileId> = tab
+            .root
+            .tiles()
+            .into_iter()
+            .filter(|t| !shown.contains(t))
+            .collect();
+        Some(rebuild(&tab.root, tree, &others))
+    }
+}
+
+/// The Azulejo tab showing the panes of herdr tab `layout` on `machine`:
+/// `None` when no tab does, or they're spread over several.
+pub fn owner(session: &Session, machine: &Machine, layout: &herdr::TabLayout) -> Option<TabId> {
+    let panes = layout.root.panes();
+    let mut owner = None;
+    for tab in session
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .flat_map(|w| &w.tabs)
+    {
+        if live_panes(tab, machine)
+            .values()
+            .any(|h| panes.iter().any(|p| p.as_str() == h.pane_id))
+        {
+            if owner.is_some() {
+                return None;
+            }
+            owner = Some(tab.id);
+        }
+    }
+    owner
+}
+
+/// Makes `tab` follow herdr's arrangement of the panes it shares with
+/// `layout`, a herdr tab on `machine` (ADR 0012, amendment): for a tab
+/// adopted or grown from herdr's events, and for a push that found herdr
+/// arranged otherwise without an Azulejo op to justify changing it. Panes
+/// herdr's tab holds that the tab doesn't show, and tiles herdr's tab
+/// doesn't hold, don't stop it. Dynamic tabs absorb what their rule can
+/// make and freeze otherwise ([`Session::apply_tree`]). Zoom is left
+/// alone. Returns whether anything changed.
+pub fn follow(
+    session: &mut Session,
+    machine: &Machine,
+    tab: TabId,
+    layout: &herdr::TabLayout,
+) -> bool {
+    let Ok(t) = session.tab(tab) else {
+        return false;
+    };
+    let Some(root) = followed_root(t, machine, &layout.root) else {
+        return false;
+    };
+    root != t.root && session.apply_tree(tab, root).unwrap_or(false)
+}
+
 // ---- the task ----------------------------------------------------------------
 
 /// `AZJ_DEBUG_MIRROR=1` logs every push and every pulled change.
@@ -626,6 +752,8 @@ pub(crate) fn debug() -> bool {
 
 struct Pending {
     target: herdr::MirrorTarget,
+    /// The tab's latest Azulejo op when the target was made.
+    intent: u64,
     due: Instant,
     /// When the push first met panes nobody knows.
     unknown_since: Option<Instant>,
@@ -652,28 +780,6 @@ fn pane_set(node: &herdr::LayoutNode) -> std::collections::BTreeSet<String> {
     node.panes().iter().map(|p| p.0.clone()).collect()
 }
 
-/// `node` with only the panes in `keep`; a split losing a side collapses.
-fn prune_panes(
-    node: &herdr::LayoutNode,
-    keep: &std::collections::BTreeSet<String>,
-) -> Option<herdr::LayoutNode> {
-    match node {
-        herdr::LayoutNode::Pane { pane_id } => pane_id
-            .as_ref()
-            .filter(|p| keep.contains(p.as_str()))
-            .map(|_| node.clone()),
-        herdr::LayoutNode::Split {
-            direction,
-            ratio,
-            first,
-            second,
-        } => match (prune_panes(first, keep), prune_panes(second, keep)) {
-            (Some(a), Some(b)) => Some(herdr::LayoutNode::split(*direction, *ratio, a, b)),
-            (one, None) | (None, one) => one,
-        },
-    }
-}
-
 /// Compares `now` with `before`, the tree recorded after our own last write,
 /// over the panes both have: a ratio, swap or zoom changed among them is
 /// someone's change whatever else came or went meanwhile. `expected` is the
@@ -690,9 +796,10 @@ pub(crate) fn judge(
     let (b, n) = (pane_set(&before.root), pane_set(&now.root));
     let common: std::collections::BTreeSet<String> = b.intersection(&n).cloned().collect();
     let same_members = b == n;
+    let keep = |p: &herdr::PaneId| common.contains(p.as_str());
     let tree_changed = match (
-        prune_panes(&before.root, &common),
-        prune_panes(&now.root, &common),
+        herdr::prune_tree(&before.root, &keep),
+        herdr::prune_tree(&now.root, &keep),
     ) {
         (Some(x), Some(y)) => !herdr::same_tree(&x, &y, herdr::ECHO_TOLERANCE),
         _ => false,
@@ -767,6 +874,9 @@ pub(crate) async fn run<P: HerdrPort>(
     log: impl Fn(String),
 ) {
     let mut pushes: HashMap<TabId, Pending> = HashMap::new();
+    // Per Azulejo tab, the latest intent a push carried out: a later target
+    // with no newer intent may not change herdr's structure.
+    let mut done: HashMap<TabId, u64> = HashMap::new();
     let mut pulls: HashMap<herdr::TabId, Instant> = HashMap::new();
     // herdr's tree right after our last write (push, split) or pull, per
     // herdr tab.
@@ -790,10 +900,16 @@ pub(crate) async fn run<P: HerdrPort>(
         };
         match msg {
             Some(None) => return,
-            Some(Some(MirrorMsg::Target(tab, None))) => {
+            Some(Some(MirrorMsg::Target {
+                tab, target: None, ..
+            })) => {
                 pushes.remove(&tab);
             }
-            Some(Some(MirrorMsg::Target(tab, Some(target)))) => {
+            Some(Some(MirrorMsg::Target {
+                tab,
+                target: Some(target),
+                intent,
+            })) => {
                 if let Some(h) = &target.tab {
                     expected.insert(h.clone(), pane_set(&target.root));
                 }
@@ -802,6 +918,7 @@ pub(crate) async fn run<P: HerdrPort>(
                     tab,
                     Pending {
                         target: *target,
+                        intent,
                         due: Instant::now() + PUSH_QUIET,
                         unknown_since,
                         failures: 0,
@@ -925,13 +1042,23 @@ pub(crate) async fn run<P: HerdrPort>(
                             continue;
                         }
                     }
-                    if p.unknown_since.is_some_and(|t| now - t >= UNKNOWN_GRACE) {
+                    // Only an Azulejo op no push has carried out yet may
+                    // change herdr's structure.
+                    p.target.restructure = p.intent > done.get(&tab).copied().unwrap_or(0);
+                    let overdue = p.unknown_since.is_some_and(|t| now - t >= UNKNOWN_GRACE);
+                    if overdue {
                         p.target.park_unknown = true;
                     }
                     let result = port.mirror(p.target.clone()).await;
                     if debug() {
                         log(format!(
-                            "mirror: push {tab} into {:?} ({:?}): {}",
+                            "mirror: push {tab} (intent {}, {}) into {:?} ({:?}): {}",
+                            p.intent,
+                            if p.target.restructure {
+                                "may restructure"
+                            } else {
+                                "follows herdr"
+                            },
                             p.target.tab,
                             p.target.root,
                             match &result {
@@ -947,11 +1074,34 @@ pub(crate) async fn run<P: HerdrPort>(
                         // herdr's answer to our last write: what we record,
                         // refusals (a lone pane's zoom) included.
                         Ok(outcome) => {
+                            if p.target.restructure {
+                                done.insert(tab, p.intent);
+                            }
                             synced.insert(outcome.layout.tab_id.clone(), outcome.layout);
+                        }
+                        // herdr has the panes in another arrangement, and no
+                        // Azulejo op asked to change it: the tab follows
+                        // herdr. Its next target matches, so that push
+                        // writes ratios at most.
+                        Err(herdr::MirrorError::Diverged(layout)) => {
+                            synced.insert(layout.tab_id.clone(), layout.clone());
+                            out(Internal::MirrorFollow {
+                                machine: machine.clone(),
+                                tab,
+                                layout: Box::new(layout),
+                            });
                         }
                         Err(herdr::MirrorError::Unknown(_)) => {
                             p.unknown_since.get_or_insert(now);
-                            p.due = now + Duration::from_millis(250);
+                            // Unknown panes are parked only for an Azulejo
+                            // op; otherwise the push waits for adoption, at
+                            // a calmer pace once the grace is over.
+                            p.due = now
+                                + if overdue && !p.target.restructure {
+                                    Duration::from_secs(1)
+                                } else {
+                                    Duration::from_millis(250)
+                                };
                             pushes.insert(tab, p);
                         }
                         Err(e) => {
@@ -976,7 +1126,8 @@ const RETRY_PULL: Duration = Duration::from_millis(150);
 /// Reads a herdr tab and [`judge`]s it against the record. On a change the
 /// core is told and the record follows; while it waits the record stays,
 /// unless `give_up` (after [`UNKNOWN_GRACE`]): then herdr's tree is taken as
-/// the record and the next push decides.
+/// the record and the next push compares (and follows herdr unless an
+/// Azulejo op asked for another arrangement).
 async fn pull<P: HerdrPort>(
     machine: &Machine,
     port: &P,
@@ -1000,7 +1151,8 @@ async fn pull<P: HerdrPort>(
         }
     };
     let Some(before) = synced.get(tab) else {
-        // Nothing to compare with: Azulejo's next push decides.
+        // Nothing to compare with: the next push compares, and only an
+        // Azulejo op may change herdr's arrangement.
         synced.insert(tab.clone(), layout);
         return Pulled::Echo;
     };

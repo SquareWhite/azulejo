@@ -2,6 +2,8 @@
 
 Status: accepted · Nov 3, 2026 · M1 · supersedes [0007](0007-dedicated-herdr-session.md) · amended by [0012](0012-mirror-layout-into-herdr.md)
 
+> Amended by ADR 0012's amendment (Nov 4, 2026): only an Azulejo op may change the structure of a herdr tab; an adopted tab, and any tab whose arrangement came from herdr, follows herdr's tree and is never pushed into another shape.
+>
 > Amended by ADR 0012 (Nov 4, 2026): adoption and restore still only read, but Azulejo now changes the layout of the herdr tabs it shows (adopted ones too) to mirror its own, moving panes between tabs and setting ratios and zoom. It still never calls `layout.apply` and never closes a pane except on an explicit kill. "Tiles Azulejo creates still get a herdr tab each" no longer holds: they're panes in their tab's herdr tab.
 
 ## Context

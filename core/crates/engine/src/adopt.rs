@@ -11,6 +11,15 @@
 //! tab shown here (the herdr TUI, a phone, an agent) join that tab beside
 //! their herdr sibling (F15, ADR 0009).
 //!
+//! Panes come in survey by survey, and a burst of splits can reach a survey
+//! half made: placing each pane beside its sibling then guesses, since the
+//! sibling may be one that isn't here yet. So every herdr tab a survey
+//! adopted or added panes to ends up with herdr's own tree from that survey
+//! (`layout.export`, read after the snapshot), whatever the guesses were
+//! ([`crate::mirror::follow`]). The tab's arrangement came from herdr, so
+//! Azulejo follows herdr's, never the other way round (ADR 0012,
+//! amendment).
+//!
 //! Each herdr machine is surveyed and adopted on its own (ADR 0011): a
 //! survey only matches, prunes and creates things on its own machine.
 
@@ -58,6 +67,8 @@ pub fn adopt(
     let mut workspaces: Vec<&herdr::WorkspaceInfo> = survey.workspaces.iter().collect();
     workspaces.sort_by_key(|w| w.number);
     let mut adopted_any = false;
+    // herdr tabs this survey adopted or added panes to.
+    let mut touched: Vec<herdr::TabId> = Vec::new();
     // herdr workspace → Azulejo workspace, for focusing afterwards.
     let mut mapped: HashMap<&str, WorkspaceId> = HashMap::new();
 
@@ -101,6 +112,7 @@ pub fn adopt(
             let id = built.id;
             if session.insert_tab(workspace, built).is_ok() {
                 adopted_any = true;
+                touched.push(tab.tab_id.clone());
                 if hw.active_tab_id.as_ref() == Some(&tab.tab_id) {
                     active = Some(id);
                 }
@@ -111,7 +123,16 @@ pub fn adopt(
         }
     }
     changed |= adopted_any;
-    changed |= adopt_split_panes(session, machine, survey, &is_known);
+    changed |= adopt_split_panes(session, machine, survey, &is_known, &mut touched);
+    // Whatever the placement guessed, those tabs take herdr's tree.
+    for tab in touched {
+        let Some(layout) = survey.layouts.iter().find(|l| l.tab_id == tab) else {
+            continue;
+        };
+        if let Some(owner) = crate::mirror::owner(session, machine, layout) {
+            changed |= crate::mirror::follow(session, machine, owner, layout);
+        }
+    }
 
     if adopted_any
         && let Some(ph) = placeholder
@@ -250,15 +271,18 @@ pub fn build_tab(
         .map(|(p, t)| (p.pane_id.as_str(), t.id))
         .collect();
 
+    // herdr's tree, without panes split off after the snapshot was read
+    // (they come with the next survey).
     let root = layout
-        .filter(|l| {
-            let mut leaves: Vec<&str> = l.root.panes().iter().map(|p| p.as_str()).collect();
+        .and_then(|l| herdr::prune_tree(&l.root, &|p| by_pane.contains_key(p.as_str())))
+        .filter(|r| {
+            let mut leaves: Vec<&str> = r.panes().iter().map(|p| p.as_str()).collect();
             leaves.sort_unstable();
             let mut want: Vec<&str> = by_pane.keys().copied().collect();
             want.sort_unstable();
             leaves == want
         })
-        .and_then(|l| convert(&l.root, &by_pane))
+        .and_then(|r| convert(&r, &by_pane))
         .unwrap_or_else(|| side_by_side(&tiles.iter().map(|t| t.id).collect::<Vec<_>>()));
 
     let focused_pane = layout
@@ -307,12 +331,14 @@ fn pane_tile(machine: &Machine, p: &herdr::PaneInfo) -> Tile {
 /// same side and with the same ratio; without a usable sibling it goes to the
 /// end of the tab's stack (`layout.split_auto`). Focus doesn't move.
 ///
-/// Returns whether anything was added.
+/// Returns whether anything was added; `touched` gets the herdr tabs that
+/// grew.
 fn adopt_split_panes(
     session: &mut Session,
     machine: &Machine,
     survey: &herdr::Survey,
     is_known: &dyn Fn(&herdr::PaneInfo) -> bool,
+    touched: &mut Vec<herdr::TabId>,
 ) -> bool {
     let mut added = false;
     for tab in &survey.tabs {
@@ -327,6 +353,7 @@ fn adopt_split_panes(
         if pending.is_empty() || pending.len() == panes.len() {
             continue;
         }
+        touched.push(tab.tab_id.clone());
         let layout = survey.layouts.iter().find(|l| l.tab_id == tab.tab_id);
         // Place what has a bound sibling; each placed pane can anchor the next.
         loop {
