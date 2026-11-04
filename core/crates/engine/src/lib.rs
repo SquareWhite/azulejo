@@ -24,6 +24,7 @@ use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
     TileInfo, WindowSummary, WorkspaceSummary,
 };
+use serde_json::json;
 
 pub use diff::diff;
 pub use driver::{CommandsFn, Core, CoreOptions, LogFn};
@@ -564,8 +565,9 @@ impl Engine {
                         if !*ended {
                             return Err(Error::new(
                                 ErrorCode::InvalidState,
-                                format!("{id}'s herdr pane is still running"),
-                            ));
+                                "the terminal's herdr pane is still running",
+                            )
+                            .with_data(json!({ "tile": id })));
                         }
                         *herdr = None;
                         *ended = false;
@@ -641,12 +643,14 @@ impl Engine {
         match &self.session.tile(id)?.content {
             TileContent::Terminal { ended: true, .. } => Err(Error::new(
                 ErrorCode::InvalidState,
-                format!("{id}'s herdr pane has ended"),
-            )),
+                "the terminal's herdr pane has ended",
+            )
+            .with_data(json!({ "tile": id }))),
             TileContent::Terminal { herdr: None, .. } => Err(Error::new(
                 ErrorCode::Unavailable,
-                format!("{id} isn't attached to a herdr pane yet"),
-            )),
+                "the terminal isn't attached to a herdr pane yet",
+            )
+            .with_data(json!({ "tile": id }))),
             TileContent::Terminal { herdr: Some(h), .. } => Ok(h.clone()),
             other => Err(wrong_kind(id, other, "terminal")),
         }
@@ -752,8 +756,9 @@ fn wrong_kind(id: TileId, content: &TileContent, want: &str) -> Error {
         .unwrap_or_default();
     Error::new(
         ErrorCode::InvalidState,
-        format!("{id} is a {kind} tile, not a {want} tile"),
+        format!("that's a {kind} tile, not a {want} tile"),
     )
+    .with_data(json!({ "tile": id, "kind": kind }))
 }
 
 fn tile_info(

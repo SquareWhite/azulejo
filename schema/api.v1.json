@@ -1575,7 +1575,11 @@
         "code": {
           "$ref": "#/$defs/ErrorCode"
         },
+        "data": {
+          "description": "For programs: what the error is about, such as `{\"tile\": \"tile_…\",\n\"direction\": \"right\"}` or `{\"param\": \"kind\"}`. Over JSON-RPC these\nfields sit in the error's `data` beside `code`."
+        },
         "message": {
+          "description": "For people: shells show it as is, so it names no IDs.",
           "type": "string"
         }
       },

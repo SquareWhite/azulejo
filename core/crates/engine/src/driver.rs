@@ -396,8 +396,9 @@ fn run<P: HerdrPort>(
                     path.map(|p| (id, PathBuf::from(p))).ok_or_else(|| {
                         Error::new(
                             ErrorCode::InvalidState,
-                            format!("{id} has no file yet; use preview.open"),
+                            "the preview has no file yet; use preview.open",
                         )
+                        .with_data(serde_json::json!({ "tile": id }))
                     })
                 });
                 match result {

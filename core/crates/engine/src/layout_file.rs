@@ -813,8 +813,9 @@ pub fn export(s: &Session, focus: Focus, p: &LayoutExport) -> Result<String, Err
             if ws.tabs.is_empty() {
                 return Err(Error::new(
                     ErrorCode::InvalidState,
-                    format!("workspace {id} has no tabs to export"),
-                ));
+                    "the workspace has no tabs to export",
+                )
+                .with_data(serde_json::json!({ "workspace": id })));
             }
             let cwd = ws.cwd.as_deref();
             let mut file = FileSpec {

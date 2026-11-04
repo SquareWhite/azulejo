@@ -164,7 +164,9 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     // MARK: HUD
 
-    func flash(_ text: String) { hud.show(text, sticky: false) }
+    /// Shows `text` briefly, in sentence case: core messages start lower
+    /// case because the CLI prints them after an error code.
+    func flash(_ text: String) { hud.show(text.prefix(1).uppercased() + text.dropFirst(), sticky: false) }
     func setStatus(_ text: String?) { text.map { hud.show($0, sticky: true) } ?? hud.hide() }
 
     // MARK: NSWindowDelegate

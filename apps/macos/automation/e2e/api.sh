@@ -201,8 +201,9 @@ cat "$out/python.txt"
 check "python sync client create/read/close" grep -q "^sync ok" "$out/python.txt"
 check "python async client create/read/close" grep -q "^async ok" "$out/python.txt"
 
-say "API leniency: unknown params"
+say "API: unknown params are refused"
 azj call layout.split '{"direction":"right","kind":"browser","url":"http://x/"}' >"$out/unknown-params.txt" 2>&1 || true
 cat "$out/unknown-params.txt"
+check "layout.split with top-level kind/url is invalid_params naming the field" grep -q "invalid_params.*kind" "$out/unknown-params.txt"
 stop_app
 grep -c PASS "$checks" | sed 's/^/passed: /'; ! grep -q FAIL "$checks"

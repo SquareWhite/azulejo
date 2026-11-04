@@ -28,6 +28,18 @@ def test_errors_carry_the_protocol_code(daemon):
             c.tile_get(tile="tile_00000000000000000000000000")
         assert e.value.code == "not_found"
         assert e.value.rpc_code == -32001
+        assert "tile_" not in e.value.message
+        assert e.value.data == {"tile": "tile_00000000000000000000000000"}
+
+
+def test_unknown_params_are_refused(daemon):
+    with Client() as c:
+        with pytest.raises(ApiError) as e:
+            c.call("layout.split", {"direction": "right", "kind": "browser", "url": "http://x/"})
+        assert e.value.code == "invalid_params"
+        assert "`kind`" in e.value.message
+        assert e.value.data == {"param": "kind"}
+        assert len(tiles(c)) == 1
 
 
 def test_not_running(tmp_short):

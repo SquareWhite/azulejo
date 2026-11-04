@@ -539,8 +539,9 @@ fn done(reply: Reply, events: Vec<Event>) -> Handled {
 fn not_ready(tile: TileId) -> Error {
     Error::new(
         ErrorCode::InvalidState,
-        format!("{tile} isn't a files tile the core is showing"),
+        "that isn't a files tile the core is showing",
     )
+    .with_data(serde_json::json!({ "tile": tile }))
 }
 
 /// The folder a files tile shows: its root, or the home folder.

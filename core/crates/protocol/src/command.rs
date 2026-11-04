@@ -378,6 +378,8 @@ impl Command {
             ));
         }
         let method = method.to_owned();
+        // serde would ignore params the method doesn't take.
+        crate::params::check(&method, value.get("params"))?;
         // `params` may be omitted when every field is optional.
         let value = match value {
             serde_json::Value::Object(mut map) if !map.contains_key("params") => {
