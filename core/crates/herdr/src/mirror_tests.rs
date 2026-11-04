@@ -269,15 +269,21 @@ impl SimState {
         self.export(tab.as_str())
     }
 
-    fn zoom(&mut self, pane: &PaneId, on: bool) -> crate::Result<()> {
+    fn zoom(&mut self, pane: &PaneId, on: bool) -> crate::Result<ZoomState> {
         self.calls.push(format!("zoom {pane} {on}"));
         let tab = self.tab_of(pane).ok_or_else(|| not_found("pane"))?;
         let t = self.tabs.get_mut(&tab).unwrap();
-        t.zoomed = on;
-        if on {
-            t.focused = pane.clone();
+        // herdr refuses to zoom a tab's only pane (`single_pane`).
+        if !matches!(t.root, LayoutNode::Pane { .. }) {
+            t.zoomed = on;
+            if on {
+                t.focused = pane.clone();
+            }
         }
-        Ok(())
+        Ok(ZoomState {
+            zoomed: t.zoomed,
+            focused: Some(t.focused.clone()),
+        })
     }
 }
 
@@ -317,7 +323,11 @@ impl LayoutOps for Sim {
         let r = self.0.lock().unwrap().set_ratio(tab, path, ratio);
         async move { r }
     }
-    fn zoom(&self, pane: &PaneId, on: bool) -> impl Future<Output = crate::Result<()>> + Send {
+    fn zoom(
+        &self,
+        pane: &PaneId,
+        on: bool,
+    ) -> impl Future<Output = crate::Result<ZoomState>> + Send {
         let r = self.0.lock().unwrap().zoom(pane, on);
         async move { r }
     }
@@ -491,6 +501,19 @@ fn zoom_goes_on_last_and_off_when_not_wanted() {
 }
 
 #[test]
+fn a_lone_pane_isnt_zoomed_and_thats_not_a_mismatch() {
+    // herdr refuses (`single_pane`): a Monocle tab with one terminal and a
+    // browser has nothing to zoom in herdr.
+    let sim = Sim::new(vec![("w1", p("w1:p1"))]);
+    let mut t = target(Some("w1:t1"), p("w1:p1"));
+    t.zoomed = Some("w1:p1".into());
+    let out = block(run(&sim, &t)).unwrap();
+    assert_eq!(out.writes, 0, "{:?}", sim.calls());
+    assert!(!out.layout.zoomed);
+    assert!(satisfies(&out.layout, &t));
+}
+
+#[test]
 fn unknown_panes_make_the_push_wait_and_known_ones_move_out() {
     let sim = Sim::new(vec![(
         "w1",
@@ -661,7 +684,8 @@ proptest! {
         {
             let mut s = sim.0.lock().unwrap();
             for (tab, z) in s.tabs.values_mut().zip(zooms) {
-                tab.zoomed = z;
+                // herdr never zooms a tab's only pane.
+                tab.zoomed = z && !matches!(tab.root, LayoutNode::Pane { .. });
             }
         }
         let before = sim.terminals();

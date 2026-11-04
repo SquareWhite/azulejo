@@ -22,7 +22,9 @@ use std::future::Future;
 
 use crate::client::Client;
 use crate::error::Error;
-use crate::types::{LayoutNode, MoveTo, Moved, PaneId, PaneInfo, SplitDirection, TabId, TabLayout};
+use crate::types::{
+    LayoutNode, MoveTo, Moved, PaneId, PaneInfo, SplitDirection, TabId, TabLayout, ZoomState,
+};
 
 /// A push writes a ratio only when herdr's is further off than this: half a
 /// cell at 100 columns.
@@ -120,7 +122,11 @@ pub trait LayoutOps: Sync {
         path: &[bool],
         ratio: f64,
     ) -> impl Future<Output = crate::Result<TabLayout>> + Send;
-    fn zoom(&self, pane: &PaneId, on: bool) -> impl Future<Output = crate::Result<()>> + Send;
+    fn zoom(
+        &self,
+        pane: &PaneId,
+        on: bool,
+    ) -> impl Future<Output = crate::Result<ZoomState>> + Send;
 }
 
 impl LayoutOps for Client {
@@ -148,7 +154,11 @@ impl LayoutOps for Client {
     ) -> impl Future<Output = crate::Result<TabLayout>> + Send {
         self.set_split_ratio(tab, path, ratio)
     }
-    fn zoom(&self, pane: &PaneId, on: bool) -> impl Future<Output = crate::Result<()>> + Send {
+    fn zoom(
+        &self,
+        pane: &PaneId,
+        on: bool,
+    ) -> impl Future<Output = crate::Result<ZoomState>> + Send {
         self.zoom_pane(pane, on)
     }
 }
@@ -228,6 +238,10 @@ pub fn satisfies(layout: &TabLayout, target: &MirrorTarget) -> bool {
 }
 
 fn zoom_ok(layout: &TabLayout, want: Option<&PaneId>) -> bool {
+    // herdr doesn't zoom a tab's only pane.
+    if matches!(layout.root, LayoutNode::Pane { .. }) {
+        return true;
+    }
     match want {
         Some(p) => layout.zoomed && layout.focused_pane_id.as_ref() == Some(p),
         None => !layout.zoomed,
@@ -410,23 +424,27 @@ impl<O: LayoutOps> Push<'_, O> {
             self.rebuild(&tab, &cur, target, &anchor).await?;
         }
 
-        // Zoom last.
-        let cur = self.ops.export(&tab).await?;
+        // Zoom last. What's recorded is herdr's own answer to the zoom, not a
+        // later read: a change someone makes right after it isn't ours.
+        let mut layout = self.ops.export(&tab).await?;
         let zoom = target.zoomed.as_ref().map(|z| self.id(z));
-        if !zoom_ok(&cur, zoom.as_ref()) {
-            match zoom {
+        if !zoom_ok(&layout, zoom.as_ref()) {
+            let state = match zoom {
                 Some(z) => self.zoom(&z, true).await?,
                 None => {
-                    let any = cur
+                    let any = layout
                         .focused_pane_id
                         .clone()
-                        .or_else(|| cur.root.first_pane().cloned())
+                        .or_else(|| layout.root.first_pane().cloned())
                         .expect("a tab has a pane");
-                    self.zoom(&any, false).await?;
+                    self.zoom(&any, false).await?
                 }
+            };
+            layout.zoomed = state.zoomed;
+            if state.focused.is_some() {
+                layout.focused_pane_id = state.focused;
             }
         }
-        let layout = self.ops.export(&tab).await?;
         Ok(MirrorOutcome {
             layout,
             moved: std::mem::take(&mut self.moved),
@@ -596,10 +614,10 @@ impl<O: LayoutOps> Push<'_, O> {
         Ok(())
     }
 
-    async fn zoom(&mut self, pane: &PaneId, on: bool) -> Result<()> {
-        self.ops.zoom(pane, on).await?;
+    async fn zoom(&mut self, pane: &PaneId, on: bool) -> Result<ZoomState> {
+        let state = self.ops.zoom(pane, on).await?;
         self.writes += 1;
-        Ok(())
+        Ok(state)
     }
 }
 

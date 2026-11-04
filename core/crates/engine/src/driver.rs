@@ -944,7 +944,7 @@ impl<P: HerdrPort> Links<P> {
                 machine.clone(),
                 port.clone(),
                 effects_rx,
-                (api_socket, mirror),
+                (api_socket, mirror, mirror_tx.clone()),
                 move |internal| {
                     let _ = out.send(Msg::Internal(internal));
                 },
