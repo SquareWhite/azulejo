@@ -11,6 +11,7 @@
 //   swift scripts/icon/draw.swift --minimal DIR   # minimal.png only
 //   swift scripts/icon/draw.swift --woven DIR     # woven.png and woven-hero.png only
 //   swift scripts/icon/draw.swift --pinwheel DIR  # pinwheel.png only (reads DIR/pinwheel-liked-32px.png)
+//   swift scripts/icon/draw.swift --chosen DIR    # chosen.png only: the shipping icon beside Terminal and Notes
 //
 // Geometry follows Apple's macOS icon template: a 1024 px canvas, an 824 px
 // rounded square (continuous corners, radius 185.4) centred in it, fully
@@ -298,10 +299,10 @@ enum Candidate: String, CaseIterable {
   var bleeds: Bool { self != .glass }
 }
 
-/// What ships: one of the candidates A–H, or a minimal mark I–Q in one of its
-/// four styles, e.g. `.mark(.woven, .glaze)`. See docs/design/icon/README.md
-/// for why it's A.
-let chosen: Icon = .candidate(.classic)
+/// What ships: one of the candidates A–H, or a mark (I–X6) in one of the
+/// styles, e.g. `.mark(.woven, .glaze)`. the maintainer picked X, pinwheel, white on
+/// cobalt (docs/design/icon/README.md).
+let chosen: Icon = .mark(.pinwheel, .cobalt)
 
 enum Icon: Equatable {
   case candidate(Candidate)
@@ -1767,6 +1768,19 @@ func drawPinwheel(_ g: CGContext, _ ink: Inks, _ pen: Pen, _ mark: Mark) {
   // cut clean through, with no sliver at its sharp corner. At 32 px and below
   // that sliver is under a pixel, and R's reach keeps X's 32 px R's own.
   let under: CGFloat = pen.small ? 0.6 : 0.9
+  if pen.lod == 3 && mark == .pinwheel {
+    // X at 16 px: a 1 px curve can't land on the grid, so the hooks smeared
+    // into grey and their weave gaps broke the tiles. Instead each tile is
+    // whole, with a 2 × 1 px tongue from its centre to the inner side the
+    // hook comes in by at 32 px. The tiles turn clockwise like the hooks.
+    pen.gap = 0
+    weave(g, tiles, ink.main, pen)
+    let p = 2 * u32  // one pixel at 16 px
+    for tongue in quarterTurns(CGPath(rect: CGRect(x: -4 * p, y: 3 * p, width: 2 * p, height: p), transform: nil)) {
+      g.fill(tongue, ink.second)
+    }
+    return
+  }
   weave(g, [pinwheelSpiral(pen)] + tiles, inks: [ink.second] + tiles.map { _ in ink.main }, pen, reach: (0.5, under))
 }
 
@@ -2399,6 +2413,83 @@ func writePinwheel(_ dir: URL) {
   writePNG(g.makeImage()!, dir.appendingPathComponent("pinwheel.png"))
 }
 
+/// The shipping icon on its own: the 1024 master shown at 256, then 128, 64,
+/// 32 and 16 at their real pixel sizes, then 32 and 16 blown up 4× (nearest
+/// neighbour), next to Terminal and Notes for scale. Under that, the three
+/// side by side at each size, as they'd sit in a Dock. Light left, dark right.
+func writeChosen(_ url: URL) {
+  typealias Draw = (CGContext, Int, CGRect) -> Void
+  func ns(_ path: String) -> Draw? {
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    let image = NSWorkspace.shared.icon(forFile: path)
+    return { g, px, rect in
+      // Rasterise at the real size first, so a zoom shows the real pixels.
+      let small = CGContext(
+        data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+      drawNSImage(small, image, in: CGRect(x: 0, y: 0, width: px, height: px))
+      g.draw(small.makeImage()!, in: rect)
+    }
+  }
+  let ours: Draw = { g, px, rect in g.draw(chosen.image(chosen.palette, px: px), in: rect) }
+  var icons: [(String, Draw)] = [("Azulejo", ours)]
+  for (name, path) in [("macOS: Terminal", "/System/Applications/Utilities/Terminal.app"), ("macOS: Notes", "/System/Applications/Notes.app")] {
+    if let d = ns(path) { icons.append((name, d)) }
+  }
+  // The Dock strip puts Azulejo in the middle.
+  let strip = icons.count == 3 ? [icons[1], icons[0], icons[2]] : icons
+
+  let sizes = [256, 128, 64, 32, 16]
+  let gap = 28
+  let labelH = 40
+  let stripSizes = [128, 64, 32, 16]
+  let stripW = stripSizes.reduce(0) { $0 + 3 * ($1 + max(4, $1 / 8)) + gap }
+  let half = max(sizes.reduce(0, +) + 32 * 4 + 16 * 4 + gap * (sizes.count + 3), stripW + 2 * gap)
+  let rowH = 256 + labelH + gap
+  let stripH = 128 + labelH + gap
+  let width = half * 2
+  let height = 80 + icons.count * rowH + stripH + gap
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let bands = [(rgb(0xECECEF), NSColor(white: 0.15, alpha: 1)), (rgb(0x1E1F23), NSColor(white: 0.85, alpha: 1))]
+  for (i, (bg, ink)) in bands.enumerated() {
+    g.setFillColor(bg)
+    g.fill(CGRect(x: i * half, y: 0, width: half, height: height))
+    let ox = CGFloat(i * half + gap)
+    label(g, "\(chosen.title) · \(i == 0 ? "light" : "dark") · 1024 at 256, then 128 / 64 / 32 / 16 at 1:1, then 32 and 16 at 4×", at: CGPoint(x: ox, y: CGFloat(height - 50)), size: 18, color: ink, bold: true)
+    var top = CGFloat(height - 80)
+    for (name, draw) in icons {
+      label(g, name, at: CGPoint(x: ox, y: top - 30), size: 18, color: ink, bold: true)
+      let base = top - CGFloat(labelH) - 256
+      var x = ox
+      for d in sizes {
+        g.interpolationQuality = .high
+        draw(g, d == 256 ? 1024 : d, CGRect(x: x, y: base, width: CGFloat(d), height: CGFloat(d)))
+        x += CGFloat(d + gap)
+      }
+      for d in [32, 16] {
+        g.interpolationQuality = .none
+        draw(g, d, CGRect(x: x, y: base, width: CGFloat(d * 4), height: CGFloat(d * 4)))
+        x += CGFloat(d * 4 + gap)
+      }
+      top -= CGFloat(rowH)
+    }
+    label(g, "In a row, as in the Dock: 128 / 64 / 32 / 16 at 1:1", at: CGPoint(x: ox, y: top - 30), size: 18, color: ink, bold: true)
+    let base = top - CGFloat(labelH) - 128
+    var x = ox
+    for d in stripSizes {
+      for (_, draw) in strip {
+        g.interpolationQuality = .high
+        draw(g, d, CGRect(x: x, y: base, width: CGFloat(d), height: CGFloat(d)))
+        x += CGFloat(d + max(4, d / 8))
+      }
+      x += CGFloat(gap)
+    }
+  }
+  writePNG(g.makeImage()!, url)
+}
+
 func writeDocs(_ dir: URL) {
   try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   for c in Candidate.allCases {
@@ -2407,6 +2498,7 @@ func writeDocs(_ dir: URL) {
   writePNG(chosen.image(dark, px: 1024), dir.appendingPathComponent("appearance-dark.png"))
   writePNG(chosen.image(tinted, px: 1024), dir.appendingPathComponent("appearance-tinted.png"))
   writeSheet(dir.appendingPathComponent("sheet.png"))
+  writeChosen(dir.appendingPathComponent("chosen.png"))
   writeOptions(dir.appendingPathComponent("options.png"))
   writeMinimal(dir)
   writeWoven(dir.appendingPathComponent("woven.png"))
@@ -2434,6 +2526,9 @@ while !args.isEmpty {
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     writeWoven(url.appendingPathComponent("woven.png"))
     writeWovenHero(url.appendingPathComponent("woven-hero.png"))
+  case "--chosen":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writeChosen(url.appendingPathComponent("chosen.png"))
   case "--pinwheel":
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     writePinwheel(url)
