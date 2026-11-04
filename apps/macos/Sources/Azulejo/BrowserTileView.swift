@@ -771,6 +771,8 @@ final class BrowserBanner: NSView {
 // MARK: - Find (⌘F)
 
 extension BrowserTileView: Findable {
+    var findBar: FindBar? { finder.bar }
+
     func beginFind() -> String? {
         if finder.bar.superview == nil { addSubview(finder.bar, positioned: .below, relativeTo: banner) }
         let opening = !finder.bar.isOpen

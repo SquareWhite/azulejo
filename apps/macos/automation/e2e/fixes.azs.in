@@ -80,7 +80,7 @@ key ctrl+1
 until tab 1 2000
 wait 500
 expect tile.find open
-remember responder
+expect responder terminal-find
 key cmd+f
 expect responder terminal-find
 key escape

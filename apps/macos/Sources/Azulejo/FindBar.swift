@@ -7,6 +7,12 @@ protocol Findable: AnyObject {
     /// Opens the tile's find bar (or its own filter) with the keyboard in it.
     /// Returns a message to flash when the tile has nothing to search.
     func beginFind() -> String?
+    /// The tile's find bar, if it has one (files tiles filter instead).
+    var findBar: FindBar? { get }
+}
+
+extension Findable {
+    var findBar: FindBar? { nil }
 }
 
 /// The find bar a tile shows under its header (⌘F): a field, "n of m",
@@ -19,6 +25,9 @@ protocol Findable: AnyObject {
 /// selects the query rather than toggling the sidebar. Everything else is
 /// typing. The field sits inside the tile, so the tile itself keeps refreshes
 /// (TileFocus) from taking the keyboard out of it; see `holdsKeyboard`.
+/// When something outside the tile takes the keyboard (the ⌘K menu, another
+/// tab, the sidebar) the bar remembers it had it (`keepsKeyboard`), and the
+/// tile gets it back into the bar when it's focused again (TileFocus).
 @MainActor
 final class FindBar: NSView {
     static let height = Design.Space.browserChromeHeight
@@ -94,6 +103,51 @@ final class FindBar: NSView {
         return window.firstResponder === editor
     }
 
+    /// The bar had the keyboard when it last left the tile, and nothing in
+    /// the tile (its terminal, page or address bar) has taken it since.
+    private(set) var keepsKeyboard = false
+    private var responderWatch: NSKeyValueObservation?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Off screen (another tab) the bar stops watching and remembers.
+        responderWatch = window?.observe(\.firstResponder) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.responderChanged() }
+        }
+    }
+
+    private func responderChanged() {
+        guard isOpen, let window else { return }
+        guard var view = window.firstResponder as? NSView else { return }
+        if let editor = view as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
+            view = field
+        }
+        if view.isDescendant(of: self) {
+            keepsKeyboard = true
+        } else if let tile = enclosingTile, view.isDescendant(of: tile) {
+            // The user moved on inside the tile: refocusing leaves that be.
+            keepsKeyboard = false
+        }
+    }
+
+    /// The tile card holding the bar.
+    private var enclosingTile: NSView? {
+        var view = superview
+        while let v = view {
+            if v is TileFrame { return v }
+            view = v.superview
+        }
+        return nil
+    }
+
+    /// Puts the keyboard back in the field, caret at the end of the query.
+    func takeKeyboard() {
+        guard let window, isOpen else { return }
+        if !holdsKeyboard { window.makeFirstResponder(field) }
+        let end = (field.stringValue as NSString).length
+        field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
+    }
+
     /// Shows the bar and puts the keyboard in the field, selecting what's
     /// there so typing replaces it.
     func open() {
@@ -107,6 +161,7 @@ final class FindBar: NSView {
     /// Hides the bar; the query stays for the next ⌘F.
     func hide() {
         isHidden = true
+        keepsKeyboard = false
     }
 
     /// "3 of 12", "No matches", or "" (nothing searched yet); `note` is

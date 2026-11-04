@@ -219,6 +219,7 @@ class TileFrame: NSView, TileView {
 
     func setFocused(_ focused: Bool) {
         header.focused = focused
+        if focused { TileFocus.returnToFindBar(of: content) }
         content.setFocused(focused)
     }
 

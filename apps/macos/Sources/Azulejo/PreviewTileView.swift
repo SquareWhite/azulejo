@@ -605,6 +605,8 @@ struct PreviewContent: Decodable {
 // MARK: - Find (⌘F)
 
 extension PreviewTileView: Findable {
+    var findBar: FindBar? { finder.bar }
+
     func beginFind() -> String? {
         guard shownMode == .html, webView != nil else {
             return shownMode == .native ? "Find works in rendered and source previews, not Quick Look"
