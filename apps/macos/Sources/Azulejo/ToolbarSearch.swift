@@ -25,7 +25,7 @@ final class ToolbarSearchView: NSView {
         layer?.cornerRadius = Design.Radius.searchField
         layer?.borderWidth = Design.Border.hairline
         magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.searchIcon, weight: .medium))
         magnifier.contentTintColor = Design.Color.searchText
         addSubview(magnifier)
         text.font = Design.Font.search
@@ -103,7 +103,7 @@ final class SidebarToggleButton: NSButton {
         self.handler = handler
         super.init(frame: .zero)
         image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle sidebar")?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.sidebarToggle, weight: .regular))
         isBordered = false
         contentTintColor = Design.Color.titlebarIcon
         refusesFirstResponder = true

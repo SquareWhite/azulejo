@@ -318,7 +318,7 @@ final class TileHeaderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         icon.image = NSImage(systemSymbolName: Self.symbol(kind), accessibilityDescription: kind.rawValue)
-        icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
+        icon.symbolConfiguration = .init(pointSize: Design.Symbol.header, weight: .regular)
         // Paths are fitted before they get here (`fitPath`); what's still too
         // long (a long title or command) loses its end.
         label.lineBreakMode = .byTruncatingTail

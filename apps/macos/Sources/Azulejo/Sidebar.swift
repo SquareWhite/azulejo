@@ -400,7 +400,7 @@ final class MachineHeader: NSView {
         if busy {
             // The app's own ring, not the system spinner, which can't take a
             // colour. It holds still with motion off or Reduce Motion on.
-            let image = Design.customSymbol("azulejo.ring", color: status.color, pointSize: 9)
+            let image = Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
             let spinner = StatusIconView(status, image: image, spins: true)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             spinner.setContentHuggingPriority(.required, for: .horizontal)
@@ -489,7 +489,7 @@ final class WorkspaceRow: NSView {
         setAccessibilityRole(.button)
         setAccessibilityLabel("\(ws.name), \(status.rawValue)")
 
-        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: 12))
+        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.sidebarRow))
         let name = NSTextField(labelWithString: ws.name)
         name.font = Design.Font.sidebarRow
         name.textColor = Design.Color.textPrimary
@@ -569,7 +569,7 @@ private final class AddRow: NSView {
         super.init(frame: .zero)
         let button = NSButton()
         button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New workspace on \(machine)")?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.sidebarAdd, weight: .regular))
         button.isBordered = false
         button.contentTintColor = Design.Color.textMuted
         button.refusesFirstResponder = true
@@ -679,7 +679,8 @@ private final class SegmentButton: NSButton {
         // The icon rides in the title, so icon and label centre together.
         let text = NSMutableAttributedString()
         if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular).applying(.init(paletteColors: [color]))) {
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.sidebarSegment, weight: .regular)
+                .applying(.init(paletteColors: [color]))) {
             let attachment = NSTextAttachment()
             attachment.image = image
             attachment.bounds = NSRect(x: 0, y: -1.5, width: image.size.width, height: image.size.height)
@@ -734,7 +735,7 @@ private final class SidebarFooter: NSView {
             item.orientation = .horizontal
             item.spacing = 4
             item.alignment = .centerY
-            let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: 11))
+            let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.footerStatus))
             let text = NSTextField(labelWithString: "\(count)")
             text.font = Design.Font.footerCount
             // Tinted by state, as in the mockup (idle stays grey).

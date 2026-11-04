@@ -58,7 +58,7 @@ final class FindBar: NSView {
         pill.wantsLayer = true
         pill.layer?.cornerRadius = Design.Radius.field
         icon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: "Find")
-        icon.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        icon.symbolConfiguration = .init(pointSize: Design.Symbol.fieldIcon, weight: .regular)
         icon.contentTintColor = Design.Color.textMuted
 
         field.placeholderString = "Find"
@@ -284,7 +284,7 @@ final class FindBar: NSView {
         let b = NSButton(image: image, target: nil, action: nil)
         b.bezelStyle = .accessoryBarAction
         b.isBordered = false
-        b.symbolConfiguration = .init(pointSize: 11, weight: .medium)
+        b.symbolConfiguration = .init(pointSize: Design.Symbol.findButton, weight: .medium)
         b.contentTintColor = Design.Color.textSecondary
         b.toolTip = tip
         return b

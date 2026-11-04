@@ -108,7 +108,7 @@ final class BrowserTileView: NSView, TileView {
 
         pill.wantsLayer = true
         pill.layer?.cornerRadius = Design.Radius.field
-        pillIcon.symbolConfiguration = .init(pointSize: 10, weight: .regular)
+        pillIcon.symbolConfiguration = .init(pointSize: Design.Symbol.fieldIcon, weight: .regular)
         pillIcon.contentTintColor = Design.Color.textMuted
         pill.addSubview(pillIcon)
         pill.addSubview(address)
@@ -550,7 +550,7 @@ final class BrowserTileView: NSView, TileView {
         let b = NSButton(image: image, target: nil, action: nil)
         b.bezelStyle = .accessoryBarAction
         b.isBordered = false
-        b.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        b.symbolConfiguration = .init(pointSize: Design.Symbol.toolbarButton, weight: .medium)
         b.contentTintColor = Design.Color.textSecondary
         b.toolTip = tip
         return b

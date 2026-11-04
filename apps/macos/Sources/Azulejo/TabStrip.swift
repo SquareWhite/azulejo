@@ -53,7 +53,7 @@ final class TabStripView: NSView {
         fade.endPoint = CGPoint(x: 1, y: 0.5)
         addSubview(scroll)
         add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "New tab")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: Design.Symbol.tabAdd, weight: .regular))
         add.isBordered = false
         add.contentTintColor = Design.Color.tabAdd
         add.refusesFirstResponder = true
@@ -284,8 +284,10 @@ final class TabButton: NSView {
     /// The state icon. Filled symbols (blocked) draw their mark in the strip's
     /// colour on the state colour, as in the mockup, not one flat disc.
     static func icon(_ status: Design.Status) -> NSImage? {
-        guard status.symbol.hasSuffix(".fill") else { return Design.StatusIcon.image(status, pointSize: 12) }
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        guard status.symbol.hasSuffix(".fill") else {
+            return Design.StatusIcon.image(status, pointSize: Design.Symbol.tabStatus)
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.tabStatus, weight: .bold)
             .applying(.init(paletteColors: [Design.Color.tabStrip, status.color]))
         return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
             .withSymbolConfiguration(config)

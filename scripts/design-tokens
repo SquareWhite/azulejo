@@ -104,6 +104,7 @@ def generate(tokens: dict) -> str:
     cgfloat_enum("Border", "Border widths, in points.", "border")
     cgfloat_enum("Alpha", "Opacities (0 to 1) applied on top of colour tokens.", "alpha")
     cgfloat_enum("Space", "Spacing and fixed sizes, in points.", "space")
+    cgfloat_enum("Symbol", "SF Symbol point sizes.", "symbol")
 
     # Fonts
     add("    /// UI fonts. Terminals use the user's Ghostty font, not these.")
@@ -193,7 +194,7 @@ def main() -> None:
         tokens = json.loads(TOKENS.read_text())
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
-    for section in ("color", "radius", "border", "alpha", "space", "font", "status", "icon", "motion"):
+    for section in ("color", "radius", "border", "alpha", "space", "symbol", "font", "status", "icon", "motion"):
         if section not in tokens:
             fail(f"missing section {section!r}")
     text = generate(tokens)
