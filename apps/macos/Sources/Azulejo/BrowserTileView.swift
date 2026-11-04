@@ -185,19 +185,29 @@ final class BrowserTileView: NSView, TileView {
         let h = Self.toolbarHeight
         toolbar.frame = NSRect(x: 0, y: 0, width: w, height: h)
         let button: CGFloat = 22, y = (h - button) / 2
+        reload.frame = NSRect(x: w - 10 - button, y: y, width: button, height: button)
+        let right = reload.frame.minX - 10
+        // Narrow tiles: back and forward give way whole (⌘[ and ⌘] still
+        // work) before the address gets less than `headerTitleMin`, and the
+        // address never runs under reload.
+        let arrows = right - (10 + 2 * button + 4 + 10) >= Design.Space.headerTitleMin
+        back.isHidden = !arrows
+        forward.isHidden = !arrows
         back.frame = NSRect(x: 10, y: y, width: button, height: button)
         forward.frame = NSRect(x: 10 + button + 4, y: y, width: button, height: button)
-        reload.frame = NSRect(x: w - 10 - button, y: y, width: button, height: button)
         let fieldH = Design.Space.browserFieldHeight
-        let left = forward.frame.maxX + 10, right = reload.frame.minX - 10
-        pill.frame = NSRect(x: left, y: (h - fieldH) / 2, width: max(40, right - left), height: fieldH)
+        let left = arrows ? forward.frame.maxX + 10 : 10
+        pill.frame = NSRect(x: left, y: (h - fieldH) / 2, width: max(0, right - left), height: fieldH)
         layoutPill()
         let find = finder.bar.isOpen ? FindBar.height : 0
         finder.bar.frame = NSRect(x: 0, y: h, width: w, height: FindBar.height)
-        webView.frame = NSRect(x: 0, y: h + find, width: w, height: max(0, bounds.height - h - find))
-        layoutProgress()
+        // The banner gets its own row and the page moves down for it, so it
+        // never covers the page's heading (V11).
         let bh = Design.Space.browserBannerHeight
         banner.frame = NSRect(x: 8, y: h + find + 8, width: max(0, w - 16), height: bh)
+        let notice = banner.isHidden ? 0 : bh + 16
+        webView.frame = NSRect(x: 0, y: h + find + notice, width: w, height: max(0, bounds.height - h - find - notice))
+        layoutProgress()
     }
 
     /// Mockup: globe (or lock) and address centred in the pill; while
@@ -206,6 +216,12 @@ final class BrowserTileView: NSView, TileView {
         let pw = pill.bounds.width, ph = pill.bounds.height
         let icon: CGFloat = 12, gap: CGFloat = 6, margin: CGFloat = 8
         let textH = address.intrinsicContentSize.height
+        // Too narrow for the icon and a few letters: the address alone.
+        pillIcon.isHidden = pw - 2 * margin - icon - gap < 24
+        if pillIcon.isHidden {
+            address.frame = NSRect(x: margin / 2, y: (ph - textH) / 2, width: max(0, pw - margin), height: textH)
+            return
+        }
         if isEditingAddress {
             pillIcon.frame = NSRect(x: margin, y: (ph - icon) / 2, width: icon, height: icon)
             address.frame = NSRect(x: margin + icon + gap, y: (ph - textH) / 2,
@@ -235,9 +251,12 @@ final class BrowserTileView: NSView, TileView {
     private var currentURL: String { failedURL ?? webView.url?.absoluteString ?? coreURL ?? "" }
 
     /// Sets the address bar's text: the full URL while editing, else the
-    /// short form, with a lock for https.
+    /// short form, with a lock once an https page has loaded securely. A load
+    /// still under way, or one that failed (a host that never answered),
+    /// gets the plain globe.
     private func showAddress(_ url: String) {
-        let secure = url.hasPrefix("https://")
+        let secure = failedURL == nil && url.hasPrefix("https://")
+            && webView.url?.absoluteString == url && webView.hasOnlySecureContent
         pillIcon.image = NSImage(systemSymbolName: secure ? "lock.fill" : "globe",
                                  accessibilityDescription: secure ? "Secure" : "Address")
         address.stringValue = isEditingAddress ? url : Self.display(url)
@@ -428,6 +447,9 @@ final class BrowserTileView: NSView, TileView {
             webView.observe(\.isLoading) { [weak self] _, _ in MainActor.assumeIsolated { self?.refreshControls() } },
             webView.observe(\.canGoBack) { [weak self] _, _ in MainActor.assumeIsolated { self?.refreshControls() } },
             webView.observe(\.canGoForward) { [weak self] _, _ in MainActor.assumeIsolated { self?.refreshControls() } },
+            webView.observe(\.hasOnlySecureContent) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.navigated() }
+            },
         ]
     }
 
@@ -463,7 +485,10 @@ final class BrowserTileView: NSView, TileView {
         let url = webView.url?.absoluteString
         // about:blank while a new tile waits for an address isn't worth keeping.
         let keepURL = url.flatMap { $0 == "about:blank" ? nil : $0 }
-        let title = webView.title.flatMap { $0.isEmpty ? nil : $0 }
+        // After a failed load the page still showing is the old one, but the
+        // tile (and its tab) should say what failed (V11): the host, or
+        // "Can't load page". The URL stays the last good one.
+        let title = failedURL.map(Self.failedTitle) ?? webView.title.flatMap { $0.isEmpty ? nil : $0 }
         guard keepURL != reported.url || title != reported.title else { return }
         var params: [String: Any] = ["tile": tileID, "page_title": title ?? ""]
         if let keepURL {
@@ -481,6 +506,11 @@ final class BrowserTileView: NSView, TileView {
     }
 
     // MARK: Helpers
+
+    /// The tile's title after a failed load.
+    static func failedTitle(_ url: String) -> String {
+        URL(string: url)?.host().flatMap { $0.isEmpty ? nil : $0 } ?? "Can't load page"
+    }
 
     /// The workspace holding a tile, for its website data store.
     static func workspace(of tile: String, in session: SessionModel?) -> String? {
@@ -567,7 +597,10 @@ extension BrowserTileView: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegat
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         banner.hide()
-        failedURL = nil
+        if failedURL != nil {
+            failedURL = nil
+            scheduleReport()
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -588,6 +621,7 @@ extension BrowserTileView: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegat
             ?? ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String
         if !isEditingAddress { showAddress(currentURL) }
         showBanner(ns.localizedDescription, .error, action: ("Retry", { [weak self] in self?.retryOrReload() }))
+        scheduleReport()
     }
 
     /// Crash isolation: the page's web content process died. The tile and the
@@ -729,6 +763,11 @@ final class BrowserBanner: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Showing or hiding moves the page (the banner has its own row).
+    override var isHidden: Bool {
+        didSet { if isHidden != oldValue { superview?.needsLayout = true } }
+    }
+
     var text: String { label.stringValue }
 
     func show(_ text: String, style: Style, action: (String, () -> Void)?) {
@@ -850,6 +889,10 @@ extension BrowserTileView: AutomatableTile {
             "tile.address": address.stringValue.isEmpty ? "-" : address.stringValue,
             "tile.core_url": coreURL ?? "-",
             "tile.title": webView.title.flatMap { $0.isEmpty ? nil : $0 } ?? "-",
+            "tile.reported_title": reported.title ?? "-",
+            "tile.address_icon": pillIcon.isHidden ? "-"
+                : pillIcon.image?.accessibilityDescription == "Secure" ? "lock" : "globe",
+            "tile.page_top": "\(Int(webView.frame.minY))",
             "tile.loading": webView.isLoading ? "yes" : "no",
             "tile.back": webView.canGoBack ? "yes" : "no",
             "tile.forward": webView.canGoForward ? "yes" : "no",
