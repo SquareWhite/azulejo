@@ -149,6 +149,7 @@ class TileFrame: NSView, TileView {
     func stopCornerMotion() {
         corners.removeAnimation(forKey: Self.cornerMotionKey)
         header.layer?.removeAnimation(forKey: Self.cornerMotionKey)
+        header.badge?.layer?.removeAnimation(forKey: Self.cornerMotionKey)
     }
 
     /// The header strip is chrome, not content: it rides the top of the
@@ -183,6 +184,26 @@ class TileFrame: NSView, TileView {
         }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.cornerMotionKey)
+        animateBadge(from: from, to: to, width: w, centred: centred, duration: duration, holdAtEnd: holdAtEnd)
+    }
+
+    /// The badge keeps to the visible strip's right end. The strip's bounds
+    /// shift to keep a centred title centred, which would carry the badge
+    /// past the clip; this moves it back by as much.
+    private func animateBadge(from: CGRect, to: CGRect, width w: CGFloat, centred: Bool,
+                              duration: CFTimeInterval, holdAtEnd: Bool) {
+        guard let layer = header.badge?.layer else { return }
+        func shift(_ clip: CGRect) -> CGFloat { centred ? (clip.width - w) / 2 : clip.width - w }
+        let x = layer.position.x
+        let move = CABasicAnimation(keyPath: "position.x")
+        move.fromValue = x + shift(from)
+        move.toValue = x + shift(to)
+        if holdAtEnd {
+            move.fillMode = .forwards
+            move.isRemovedOnCompletion = false
+        }
+        Motion.configure(move, duration: duration)
+        layer.add(move, forKey: Self.cornerMotionKey)
     }
 
     private static let cornerMotionKey = "azj.corners"
@@ -335,11 +356,19 @@ final class TileHeaderView: NSView {
         render()
     }
 
-    /// Room kept clear at the strip's right end for something drawn over it
-    /// (the agent badge, which the attention overlay puts in the strip).
-    var trailingInset: CGFloat = 0 {
-        didSet { if trailingInset != oldValue { needsLayout = true } }
+    /// The agent badge (the attention overlay makes and fills it) at the
+    /// strip's right end; the title keeps clear of it. A subview, so it rides
+    /// with the strip when the strip follows a crop clip mid-motion (F6).
+    var badge: NSView? {
+        didSet {
+            if oldValue !== badge, oldValue?.superview === self { oldValue?.removeFromSuperview() }
+            if let badge, badge.superview !== self { addSubview(badge) }
+            needsLayout = true
+        }
     }
+
+    /// Room kept clear at the strip's right end for the badge.
+    private var trailingInset: CGFloat = 0
 
     /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
     private(set) var shownSubtitle = ""
@@ -388,6 +417,13 @@ final class TileHeaderView: NSView {
         super.layout()
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
+        trailingInset = 0
+        if let badge {
+            let size = badge.fittingSize, inset = Design.Space.badgeInset
+            badge.frame = NSRect(x: bounds.width - inset - size.width, y: (h - size.height) / 2,
+                                 width: size.width, height: size.height)
+            trailingInset = size.width + inset
+        }
         var right = bounds.width - margin - trailingInset
         if let accessory {
             // The tile's controls show whole or not at all: below
