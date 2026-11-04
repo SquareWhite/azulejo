@@ -130,6 +130,20 @@ the maintainer settled the designer question: **no outline round the focused til
 
 Changing the strength or the fill is a one-line edit in `tokens.json`.
 
+### Themes (Nov 4, 2026)
+
+the maintainer asked for themes. The look above is **Atom One Dark**, the default, and nothing in it changed; beside it ship **Atom One Light** (the official Atom One Light palette), **macOS Dark** and **macOS Light** (system colours that follow the accent colour, a vibrancy sidebar card). Each theme also picks its preview syntax colours and a terminal palette. [docs/themes.md](../themes.md) covers the config, user themes, the terminal colour precedence and every token's value per theme.
+
+| Atom One Dark | Atom One Light |
+| --- | --- |
+| `theme-atom-one-dark.png` (local capture) | `theme-atom-one-light.png` (local capture) |
+| **macOS Dark** | **macOS Light** |
+| `theme-macos-dark.png` (local capture) | `theme-macos-light.png` (local capture) |
+
+The captures are the app's own render of the mockup scene (`apps/macos/automation/themes.sh --docs`), so two things differ from the screen: the traffic lights come out white (a background window's grey lights are drawn with plus-lighter, which washes out on a light window), and the macOS themes' sidebar card shows its material's flat fallback rather than the blurred desktop. The browser tile is blank in all four: WebKit draws the page out of process and the render can't include it.
+
+The focus dim works the same in every theme: unfocused tiles fade towards the theme's `dimFill` at 25 %. The Atom themes and macOS Light fade towards their window colour; macOS Dark fades towards black, because its window colour (`underPageBackgroundColor`, #282828) is lighter than its tiles.
+
 ## What the mockup needs, against the plan
 
 Status as of Nov 3, 2026, after the maintainer's decisions. "Visual" means M2.5 only; "functional" means something the core or the shell can't do yet.

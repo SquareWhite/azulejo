@@ -8,7 +8,8 @@ For each `capture NAME` in OUT_DIR/automation.log, reads the app's render
 outside every tile's on-screen frame and outside the sidebar card, as logged
 at that instant ("frames NAME: …", "chrome NAME: container=… card=…").
 Content drawn past a card's clip (a snapshot, a header, a ghost) shows up
-here. The scan covers the whole window width, so tiles sliding in or out
+here. "Bright" is relative to the window colour (the commonest colour outside
+the cards), so a light theme's gaps count the same way as a dark one's. The scan covers the whole window width, so tiles sliding in or out
 with the sidebar are checked too. Prints one line per capture and a total;
 exits 1 when any capture has stray pixels.
 
@@ -50,8 +51,8 @@ def main():
             continue
         px = im.load()
         width = im.size[0] / scale
-        bad, first = 0, None
         step = 1 / scale
+        outside = []
         y = cy + 2
         while y < cy + ch - 2:
             x = 2.0
@@ -61,13 +62,21 @@ def main():
                 inside = any(rx - 2 <= tx <= rx + rw + 2 and ry - 2 <= ty <= ry + rh + 2
                              for rx, ry, rw, rh in allowed)
                 if not inside:
-                    r, g, b = px[int(x * scale), int(y * scale)]
-                    if r + g + b > 130:
-                        bad += 1
-                        if first is None:
-                            first = (round(x), round(y), (r, g, b))
+                    outside.append((round(x), round(y), px[int(x * scale), int(y * scale)]))
                 x += step
             y += step
+        # The window colour; a dark theme's #1b1d23 (sum 59) gives the old
+        # test (sum > 130).
+        counts = {}
+        for _, _, c in outside:
+            counts[c] = counts.get(c, 0) + 1
+        back = sum(max(counts, key=counts.get)) if counts else 59
+        bad, first = 0, None
+        for x, y, (r, g, b) in outside:
+            if abs(r + g + b - back) > 71:
+                bad += 1
+                if first is None:
+                    first = (x, y, (r, g, b))
         checked += 1
         total += bad
         print(f"{name:28s} outside-bright={bad} first={first}")

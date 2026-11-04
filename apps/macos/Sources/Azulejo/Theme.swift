@@ -245,9 +245,11 @@ enum Theme {
     private static var applied = false
 
     /// Makes `spec` the current theme everywhere.
-    static func set(_ spec: ThemeSpec, terminalsUseTheme: Bool) {
+    /// `force`: apply even when nothing in the theme changed (the system's
+    /// colours did: the accent colour, or the system appearance).
+    static func set(_ spec: ThemeSpec, terminalsUseTheme: Bool, force: Bool = false) {
         let palette = terminalsUseTheme ? spec.terminal : nil
-        if applied, spec == current, palette == terminal { return }
+        if applied, !force, spec == current, palette == terminal { return }
         let start = CACurrentMediaTime()
         applied = true
         current = spec
@@ -287,6 +289,18 @@ enum Theme {
             forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main
         ) { _ in
             MainActor.assumeIsolated { if Theme.choice.auto, Theme.systemOverride == nil { Theme.refresh() } }
+        }
+        // The accent colour (or another system colour) changed: system-colour
+        // tokens resolve to new values, so every snapshot is taken again.
+        NotificationCenter.default.addObserver(
+            forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                let uses = Theme.current.colors.values.contains {
+                    if case .system = $0 { return true } else { return false }
+                }
+                if uses { Theme.set(Theme.wanted, terminalsUseTheme: Theme.choice.terminalsUseTheme, force: true) }
+            }
         }
     }
 
