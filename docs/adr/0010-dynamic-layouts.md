@@ -93,7 +93,7 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
 
 - Tabs adopted from herdr (ADR 0008) open as **manual**: their geometry mirrors herdr exactly, which a dynamic layout can't promise.
 - Panes later split off in herdr (ADR 0009): manual tab → placed beside the sibling, as today; dynamic tab → inserted per `[layout] insert`.
-- Nothing here changes herdr's own layout. Azulejo still never calls `layout.apply` on live tabs (ADR 0002).
+- Nothing here changes herdr's own layout. Azulejo still never calls `layout.apply` on live tabs (ADR 0002). *Amended by [ADR 0012](0012-mirror-layout-into-herdr.md) (Nov 4, 2026): a dynamic tab's frozen tree is mirrored into herdr, Monocle as herdr's zoom; changes made in herdr are absorbed (order, ratio, weights) or freeze the tab to manual.*
 
 ### 6. Layout files (2.4)
 

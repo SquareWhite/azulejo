@@ -542,7 +542,12 @@ fn herdr_events_end_close_or_rebind_tiles() {
         pane_id: herdr::PaneId(refs[0].pane_id.clone()),
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
-    // Closed in herdr: tab and pane. The tiles go.
+    // Closed in herdr: tab and pane. The tiles go. (A closed tab's panes are
+    // gone from herdr by the time it says so; the core checks, since a tab
+    // also closes when its last pane moves away.)
+    fake.state()
+        .panes
+        .retain(|p| p.terminal_id.0 != refs[1].terminal_id);
     fake.send(herdr::StreamItem::Event(E::TabClosed {
         tab_id: herdr::TabId(refs[1].tab_id.clone()),
         workspace_id: herdr::WorkspaceId("w1".into()),

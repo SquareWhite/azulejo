@@ -17,9 +17,9 @@ use crate::error::{Error, Result};
 use crate::event::Subscription;
 use crate::stream::EventStream;
 use crate::types::{
-    EnsuredWorkspace, PaneId, PaneInfo, ProcessInfo, ReadResult, ReadSource, Resolved, ServerInfo,
-    Snapshot, Survey, TabId, TabLayout, TerminalId, TerminalRef, TerminalSpec, WorkspaceId,
-    WorkspaceInfo, WorkspaceSpec,
+    EnsuredWorkspace, MoveTo, Moved, PaneId, PaneInfo, ProcessInfo, ReadResult, ReadSource,
+    Resolved, ServerInfo, Snapshot, SplitSpec, Survey, TabId, TabLayout, TerminalId, TerminalRef,
+    TerminalSpec, WorkspaceId, WorkspaceInfo, WorkspaceSpec,
 };
 use crate::wire::{self, method};
 
@@ -297,6 +297,107 @@ impl Client {
     /// last pane goes, and the workspace when its last tab goes.
     pub async fn kill_terminal(&self, pane: &PaneId) -> Result<()> {
         self.call(method::PANE_CLOSE, json!({ "pane_id": pane }))
+            .await
+            .map(drop)
+    }
+
+    // ---- layout (ADR 0012) ---------------------------------------------------
+
+    /// A terminal made by splitting a pane of an existing tab, with the
+    /// tile's env vars. The new pane is the split's second child.
+    pub async fn split_terminal(&self, spec: &SplitSpec) -> Result<TerminalRef> {
+        let r = self
+            .call(
+                method::PANE_SPLIT,
+                json!({
+                    "target_pane_id": spec.target,
+                    "direction": spec.direction,
+                    "ratio": spec.ratio,
+                    "cwd": spec.cwd,
+                    "env": env_map(&spec.env),
+                    "focus": false,
+                }),
+            )
+            .await?;
+        let pane: PaneInfo = wire::field(&r, "pane")?;
+        Ok(pane.terminal_ref())
+    }
+
+    /// Moves a pane to another tab or a new one. Its process, terminal ID
+    /// and any attached client stay; herdr closes a tab its last pane left.
+    /// A refusal (`same_tab`, `zoomed_tab`) isn't an error: see
+    /// [`Moved::changed`].
+    pub async fn move_pane(&self, pane: &PaneId, to: &MoveTo) -> Result<Moved> {
+        let destination = match to {
+            MoveTo::Tab {
+                tab,
+                split,
+                target,
+                ratio,
+            } => json!({
+                "type": "tab",
+                "tab_id": tab,
+                "split": split,
+                "target_pane_id": target,
+                "ratio": ratio,
+            }),
+            MoveTo::NewTab { workspace, label } => json!({
+                "type": "new_tab",
+                "workspace_id": workspace,
+                "label": label,
+            }),
+        };
+        let r = self
+            .call(
+                method::PANE_MOVE,
+                json!({ "pane_id": pane, "destination": destination, "focus": false }),
+            )
+            .await?;
+        let result = r
+            .get("move_result")
+            .ok_or_else(|| Error::Protocol(format!("pane.move: {}", wire::short(&r))))?;
+        Ok(Moved {
+            pane: wire::field(result, "pane")?,
+            changed: result.get("changed").and_then(Value::as_bool) == Some(true),
+            reason: result
+                .get("reason")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        })
+    }
+
+    /// Swaps two panes of one tab; the split ratios stay where they are.
+    pub async fn swap_panes(&self, a: &PaneId, b: &PaneId) -> Result<()> {
+        self.call(
+            method::PANE_SWAP,
+            json!({ "source_pane_id": a, "target_pane_id": b }),
+        )
+        .await
+        .map(drop)
+    }
+
+    /// Sets one split's ratio (its first child's share). `path` picks the
+    /// split from the root: `false` is the first child, `true` the second.
+    /// Returns the tab's tree after the change.
+    pub async fn set_split_ratio(
+        &self,
+        tab: &TabId,
+        path: &[bool],
+        ratio: f64,
+    ) -> Result<TabLayout> {
+        let r = self
+            .call(
+                method::LAYOUT_SET_SPLIT_RATIO,
+                json!({ "tab_id": tab, "path": path, "ratio": ratio }),
+            )
+            .await?;
+        wire::field(&r, "layout")
+    }
+
+    /// Zooms `pane` (and focuses it) or unzooms its tab.
+    pub async fn zoom_pane(&self, pane: &PaneId, on: bool) -> Result<()> {
+        let mode = if on { "on" } else { "off" };
+        self.call(method::PANE_ZOOM, json!({ "pane_id": pane, "mode": mode }))
             .await
             .map(drop)
     }

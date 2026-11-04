@@ -1,4 +1,5 @@
-//! Keeps terminal tiles and herdr in step (ADR 0002).
+//! Keeps terminal tiles and herdr in step (ADR 0002, 0012; the layout
+//! mirror itself is [`crate::mirror`]).
 //!
 //! The engine stays pure: [`effects`] turns events into herdr work, a worker
 //! runs that work through a [`HerdrPort`] one item at a time, and the results
@@ -18,6 +19,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use azulejo_herdr as herdr;
 use azulejo_model::{
@@ -130,6 +132,40 @@ pub trait HerdrPort: Send + Sync + 'static {
     fn socket(&self) -> Option<std::path::PathBuf> {
         None
     }
+
+    // ----- layout mirroring (ADR 0012) -----
+
+    /// A terminal split off a pane of an existing tab. A port without it
+    /// fails, and the caller makes a tab instead.
+    fn split_terminal(
+        &self,
+        spec: herdr::SplitSpec,
+    ) -> impl Future<Output = Result<herdr::TerminalRef, String>> + Send {
+        let _ = spec;
+        async { Err(crate::meta::UNSUPPORTED.to_owned()) }
+    }
+
+    /// A herdr tab's split tree.
+    fn layout_export(
+        &self,
+        tab: String,
+    ) -> impl Future<Output = Result<herdr::TabLayout, String>> + Send {
+        let _ = tab;
+        async { Err(crate::meta::UNSUPPORTED.to_owned()) }
+    }
+
+    /// Makes a herdr tab look like `target`, never closing a pane.
+    fn mirror(
+        &self,
+        target: herdr::MirrorTarget,
+    ) -> impl Future<Output = Result<herdr::MirrorOutcome, herdr::MirrorError>> + Send {
+        let _ = target;
+        async {
+            Err(herdr::MirrorError::Herdr(herdr::Error::Protocol(
+                crate::meta::UNSUPPORTED.to_owned(),
+            )))
+        }
+    }
 }
 
 impl HerdrPort for herdr::Client {
@@ -230,6 +266,25 @@ impl HerdrPort for herdr::Client {
         self.socket_path().map(std::path::Path::to_path_buf)
     }
 
+    async fn split_terminal(&self, spec: herdr::SplitSpec) -> Result<herdr::TerminalRef, String> {
+        herdr::Client::split_terminal(self, &spec)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn layout_export(&self, tab: String) -> Result<herdr::TabLayout, String> {
+        herdr::Client::layout_export(self, &herdr::TabId(tab))
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn mirror(
+        &self,
+        target: herdr::MirrorTarget,
+    ) -> Result<herdr::MirrorOutcome, herdr::MirrorError> {
+        herdr::Client::mirror(self, &target).await
+    }
+
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem> {
         forward(herdr::Client::subscribe(
             self,
@@ -279,6 +334,10 @@ pub enum Effect {
         env: Vec<(String, String)>,
         /// A line typed into the new pane's shell (a layout file's `command`).
         command: Option<String>,
+        /// Where to split the pane off while mirroring the layout (ADR
+        /// 0012): the pane beside the tile in its tab. `None` (or mirroring
+        /// off) gives the terminal a herdr tab of its own.
+        split: Option<crate::mirror::SplitFrom>,
     },
     /// Kill a closed tile's pane (F14: only when the user asked to).
     KillTerminal { pane_id: String },
@@ -288,6 +347,10 @@ pub enum Effect {
         stored: HerdrRef,
         herdr_workspace: Option<String>,
     },
+    /// A herdr tab a tile's pane was in closed. herdr reports that before
+    /// the `pane_moved` of a pane moved out of it (ADR 0012), so check: a
+    /// pane that's gone closes its tile, a moved one rebinds it.
+    ConfirmClosed { tile: TileId, stored: HerdrRef },
     /// Read what herdr runs, to adopt tabs nobody here knows (ADR 0008).
     Survey,
     /// Read every pane's agent status, and nothing else: herdr's agent
@@ -366,6 +429,12 @@ pub enum Internal {
     /// The `u64` is the link's connection generation when the check started;
     /// a newer one means the news is stale.
     Announce(Machine, u64),
+    /// Someone changed a herdr tab's layout (the TUI, a phone): the tab
+    /// showing it follows (ADR 0012).
+    MirrorPulled {
+        machine: Machine,
+        layout: Box<herdr::TabLayout>,
+    },
 }
 
 impl Engine {
@@ -509,6 +578,14 @@ impl Engine {
             }
             // The driver handles it; nothing in the session changes.
             Internal::Announce(..) => Vec::new(),
+            Internal::MirrorPulled { machine, layout } => {
+                let before = self.session.clone();
+                if !crate::mirror::absorb(&mut self.session, &machine, &layout) {
+                    return Vec::new();
+                }
+                debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                self.changes_since(&before)
+            }
             Internal::PaneInfo {
                 machine,
                 pane_id,
@@ -691,6 +768,7 @@ fn create_effect(session: &Session, tile: &Tile) -> Option<(Machine, Effect)> {
             command: command
                 .as_deref()
                 .and_then(crate::layout_file::command_line),
+            split: crate::mirror::split_for(session, tile.id),
         },
     ))
 }
@@ -784,9 +862,18 @@ pub fn reconcile(
             E::PaneClosed { pane_id, .. } => {
                 close_where(&mut reaction, &|h| h.pane_id == pane_id.as_str());
             }
-            // Closing a tab reports only the tab, not its panes.
+            // Closing a tab reports only the tab, not its panes. A tab also
+            // closes when its last pane moves to another, and herdr says
+            // so before `pane_moved`: check each pane before closing.
             E::TabClosed { tab_id, .. } => {
-                close_where(&mut reaction, &|h| h.tab_id == tab_id.as_str());
+                for (_, tile, h) in bound() {
+                    if h.tab_id == tab_id.as_str() {
+                        reaction.effects.push(Effect::ConfirmClosed {
+                            tile,
+                            stored: h.clone(),
+                        });
+                    }
+                }
             }
             E::WorkspaceClosed { workspace_id } => {
                 reaction.internals.push(Internal::HerdrWorkspaceClosed {
@@ -1027,12 +1114,15 @@ pub(crate) async fn run_worker<P: HerdrPort>(
     machine: Machine,
     port: Arc<P>,
     mut effects: mpsc::UnboundedReceiver<Effect>,
-    api_socket: String,
+    (api_socket, mirror): (String, Arc<AtomicBool>),
     out: impl Fn(Internal),
     log: impl Fn(String),
 ) {
     // App workspace → herdr workspace, ahead of the engine's own copy.
     let mut workspaces: HashMap<WorkspaceId, String> = HashMap::new();
+    // Panes made here, by tile: a tile split off one made just before finds
+    // it here before the engine has bound it.
+    let mut made: HashMap<TileId, String> = HashMap::new();
     while let Some(effect) = effects.recv().await {
         match effect {
             Effect::CreateTerminal {
@@ -1044,6 +1134,7 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 label,
                 env: extra_env,
                 command,
+                split,
             } => {
                 let mut env = extra_env;
                 env.extend(
@@ -1085,17 +1176,47 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     // A new workspace's first pane already carries this tile's env.
                     Some(terminal) => Ok(terminal),
                     None => {
-                        port.create_terminal(herdr::TerminalSpec {
-                            workspace_id: herdr::WorkspaceId(herdr_ws),
-                            label,
-                            cwd,
-                            env,
-                        })
-                        .await
+                        // Mirroring (ADR 0012): split off the pane beside it,
+                        // so it's born in place. If that fails (the pane
+                        // just went), a tab of its own; the next push moves
+                        // it in.
+                        let split =
+                            split
+                                .filter(|_| mirror.load(Ordering::Relaxed))
+                                .and_then(|s| {
+                                    let pane = s.pane.or_else(|| made.get(&s.tile).cloned())?;
+                                    Some(herdr::SplitSpec {
+                                        target: herdr::PaneId(pane),
+                                        direction: s.direction,
+                                        ratio: Some(s.ratio),
+                                        cwd: cwd.clone(),
+                                        env: env.clone(),
+                                    })
+                                });
+                        let split_off = match split {
+                            Some(spec) => port.split_terminal(spec).await.ok(),
+                            None => None,
+                        };
+                        match split_off {
+                            Some(t) => Ok(t),
+                            None => {
+                                port.create_terminal(herdr::TerminalSpec {
+                                    workspace_id: herdr::WorkspaceId(herdr_ws),
+                                    label,
+                                    cwd,
+                                    env,
+                                })
+                                .await
+                            }
+                        }
                     }
                 };
                 match terminal {
                     Ok(t) => {
+                        if made.len() > 4096 {
+                            made.clear();
+                        }
+                        made.insert(tile, t.pane_id.0.clone());
                         // herdr can't replace the shell, so the command is
                         // typed in; the PTY holds it until the shell reads.
                         if let Some(line) = command {
@@ -1131,6 +1252,17 @@ pub(crate) async fn run_worker<P: HerdrPort>(
             } => {
                 let query = reresolve_query(&stored, herdr_workspace);
                 match port.reresolve(query).await {
+                    Ok(resolved) => {
+                        if let Some(internal) = resolved_internal(&machine, tile, resolved) {
+                            out(internal);
+                        }
+                    }
+                    Err(e) => log(format!("herdr: checking tile {tile}: {e}")),
+                }
+            }
+            Effect::ConfirmClosed { tile, stored } => {
+                match port.reresolve(reresolve_query(&stored, None)).await {
+                    Ok(herdr::Resolved::Gone) => out(Internal::ClosedElsewhere { tile }),
                     Ok(resolved) => {
                         if let Some(internal) = resolved_internal(&machine, tile, resolved) {
                             out(internal);

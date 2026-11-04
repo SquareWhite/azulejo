@@ -26,7 +26,12 @@ pub(crate) mod method {
     pub const PANE_READ: &str = "pane.read";
     pub const PANE_SCROLL: &str = "pane.scroll";
     pub const PANE_PROCESS_INFO: &str = "pane.process_info";
+    pub const PANE_SPLIT: &str = "pane.split";
+    pub const PANE_MOVE: &str = "pane.move";
+    pub const PANE_SWAP: &str = "pane.swap";
+    pub const PANE_ZOOM: &str = "pane.zoom";
     pub const LAYOUT_EXPORT: &str = "layout.export";
+    pub const LAYOUT_SET_SPLIT_RATIO: &str = "layout.set_split_ratio";
     pub const EVENTS_SUBSCRIBE: &str = "events.subscribe";
 }
 
