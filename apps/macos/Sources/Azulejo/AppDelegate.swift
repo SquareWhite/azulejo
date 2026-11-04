@@ -48,13 +48,19 @@ final class AppController: NSObject, NSApplicationDelegate {
             Perf.noteEvent(json, moving: MotionStats.shared.moving)
             let start = CACurrentMediaTime()
             defer { Perf.record("event.route", start, CACurrentMediaTime()) }
+            if json.contains("\"event\":\"machine") || json.contains("\"config.reloaded\"") {
+                self?.machinesStale = true
+            }
+            // A machine connected: the core has rebound its tiles to the panes
+            // herdr has now (a herdr restart replaces terminals). Take those
+            // in before terminals reattach, so none attaches to a dead one.
+            if json.contains("\"herdr.status\"") || json.contains("\"machine.status\"") {
+                self?.refresh()
+            }
             PreviewTileView.route(json)
             FilesTileView.route(json)
             TerminalTileView.route(json)
             if json.contains("\"config.reloaded\""), let core = self?.core { Motion.load(core.animation()) }
-            if json.contains("\"event\":\"machine") || json.contains("\"config.reloaded\"") {
-                self?.machinesStale = true
-            }
             self?.routeConfigReload(json)
             // Events trail the command that already refreshed the UI (a
             // layout change arrives as `layout.changed` just after); while
@@ -192,9 +198,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         var machinesChanged = false
         if machinesStale {
             machinesStale = false
-            if let list = core.fetch("machines.list", field: "machines", as: [MachineModel].self), list != machines {
-                machines = list
-                machinesChanged = true
+            if let list = core.fetch("machines.list", field: "machines", as: [MachineModel].self) {
+                TerminalTileView.noteMachines(list)
+                if list != machines {
+                    machines = list
+                    machinesChanged = true
+                }
             }
         }
         guard let fetched = core.fetchRaw(
