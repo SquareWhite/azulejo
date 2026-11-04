@@ -210,8 +210,29 @@ final class WindowController: NSObject, NSWindowDelegate {
     // MARK: HUD
 
     /// Shows `text` briefly, in sentence case: core messages start lower
-    /// case because the CLI prints them after an error code.
-    func flash(_ text: String) { hud.show(text.prefix(1).uppercased() + text.dropFirst(), sticky: false) }
+    /// case because the CLI prints them after an error code. Every flash is
+    /// logged and counted (automation: `hud.flashes`, `hud.last`).
+    func flash(_ text: String) {
+        let shown = text.prefix(1).uppercased() + text.dropFirst()
+        flashes += 1
+        lastFlash = shown
+        app?.log("hud: flash \"\(shown)\"")
+        hud.show(shown, sticky: false)
+    }
+
+    /// A failed command a key, menu or quick open asked for: flashed,
+    /// unless there was simply nothing there (focus or swap past the edge,
+    /// a resize with no divider), which does nothing, silently.
+    func report(_ error: CoreError) {
+        if error.nothingThere {
+            app?.log("hud: quiet, \(error)")
+            return
+        }
+        flash(error.message)
+    }
+
+    private(set) var flashes = 0
+    private(set) var lastFlash = ""
     func setStatus(_ text: String?) { text.map { hud.show($0, sticky: true) } ?? hud.hide() }
 
     // MARK: NSWindowDelegate
@@ -733,6 +754,8 @@ extension WindowController {
     /// `palette.anchor` (`search` while the ⌘K dropdown hangs from the field).
     func chromeState() -> [String: String] {
         var s: [String: String] = ["chrome.lights": TrafficLights.describe(window)]
+        s["hud.flashes"] = "\(flashes)"
+        s["hud.last"] = lastFlash.isEmpty ? "-" : lastFlash
         guard let theme = window.contentView?.superview else { return s }
         func hit(_ view: NSView?, at point: NSPoint? = nil) -> String {
             guard let view, !view.isHidden else { return "hidden" }

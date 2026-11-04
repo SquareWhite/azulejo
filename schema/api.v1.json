@@ -1611,7 +1611,7 @@
           "$ref": "#/$defs/ErrorCode"
         },
         "data": {
-          "description": "For programs: what the error is about, such as `{\"tile\": \"tile_…\",\n\"direction\": \"right\"}` or `{\"param\": \"kind\"}`. Over JSON-RPC these\nfields sit in the error's `data` beside `code`."
+          "description": "For programs: what the error is about, such as `{\"tile\": \"tile_…\",\n\"direction\": \"right\"}` or `{\"param\": \"kind\"}`. Over JSON-RPC these\nfields sit in the error's `data` beside `code`.\n\n`reason` narrows an `invalid_state` down for programs that act on\nit: `no_neighbour` (no tile that way, for focus and swap) and\n`no_edge` (no divider that way to move). Shells stay silent on both\nwhen a key asked, since there's simply nothing there."
         },
         "message": {
           "description": "For people: shells show it as is, so it names no IDs.",

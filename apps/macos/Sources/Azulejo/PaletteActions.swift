@@ -201,7 +201,7 @@ extension AppController {
     }
 
     private func report(_ result: Result<[String: Any], CoreError>, _ controller: WindowController) {
-        if case .failure(let error) = result { controller.flash(error.message) }
+        if case .failure(let error) = result { controller.report(error) }
     }
 
     // MARK: Go to

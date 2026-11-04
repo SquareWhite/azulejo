@@ -309,6 +309,9 @@ mod tests {
         assert_eq!(error_code(&r), (-32002, "invalid_state".into()));
         assert_eq!(r["error"]["message"], "no tile to the right");
         assert_eq!(r["error"]["data"]["direction"], "right");
+        // Programs (and shells) tell "nothing there" from other refusals by
+        // this, not by the words.
+        assert_eq!(r["error"]["data"]["reason"], "no_neighbour");
         assert!(
             r["error"]["data"]["tile"]
                 .as_str()
