@@ -826,7 +826,7 @@ private final class FileCell: NSTableCellView {
 
     func show(_ node: FileNode, icon image: NSImage, git: String?) {
         icon.image = image
-        icon.alphaValue = node.hidden || node.ignored ? 0.5 : 1
+        icon.alphaValue = node.hidden || node.ignored ? Design.Alpha.dimmed : 1
         name.stringValue = node.name
         let (letter, color) = Self.badge(git)
         badge.stringValue = letter

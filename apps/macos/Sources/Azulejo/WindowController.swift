@@ -88,6 +88,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         }
         tabBar.onSelect = { [weak app] id in app?.send(["method": "tab.focus", "params": ["tab": id]]) }
         tiles.onClickTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
+        attention.header = { [weak tiles = self.tiles] id in tiles?.header(of: id) }
     }
 
     /// The keymap context for the focused tile (`"terminal"`, …).
@@ -296,18 +297,22 @@ final class ChromeLayoutView: NSView {
                                   width: min(tabBar.naturalWidth, room), height: height)
         }
 
-        let rest = NSRect(x: tilesLeft, y: inset,
+        var rest = NSRect(x: tilesLeft, y: inset,
                           width: max(0, bounds.width - inset - tilesLeft),
                           height: max(0, bounds.height - Design.Space.toolbarHeight - inset))
+        // The config banner gets its own row under the toolbar, as wide as
+        // the tile area, and the tiles move down for it: it covers no header
+        // and no terminal text. Terminals resize once when it shows and once
+        // when it goes, which is rare (a broken config).
+        if let banner, !banner.isHidden {
+            let height = min(banner.preferredHeight(width: rest.width), max(0, rest.height / 2))
+            banner.frame = NSRect(x: rest.minX, y: rest.maxY - height, width: rest.width, height: height)
+            rest.size.height = max(0, rest.height - height - Design.Space.gutter)
+        }
         tiles?.frame = rest
         if let attention, let container = tiles as? TileContainerView {
             attention.frame = rest
             attention.relayout(frames: container.visibleTileFrames())
-        }
-        if let banner, !banner.isHidden {
-            let width = min(rest.width - 24, 760)
-            let height = banner.preferredHeight(width: width)
-            banner.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 10, width: width, height: height)
         }
         if let palette, !palette.isHidden {
             // D.8: a dropdown from the search field: right edges aligned, its
@@ -478,7 +483,7 @@ extension WindowController {
             let p = point ?? view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: theme)
             return theme.hitTest(p).map { "\(type(of: $0))" } ?? "nil"
         }
-        s["chrome.hit.tab1"] = hit(tabBar.subviews.first { $0 is TabButton })
+        s["chrome.hit.tab1"] = hit(tabBar.firstTab)
         s["chrome.hit.add"] = hit(tabBar.subviews.first { $0 is NSButton })
         s["chrome.hit.search"] = hit(search)
         s["chrome.hit.toggle"] = hit(sidebarToggle)
@@ -490,6 +495,7 @@ extension WindowController {
         s["chrome.tiles"] = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
         s["chrome.fits"] = tabBar.frame.maxX <= search.frame.minX ? "yes" : "no"
         s["tab.statuses"] = tabBar.statuses.joined(separator: ",")
+        s["tab.overflow"] = tabBar.overflow
         s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText
         s["search.active"] = search.active ? "yes" : "no"
         if palette.isHidden {

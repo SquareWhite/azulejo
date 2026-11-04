@@ -56,16 +56,19 @@ extension Design {
 }
 
 /// A state icon. The working ring turns slowly while layout motion is on and
-/// holds still when it's off or under Reduce Motion. The image lives in a
+/// holds still when it's off or under Reduce Motion; `spins` makes any icon
+/// turn the same way (a machine's reconnecting arc). The image lives in a
 /// centred sublayer, so it spins about its middle whatever the view's frame.
 @MainActor
 final class StatusIconView: NSView {
     private let icon = CALayer()
     private(set) var status: Design.Status
     private var size: NSSize = .zero
+    private let spins: Bool?
 
-    init(_ status: Design.Status, image: NSImage?) {
+    init(_ status: Design.Status, image: NSImage?, spins: Bool? = nil) {
         self.status = status
+        self.spins = spins
         super.init(frame: .zero)
         wantsLayer = true
         layer?.addSublayer(icon)
@@ -108,7 +111,7 @@ final class StatusIconView: NSView {
     private static let spinKey = "azulejo.spin"
 
     private func updateSpin() {
-        let wanted = status == .working && Motion.active && window != nil
+        let wanted = (spins ?? (status == .working)) && Motion.active && window != nil
         if !wanted { icon.removeAnimation(forKey: Self.spinKey); return }
         guard icon.animation(forKey: Self.spinKey) == nil else { return }
         let spin = CABasicAnimation(keyPath: "transform.rotation.z")

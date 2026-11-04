@@ -44,6 +44,10 @@ final class BrowserTileView: NSView, TileView {
 
     /// The URL the core last told us about.
     private var coreURL: String?
+    /// The address of the last load that failed, until the next load starts.
+    /// WebKit puts `url` back to the page still showing, but the address bar
+    /// should say what failed (and Retry should try it again).
+    private var failedURL: String?
     /// URLs we reported with `browser.state` and haven't seen echoed yet.
     private var pendingEchoes: [String] = []
     /// The last state we reported, so unchanged KVO bursts send nothing.
@@ -183,7 +187,7 @@ final class BrowserTileView: NSView, TileView {
         layoutPill()
         webView.frame = NSRect(x: 0, y: h, width: w, height: max(0, bounds.height - h))
         layoutProgress()
-        let bh: CGFloat = 30
+        let bh = Design.Space.browserBannerHeight
         banner.frame = NSRect(x: 8, y: h + 8, width: max(0, w - 16), height: bh)
     }
 
@@ -219,7 +223,7 @@ final class BrowserTileView: NSView, TileView {
     }
 
     /// The URL the address bar stands for (full, with scheme).
-    private var currentURL: String { webView.url?.absoluteString ?? coreURL ?? "" }
+    private var currentURL: String { failedURL ?? webView.url?.absoluteString ?? coreURL ?? "" }
 
     /// Sets the address bar's text: the full URL while editing, else the
     /// short form, with a lock for https.
@@ -283,7 +287,7 @@ final class BrowserTileView: NSView, TileView {
     func handle(chord: String) -> Bool {
         switch chord {
         case "cmd+l": focusAddress()
-        case "cmd+r": webView.reload()
+        case "cmd+r": retryOrReload()
         case "cmd+shift+r": webView.reloadFromOrigin()
         case "cmd+bracketleft": goBack()
         case "cmd+bracketright": goForward()
@@ -293,7 +297,7 @@ final class BrowserTileView: NSView, TileView {
         case "cmd+minus": webView.magnification = max(0.5, webView.magnification - 0.1)
         case "cmd+0": webView.magnification = 1
         case "escape" where isEditingAddress:
-            address.stringValue = webView.url?.absoluteString ?? coreURL ?? ""
+            address.stringValue = currentURL
             window?.makeFirstResponder(webView)
         default: return false
         }
@@ -349,7 +353,17 @@ final class BrowserTileView: NSView, TileView {
     @objc func goBack() { if webView.canGoBack { webView.goBack() } }
     @objc func goForward() { if webView.canGoForward { webView.goForward() } }
     @objc private func reloadOrStop() {
-        if webView.isLoading { webView.stopLoading() } else { webView.reload() }
+        if webView.isLoading { webView.stopLoading() } else { retryOrReload() }
+    }
+
+    /// After a failed load, tries that address again; otherwise reloads the
+    /// page that's showing.
+    private func retryOrReload() {
+        if let failed = failedURL, let url = URL(string: failed) {
+            webView.load(URLRequest(url: url))
+        } else {
+            webView.reload()
+        }
     }
 
     /// The chrome's right-click menu (the mockup's toolbar has no menu button).
@@ -544,6 +558,7 @@ extension BrowserTileView: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegat
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         banner.hide()
+        failedURL = nil
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -560,7 +575,10 @@ extension BrowserTileView: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegat
         // (the response became a download) aren't failures.
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
         if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
-        showBanner(ns.localizedDescription, .error, action: ("Retry", { [weak self] in self?.webView.reload() }))
+        failedURL = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
+            ?? ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String
+        if !isEditingAddress { showAddress(currentURL) }
+        showBanner(ns.localizedDescription, .error, action: ("Retry", { [weak self] in self?.retryOrReload() }))
     }
 
     /// Crash isolation: the page's web content process died. The tile and the
@@ -709,7 +727,7 @@ final class BrowserBanner: NSView {
         label.stringValue = text
         label.textColor = style == .error ? Design.Color.textOnAccent : Design.Color.textPrimary
         layer?.backgroundColor = (style == .error ? Design.Color.error : Design.Color.control)
-            .withAlphaComponent(0.95).cgColor
+            .withAlphaComponent(Design.Alpha.browserBanner).cgColor
         layer?.borderWidth = style == .error ? 0 : Design.Border.hairline
         layer?.borderColor = Design.Color.border.cgColor
         self.action = action?.1
@@ -727,11 +745,15 @@ final class BrowserBanner: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
+    /// Narrower than `browserBannerButtonMin`, the button gives way so the
+    /// message stays readable (⌘R still retries, ⌘R reloads after a crash).
     override func layout() {
         super.layout()
+        button.isHidden = action == nil || bounds.width < Design.Space.browserBannerButtonMin
         let buttonWidth: CGFloat = button.isHidden ? 0 : 70
         button.frame = NSRect(x: bounds.width - buttonWidth - 6, y: (bounds.height - 22) / 2, width: buttonWidth, height: 22)
-        label.frame = NSRect(x: 10, y: (bounds.height - 16) / 2, width: bounds.width - buttonWidth - 22, height: 16)
+        label.frame = NSRect(x: 10, y: (bounds.height - 16) / 2,
+                             width: max(0, bounds.width - buttonWidth - 22), height: 16)
     }
 
     @objc private func run() { action?() }
@@ -792,6 +814,7 @@ extension BrowserTileView: AutomatableTile {
         [
             "tile.kind": "browser",
             "tile.url": webView.url?.absoluteString ?? "-",
+            "tile.address": address.stringValue.isEmpty ? "-" : address.stringValue,
             "tile.core_url": coreURL ?? "-",
             "tile.title": webView.title.flatMap { $0.isEmpty ? nil : $0 } ?? "-",
             "tile.loading": webView.isLoading ? "yes" : "no",

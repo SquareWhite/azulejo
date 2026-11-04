@@ -151,6 +151,8 @@ enum Design {
         static let searchField: CGFloat = 8
         static let searchBadge: CGFloat = 4
         static let sidebarSegment: CGFloat = 7
+        static let badgeDot: CGFloat = 4
+        static let machineDot: CGFloat = 3
     }
 
     /// Border widths, in points.
@@ -158,6 +160,22 @@ enum Design {
         static let focus: CGFloat = 1
         static let attention: CGFloat = 2
         static let hairline: CGFloat = 1
+    }
+
+    /// Opacities (0 to 1) applied on top of colour tokens.
+    enum Alpha {
+        static let attentionBorder: CGFloat = 0.85
+        static let workingMarker: CGFloat = 0.6
+        static let rowHover: CGFloat = 0.45
+        static let footerZero: CGFloat = 0.45
+        static let dimmed: CGFloat = 0.5
+        static let unfocusedTile: CGFloat = 0.72
+        static let badgePulse: CGFloat = 0.35
+        static let bannerFill: CGFloat = 0.16
+        static let bannerMix: CGFloat = 0.75
+        static let bannerBorder: CGFloat = 0.5
+        static let browserBanner: CGFloat = 0.95
+        static let paletteShadow: CGFloat = 0.35
     }
 
     /// Spacing and fixed sizes, in points.
@@ -185,6 +203,8 @@ enum Design {
         static let tabIconGap: CGFloat = 7
         static let tabMinWidth: CGFloat = 64
         static let tabMaxWidth: CGFloat = 180
+        static let tabFitMinWidth: CGFloat = 100
+        static let tabFadeWidth: CGFloat = 24
         static let searchWidth: CGFloat = 280
         static let searchMinWidth: CGFloat = 170
         static let searchHeight: CGFloat = 30
@@ -192,9 +212,17 @@ enum Design {
         static let rowHeight: CGFloat = 22
         static let sidebarWidth: CGFloat = 230
         static let sidebarPadding: CGFloat = 8
-        static let sidebarRowHeight: CGFloat = 30
+        static let sidebarRowHeight: CGFloat = 31
+        static let sidebarSegmentTop: CGFloat = 8
         static let sidebarSegmentHeight: CGFloat = 28
+        static let sidebarListTop: CGFloat = 2
+        static let sidebarGroupHeight: CGFloat = 32
+        static let sidebarAddHeight: CGFloat = 26
         static let sidebarFooterHeight: CGFloat = 36
+        static let headerTitleMin: CGFloat = 72
+        static let badgeInset: CGFloat = 6
+        static let browserBannerHeight: CGFloat = 30
+        static let browserBannerButtonMin: CGFloat = 240
     }
 
     /// UI fonts. Terminals use the user's Ghostty font, not these.
@@ -207,7 +235,7 @@ enum Design {
         nonisolated(unsafe) static let detail: NSFont = .systemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let caption: NSFont = .systemFont(ofSize: 10, weight: .regular)
         nonisolated(unsafe) static let groupLabel: NSFont = .systemFont(ofSize: 11, weight: .regular)
-        nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .light)
         nonisolated(unsafe) static let sidebarBranch: NSFont = .systemFont(ofSize: 12, weight: .regular)
         nonisolated(unsafe) static let sidebarSegment: NSFont = .systemFont(ofSize: 12, weight: .medium)
         nonisolated(unsafe) static let footerCount: NSFont = .systemFont(ofSize: 12, weight: .regular)
