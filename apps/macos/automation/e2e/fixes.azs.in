@@ -219,10 +219,13 @@ wait 800
 key alt+h
 expect focus 1
 expect tile.header.inset 0
-# Blocked and seen (focused): the icon stays, without text.
+# Blocked and seen (focused): the icon stays, without text. Up the stack
+# from its last tile (tile 3 is seen on the way).
 key alt+l
+key alt+k
+key alt+k
 expect focus 2
-until agents working,blocked,done!,none 3000
+until agents working,blocked,done,none 3000
 expect header.agents none,blocked,none,none
 remember tile.header.inset
 key alt+h
@@ -232,19 +235,19 @@ sh cp {config} {config}.n5
 sh printf '\n[appearance]\ntile_agent_badge = true\n' >> {config}
 until tile.badge.setting on 4000
 until header.agents badge,badge,badge,none 2000
-expect tile.header.inset 0
-key alt+l
-expect focus 2
+# The working tile's badge takes room from its title again.
 remember tile.header.inset
-key alt+h
 wait 600
 shot n5a-badges-on
 sh cp {config}.n5 {config}
 until tile.badge.setting off 4000
 until header.agents none,blocked,none,none 2000
-log === N5c mid-swap: no badge on the working tile, the blocked icon rides its strip
+expect tile.header.inset 0
+log === N5c mid-swap: the blocked icon rides its strip into the master area
+key alt+l
+expect focus 2
 anim duration 1500
-key alt+shift+l
+key alt+shift+h
 capture n5-badge-swap-mid 650
 wait 2300
 anim duration default
