@@ -63,7 +63,7 @@ enum TileViews {
 /// the tile. Takes first responder when focused so the key router's context
 /// and the Edit menu behave as they will with real tiles.
 @MainActor
-final class PlaceholderTileView: NSView, TileView {
+final class PlaceholderTileView: NSView, TileView, ThemeAware {
     let tileID: String
     let kind: TileKind
     private let label = NSTextField(labelWithString: "")
@@ -75,7 +75,7 @@ final class PlaceholderTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = Design.Color.placeholder(tile.kind).cgColor
+        Theme.track(self)
         label.font = Design.Font.tileLabel
         label.textColor = Design.Color.textOnAccent
         label.alignment = .center
@@ -92,6 +92,10 @@ final class PlaceholderTileView: NSView, TileView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.placeholder(kind).cgColor
+    }
 
     override var acceptsFirstResponder: Bool { true }
 

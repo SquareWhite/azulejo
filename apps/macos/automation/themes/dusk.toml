@@ -1,0 +1,11 @@
+# A user theme for themes.sh: macOS Dark with its own window colour and
+# accent, one unknown key and one bad colour (both reported in the banner,
+# both falling back to macos-dark's values).
+name = "Dusk"
+inherits = "macos-dark"
+
+[color]
+window = "#3a1f4d"
+accent = "#ff8800"
+sparkle = "#ffffff"
+tab_strip = "teal"

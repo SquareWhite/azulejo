@@ -37,6 +37,9 @@ extension Design {
     static func customSymbol(_ name: String, color: NSColor, pointSize: CGFloat) -> NSImage? {
         guard name == "azulejo.ring" else { return nil }
         let side = ceil(pointSize * 1.15)
+        // Resolved now: the image is baked into a layer (StatusIconView makes
+        // it again on a theme change).
+        let color = Theme.resolved(color)
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             let line = max(1.4, pointSize * 0.15)
             let radius = (min(rect.width, rect.height) - line) / 2 - 0.5
@@ -59,20 +62,24 @@ extension Design {
 /// holds still when it's off or under Reduce Motion; `spins` makes any icon
 /// turn the same way (a machine's reconnecting arc). The image lives in a
 /// centred sublayer, so it spins about its middle whatever the view's frame.
+/// The layer holds a baked image, so `image` makes it again on each theme
+/// change.
 @MainActor
-final class StatusIconView: NSView {
+final class StatusIconView: NSView, ThemeAware {
     private let icon = CALayer()
     private(set) var status: Design.Status
     private var size: NSSize = .zero
     private let spins: Bool?
+    private let makeImage: () -> NSImage?
 
-    init(_ status: Design.Status, image: NSImage?, spins: Bool? = nil) {
+    init(_ status: Design.Status, image: @escaping () -> NSImage?, spins: Bool? = nil) {
         self.status = status
         self.spins = spins
+        makeImage = image
         super.init(frame: .zero)
         wantsLayer = true
         layer?.addSublayer(icon)
-        set(status, image: image)
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -81,8 +88,8 @@ final class StatusIconView: NSView {
     /// Automation: whether the ring is turning.
     var isSpinning: Bool { icon.animation(forKey: Self.spinKey) != nil }
 
-    func set(_ status: Design.Status, image: NSImage?) {
-        self.status = status
+    func applyTheme() {
+        let image = makeImage()
         size = image?.size ?? .zero
         icon.contents = image
         icon.contentsScale = window?.backingScaleFactor ?? 2

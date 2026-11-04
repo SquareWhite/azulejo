@@ -27,7 +27,7 @@ protocol TileOwnsChrome {}
 /// the header in one go, so a terminal's PTY still resizes once per layout
 /// change (ADR 0004). Everything a tile view does is forwarded.
 @MainActor
-class TileFrame: NSView, TileView {
+class TileFrame: NSView, TileView, ThemeAware {
     static let headerHeight = Design.Space.headerHeight
 
     let content: any TileView
@@ -83,7 +83,7 @@ class TileFrame: NSView, TileView {
         dim.actions = ["opacity": NSNull(), "position": NSNull(), "bounds": NSNull(), "backgroundColor": NSNull()]
         overlays.layer?.addSublayer(dim)
         overlays.layer?.addSublayer(corners)
-        updateColors()
+        Theme.track(self)
     }
 
     /// Holds the dim and the corner caps over everything else in the card.
@@ -121,6 +121,7 @@ class TileFrame: NSView, TileView {
     func setDim(_ level: CGFloat, duration: CFTimeInterval) {
         let fill = Motion.dimFill
         var colour: CGColor?
+        // theme: re-read on every focus change; applyTheme() sets it too.
         effectiveAppearance.performAsCurrentDrawingAppearance { colour = fill.cgColor }
         if dim.backgroundColor != colour { dim.backgroundColor = colour }
         guard level != dimLevel else { return }
@@ -140,33 +141,29 @@ class TileFrame: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateColors()
+        Theme.reapply(self)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateColors()
+        Theme.reapply(self)
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        updateColors()
+        Theme.reapply(self)
     }
 
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            // A terminal's margin shows the terminal's own background, so it
-            // reads as part of the terminal whatever the user's Ghostty theme.
-            let body = content.kind == .terminal
-                ? (TerminalRuntime.shared?.background ?? Design.Color.tile) : Design.Color.tile
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer?.backgroundColor = body.cgColor
-            CATransaction.commit()
-            corners.update(fill: Design.Color.window.cgColor, radius: Design.Radius.tile,
-                           scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
-            dim.backgroundColor = Motion.dimFill.cgColor
-        }
+    func applyTheme() {
+        // A terminal's margin shows the terminal's own background, so it
+        // reads as part of the terminal whatever its colours: the theme's
+        // palette or the user's Ghostty theme.
+        let body = content.kind == .terminal
+            ? (TerminalRuntime.shared?.background ?? Design.Color.tile) : Design.Color.tile
+        layer?.backgroundColor = body.cgColor
+        corners.update(fill: Design.Color.window.cgColor, radius: Design.Radius.tile,
+                       scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+        dim.backgroundColor = Motion.dimFill.cgColor
     }
 
     // MARK: Corners in motion
@@ -372,7 +369,7 @@ extension TileFrame: AutomatableTile {
 /// (`TileFrame.setDim`), which turns the mockup's focused strip colour into
 /// its unfocused one.
 @MainActor
-final class TileHeaderView: NSView {
+final class TileHeaderView: NSView, ThemeAware {
     /// The tile's right-click menu (`TileFrame.contextMenu`).
     var menuProvider: (() -> NSMenu?)?
     private let icon = NSImageView()
@@ -399,7 +396,7 @@ final class TileHeaderView: NSView {
         addSubview(icon)
         addSubview(label)
         layer?.addSublayer(hairline)
-        updateColors()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -534,8 +531,7 @@ final class TileHeaderView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateColors()
-        render()
+        Theme.reapply(self)
     }
 
     // MARK: Hover
@@ -562,15 +558,11 @@ final class TileHeaderView: NSView {
         needsLayout = true
     }
 
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer?.backgroundColor = Design.Color.header.cgColor
-            hairline.backgroundColor = Design.Color.headerHairline.cgColor
-            CATransaction.commit()
-        }
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.header.cgColor
+        hairline.backgroundColor = Design.Color.headerHairline.cgColor
         icon.contentTintColor = Design.Color.textSecondary
+        render()
     }
 
     private static func symbol(_ kind: TileKind) -> String { Design.Icon.for(kind) }
@@ -579,7 +571,7 @@ final class TileHeaderView: NSView {
 /// A small two-way segmented pill (the mockup's Preview | Source): a track
 /// with the selected segment filled.
 @MainActor
-final class PillToggle: NSView {
+final class PillToggle: NSView, ThemeAware {
     var onChange: (Int) -> Void = { _ in }
     var selectedSegment = 0 { didSet { if selectedSegment != oldValue { restyle() } } }
     private let buttons: [NSButton]
@@ -599,8 +591,10 @@ final class PillToggle: NSView {
             button.action = #selector(clicked(_:))
             addSubview(button)
         }
-        restyle()
+        Theme.track(self)
     }
+
+    func applyTheme() { restyle() }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
@@ -634,9 +628,10 @@ final class PillToggle: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        restyle()
+        Theme.reapply(self)
     }
 
+    /// Also this view's applyTheme().
     private func restyle() {
         for (i, button) in buttons.enumerated() {
             button.attributedTitle = NSAttributedString(string: button.title, attributes: [
@@ -644,6 +639,7 @@ final class PillToggle: NSView {
                 .foregroundColor: i == selectedSegment ? Design.Color.textPrimary : Design.Color.textMuted,
             ])
         }
+        // theme: restyle() is applyTheme().
         effectiveAppearance.performAsCurrentDrawingAppearance {
             CATransaction.begin()
             CATransaction.setDisableActions(true)

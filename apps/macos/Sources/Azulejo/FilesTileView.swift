@@ -16,7 +16,7 @@ import UniformTypeIdentifiers
 /// files). ← → are AppKit's outline keys. While the filter has the keyboard
 /// the context is `find_bar`: enter goes to the list, escape clears it.
 @MainActor
-final class FilesTileView: NSView, TileView {
+final class FilesTileView: NSView, TileView, ThemeAware {
     let tileID: String
     let kind: TileKind = .files
 
@@ -90,7 +90,7 @@ final class FilesTileView: NSView, TileView {
         wantsLayer = true
         // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
-        layer?.backgroundColor = Design.Color.tile.cgColor
+        Theme.track(self)
 
         // The root and the buttons live in the tile's header strip (TileFrame).
         header.onToggleHidden = { [weak self] in self?.toggleHidden() }
@@ -188,10 +188,13 @@ final class FilesTileView: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        guard !isPanel else { return }
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.tile.cgColor
-        }
+        Theme.reapply(self)
+    }
+
+    /// The tile's body; in the sidebar (a panel) it sits on the card. Rows
+    /// draw their text with the tokens, so a redraw recolours them.
+    func applyTheme() {
+        layer?.backgroundColor = isPanel ? nil : Design.Color.tile.cgColor
     }
 
     // MARK: TileView

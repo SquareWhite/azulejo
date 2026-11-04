@@ -137,6 +137,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `open_config` | global | `cmd+comma` | `super+comma` | Open config file |
 | `reload_config` | global | unbound | unbound | Reload config |
 | `toggle_sidebar` | terminal | `cmd+a` | `super+a` | Toggle sidebar |
+| `set_theme` | global | unbound | unbound | Set theme… |
 | `edit_scrollback` | global | unbound | unbound | Edit scrollback |
 | `quit` | global | `cmd+q` | `ctrl+shift+q` | Quit Azulejo |
 | `hide` | global | `cmd+h` | unbound | Hide Azulejo |

@@ -22,16 +22,14 @@ final class TerminalRuntime {
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
 
-    /// The terminal background from the user's Ghostty config, so a tile's
-    /// margin round the text matches it (D.5).
-    lazy var background: NSColor? = {
-        guard let config else { return nil }
-        var color = ghostty_config_color_s()
-        let key = "background"
-        guard ghostty_config_get(config, &color, key, UInt(key.utf8.count)) else { return nil }
-        return NSColor(srgbRed: CGFloat(color.r) / 255, green: CGFloat(color.g) / 255,
-                       blue: CGFloat(color.b) / 255, alpha: 1)
-    }()
+    /// The terminals' background as configured (the theme's palette, or the
+    /// user's Ghostty colours), so a tile's margin round the text matches it
+    /// (D.5).
+    private(set) var background: NSColor?
+    /// The theme palette loaded over the user's Ghostty config (nil: none).
+    private(set) var palette: TerminalSpec?
+    /// Automation: how many times the terminals' config was replaced.
+    private(set) var configUpdates = 0
     private var surfaces: [UInt: WeakSurface] = [:]
     private var nextToken: UInt = 1
     private var observers: [NSObjectProtocol] = []
@@ -52,21 +50,71 @@ final class TerminalRuntime {
         return runtime
     }
 
-    private func boot(log: (String) -> Void) -> Bool {
-        // The user's Ghostty config, loaded the way Ghostty.app does.
+    /// The user's Ghostty config, loaded the way Ghostty.app does, with the
+    /// theme's palette over it when terminals use the theme's colours
+    /// (`[appearance] terminal_colors`, docs/themes.md).
+    private func makeConfig(palette: TerminalSpec?, log: (String) -> Void) -> ghostty_config_t? {
         guard let cfg = ghostty_config_new() else {
             log("terminal: ghostty_config_new failed")
-            return false
+            return nil
         }
         ghostty_config_load_default_files(cfg)
         ghostty_config_load_recursive_files(cfg)
+        if let palette {
+            // libghostty reads config from files: the palette goes in a
+            // private one, loaded last so it wins.
+            let file = Self.paletteFile
+            do {
+                try palette.ghosttyConfig.write(to: file, atomically: true, encoding: .utf8)
+                ghostty_config_load_file(cfg, file.path)
+            } catch {
+                log("terminal: can't write the theme palette: \(error)")
+            }
+        }
         ghostty_config_finalize(cfg)
         for i in 0..<ghostty_config_diagnostics_count(cfg) {
             if let message = ghostty_config_get_diagnostic(cfg, i).message {
                 log("terminal: Ghostty config: \(String(cString: message))")
             }
         }
+        return cfg
+    }
+
+    private static let paletteFile = FileManager.default.temporaryDirectory
+        .appendingPathComponent("azulejo-\(getpid())-terminal-theme.ghostty")
+
+    private static func background(of config: ghostty_config_t) -> NSColor? {
+        var color = ghostty_config_color_s()
+        let key = "background"
+        guard ghostty_config_get(config, &color, key, UInt(key.utf8.count)) else { return nil }
+        return NSColor(srgbRed: CGFloat(color.r) / 255, green: CGFloat(color.g) / 255,
+                       blue: CGFloat(color.b) / 255, alpha: 1)
+    }
+
+    /// Puts `palette` (nil: the user's Ghostty colours alone) on every
+    /// terminal now: libghostty swaps the config of every surface in place,
+    /// so nothing reattaches and no PTY changes size. Light or dark goes to
+    /// Ghostty too, for `theme = light:…,dark:…` configs.
+    func applyTheme(palette: TerminalSpec?, dark: Bool, log: (String) -> Void) {
+        if let app { ghostty_app_set_color_scheme(app, dark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT) }
+        guard palette != self.palette || config == nil else { return }
+        guard let app, let cfg = makeConfig(palette: palette, log: log) else { return }
+        ghostty_app_update_config(app, cfg)
+        if let old = config { ghostty_config_free(old) }
         config = cfg
+        self.palette = palette
+        background = Self.background(of: cfg)
+        configUpdates += 1
+        // Surfaces redraw on their own; ask now so the switch lands with the
+        // chrome's.
+        for case let view? in surfaces.values.map(\.view) { view.needsDisplay = true }
+    }
+
+    private func boot(log: (String) -> Void) -> Bool {
+        guard let cfg = makeConfig(palette: Theme.terminal, log: log) else { return false }
+        config = cfg
+        palette = Theme.terminal
+        background = Self.background(of: cfg)
 
         var rt = ghostty_runtime_config_s()
         rt.userdata = nil

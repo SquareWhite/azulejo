@@ -40,6 +40,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         ContextMenus.app = self
         keys.install()
         BrowserTileView.register(app: self)
+        // The theme before any view or terminal exists (docs/themes.md).
+        Theme.log = { [weak self] in self?.log($0) }
+        loadTheme()
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
         FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
@@ -62,7 +65,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             PreviewTileView.route(json)
             FilesTileView.route(json)
             TerminalTileView.route(json)
-            if json.contains("\"config.reloaded\""), let core = self?.core { Motion.load(core.animation()) }
+            if json.contains("\"config.reloaded\""), let core = self?.core {
+                Motion.load(core.animation())
+                // A saved theme, a theme file, or Ghostty's colours.
+                self?.loadTheme()
+            }
             self?.routeConfigReload(json)
             // Events trail the command that already refreshed the UI (a
             // layout change arrives as `layout.changed` just after); while
@@ -434,6 +441,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             send(["method": "window.create"])
         case "close_window":
             closeWindow(controller)
+        case "set_theme":
+            openThemePicker(in: controller)
         case "toggle_sidebar":
             // Saved in the core so it comes back on relaunch.
             send(["method": "window.set_sidebar",

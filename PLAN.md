@@ -297,6 +297,7 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 - [x] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
   **Done when** no view hard-codes a colour or radius.
   **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: was a 1 pt accent outline at 45 %; since Nov 4 there's no outline and unfocused tiles dim instead (25 % of the window colour, `alpha.unfocusedDim`; Ghostty's `unfocused-split-opacity` wins when set), see docs/design/README.md.
+  **Themes (Nov 4, 2026, the maintainer):** the chrome, terminals and previews are themeable ([docs/themes.md](docs/themes.md)). Built in: Atom One Dark (the default, the look above, unchanged), Atom One Light, macOS Dark and macOS Light (system colours, following the accent colour; vibrancy sidebar card). tokens.json keeps colours per theme (`themes.<id>.color`), with each theme's appearance, preview syntax and terminal palette; everything else stays shared. `[appearance] theme` (or `"auto"` with `theme_light` / `theme_dark`), user themes in `<config dir>/themes/<id>.toml` (`inherits`, warnings per bad value), `terminal_colors = "theme" | "ghostty"` (default: Ghostty's colours when its config sets any). Switching is live: config saves, theme file saves, ⌘K "Set theme…" (previews as you move, Esc goes back) and View → Theme; no restart, no reattach, no PTY resize. `scripts/check-theme-colours` (just lint) keeps views from holding stale colours; `apps/macos/automation/themes.sh` checks the pixels in each theme.
 
 - [x] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
@@ -340,7 +341,7 @@ Details and status per element are in [docs/design/README.md](docs/design/README
 4. **Tile headers with title and cwd or command**: built before polish, as 2.15 (F28).
 5. **Preview | Source toggle**: built before polish, as 2.15 (F29).
 6. **⌘K for the picker** and an always-visible search field: ⌘K done (one quick-open menu for commands and places); the search field stays in M2.5, D.8.
-7. **Chrome theming** and a default terminal theme: M2.5, in D.1 (not decided separately; follows the design tokens).
+7. **Chrome theming** and a default terminal theme: M2.5, in D.1 (not decided separately; follows the design tokens). Done Nov 4: four built-in themes and user themes ([docs/themes.md](docs/themes.md)).
 8. **Naming**: keep "workspace" in code, docs, API and UI; the designer relabels "session".
 
 ### Gate GD

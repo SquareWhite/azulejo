@@ -4,124 +4,572 @@
 
 import AppKit
 
-/// Design tokens: colours, radii, spacing, type, status icons and motion.
+/// Design tokens: colours (per theme), radii, spacing, type, status icons and motion.
 /// Use these instead of literal colours, fonts and sizes in the shell.
 enum Design {
-    /// Colours with a dark and a light value, resolved per appearance.
+    /// Colour tokens. Each resolves against the current theme (Theme.swift)
+    /// in the appearance it's drawn in, so re-reading it after a theme change
+    /// gives the new colour; a CGColor taken from it doesn't change (see
+    /// ThemeAware).
     enum Color {
         /// window background, gutters between tiles, toolbar row
-        static let window = dynamic("window", dark: 0x1b1d23ff, light: 0xeceef1ff)
+        static let window = Theme.token("window")
         /// sidebar card, tab bar, tile header strip
-        static let sidebar = dynamic("sidebar", dark: 0x21252bff, light: 0xf5f6f8ff)
+        static let sidebar = Theme.token("sidebar")
         /// tile body: terminal backdrop, browser, preview, files
-        static let tile = dynamic("tile", dark: 0x282c34ff, light: 0xffffffff)
+        static let tile = Theme.token("tile")
         /// secondary tile bodies
-        static let tileAlt = dynamic("tileAlt", dark: 0x252930ff, light: 0xfafbfcff)
+        static let tileAlt = Theme.token("tileAlt")
         /// browser chrome, code blocks, inset strips
-        static let sunken = dynamic("sunken", dark: 0x202329ff, light: 0xe9ebeeff)
+        static let sunken = Theme.token("sunken")
         /// segmented tracks, search field, tab container
-        static let control = dynamic("control", dark: 0x2c3036ff, light: 0xe2e5e9ff)
+        static let control = Theme.token("control")
         /// selected sidebar row, selected palette row
-        static let selected = dynamic("selected", dark: 0x35393eff, light: 0xd5d9dfff)
-        /// selected tab
-        static let selectedStrong = dynamic("selectedStrong", dark: 0x3a3f4bff, light: 0xcdd3dcff)
+        static let selected = Theme.token("selected")
+        /// strong selection grey: preview borders and table rules
+        static let selectedStrong = Theme.token("selectedStrong")
         /// hairlines around cards, fields and toasts
-        static let border = dynamic("border", dark: 0xffffff14, light: 0x0000001a)
+        static let border = Theme.token("border")
         /// names, titles, tile header titles
-        static let textPrimary = dynamic("textPrimary", dark: 0xd7dae0ff, light: 0x24292fff)
+        static let textPrimary = Theme.token("textPrimary")
         /// tab labels, details, tile header icons
-        static let textSecondary = dynamic("textSecondary", dark: 0x9da5b4ff, light: 0x57606aff)
+        static let textSecondary = Theme.token("textSecondary")
         /// group labels, branches, subtitles, hidden files
-        static let textMuted = dynamic("textMuted", dark: 0x7f848eff, light: 0x8c959fff)
+        static let textMuted = Theme.token("textMuted")
         /// text on HUDs, badges and coloured fills
-        static let textOnAccent = dynamic("textOnAccent", dark: 0xffffffff, light: 0xffffffff)
+        static let textOnAccent = Theme.token("textOnAccent")
         /// progress bars, matched characters, links
-        static let accent = dynamic("accent", dark: 0x61afefff, light: 0x2f7fd8ff)
+        static let accent = Theme.token("accent")
         /// what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it
-        static let dimFill = dynamic("dimFill", dark: 0x1b1d23ff, light: 0xeceef1ff)
-        static let statusWorking = dynamic("statusWorking", dark: 0x61afefff, light: 0x2f7fd8ff)
-        static let statusBlocked = dynamic("statusBlocked", dark: 0xe5c07bff, light: 0xb8860bff)
-        static let statusDone = dynamic("statusDone", dark: 0x98c379ff, light: 0x3f8f2fff)
-        static let statusIdle = dynamic("statusIdle", dark: 0x7f848eff, light: 0x8c959fff)
-        static let statusOff = dynamic("statusOff", dark: 0x5c6370ff, light: 0xa0a7b0ff)
-        static let statusConnected = dynamic("statusConnected", dark: 0x98c379ff, light: 0x3f8f2fff)
-        static let statusConnecting = dynamic("statusConnecting", dark: 0xe5c07bff, light: 0xb8860bff)
-        static let statusReconnecting = dynamic("statusReconnecting", dark: 0xd19a66ff, light: 0xc4721fff)
-        static let statusError = dynamic("statusError", dark: 0xe06c75ff, light: 0xcf222eff)
+        static let dimFill = Theme.token("dimFill")
+        /// working agents (azulejo.ring)
+        static let statusWorking = Theme.token("statusWorking")
+        /// agents waiting for input
+        static let statusBlocked = Theme.token("statusBlocked")
+        /// agents that finished
+        static let statusDone = Theme.token("statusDone")
+        /// idle agents
+        static let statusIdle = Theme.token("statusIdle")
+        /// machines that are off
+        static let statusOff = Theme.token("statusOff")
+        /// connected machines
+        static let statusConnected = Theme.token("statusConnected")
+        /// machines connecting
+        static let statusConnecting = Theme.token("statusConnecting")
+        /// machines reconnecting
+        static let statusReconnecting = Theme.token("statusReconnecting")
+        /// machines or agents in error
+        static let statusError = Theme.token("statusError")
         /// config errors, failed loads
-        static let error = dynamic("error", dark: 0xe06c75ff, light: 0xcf222eff)
+        static let error = Theme.token("error")
         /// config warnings
-        static let warning = dynamic("warning", dark: 0xe5c07bff, light: 0xb8860bff)
-        static let gitModified = dynamic("gitModified", dark: 0xd19a66ff, light: 0xc4721fff)
-        static let gitAdded = dynamic("gitAdded", dark: 0x98c379ff, light: 0x3f8f2fff)
-        static let gitDeleted = dynamic("gitDeleted", dark: 0xe06c75ff, light: 0xcf222eff)
-        static let gitRenamed = dynamic("gitRenamed", dark: 0x61afefff, light: 0x2f7fd8ff)
-        static let gitConflicted = dynamic("gitConflicted", dark: 0xc678ddff, light: 0x8250dfff)
+        static let warning = Theme.token("warning")
+        /// git: modified
+        static let gitModified = Theme.token("gitModified")
+        /// git: added
+        static let gitAdded = Theme.token("gitAdded")
+        /// git: deleted
+        static let gitDeleted = Theme.token("gitDeleted")
+        /// git: renamed
+        static let gitRenamed = Theme.token("gitRenamed")
+        /// git: conflicted
+        static let gitConflicted = Theme.token("gitConflicted")
         /// status HUD in the window corner
-        static let hud = dynamic("hud", dark: 0x000000bf, light: 0x000000bf)
+        static let hud = Theme.token("hud")
         /// agent badge pill on tiles
-        static let badge = dynamic("badge", dark: 0x0000008c, light: 0x0000008c)
+        static let badge = Theme.token("badge")
         /// terminal state overlays (reconnecting, ended)
-        static let overlay = dynamic("overlay", dark: 0x1b1d23eb, light: 0x1b1d23eb)
-        static let overlayText = dynamic("overlayText", dark: 0xbfbfbfff, light: 0xbfbfbfff)
+        static let overlay = Theme.token("overlay")
+        /// text on terminal state overlays
+        static let overlayText = Theme.token("overlayText")
+        /// titles on terminal state overlays (Session ended, reconnecting)
+        static let overlayTitle = Theme.token("overlayTitle")
         /// read-only / taken-over banner on terminals
-        static let takeover = dynamic("takeover", dark: 0x8c610df2, light: 0x8c610df2)
-        static let shadow = dynamic("shadow", dark: 0x000000ff, light: 0x000000ff)
+        static let takeover = Theme.token("takeover")
+        /// drop shadows (⌘K)
+        static let shadow = Theme.token("shadow")
         /// tile outlines during the outline animation style
-        static let ghostFill = dynamic("ghostFill", dark: 0x8080801a, light: 0x8080801a)
+        static let ghostFill = Theme.token("ghostFill")
         /// tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329)
-        static let header = dynamic("header", dark: 0x21252bff, light: 0xf6f7f9ff)
+        static let header = Theme.token("header")
         /// line under a tile's header strip
-        static let headerHairline = dynamic("headerHairline", dark: 0x181a1fff, light: 0x0000001a)
+        static let headerHairline = Theme.token("headerHairline")
         /// browser tile toolbar (back, forward, address, reload)
-        static let browserChrome = dynamic("browserChrome", dark: 0x202329ff, light: 0xe9ebeeff)
+        static let browserChrome = Theme.token("browserChrome")
         /// browser address pill
-        static let browserField = dynamic("browserField", dark: 0x252930ff, light: 0xffffffff)
+        static let browserField = Theme.token("browserField")
         /// Preview | Source track
-        static let previewToggleTrack = dynamic("previewToggleTrack", dark: 0x2c3036ff, light: 0xe2e5e9ff)
+        static let previewToggleTrack = Theme.token("previewToggleTrack")
         /// Preview | Source selected segment
-        static let previewToggleSelected = dynamic("previewToggleSelected", dark: 0x3a3f4bff, light: 0xffffffff)
+        static let previewToggleSelected = Theme.token("previewToggleSelected")
         /// placeholder tile bodies before a tile kind's view exists
-        static let kindTerminal = dynamic("kindTerminal", dark: 0x29303dff, light: 0x29303dff)
-        static let kindBrowser = dynamic("kindBrowser", dark: 0x21527aff, light: 0x21527aff)
-        static let kindPreview = dynamic("kindPreview", dark: 0x5c4078ff, light: 0x5c4078ff)
-        static let kindFiles = dynamic("kindFiles", dark: 0x336145ff, light: 0x336145ff)
+        static let kindTerminal = Theme.token("kindTerminal")
+        /// placeholder body, browser
+        static let kindBrowser = Theme.token("kindBrowser")
+        /// placeholder body, preview
+        static let kindPreview = Theme.token("kindPreview")
+        /// placeholder body, files
+        static let kindFiles = Theme.token("kindFiles")
         /// the tab strip's pill container in the toolbar
-        static let tabStrip = dynamic("tabStrip", dark: 0x24262cff, light: 0xe4e7ebff)
+        static let tabStrip = Theme.token("tabStrip")
         /// hairline around the tab strip
-        static let tabStripBorder = dynamic("tabStripBorder", dark: 0x2f3036ff, light: 0x0000000f)
+        static let tabStripBorder = Theme.token("tabStripBorder")
         /// the selected tab's fill
-        static let tabSelected = dynamic("tabSelected", dark: 0x3a3f4bff, light: 0xffffffff)
+        static let tabSelected = Theme.token("tabSelected")
         /// unselected tab names
-        static let tabText = dynamic("tabText", dark: 0x9da5b4ff, light: 0x57606aff)
+        static let tabText = Theme.token("tabText")
         /// the selected tab's name
-        static let tabTextSelected = dynamic("tabTextSelected", dark: 0xd7dae0ff, light: 0x24292fff)
+        static let tabTextSelected = Theme.token("tabTextSelected")
         /// the tab strip's +
-        static let tabAdd = dynamic("tabAdd", dark: 0x6c717aff, light: 0x8c959fff)
+        static let tabAdd = Theme.token("tabAdd")
         /// toolbar search field
-        static let searchField = dynamic("searchField", dark: 0x27292eff, light: 0xffffffff)
+        static let searchField = Theme.token("searchField")
         /// toolbar search field hairline
-        static let searchBorder = dynamic("searchBorder", dark: 0x33353aff, light: 0x0000001a)
+        static let searchBorder = Theme.token("searchBorder")
         /// search field hairline while quick open is open
-        static let searchBorderActive = dynamic("searchBorderActive", dark: 0x61afef80, light: 0x2f7fd880)
+        static let searchBorderActive = Theme.token("searchBorderActive")
         /// search placeholder and magnifier
-        static let searchText = dynamic("searchText", dark: 0x7f848eff, light: 0x8c959fff)
+        static let searchText = Theme.token("searchText")
         /// the search field's key badge (⌘K)
-        static let searchBadge = dynamic("searchBadge", dark: 0x34363aff, light: 0xe9ebeeff)
-        static let searchBadgeText = dynamic("searchBadgeText", dark: 0xabb2bfff, light: 0x57606aff)
+        static let searchBadge = Theme.token("searchBadge")
+        /// the search field's key badge text
+        static let searchBadgeText = Theme.token("searchBadgeText")
         /// sidebar toggle next to the traffic lights
-        static let titlebarIcon = dynamic("titlebarIcon", dark: 0x7f848eff, light: 0x8c959fff)
+        static let titlebarIcon = Theme.token("titlebarIcon")
+        /// preview notices (a truncated file): fill
+        static let noticeFill = Theme.token("noticeFill")
+        /// preview notices: border
+        static let noticeBorder = Theme.token("noticeBorder")
+    }
 
-        private static func dynamic(_ name: String, dark: UInt32, light: UInt32) -> NSColor {
-            let darkColor = rgba(dark), lightColor = rgba(light)
-            return NSColor(name: NSColor.Name("azulejo." + name)) { appearance in
-                appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? lightColor : darkColor
-            }
-        }
+    /// The built-in themes (tokens.json `themes`), in order. The core sends
+    /// the same tables plus the user's themes (`azj_core_theme`).
+    enum Themes {
+        static let defaultID = "atom-one-dark"
+        /// Every colour token, in tokens.json order.
+        static let tokens: [String] = [
+            "window",
+            "sidebar",
+            "tile",
+            "tileAlt",
+            "sunken",
+            "control",
+            "selected",
+            "selectedStrong",
+            "border",
+            "textPrimary",
+            "textSecondary",
+            "textMuted",
+            "textOnAccent",
+            "accent",
+            "dimFill",
+            "statusWorking",
+            "statusBlocked",
+            "statusDone",
+            "statusIdle",
+            "statusOff",
+            "statusConnected",
+            "statusConnecting",
+            "statusReconnecting",
+            "statusError",
+            "error",
+            "warning",
+            "gitModified",
+            "gitAdded",
+            "gitDeleted",
+            "gitRenamed",
+            "gitConflicted",
+            "hud",
+            "badge",
+            "overlay",
+            "overlayText",
+            "overlayTitle",
+            "takeover",
+            "shadow",
+            "ghostFill",
+            "header",
+            "headerHairline",
+            "browserChrome",
+            "browserField",
+            "previewToggleTrack",
+            "previewToggleSelected",
+            "kindTerminal",
+            "kindBrowser",
+            "kindPreview",
+            "kindFiles",
+            "tabStrip",
+            "tabStripBorder",
+            "tabSelected",
+            "tabText",
+            "tabTextSelected",
+            "tabAdd",
+            "searchField",
+            "searchBorder",
+            "searchBorderActive",
+            "searchText",
+            "searchBadge",
+            "searchBadgeText",
+            "titlebarIcon",
+            "noticeFill",
+            "noticeBorder",
+        ]
+        static let builtIn: [ThemeSpec] = [
+            ThemeSpec(
+                id: "atom-one-dark", name: "Atom One Dark", appearance: .dark,
+                syntax: "one-dark", sidebarMaterial: nil,
+                colors: [
+                    "window": .rgba(0x1b1d23ff),
+                    "sidebar": .rgba(0x21252bff),
+                    "tile": .rgba(0x282c34ff),
+                    "tileAlt": .rgba(0x252930ff),
+                    "sunken": .rgba(0x202329ff),
+                    "control": .rgba(0x2c3036ff),
+                    "selected": .rgba(0x35393eff),
+                    "selectedStrong": .rgba(0x3a3f4bff),
+                    "border": .rgba(0xffffff14),
+                    "textPrimary": .rgba(0xd7dae0ff),
+                    "textSecondary": .rgba(0x9da5b4ff),
+                    "textMuted": .rgba(0x7f848eff),
+                    "textOnAccent": .rgba(0xffffffff),
+                    "accent": .rgba(0x61afefff),
+                    "dimFill": .rgba(0x1b1d23ff),
+                    "statusWorking": .rgba(0x61afefff),
+                    "statusBlocked": .rgba(0xe5c07bff),
+                    "statusDone": .rgba(0x98c379ff),
+                    "statusIdle": .rgba(0x7f848eff),
+                    "statusOff": .rgba(0x5c6370ff),
+                    "statusConnected": .rgba(0x98c379ff),
+                    "statusConnecting": .rgba(0xe5c07bff),
+                    "statusReconnecting": .rgba(0xd19a66ff),
+                    "statusError": .rgba(0xe06c75ff),
+                    "error": .rgba(0xe06c75ff),
+                    "warning": .rgba(0xe5c07bff),
+                    "gitModified": .rgba(0xd19a66ff),
+                    "gitAdded": .rgba(0x98c379ff),
+                    "gitDeleted": .rgba(0xe06c75ff),
+                    "gitRenamed": .rgba(0x61afefff),
+                    "gitConflicted": .rgba(0xc678ddff),
+                    "hud": .rgba(0x000000bf),
+                    "badge": .rgba(0x0000008c),
+                    "overlay": .rgba(0x1b1d23eb),
+                    "overlayText": .rgba(0xbfbfbfff),
+                    "overlayTitle": .rgba(0xffffffff),
+                    "takeover": .rgba(0x8c610df2),
+                    "shadow": .rgba(0x000000ff),
+                    "ghostFill": .rgba(0x8080801a),
+                    "header": .rgba(0x21252bff),
+                    "headerHairline": .rgba(0x181a1fff),
+                    "browserChrome": .rgba(0x202329ff),
+                    "browserField": .rgba(0x252930ff),
+                    "previewToggleTrack": .rgba(0x2c3036ff),
+                    "previewToggleSelected": .rgba(0x3a3f4bff),
+                    "kindTerminal": .rgba(0x29303dff),
+                    "kindBrowser": .rgba(0x21527aff),
+                    "kindPreview": .rgba(0x5c4078ff),
+                    "kindFiles": .rgba(0x336145ff),
+                    "tabStrip": .rgba(0x24262cff),
+                    "tabStripBorder": .rgba(0x2f3036ff),
+                    "tabSelected": .rgba(0x3a3f4bff),
+                    "tabText": .rgba(0x9da5b4ff),
+                    "tabTextSelected": .rgba(0xd7dae0ff),
+                    "tabAdd": .rgba(0x6c717aff),
+                    "searchField": .rgba(0x27292eff),
+                    "searchBorder": .rgba(0x33353aff),
+                    "searchBorderActive": .rgba(0x61afef80),
+                    "searchText": .rgba(0x7f848eff),
+                    "searchBadge": .rgba(0x34363aff),
+                    "searchBadgeText": .rgba(0xabb2bfff),
+                    "titlebarIcon": .rgba(0x7f848eff),
+                    "noticeFill": .rgba(0x2e2a1aff),
+                    "noticeBorder": .rgba(0x9e6a03ff),
+                ],
+                terminal: TerminalSpec(
+                    background: 0x282c34ff, foreground: 0xabb2bfff,
+                    cursor: 0x528bffff, cursorText: 0x282c34ff,
+                    selectionBackground: 0x3e4451ff, selectionForeground: nil,
+                    palette: [0x21252bff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff, 0x767676ff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff])),
+            ThemeSpec(
+                id: "atom-one-light", name: "Atom One Light", appearance: .light,
+                syntax: "one-light", sidebarMaterial: nil,
+                colors: [
+                    "window": .rgba(0xe1e1e3ff),
+                    "sidebar": .rgba(0xeaeaebff),
+                    "tile": .rgba(0xfafafaff),
+                    "tileAlt": .rgba(0xf5f5f6ff),
+                    "sunken": .rgba(0xededeeff),
+                    "control": .rgba(0xdfdfe1ff),
+                    "selected": .rgba(0xdbdbdcff),
+                    "selectedStrong": .rgba(0xd0d0d2ff),
+                    "border": .rgba(0x0000001a),
+                    "textPrimary": .rgba(0x383a42ff),
+                    "textSecondary": .rgba(0x5c5f69ff),
+                    "textMuted": .rgba(0x74767fff),
+                    "textOnAccent": .rgba(0xffffffff),
+                    "accent": .rgba(0x526fffff),
+                    "dimFill": .rgba(0xe1e1e3ff),
+                    "statusWorking": .rgba(0x4078f2ff),
+                    "statusBlocked": .rgba(0xc18401ff),
+                    "statusDone": .rgba(0x50a14fff),
+                    "statusIdle": .rgba(0x74767fff),
+                    "statusOff": .rgba(0xa0a1a7ff),
+                    "statusConnected": .rgba(0x50a14fff),
+                    "statusConnecting": .rgba(0xc18401ff),
+                    "statusReconnecting": .rgba(0x986801ff),
+                    "statusError": .rgba(0xe45649ff),
+                    "error": .rgba(0xe45649ff),
+                    "warning": .rgba(0xc18401ff),
+                    "gitModified": .rgba(0x986801ff),
+                    "gitAdded": .rgba(0x50a14fff),
+                    "gitDeleted": .rgba(0xe45649ff),
+                    "gitRenamed": .rgba(0x4078f2ff),
+                    "gitConflicted": .rgba(0xa626a4ff),
+                    "hud": .rgba(0x000000bf),
+                    "badge": .rgba(0x0000008c),
+                    "overlay": .rgba(0xfafafaeb),
+                    "overlayText": .rgba(0x5c5f69ff),
+                    "overlayTitle": .rgba(0x383a42ff),
+                    "takeover": .rgba(0x8c610df2),
+                    "shadow": .rgba(0x000000ff),
+                    "ghostFill": .rgba(0x8080801a),
+                    "header": .rgba(0xeaeaebff),
+                    "headerHairline": .rgba(0xdbdbdcff),
+                    "browserChrome": .rgba(0xededeeff),
+                    "browserField": .rgba(0xfafafaff),
+                    "previewToggleTrack": .rgba(0xdfdfe1ff),
+                    "previewToggleSelected": .rgba(0xffffffff),
+                    "kindTerminal": .rgba(0x29303dff),
+                    "kindBrowser": .rgba(0x21527aff),
+                    "kindPreview": .rgba(0x5c4078ff),
+                    "kindFiles": .rgba(0x336145ff),
+                    "tabStrip": .rgba(0xe8e8e9ff),
+                    "tabStripBorder": .rgba(0xd4d4d6ff),
+                    "tabSelected": .rgba(0xffffffff),
+                    "tabText": .rgba(0x5c5f69ff),
+                    "tabTextSelected": .rgba(0x383a42ff),
+                    "tabAdd": .rgba(0x74767fff),
+                    "searchField": .rgba(0xfafafaff),
+                    "searchBorder": .rgba(0xd4d4d6ff),
+                    "searchBorderActive": .rgba(0x526fff80),
+                    "searchText": .rgba(0x74767fff),
+                    "searchBadge": .rgba(0xeaeaebff),
+                    "searchBadgeText": .rgba(0x5c5f69ff),
+                    "titlebarIcon": .rgba(0x74767fff),
+                    "noticeFill": .rgba(0xfff8c5ff),
+                    "noticeBorder": .rgba(0xd4a72cff),
+                ],
+                terminal: TerminalSpec(
+                    background: 0xfafafaff, foreground: 0x383a42ff,
+                    cursor: 0x526fffff, cursorText: 0xfafafaff,
+                    selectionBackground: 0xe5e5e6ff, selectionForeground: nil,
+                    palette: [0x383a42ff, 0xe45649ff, 0x50a14fff, 0xc18401ff, 0x4078f2ff, 0xa626a4ff, 0x0184bcff, 0xa0a1a7ff, 0x696c77ff, 0xe45649ff, 0x50a14fff, 0xc18401ff, 0x4078f2ff, 0xa626a4ff, 0x0184bcff, 0xfafafaff])),
+            ThemeSpec(
+                id: "macos-dark", name: "macOS Dark", appearance: .dark,
+                syntax: "github-dark", sidebarMaterial: "sidebar",
+                colors: [
+                    "window": .system("underPageBackgroundColor", alpha: nil, fallback: 0x282828ff),
+                    "sidebar": .system("windowBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
+                    "tile": .system("textBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
+                    "tileAlt": .system("textBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
+                    "sunken": .system("underPageBackgroundColor", alpha: nil, fallback: 0x282828ff),
+                    "control": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "selected": .system("controlAccentColor", alpha: 0.35, fallback: 0x007aff59),
+                    "selectedStrong": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0x464646ff),
+                    "border": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
+                    "textPrimary": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
+                    "textSecondary": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "textMuted": .system("labelColor", alpha: 0.45, fallback: 0xffffff73),
+                    "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
+                    "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "dimFill": .rgba(0x000000ff),
+                    "statusWorking": .system("systemBlue", alpha: nil, fallback: 0x0091ffff),
+                    "statusBlocked": .system("systemYellow", alpha: nil, fallback: 0xffd600ff),
+                    "statusDone": .system("systemGreen", alpha: nil, fallback: 0x30d158ff),
+                    "statusIdle": .system("labelColor", alpha: 0.45, fallback: 0xffffff73),
+                    "statusOff": .system("tertiaryLabelColor", alpha: nil, fallback: 0xffffff3f),
+                    "statusConnected": .system("systemGreen", alpha: nil, fallback: 0x30d158ff),
+                    "statusConnecting": .system("systemYellow", alpha: nil, fallback: 0xffd600ff),
+                    "statusReconnecting": .system("systemOrange", alpha: nil, fallback: 0xff9230ff),
+                    "statusError": .system("systemRed", alpha: nil, fallback: 0xff4245ff),
+                    "error": .system("systemRed", alpha: nil, fallback: 0xff4245ff),
+                    "warning": .system("systemYellow", alpha: nil, fallback: 0xffd600ff),
+                    "gitModified": .system("systemOrange", alpha: nil, fallback: 0xff9230ff),
+                    "gitAdded": .system("systemGreen", alpha: nil, fallback: 0x30d158ff),
+                    "gitDeleted": .system("systemRed", alpha: nil, fallback: 0xff4245ff),
+                    "gitRenamed": .system("systemBlue", alpha: nil, fallback: 0x0091ffff),
+                    "gitConflicted": .system("systemPurple", alpha: nil, fallback: 0xdb34f2ff),
+                    "hud": .rgba(0x000000bf),
+                    "badge": .rgba(0x0000008c),
+                    "overlay": .rgba(0x1e1e1eeb),
+                    "overlayText": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "overlayTitle": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
+                    "takeover": .rgba(0x8c610df2),
+                    "shadow": .system("shadowColor", alpha: nil, fallback: 0x000000ff),
+                    "ghostFill": .rgba(0x8080801a),
+                    "header": .system("windowBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
+                    "headerHairline": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
+                    "browserChrome": .system("windowBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
+                    "browserField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "previewToggleSelected": .system("controlColor", alpha: nil, fallback: 0xffffff3f),
+                    "kindTerminal": .rgba(0x29303dff),
+                    "kindBrowser": .rgba(0x21527aff),
+                    "kindPreview": .rgba(0x5c4078ff),
+                    "kindFiles": .rgba(0x336145ff),
+                    "tabStrip": .system("tertiarySystemFill", alpha: nil, fallback: 0xffffff0c),
+                    "tabStripBorder": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
+                    "tabSelected": .system("tertiaryLabelColor", alpha: nil, fallback: 0xffffff3f),
+                    "tabText": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "tabTextSelected": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
+                    "tabAdd": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "searchField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "searchBorder": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
+                    "searchBorderActive": .system("controlAccentColor", alpha: 0.5, fallback: 0x007aff80),
+                    "searchText": .system("labelColor", alpha: 0.45, fallback: 0xffffff73),
+                    "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "searchBadgeText": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "noticeFill": .system("systemYellow", alpha: 0.14, fallback: 0xffd60024),
+                    "noticeBorder": .system("systemYellow", alpha: 0.6, fallback: 0xffd60099),
+                ],
+                terminal: TerminalSpec(
+                    background: 0x1e1e1eff, foreground: 0xffffffff,
+                    cursor: 0x98989dff, cursorText: 0xffffffff,
+                    selectionBackground: 0x3f638bff, selectionForeground: 0xffffffff,
+                    palette: [0x1a1a1aff, 0xcc372eff, 0x26a439ff, 0xcdac08ff, 0x0869cbff, 0x9647bfff, 0x479ec2ff, 0x98989dff, 0x464646ff, 0xff453aff, 0x32d74bff, 0xffd60aff, 0x0a84ffff, 0xbf5af2ff, 0x76d6ffff, 0xffffffff])),
+            ThemeSpec(
+                id: "macos-light", name: "macOS Light", appearance: .light,
+                syntax: "github-light", sidebarMaterial: "sidebar",
+                colors: [
+                    "window": .rgba(0xecececff),
+                    "sidebar": .rgba(0xf5f5f5ff),
+                    "tile": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
+                    "tileAlt": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
+                    "sunken": .rgba(0xf5f5f5ff),
+                    "control": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
+                    "selected": .system("controlAccentColor", alpha: 0.2, fallback: 0x007aff33),
+                    "selectedStrong": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0xdcdcdcff),
+                    "border": .system("separatorColor", alpha: nil, fallback: 0x00000019),
+                    "textPrimary": .system("labelColor", alpha: nil, fallback: 0x000000d8),
+                    "textSecondary": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "textMuted": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
+                    "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
+                    "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "dimFill": .rgba(0xecececff),
+                    "statusWorking": .system("systemBlue", alpha: nil, fallback: 0x0088ffff),
+                    "statusBlocked": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
+                    "statusDone": .system("systemGreen", alpha: nil, fallback: 0x34c759ff),
+                    "statusIdle": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
+                    "statusOff": .system("tertiaryLabelColor", alpha: nil, fallback: 0x00000042),
+                    "statusConnected": .system("systemGreen", alpha: nil, fallback: 0x34c759ff),
+                    "statusConnecting": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
+                    "statusReconnecting": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
+                    "statusError": .system("systemRed", alpha: nil, fallback: 0xff383cff),
+                    "error": .system("systemRed", alpha: nil, fallback: 0xff383cff),
+                    "warning": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
+                    "gitModified": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
+                    "gitAdded": .system("systemGreen", alpha: nil, fallback: 0x34c759ff),
+                    "gitDeleted": .system("systemRed", alpha: nil, fallback: 0xff383cff),
+                    "gitRenamed": .system("systemBlue", alpha: nil, fallback: 0x0088ffff),
+                    "gitConflicted": .system("systemPurple", alpha: nil, fallback: 0xcb30e0ff),
+                    "hud": .rgba(0x000000bf),
+                    "badge": .rgba(0x0000008c),
+                    "overlay": .rgba(0xffffffeb),
+                    "overlayText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "overlayTitle": .system("labelColor", alpha: nil, fallback: 0x000000d8),
+                    "takeover": .rgba(0x8c610df2),
+                    "shadow": .system("shadowColor", alpha: nil, fallback: 0x000000ff),
+                    "ghostFill": .rgba(0x8080801a),
+                    "header": .rgba(0xf5f5f5ff),
+                    "headerHairline": .system("separatorColor", alpha: nil, fallback: 0x00000019),
+                    "browserChrome": .rgba(0xf5f5f5ff),
+                    "browserField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
+                    "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
+                    "previewToggleSelected": .system("controlColor", alpha: nil, fallback: 0xffffffff),
+                    "kindTerminal": .rgba(0x29303dff),
+                    "kindBrowser": .rgba(0x21527aff),
+                    "kindPreview": .rgba(0x5c4078ff),
+                    "kindFiles": .rgba(0x336145ff),
+                    "tabStrip": .system("tertiarySystemFill", alpha: nil, fallback: 0x0000000c),
+                    "tabStripBorder": .system("separatorColor", alpha: nil, fallback: 0x00000019),
+                    "tabSelected": .system("controlColor", alpha: nil, fallback: 0xffffffff),
+                    "tabText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "tabTextSelected": .system("labelColor", alpha: nil, fallback: 0x000000d8),
+                    "tabAdd": .system("secondaryLabelColor", alpha: nil, fallback: 0x0000007f),
+                    "searchField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
+                    "searchBorder": .system("separatorColor", alpha: nil, fallback: 0x00000019),
+                    "searchBorderActive": .system("controlAccentColor", alpha: 0.5, fallback: 0x007aff80),
+                    "searchText": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
+                    "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
+                    "searchBadgeText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0x0000007f),
+                    "noticeFill": .system("systemYellow", alpha: 0.14, fallback: 0xffcc0024),
+                    "noticeBorder": .system("systemOrange", alpha: 0.7, fallback: 0xff8d28b2),
+                ],
+                terminal: TerminalSpec(
+                    background: 0xffffffff, foreground: 0x000000ff,
+                    cursor: 0x98989dff, cursorText: 0xffffffff,
+                    selectionBackground: 0xb3d7ffff, selectionForeground: 0x000000ff,
+                    palette: [0x1a1a1aff, 0xcc372eff, 0x26a439ff, 0xcdac08ff, 0x0869cbff, 0x9647bfff, 0x479ec2ff, 0x98989dff, 0x464646ff, 0xff453aff, 0x32d74bff, 0xe5bc00ff, 0x0a84ffff, 0xbf5af2ff, 0x69c9f2ff, 0xffffffff])),
+        ]
+    }
 
-        private static func rgba(_ v: UInt32) -> NSColor {
-            NSColor(srgbRed: CGFloat((v >> 24) & 0xff) / 255, green: CGFloat((v >> 16) & 0xff) / 255,
-                    blue: CGFloat((v >> 8) & 0xff) / 255, alpha: CGFloat(v & 0xff) / 255)
+    /// CSS variables the shell sets on webview pages: `--azj-<name>` gets the token.
+    enum Webview {
+        static let variables: [(name: String, token: String)] = [
+            ("bg", "tileAlt"),
+            ("fg", "textSecondary"),
+            ("heading", "textPrimary"),
+            ("muted", "textMuted"),
+            ("border", "selectedStrong"),
+            ("subtle", "sunken"),
+            ("link", "accent"),
+            ("code", "error"),
+            ("notice-bg", "noticeFill"),
+            ("notice-border", "noticeBorder"),
+        ]
+    }
+
+    /// The NSColor a theme's `{"system": name}` colour names.
+    static func systemColor(_ name: String) -> NSColor? {
+        switch name {
+        case "windowBackgroundColor": .windowBackgroundColor
+        case "controlBackgroundColor": .controlBackgroundColor
+        case "textBackgroundColor": .textBackgroundColor
+        case "underPageBackgroundColor": .underPageBackgroundColor
+        case "labelColor": .labelColor
+        case "secondaryLabelColor": .secondaryLabelColor
+        case "tertiaryLabelColor": .tertiaryLabelColor
+        case "quaternaryLabelColor": .quaternaryLabelColor
+        case "separatorColor": .separatorColor
+        case "gridColor": .gridColor
+        case "controlColor": .controlColor
+        case "controlTextColor": .controlTextColor
+        case "unemphasizedSelectedContentBackgroundColor": .unemphasizedSelectedContentBackgroundColor
+        case "selectedContentBackgroundColor": .selectedContentBackgroundColor
+        case "controlAccentColor": .controlAccentColor
+        case "selectedTextBackgroundColor": .selectedTextBackgroundColor
+        case "findHighlightColor": .findHighlightColor
+        case "systemFill": .systemFill
+        case "secondarySystemFill": .secondarySystemFill
+        case "tertiarySystemFill": .tertiarySystemFill
+        case "quaternarySystemFill": .quaternarySystemFill
+        case "systemBlue": .systemBlue
+        case "systemGreen": .systemGreen
+        case "systemYellow": .systemYellow
+        case "systemOrange": .systemOrange
+        case "systemRed": .systemRed
+        case "systemPurple": .systemPurple
+        case "systemPink": .systemPink
+        case "systemGray": .systemGray
+        case "systemTeal": .systemTeal
+        case "systemIndigo": .systemIndigo
+        case "systemBrown": .systemBrown
+        case "headerTextColor": .headerTextColor
+        case "shadowColor": .shadowColor
+        case "linkColor": .linkColor
+        case "placeholderTextColor": .placeholderTextColor
+        case "alternateSelectedControlTextColor": .alternateSelectedControlTextColor
+        default: nil
         }
     }
 
@@ -341,13 +789,15 @@ enum Design {
         }
 
         /// The state's symbol as a tinted image, or nil if the symbol is missing.
+        /// Its colour is resolved now, in the theme's appearance: the image is
+        /// often baked into a layer (StatusIconView makes it again per theme).
         /// Symbols named `azulejo.*` are drawn by the app (DesignSupport.swift).
         static func image(_ status: Status, pointSize: CGFloat = 11) -> NSImage? {
             if status.symbol.hasPrefix("azulejo.") {
                 return Design.customSymbol(status.symbol, color: status.color, pointSize: pointSize)
             }
             let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-                .applying(.init(paletteColors: [status.color]))
+                .applying(.init(paletteColors: [Theme.resolved(status.color)]))
             return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
                 .withSymbolConfiguration(config)
         }

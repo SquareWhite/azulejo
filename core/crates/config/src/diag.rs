@@ -23,6 +23,8 @@ pub enum Source {
     User(Option<PathBuf>),
     /// A Ghostty config file.
     Ghostty(PathBuf),
+    /// A user theme, `<config dir>/themes/<id>.toml`.
+    Theme(PathBuf),
 }
 
 /// 1-based line and column (column counts characters, not bytes).
@@ -73,7 +75,9 @@ impl fmt::Display for Diagnostic {
         };
         match &self.source {
             Source::DefaultKeymap => write!(f, "keymap.default.toml")?,
-            Source::User(Some(path)) | Source::Ghostty(path) => write!(f, "{}", path.display())?,
+            Source::User(Some(path)) | Source::Ghostty(path) | Source::Theme(path) => {
+                write!(f, "{}", path.display())?
+            }
             Source::User(None) => write!(f, "config")?,
         }
         if let Some(loc) = self.location {

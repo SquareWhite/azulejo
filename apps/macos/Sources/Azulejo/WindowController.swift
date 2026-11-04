@@ -13,6 +13,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// The sidebar's rounded card: the traffic lights sit in its top band
     /// and the sidebar's rows below them (D.2).
     private let sidebarCard = SidebarCardView()
+    /// Automation: the sidebar card's vibrancy material, if the theme has one.
+    var sidebarMaterial: String? { sidebarCard.materialName }
     private let tabBar = TabStripView()
     let search = ToolbarSearchView()
     private lazy var sidebarToggle = SidebarToggleButton { [weak self] in
@@ -66,6 +68,9 @@ final class WindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.backgroundColor = Design.Color.window
+        // The theme's appearance (darkAqua or aqua): system controls, menus
+        // and scrollers match it. Theme.set keeps it current.
+        window.appearance = Theme.current.appearance.nsAppearance
         window.minSize = NSSize(width: 480, height: 320)
         window.tabbingMode = .disallowed
         content.sidebarCard = sidebarCard
@@ -288,6 +293,7 @@ final class ChromeLayoutView: NSView {
     override var isOpaque: Bool { true }
 
     override func updateLayer() {
+        // Redrawn on every theme change (Theme.set marks every view).
         layer?.backgroundColor = Design.Color.window.cgColor
     }
 
@@ -550,8 +556,12 @@ final class ChromeLayoutView: NSView {
 
 /// The sidebar's rounded card (D.2); D.3 styles the rows inside it. Its top
 /// band holds the traffic lights and moves the window like a title bar.
+/// Themes with a sidebar material (the macOS ones) show it through a
+/// vibrancy view instead of the flat `sidebar` colour.
 @MainActor
-final class SidebarCardView: NSView {
+final class SidebarCardView: NSView, ThemeAware {
+    private var vibrancy: NSVisualEffectView?
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -561,20 +571,58 @@ final class SidebarCardView: NSView {
         layer?.masksToBounds = true
         layer?.cornerRadius = Design.Radius.card
         layer?.borderWidth = Design.Border.hairline
-        applyColours()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func applyColours() {
-        layer?.backgroundColor = Design.Color.sidebar.cgColor
+    func applyTheme() {
+        let material = Theme.current.sidebarMaterial.flatMap(Self.material)
+        if let material {
+            let effect = vibrancy ?? NSVisualEffectView()
+            if vibrancy == nil {
+                effect.blendingMode = .behindWindow
+                effect.state = .followsWindowActiveState
+                effect.wantsLayer = true
+                effect.layer?.cornerRadius = Design.Radius.card
+                effect.layer?.masksToBounds = true
+                effect.frame = bounds
+                effect.autoresizingMask = [.width, .height]
+                addSubview(effect, positioned: .below, relativeTo: nil)
+                vibrancy = effect
+            }
+            effect.material = material
+            layer?.backgroundColor = nil
+        } else {
+            vibrancy?.removeFromSuperview()
+            vibrancy = nil
+            layer?.backgroundColor = Design.Color.sidebar.cgColor
+        }
         layer?.borderColor = Design.Color.border.cgColor
+    }
+
+    /// Automation: whether the card shows a vibrancy material.
+    var materialName: String? { vibrancy.map { _ in Theme.current.sidebarMaterial ?? "?" } }
+
+    private static func material(_ name: String) -> NSVisualEffectView.Material? {
+        switch name {
+        case "sidebar": .sidebar
+        case "menu": .menu
+        case "popover": .popover
+        case "headerView": .headerView
+        case "windowBackground": .windowBackground
+        case "underWindowBackground": .underWindowBackground
+        case "contentBackground": .contentBackground
+        case "titlebar": .titlebar
+        case "hudWindow": .hudWindow
+        default: nil
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyColours()
+        Theme.reapply(self)
     }
 
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
@@ -627,7 +675,7 @@ enum TrafficLights {
 /// A small status pill over the tiles: "prefix", "resize mode", and short
 /// notes for shell actions that haven't landed yet.
 @MainActor
-final class HUDView: NSView {
+final class HUDView: NSView, ThemeAware {
     private let label = NSTextField(labelWithString: "")
     private var hideWork: DispatchWorkItem?
 
@@ -635,7 +683,7 @@ final class HUDView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.hud
-        layer?.backgroundColor = Design.Color.hud.cgColor
+        Theme.track(self)
         label.textColor = Design.Color.textOnAccent
         label.font = Design.Font.hud
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -651,6 +699,10 @@ final class HUDView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.hud.cgColor
+    }
 
     func show(_ text: String, sticky: Bool) {
         hideWork?.cancel()

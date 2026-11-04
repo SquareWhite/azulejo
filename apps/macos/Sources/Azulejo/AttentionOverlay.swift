@@ -61,7 +61,7 @@ enum AttentionStyle {
 /// it), and a thin coloured border on tiles that need a look. The overlay
 /// lies over the tile container and passes every click through.
 @MainActor
-final class AttentionOverlayView: NSView {
+final class AttentionOverlayView: NSView, ThemeAware {
     /// A tile's header strip, so the badge can sit in it.
     var header: ((String) -> TileHeaderView?)?
     /// Badges by tile; each lives in its tile's header strip.
@@ -73,6 +73,7 @@ final class AttentionOverlayView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -81,6 +82,10 @@ final class AttentionOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     private var tab: TabModel?
+    private var frames: [String: CGRect] = [:]
+
+    /// Borders and badge dots take their colours again.
+    func applyTheme() { apply(tab, frames: frames) }
 
     /// Puts the badges where the tiles are now (window resized, motion ended).
     func relayout(frames: [String: CGRect]) { apply(tab, frames: frames) }
@@ -89,6 +94,7 @@ final class AttentionOverlayView: NSView {
     /// overlay has the container's frame).
     func apply(_ tab: TabModel?, frames: [String: CGRect]) {
         self.tab = tab
+        self.frames = frames
         var seen = Set<String>()
         var state: [String: String] = [:]
         for (id, frame) in frames {
@@ -126,6 +132,7 @@ final class AttentionOverlayView: NSView {
                     borders[id] = v
                     return v
                 }()
+                // theme: apply() runs again from applyTheme().
                 border.layer?.borderColor = (agent.status == .blocked
                     ? AttentionStyle.blocked : AttentionStyle.done).withAlphaComponent(Design.Alpha.attentionBorder).cgColor
                 border.frame = frame.insetBy(dx: -1, dy: -1)
@@ -150,7 +157,7 @@ final class AttentionOverlayView: NSView {
 /// "● claude · blocked" in a tile's header strip; just "●" when `compact`.
 /// Working agents get a slow, gentle pulse on the dot; nothing else moves.
 @MainActor
-final class AgentBadgeView: NSView {
+final class AgentBadgeView: NSView, ThemeAware {
     private let dot = CALayer()
     private let label = NSTextField(labelWithString: "")
     private var pulsing = false
@@ -173,7 +180,7 @@ final class AgentBadgeView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.badge
-        layer?.backgroundColor = Design.Color.badge.cgColor
+        Theme.track(self)
         dot.cornerRadius = Design.Radius.badgeDot
         layer?.addSublayer(dot)
         label.font = Design.Font.badgeLabel
@@ -199,6 +206,11 @@ final class AgentBadgeView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// The dot's colour comes back with the overlay's next apply().
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.badge.cgColor
+    }
+
     func apply(_ tile: TileModel) {
         guard let agent = tile.agent else { return }
         let name = agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
@@ -212,6 +224,7 @@ final class AgentBadgeView: NSView {
         label.stringValue = "\(name) · \(status)"
         toolTip = label.stringValue
         let color = AttentionStyle.color(for: tile) ?? AttentionStyle.idle
+        // theme: AttentionOverlayView.applyTheme() runs this again.
         dot.backgroundColor = color.cgColor
         setPulse(agent.status == .working)
         needsLayout = true

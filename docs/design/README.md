@@ -104,7 +104,7 @@ Four tiles in the mockup: a terminal as the master on the left, a browser top-ri
 
 The values above live in [`shared/design/tokens.json`](../../shared/design/tokens.json), the single source for both shells. The macOS shell reads them through `Design.swift`, which `scripts/design-tokens` (or `just design-tokens`) generates; `just lint` fails while it's stale. No view sets a colour, font or corner radius directly any more.
 
-- **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Each has a dark and a light value; the light ones are provisional.
+- **Colours** use the palette above under camelCase names (`Design.Color.window`, `.sidebar`, `.tile`, `.textPrimary`, `.textMuted`, `.accent`, `.statusBlocked` …). Since Nov 4 they live per theme (`themes.<id>.color` in tokens.json): this palette is `atom-one-dark`, the default, unchanged; `atom-one-light`, `macos-dark` and `macos-light` sit beside it, and users can add their own. [docs/themes.md](../themes.md) has the themes, the config, the terminal colour precedence and the full token list; `Design.Color` tokens resolve against the current theme, and views re-apply their layer colours on a switch (`ThemeAware`, `Theme.swift`).
 - **Tile radii and spacing** follow the mockup since D.5: gutter and outer margin 8 pt, tile radius 10 pt, header strip 28 pt, browser toolbar 36 pt, 8 pt margin round a terminal's text. The sidebar width (168 → 230 pt) moves with D.3.
 - **Tile cards** (D.5): the card's corners are the window colour drawn over the tile (`CornerCapLayer`, a nine-slice image), not a rounded mask, so the terminal's Metal surface and web views aren't masked (a rounded mask costs an offscreen pass). During crop motion the caps follow the moving clip.
 - **Header strips** (D.5): `header` (#21252b, the mockup's focused strip) on every tile, with a `headerHairline` underneath. Unfocused strips come out at the mockup's #202329 through the focus dim (below), not a colour of their own. Terminal titles are centred; tiles with controls on the right (preview, files) are left-aligned. Browser tiles have no header strip; their toolbar takes its place (`browserChrome`, address pill `browserField`, D.6).
@@ -129,6 +129,20 @@ the maintainer settled the designer question: **no outline round the focused til
 - **Motion.** Focus moving cross-fades the dim in 120 ms (`motion.focus`) on the `[animation]` curve; instantly with motion off or under Reduce Motion. Mid-motion the dim rides with the card's crop clip, like the corner caps.
 
 Changing the strength or the fill is a one-line edit in `tokens.json`.
+
+### Themes (Nov 4, 2026)
+
+the maintainer asked for themes. The look above is **Atom One Dark**, the default, and nothing in it changed; beside it ship **Atom One Light** (the official Atom One Light palette), **macOS Dark** and **macOS Light** (system colours that follow the accent colour, a vibrancy sidebar card). Each theme also picks its preview syntax colours and a terminal palette. [docs/themes.md](../themes.md) covers the config, user themes, the terminal colour precedence and every token's value per theme.
+
+| Atom One Dark | Atom One Light |
+| --- | --- |
+| `theme-atom-one-dark.png` (local capture) | `theme-atom-one-light.png` (local capture) |
+| **macOS Dark** | **macOS Light** |
+| `theme-macos-dark.png` (local capture) | `theme-macos-light.png` (local capture) |
+
+The captures are the app's own render of the mockup scene (`apps/macos/automation/themes.sh --docs`), so two things differ from the screen: the traffic lights come out white (a background window's grey lights are drawn with plus-lighter, which washes out on a light window), and the macOS themes' sidebar card shows its material's flat fallback rather than the blurred desktop. The browser tile is blank in all four: WebKit draws the page out of process and the render can't include it.
+
+The focus dim works the same in every theme: unfocused tiles fade towards the theme's `dimFill` at 25 %. The Atom themes and macOS Light fade towards their window colour; macOS Dark fades towards black, because its window colour (`underPageBackgroundColor`, #282828) is lighter than its tiles.
 
 ## What the mockup needs, against the plan
 

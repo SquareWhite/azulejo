@@ -18,7 +18,7 @@ import AppKit
 /// to the tile; right-click on a workspace gives its usual menu. The rail
 /// never takes the keyboard.
 @MainActor
-final class SidebarRailView: NSView {
+final class SidebarRailView: NSView, ThemeAware {
     var onSelect: ((String) -> Void)?
     var onMenu: ((String) -> NSMenu?)?
     /// An agent row: focus its tile (and its workspace and tab).
@@ -53,7 +53,7 @@ final class SidebarRailView: NSView {
         separator.wantsLayer = true
         document.addSubview(separator)
         addSubview(expand)
-        applyColours()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -61,13 +61,11 @@ final class SidebarRailView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyColours()
+        Theme.reapply(self)
     }
 
-    private func applyColours() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            separator.layer?.backgroundColor = Design.Color.border.cgColor
-        }
+    func applyTheme() {
+        separator.layer?.backgroundColor = Design.Color.border.cgColor
     }
 
     // MARK: Model
@@ -264,14 +262,14 @@ private final class RailDocument: NSView {
 
 /// A rail row: hover fill, a click handler, no keyboard focus.
 @MainActor
-class RailRow: NSView {
+class RailRow: NSView, ThemeAware {
     fileprivate let handler: () -> Void
     fileprivate var fill: NSColor? { nil }
     private var icon: StatusIconView?
     /// Automation: the working ring is turning.
     var isSpinning: Bool { icon?.isSpinning == true }
     private var hovering = false {
-        didSet { updateBackground() }
+        didSet { Theme.reapply(self) }
     }
 
     init(handler: @escaping () -> Void) {
@@ -281,6 +279,7 @@ class RailRow: NSView {
         layer?.cornerRadius = Design.Radius.row
         layer?.cornerCurve = .continuous
         setAccessibilityRole(.button)
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -305,15 +304,16 @@ class RailRow: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateBackground()
+        Theme.reapply(self)
     }
 
-    fileprivate func updateBackground() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = (fill
-                ?? (hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover) : nil))?.cgColor
-        }
+    /// The selected or blocked fill, or the hover one.
+    func applyTheme() {
+        layer?.backgroundColor = (fill
+            ?? (hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover) : nil))?.cgColor
     }
+
+    fileprivate func updateBackground() { Theme.reapply(self) }
 
     /// Automation: what a click does.
     func press() { handler() }
@@ -375,8 +375,9 @@ final class RailGroupHeader: NSView {
         let busy = machine?.state == .connecting || machine?.state == .reconnecting
         let mark: NSView
         if busy {
-            let image = Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
-            mark = StatusIconView(status, image: image, spins: true)
+            mark = StatusIconView(status, image: {
+                Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
+            }, spins: true)
         } else {
             mark = RailDot(color: status.color)
         }
@@ -400,7 +401,7 @@ final class RailGroupHeader: NSView {
 
 /// A machine's connection dot in the rail.
 @MainActor
-private final class RailDot: NSView {
+private final class RailDot: NSView, ThemeAware {
     private let color: NSColor
 
     init(color: NSColor) {
@@ -413,7 +414,7 @@ private final class RailDot: NSView {
             widthAnchor.constraint(equalToConstant: side),
             heightAnchor.constraint(equalToConstant: side),
         ])
-        applyColour()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -421,11 +422,11 @@ private final class RailDot: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyColour()
+        Theme.reapply(self)
     }
 
-    private func applyColour() {
-        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = color.cgColor }
+    func applyTheme() {
+        layer?.backgroundColor = color.cgColor
     }
 }
 
@@ -448,7 +449,7 @@ final class RailWorkspaceRow: RailRow, ContextMenuProviding {
         toolTip = tip
         alphaValue = dimmed ? Design.Alpha.dimmed : 1
         setAccessibilityLabel("\(ws.name), \(status.rawValue)")
-        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.railStatus))
+        let icon = StatusIconView(status) { SidebarView.icon(status, pointSize: Design.Symbol.railStatus) }
         addContent(text: "\(number)", font: Design.Font.railNumber,
                    color: selected ? Design.Color.textPrimary : Design.Color.textSecondary, icon: icon)
         updateBackground()
@@ -475,7 +476,8 @@ final class RailAgentRow: RailRow {
         super.init(handler: handler)
         toolTip = agent.tip
         setAccessibilityLabel(agent.tip.replacingOccurrences(of: "\n", with: ", "))
-        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.railStatus))
+        let state = agent.status
+        let icon = StatusIconView(state) { SidebarView.icon(state, pointSize: Design.Symbol.railStatus) }
         addContent(text: machine, font: Design.Font.railLetter,
                    color: blocked ? Design.Status.blocked.color : Design.Color.textMuted, icon: icon)
         updateBackground()

@@ -5,7 +5,7 @@ import AppKit
 /// typing happens in quick open's own field. The key badge shows whatever
 /// chord `quick_open` is bound to, so config overrides show up.
 @MainActor
-final class ToolbarSearchView: NSView {
+final class ToolbarSearchView: NSView, ThemeAware {
     static let placeholder = "Jump to workspace or tile"
     var onActivate: (() -> Void)?
     private let magnifier = NSImageView()
@@ -16,7 +16,7 @@ final class ToolbarSearchView: NSView {
     private(set) var chordText = ""
     /// Drawn with the accent hairline while quick open is showing.
     var active = false {
-        didSet { if active != oldValue { applyColours() } }
+        didSet { if active != oldValue { Theme.reapply(self) } }
     }
 
     override init(frame: NSRect) {
@@ -39,7 +39,7 @@ final class ToolbarSearchView: NSView {
         badge.textColor = Design.Color.searchBadgeText
         badge.alignment = .center
         badgeBack.addSubview(badge)
-        applyColours()
+        Theme.track(self)
         setAccessibilityRole(.button)
         setAccessibilityLabel(Self.placeholder)
     }
@@ -47,7 +47,7 @@ final class ToolbarSearchView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func applyColours() {
+    func applyTheme() {
         layer?.backgroundColor = Design.Color.searchField.cgColor
         layer?.borderColor = (active ? Design.Color.searchBorderActive : Design.Color.searchBorder).cgColor
         badgeBack.layer?.backgroundColor = Design.Color.searchBadge.cgColor
@@ -55,7 +55,7 @@ final class ToolbarSearchView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        applyColours()
+        Theme.reapply(self)
     }
 
     /// Picks the badge's chord from the core's keymap (`azj_core_keymap`).

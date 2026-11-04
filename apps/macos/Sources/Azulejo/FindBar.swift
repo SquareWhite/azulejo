@@ -29,7 +29,7 @@ extension Findable {
 /// tab, the sidebar) the bar remembers it had it (`keepsKeyboard`), and the
 /// tile gets it back into the bar when it's focused again (TileFocus).
 @MainActor
-final class FindBar: NSView, KeyScope {
+final class FindBar: NSView, KeyScope, ThemeAware {
     static let height = Design.Space.browserChromeHeight
 
     /// The query changed (every edit; the finder debounces).
@@ -85,7 +85,7 @@ final class FindBar: NSView, KeyScope {
         hairline.wantsLayer = true
         [icon, field, count].forEach(pill.addSubview)
         [pill, previous, next, close, hairline].forEach(addSubview)
-        updateColors()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -252,15 +252,13 @@ final class FindBar: NSView, KeyScope {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateColors()
+        Theme.reapply(self)
     }
 
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.browserChrome.cgColor
-            pill.layer?.backgroundColor = Design.Color.browserField.cgColor
-            hairline.layer?.backgroundColor = Design.Color.headerHairline.cgColor
-        }
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.browserChrome.cgColor
+        pill.layer?.backgroundColor = Design.Color.browserField.cgColor
+        hairline.layer?.backgroundColor = Design.Color.headerHairline.cgColor
     }
 
     // MARK: Buttons

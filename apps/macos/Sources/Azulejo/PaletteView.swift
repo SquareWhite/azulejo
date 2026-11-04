@@ -7,8 +7,10 @@ struct PaletteItem {
         case workspace
         case tab
         case tile(TileKind)
+        /// A row of the "Set theme…" list.
+        case theme
 
-        var isCommand: Bool { self == .command }
+        var isCommand: Bool { self == .command || self == .theme }
 
         /// Short tag drawn on the row.
         var label: String {
@@ -16,6 +18,7 @@ struct PaletteItem {
             case .command: return "Command"
             case .workspace: return "Workspace"
             case .tab: return "Tab"
+            case .theme: return "Theme"
             case .tile(let kind):
                 switch kind {
                 case .terminal: return "Terminal"
@@ -32,6 +35,7 @@ struct PaletteItem {
             case .command: return Design.Icon.command
             case .workspace: return Design.Icon.workspace
             case .tab: return Design.Icon.tab
+            case .theme: return "paintpalette"
             case .tile(let kind): return Design.Icon.for(kind)
             }
         }
@@ -66,7 +70,7 @@ struct PaletteItem {
 /// resolves them and calls `perform(keyAction:)`; plain typing goes to the
 /// field.
 @MainActor
-final class PaletteView: NSView, NSTextFieldDelegate {
+final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
     /// What the current query lists, from its leading character.
     enum Scope: String {
         case all, commands, jump
@@ -104,6 +108,11 @@ final class PaletteView: NSView, NSTextFieldDelegate {
     /// Runs the chosen item, with the prompt's input for two-step items.
     var onRun: ((PaletteItem, String?) -> Void)?
     var onClose: (() -> Void)?
+    /// A list opened with `openList`: the selected row changed (the theme
+    /// picker previews it).
+    var onSelect: ((PaletteItem) -> Void)?
+    /// Closed without running a row (Esc, a click outside): before `onClose`.
+    var onCancel: (() -> Void)?
     /// Opened or closed (the toolbar search field highlights while open).
     var onShownChange: ((Bool) -> Void)?
 
@@ -123,7 +132,6 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         super.init(frame: frame)
         wantsLayer = true
         isHidden = true
-        layer?.shadowColor = Design.Color.shadow.cgColor
         layer?.shadowOpacity = Float(Design.Alpha.paletteShadow)
         layer?.shadowRadius = 18
         layer?.shadowOffset = CGSize(width: 0, height: -6)
@@ -135,7 +143,6 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         backdrop.layer?.cornerRadius = Design.Radius.palette
         backdrop.layer?.masksToBounds = true
         backdrop.layer?.borderWidth = Design.Border.hairline
-        backdrop.layer?.borderColor = Design.Color.border.cgColor
         addSubview(backdrop)
 
         field.isBordered = false
@@ -157,10 +164,21 @@ final class PaletteView: NSView, NSTextFieldDelegate {
             self.runSelected()
         }
         addSubview(list)
+        Theme.track(self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyTheme() {
+        layer?.shadowColor = Design.Color.shadow.cgColor
+        backdrop.layer?.borderColor = Design.Color.border.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        Theme.reapply(self)
+    }
 
     // MARK: Open / close
 
@@ -168,6 +186,9 @@ final class PaletteView: NSView, NSTextFieldDelegate {
 
     /// Opens with `query` in the field (`">"` or `"@"` for a scoped open).
     func open(items: [PaletteItem], recents: [String], query: String = "") {
+        onSelect = nil
+        onCancel = nil
+        listID = nil
         isOpen = true
         self.items = items
         self.recents = recents
@@ -182,8 +203,31 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         installClickMonitor()
     }
 
-    func close() {
+    /// A list of its own (the theme picker): `items` in their order, the
+    /// field filtering them, `selectedID` selected; `placeholder` says what
+    /// it's for. Set `onSelect` and `onCancel` after this.
+    func openList(id: String, items: [PaletteItem], selectedID: String?, placeholder: String) {
+        open(items: items, recents: [], query: "")
+        listID = id
+        field.placeholderString = placeholder
+        if let selectedID, let index = results.firstIndex(where: { $0.item.id == selectedID }) {
+            selected = index
+            list.selected = index
+        }
+    }
+
+    /// The `openList` id while one is showing.
+    private(set) var listID: String?
+
+    /// Esc and clicks outside: a cancel.
+    func close() { close(cancelled: true) }
+
+    private func close(cancelled: Bool) {
         guard isOpen else { return }
+        if cancelled { onCancel?() }
+        onCancel = nil
+        onSelect = nil
+        listID = nil
         isOpen = false
         promptItem = nil
         isHidden = true
@@ -239,6 +283,12 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         guard promptItem == nil, !results.isEmpty else { return }
         selected = max(0, min(results.count - 1, selected + delta))
         list.selected = selected
+        selectionChanged()
+    }
+
+    private func selectionChanged() {
+        guard let onSelect, results.indices.contains(selected) else { return }
+        onSelect(results[selected].item)
     }
 
     // MARK: Filtering
@@ -303,6 +353,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
         list.isHidden = false
         promptLabel.isHidden = true
         superview?.needsLayout = true
+        selectionChanged()
     }
 
     // MARK: Running
@@ -310,7 +361,7 @@ final class PaletteView: NSView, NSTextFieldDelegate {
     private func runSelected() {
         if let item = promptItem {
             let input = field.stringValue
-            close()
+            close(cancelled: false)
             onRun?(item, input)
             return
         }
@@ -332,8 +383,17 @@ final class PaletteView: NSView, NSTextFieldDelegate {
             superview?.needsLayout = true
             return
         }
-        close()
+        close(cancelled: false)
         onRun?(item, nil)
+    }
+
+    /// Automation: selects the row with `id`, as the arrow keys would.
+    func select(id: String) -> Bool {
+        guard let index = results.firstIndex(where: { $0.item.id == id }) else { return false }
+        selected = index
+        list.selected = index
+        selectionChanged()
+        return true
     }
 
     /// Whether the inline input step is showing, and for which item.
@@ -473,12 +533,14 @@ final class PaletteListView: NSView {
     private static var icons: [String: NSImage] = [:]
 
     static func icon(_ kind: PaletteItem.Kind) -> NSImage? {
-        if let cached = icons[kind.symbol] { return cached }
+        // By theme too: the image holds its tint.
+        let key = Theme.current.id + "/" + kind.symbol
+        if let cached = icons[key] { return cached }
         let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.paletteKind, weight: .regular)
-            .applying(.init(paletteColors: [Design.Color.textSecondary]))
+            .applying(.init(paletteColors: [Theme.resolved(Design.Color.textSecondary)]))
         guard let image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.label)?
             .withSymbolConfiguration(config) else { return nil }
-        icons[kind.symbol] = image
+        icons[key] = image
         return image
     }
 
