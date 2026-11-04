@@ -4048,6 +4048,17 @@
               },
               "type": "array"
             },
+            "scroll": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ScrollState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "With `locate`: the terminal's view when it was searched."
+            },
             "truncated": {
               "default": false,
               "description": "herdr cut the history short; older lines weren't searched.",
@@ -4181,6 +4192,24 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "offset_from_bottom": {
+          "description": "With `locate`: the `terminal.scroll` offset that puts this line in\nthe middle of the view.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "row": {
+          "description": "With `locate`: the line's first row in herdr's buffer, 0 being the\noldest row herdr keeps (a soft-wrapped line takes several rows).\nAbsent when the rows couldn't be matched up with the lines.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "text": {
           "type": "string"
@@ -4611,13 +4640,18 @@
           "type": "boolean"
         },
         "lines": {
-          "description": "How many lines of history to search; herdr's default when absent.",
+          "description": "How many lines of history to search; herdr's default when absent, or\nall of it with `locate`.",
           "format": "uint32",
           "minimum": 0,
           "type": [
             "integer",
             "null"
           ]
+        },
+        "locate": {
+          "default": false,
+          "description": "Also work out where each match sits in herdr's buffer (`row`) and the\n`terminal.scroll` offset that shows it mid-view, as a find bar needs.\nCosts two more herdr calls.",
+          "type": "boolean"
         },
         "query": {
           "description": "Literal text to find.",

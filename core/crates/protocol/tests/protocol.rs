@@ -180,6 +180,7 @@ fn sample_commands() -> Vec<Command> {
             query: "error".into(),
             case_sensitive: true,
             lines: Some(2000),
+            locate: true,
         }),
         Command::EventsSubscribe(EventsSubscribe {
             filter: vec!["tile.".into(), "focus.changed".into()],
@@ -612,8 +613,20 @@ fn replies_round_trip() {
             matches: vec![SearchMatch {
                 line: 3,
                 text: "error: boom".into(),
+                row: Some(250),
+                offset_from_bottom: Some(170),
             }],
             truncated: true,
+            scroll: Some(ScrollState {
+                offset_from_bottom: 0,
+                max_offset_from_bottom: 400,
+                viewport_rows: 40,
+            }),
+        },
+        Reply::Matches {
+            matches: vec![],
+            truncated: false,
+            scroll: None,
         },
         Reply::Subscribed { subscription: 1 },
         Reply::Preview(sample_preview(tile.id)),

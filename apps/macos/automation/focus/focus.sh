@@ -31,6 +31,7 @@ mkdir -p "$fixtures/site" "$fixtures/tree/sub"
 cat >"$fixtures/site/index.html" <<'HTML'
 <!doctype html><title>focus page</title>
 <input id="q" autocomplete="off"><p id="out"></p>
+<p id="words">azulejo tiles, azulejo walls, azulejo floors</p>
 <script>document.getElementById('q').addEventListener('keydown', e => {
   document.getElementById('out').textContent += e.key + ',';
 });</script>

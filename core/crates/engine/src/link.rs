@@ -94,6 +94,13 @@ pub trait HerdrPort: Send + Sync + 'static {
         offset_from_bottom: u64,
     ) -> impl Future<Output = Result<herdr::ScrollInfo, String>> + Send;
 
+    /// Where a pane's view sits, without moving it (`terminal.search`
+    /// with `locate`).
+    fn scroll_state(
+        &self,
+        pane_id: String,
+    ) -> impl Future<Output = Result<herdr::ScrollInfo, String>> + Send;
+
     /// What runs in a pane's foreground (F28). herdr has no event for it, so
     /// the core polls. A port without it answers [`crate::meta::UNSUPPORTED`].
     fn process_info(
@@ -179,6 +186,14 @@ impl HerdrPort for herdr::Client {
             .await
             .map(|pane| pane.scroll.unwrap_or_default())
             .map_err(|e| e.to_string())
+    }
+
+    async fn scroll_state(&self, pane_id: String) -> Result<herdr::ScrollInfo, String> {
+        match herdr::Client::pane(self, &herdr::PaneId(pane_id.clone())).await {
+            Ok(Some(pane)) => Ok(pane.scroll.unwrap_or_default()),
+            Ok(None) => Err(format!("no pane {pane_id}")),
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     async fn process_info(&self, pane_id: String) -> Result<herdr::ProcessInfo, String> {

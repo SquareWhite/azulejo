@@ -54,6 +54,13 @@ final class BrowserTileView: NSView, TileView {
     private var reported: (url: String?, title: String?) = (nil, nil)
     private var reportScheduled = false
     private var focused = false
+    /// ⌘F: the bar sits under the toolbar and pushes the page down.
+    private lazy var finder: WebFinder = {
+        let finder = WebFinder(webView: { [weak self] in self?.webView })
+        finder.bar.onFocus = { [weak self] in self?.findFocused() }
+        finder.onClosed = { [weak self] in self?.findClosed() }
+        return finder
+    }()
 
     static let toolbarHeight = Design.Space.browserChromeHeight
 
@@ -185,10 +192,12 @@ final class BrowserTileView: NSView, TileView {
         let left = forward.frame.maxX + 10, right = reload.frame.minX - 10
         pill.frame = NSRect(x: left, y: (h - fieldH) / 2, width: max(40, right - left), height: fieldH)
         layoutPill()
-        webView.frame = NSRect(x: 0, y: h, width: w, height: max(0, bounds.height - h))
+        let find = finder.bar.isOpen ? FindBar.height : 0
+        finder.bar.frame = NSRect(x: 0, y: h, width: w, height: FindBar.height)
+        webView.frame = NSRect(x: 0, y: h + find, width: w, height: max(0, bounds.height - h - find))
         layoutProgress()
         let bh = Design.Space.browserBannerHeight
-        banner.frame = NSRect(x: 8, y: h + 8, width: max(0, w - 16), height: bh)
+        banner.frame = NSRect(x: 8, y: h + find + 8, width: max(0, w - 16), height: bh)
     }
 
     /// Mockup: globe (or lock) and address centred in the pill; while
@@ -759,6 +768,28 @@ final class BrowserBanner: NSView {
     @objc private func run() { action?() }
 }
 
+// MARK: - Find (⌘F)
+
+extension BrowserTileView: Findable {
+    func beginFind() -> String? {
+        if finder.bar.superview == nil { addSubview(finder.bar, positioned: .below, relativeTo: banner) }
+        let opening = !finder.bar.isOpen
+        finder.open()
+        if opening { needsLayout = true; layoutSubtreeIfNeeded() }
+        return nil
+    }
+
+    fileprivate func findFocused() {
+        // A click into the bar of a tile that isn't focused focuses it.
+        if !focused { app?.send(["method": "tile.focus", "params": ["tile": tileID]]) }
+    }
+
+    fileprivate func findClosed() {
+        needsLayout = true
+        window?.makeFirstResponder(webView)
+    }
+}
+
 // MARK: - Automation
 
 extension BrowserTileView: AutomatableTile {
@@ -827,7 +858,7 @@ extension BrowserTileView: AutomatableTile {
             "tile.store": webView.configuration.websiteDataStore.identifier?.uuidString ?? "default",
             "tile.js": lastScriptResult ?? "-",
             "tile.pending": "\(pendingEchoes.count)",
-        ]
+        ].merging(finder.automationState()) { $1 }
     }
 
     private var lastScriptResult: String? {

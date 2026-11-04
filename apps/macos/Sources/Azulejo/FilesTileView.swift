@@ -923,3 +923,14 @@ private final class FilesHeader: NSView {
 extension FilesTileView: TileHeaderAccessory {
     var headerAccessory: NSView? { header }
 }
+
+// MARK: - Find (⌘F)
+
+/// The files tile has a filter already; ⌘F opens it, as / does.
+extension FilesTileView: Findable {
+    func beginFind() -> String? {
+        showFilter()
+        filter.currentEditor()?.selectAll(nil)
+        return nil
+    }
+}

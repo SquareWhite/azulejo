@@ -55,6 +55,8 @@ final class TerminalTileView: NSView, TileView {
     private var ownAttachEnded: (terminal: String, at: Date)?
     private var ghostRetries: [Date] = []
     private let overlay = TerminalOverlay()
+    /// ⌘F: made on first use, then kept with its query.
+    private var finder: TerminalFinder?
     private let runDir: URL
     /// Layout motion (ADR 0004): the last frame, covering the live surface
     /// while the tile moves and the PTY redraws at its new size. `freeze` is
@@ -131,6 +133,8 @@ final class TerminalTileView: NSView, TileView {
     func setFocused(_ focused: Bool) {
         self.focused = focused
         guard focused, let window, TileFocus.canTake(in: window) else { return }
+        // Typing in this tile's find bar: refreshes leave it there.
+        if finder?.bar.holdsKeyboard == true { return }
         let target: NSView = surface ?? self
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
@@ -150,6 +154,7 @@ final class TerminalTileView: NSView, TileView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         overlay.frame = bounds
+        layoutFindBar()
         if freezeFills {
             freeze?.frame = bounds
             freezeImage?.frame = bounds
@@ -320,8 +325,11 @@ final class TerminalTileView: NSView, TileView {
         lastTerminal = herdr.terminalId
         Self.log("terminal \(Short.id(tileID)): \(mode) \(herdr.terminalId)")
         // A surface that comes up (attach finished, reattach) takes the
-        // keyboard from its tile, but not from the ⌘K field (TileFocus).
-        if focused, let window, TileFocus.canTake(in: window) { window.makeFirstResponder(view) }
+        // keyboard from its tile, but not from the ⌘K field (TileFocus) or
+        // the tile's find bar.
+        if focused, let window, TileFocus.canTake(in: window), finder?.bar.holdsKeyboard != true {
+            window.makeFirstResponder(view)
+        }
         return true
     }
 
@@ -662,6 +670,52 @@ private extension NSView {
         if let tile = self as? TerminalTileView, tile.tileID == id { return tile }
         for sub in subviews { if let found = sub.findTerminal(id) { return found } }
         return nil
+    }
+}
+
+// MARK: - Find (⌘F)
+
+extension TerminalTileView: Findable {
+    func beginFind() -> String? {
+        guard model.herdr != nil, model.ended != true else { return "no herdr pane to search" }
+        let finder = self.finder ?? makeFinder()
+        if finder.bar.superview == nil {
+            // Over the top rows, not above them: shrinking the surface would
+            // resize the PTY and reflow herdr's pane mid-search.
+            addSubview(finder.bar, positioned: .above, relativeTo: overlay)
+        }
+        layoutFindBar()
+        finder.open()
+        return nil
+    }
+
+    private func makeFinder() -> TerminalFinder {
+        let finder = TerminalFinder(tileID: tileID, core: { Self.core }, surface: { [weak self] in self?.surface })
+        finder.bar.onFocus = { [weak self] in
+            // A click into the bar of a tile that isn't focused focuses it.
+            if self?.focused == false { self?.clickFocus() }
+        }
+        finder.onClosed = { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self.surface ?? self)
+        }
+        self.finder = finder
+        return finder
+    }
+
+    fileprivate func layoutFindBar() {
+        guard let bar = finder?.bar else { return }
+        bar.frame = NSRect(x: 0, y: bounds.height - FindBar.height, width: bounds.width, height: FindBar.height)
+    }
+}
+
+extension TerminalTileView: AutomatableTile {
+    func automate(_ verb: String, _ arg: String) -> String? {
+        "unknown terminal verb \(verb)"
+    }
+
+    func automationState() -> [String: String] {
+        finder?.automationState() ?? ["tile.find": "closed"]
     }
 }
 

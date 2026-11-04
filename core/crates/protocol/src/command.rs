@@ -817,9 +817,15 @@ pub struct TerminalSearch {
     pub query: String,
     #[serde(default)]
     pub case_sensitive: bool,
-    /// How many lines of history to search; herdr's default when absent.
+    /// How many lines of history to search; herdr's default when absent, or
+    /// all of it with `locate`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lines: Option<u32>,
+    /// Also work out where each match sits in herdr's buffer (`row`) and the
+    /// `terminal.scroll` offset that shows it mid-view, as a find bar needs.
+    /// Costs two more herdr calls.
+    #[serde(default)]
+    pub locate: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

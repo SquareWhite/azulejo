@@ -521,6 +521,59 @@ fn search_finds_lines_case_insensitively_by_default() {
 }
 
 #[test]
+fn line_rows_follow_soft_wraps() {
+    use crate::terminal::line_rows;
+    // Typed lines against the rows on screen: line 1 wraps (herdr trims the
+    // space at the wrap), line 2 is blank.
+    let lines = ["$ ls", "one two three", "", "end"];
+    let rows = ["$ ls", "one two", " three", "", "end"];
+    assert_eq!(
+        line_rows(&lines, &rows),
+        vec![Some(0), Some(1), Some(3), Some(4)]
+    );
+    // Rows that stop lining up (output arrived between the reads).
+    let moved = ["$ ls", "one two", "new output"];
+    assert_eq!(line_rows(&lines, &moved), vec![Some(0), None, None, None]);
+    assert_eq!(
+        line_rows(&lines, &["$ ls"]),
+        vec![Some(0), None, None, None]
+    );
+}
+
+#[test]
+fn first_row_finds_the_view_in_a_cut_read() {
+    use crate::terminal::first_row;
+    let view = |offset| azulejo_protocol::ScrollState {
+        offset_from_bottom: offset,
+        max_offset_from_bottom: 10,
+        viewport_rows: 2,
+    };
+    // Buffer rows 0..12; herdr gave rows 5..=10 (row 11 is blank, trimmed).
+    let rows = ["e", "f", "x", "x", "y", "$"];
+    // Live view: rows 10 and 11, shown as "$" alone.
+    assert_eq!(first_row(&rows, &["$"], &view(0)), Some(5));
+    // Scrolled up 3: rows 7 and 8, "x x"; nearest the guess wins.
+    assert_eq!(first_row(&rows, &["x", "x"], &view(3)), Some(5));
+    // Scrolled above the read: no anchor.
+    assert_eq!(first_row(&rows, &["a", "b"], &view(9)), None);
+}
+
+#[test]
+fn centre_puts_a_row_mid_view() {
+    use crate::terminal::centre;
+    let view = azulejo_protocol::ScrollState {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 128,
+        viewport_rows: 40,
+    };
+    // Rows 0..168; row 122 shows mid-view with its top at 102.
+    assert_eq!(centre(122, &view), 26);
+    // Near the top: as far up as it goes; near the bottom: the live view.
+    assert_eq!(centre(3, &view), 128);
+    assert_eq!(centre(167, &view), 0);
+}
+
+#[test]
 fn tall_commands_append_promote_rotate_and_equalize() {
     let mut engine = Engine::new();
     let master = engine.session().focused_tile().unwrap();
