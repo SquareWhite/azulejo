@@ -470,3 +470,169 @@ async fn a_remote_machine_through_herdrs_bridge() {
     assert!(attach.args.iter().any(|a| a == "-tt"));
     let _ = std::fs::remove_dir_all(ssh.parent().unwrap());
 }
+
+/// The last `tick N` a pane printed.
+async fn last_tick(client: &Client, pane: &azulejo_herdr::PaneId) -> u64 {
+    let text = client
+        .read(pane, ReadSource::Recent, Some(20))
+        .await
+        .unwrap()
+        .text;
+    text.lines()
+        .filter_map(|l| l.trim().strip_prefix("tick ")?.trim().parse().ok())
+        .next_back()
+        .unwrap_or(0)
+}
+
+/// ADR 0012: one herdr tab per tile becomes one tab with Azulejo's splits,
+/// pane by pane. Nothing is killed: the terminals keep their IDs, a ticker
+/// keeps counting and an attached client stays attached. Then a rebuild to
+/// another shape, and zoom.
+#[tokio::test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
+    use azulejo_herdr::{LayoutNode, MirrorTarget, PaneId, SplitDirection, TabId};
+    let tmp = TempSession::new().await;
+    assert!(tmp.name.starts_with("azj-test-"), "throwaway session only");
+    assert!(
+        tmp.socket.to_string_lossy().contains("azj-test-"),
+        "never the default session: {}",
+        tmp.socket.display()
+    );
+    let session = tmp.session();
+    let (client, _) = tmp.herdr.ensure_server(&session, quick()).await.unwrap();
+    let (ws, first) = client
+        .create_workspace(&WorkspaceSpec::default())
+        .await
+        .unwrap();
+    let mut refs = vec![first];
+    for label in ["two", "three"] {
+        refs.push(
+            client
+                .create_terminal(&TerminalSpec {
+                    workspace_id: ws.workspace_id.clone(),
+                    label: Some(label.into()),
+                    cwd: None,
+                    env: Vec::new(),
+                })
+                .await
+                .unwrap(),
+        );
+    }
+    let tabs: Vec<TabId> = refs.iter().map(|r| r.tab_id.clone()).collect();
+    assert_eq!(
+        tabs.iter().collect::<std::collections::HashSet<_>>().len(),
+        3,
+        "one tab per terminal to start with"
+    );
+    // A ticker in the second terminal.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    client
+        .send_text(
+            &refs[1].pane_id,
+            "sh -c 'i=0; while true; do i=$((i+1)); echo tick $i; sleep 0.2; done'\n",
+        )
+        .await
+        .unwrap();
+    read_until(&client, &refs[1].pane_id, "tick 3").await;
+
+    // An attached client on the third, under `script` for a PTY.
+    let cmd = tmp.herdr.attach(&session, &refs[2].terminal_id, false);
+    let mut argv = vec![
+        "-q".to_owned(),
+        "/dev/null".to_owned(),
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        r#"stty rows 30 cols 100; exec "$0" "$@""#.to_owned(),
+    ];
+    argv.extend(cmd.argv());
+    let mut attached = tokio::process::Command::new("script")
+        .args(&argv)
+        .env_clear()
+        .envs(cmd.env.clone())
+        .env("TERM", "xterm-256color")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+    assert!(attached.try_wait().unwrap().is_none(), "attach is running");
+
+    let mut events = client.subscribe(vec![Subscription::LayoutUpdated]);
+    next_event(&mut events, |i| matches!(i, StreamItem::Connected)).await;
+
+    let pane = |i: usize| LayoutNode::pane(refs[i].pane_id.as_str());
+    let target = MirrorTarget {
+        tab: Some(tabs[0].clone()),
+        root: LayoutNode::split(
+            SplitDirection::Right,
+            0.5,
+            pane(0),
+            LayoutNode::split(SplitDirection::Down, 0.4, pane(1), pane(2)),
+        ),
+        zoomed: None,
+        label: None,
+        known: Vec::new(),
+        park_unknown: false,
+    };
+    let ticks = last_tick(&client, &refs[1].pane_id).await;
+    let out = client.mirror(&target).await.unwrap();
+    assert!(azulejo_herdr::satisfies(&out.layout, &target), "{out:?}");
+    // herdr says so on the stream, typed.
+    let item = next_event(&mut events, |i| {
+        matches!(i, StreamItem::Event(HerdrEvent::LayoutUpdated { .. }))
+    })
+    .await;
+    assert!(
+        matches!(&item, StreamItem::Event(HerdrEvent::LayoutUpdated { tab_id, .. }) if *tab_id == tabs[0]),
+        "{item:?}"
+    );
+
+    let snap = client.snapshot().await.unwrap();
+    assert_eq!(snap.tabs.len(), 1, "the emptied tabs are gone");
+    let mut before: Vec<&str> = refs.iter().map(|r| r.terminal_id.as_str()).collect();
+    let mut after: Vec<&str> = snap.panes.iter().map(|p| p.terminal_id.as_str()).collect();
+    before.sort_unstable();
+    after.sort_unstable();
+    assert_eq!(before, after, "the same terminals");
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(
+        last_tick(&client, &refs[1].pane_id).await > ticks,
+        "the ticker kept counting"
+    );
+    assert!(
+        attached.try_wait().unwrap().is_none(),
+        "still attached after the move"
+    );
+
+    // Another shape (a Tile turned master-top): rebuilt through a staging
+    // tab, still nothing killed; zoom last.
+    let turned = MirrorTarget {
+        root: LayoutNode::split(
+            SplitDirection::Down,
+            0.5,
+            pane(0),
+            LayoutNode::split(SplitDirection::Right, 0.5, pane(1), pane(2)),
+        ),
+        zoomed: Some(PaneId(refs[2].pane_id.0.clone())),
+        ..target.clone()
+    };
+    let out = client.mirror(&turned).await.unwrap();
+    assert!(azulejo_herdr::satisfies(&out.layout, &turned), "{out:?}");
+    assert!(out.layout.zoomed);
+    let snap = client.snapshot().await.unwrap();
+    assert_eq!(snap.tabs.len(), 1, "the staging tab is gone");
+    assert_eq!(snap.panes.len(), 3);
+    let ticks = last_tick(&client, &refs[1].pane_id).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert!(last_tick(&client, &refs[1].pane_id).await > ticks);
+    assert!(
+        attached.try_wait().unwrap().is_none(),
+        "still attached after the rebuild"
+    );
+    // Pushing it again writes nothing.
+    assert_eq!(client.mirror(&turned).await.unwrap().writes, 0);
+    let _ = attached.kill().await;
+}

@@ -183,6 +183,34 @@ pub enum LayoutNode {
 }
 
 impl LayoutNode {
+    pub fn pane(id: impl Into<PaneId>) -> Self {
+        LayoutNode::Pane {
+            pane_id: Some(id.into()),
+        }
+    }
+
+    pub fn split(
+        direction: SplitDirection,
+        ratio: f64,
+        first: LayoutNode,
+        second: LayoutNode,
+    ) -> Self {
+        LayoutNode::Split {
+            direction,
+            ratio,
+            first: Box::new(first),
+            second: Box::new(second),
+        }
+    }
+
+    /// The first pane in reading order.
+    pub fn first_pane(&self) -> Option<&PaneId> {
+        match self {
+            LayoutNode::Pane { pane_id } => pane_id.as_ref(),
+            LayoutNode::Split { first, .. } => first.first_pane(),
+        }
+    }
+
     /// Pane IDs at the leaves, left to right.
     pub fn panes(&self) -> Vec<&PaneId> {
         match self {
@@ -350,6 +378,46 @@ pub struct TerminalSpec {
     pub label: Option<String>,
     pub cwd: Option<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// How to make a terminal by splitting a pane of an existing tab (ADR 0012).
+/// The new pane is always the split's second child.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SplitSpec {
+    pub target: PaneId,
+    pub direction: SplitDirection,
+    /// The first child's (the target's) share; `None` lets herdr pick (½).
+    pub ratio: Option<f64>,
+    pub cwd: Option<String>,
+    pub env: Vec<(String, String)>,
+}
+
+/// Where [`crate::Client::move_pane`] puts a pane.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MoveTo {
+    /// Into `tab`, splitting `target` (or herdr's choice) in `split`; the
+    /// moved pane is the second child. herdr refuses the pane's own tab.
+    Tab {
+        tab: TabId,
+        split: SplitDirection,
+        target: Option<PaneId>,
+        ratio: Option<f64>,
+    },
+    /// Alone into a new tab of `workspace` (the pane's own when `None`).
+    NewTab {
+        workspace: Option<WorkspaceId>,
+        label: Option<String>,
+    },
+}
+
+/// What [`crate::Client::move_pane`] did. The process and terminal ID stay;
+/// the pane ID changes when the pane changes workspace.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Moved {
+    pub pane: PaneInfo,
+    /// `false` when herdr refused, e.g. `same_tab` or `zoomed_tab`.
+    pub changed: bool,
+    pub reason: Option<String>,
 }
 
 /// Result of [`crate::Client::ensure_workspace`].

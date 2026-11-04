@@ -1274,6 +1274,88 @@ impl Session {
         Ok(true)
     }
 
+    /// Takes an arrangement made elsewhere (the herdr TUI, a phone; ADR
+    /// 0012): `root` must hold exactly the tab's tiles. A manual tab takes
+    /// the tree. A Tile or Three Column tab absorbs it when its rule can
+    /// produce it (a reorder, a ratio, stack sizes), and otherwise freezes to
+    /// manual with it, remembering its kind for toggling back. Monocle takes
+    /// only the order. Focus and zoom stay. Returns whether anything changed.
+    pub fn apply_tree(&mut self, tab: TabId, root: Node) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        let mut want: Vec<TileId> = t.tiles.iter().map(|x| x.id).collect();
+        let mut have = root.tiles();
+        want.sort_unstable();
+        have.sort_unstable();
+        if want != have {
+            return Err(ModelError::InvalidValue(
+                "the tree doesn't hold exactly the tab's tiles".into(),
+            ));
+        }
+        let mut root = root;
+        clamp_ratios(&mut root);
+        if !t.is_dynamic() {
+            if t.root == root {
+                return Ok(false);
+            }
+            t.root = root;
+            return Ok(true);
+        }
+        let before = (t.layout.clone(), t.root.clone());
+        match dynamic::fit(&t.layout, &root.rects()) {
+            Some(layout) => {
+                t.layout = layout;
+                t.sync();
+            }
+            None if t.layout.kind == LayoutKind::Monocle => {}
+            None => {
+                t.layout.previous = Some(t.layout.kind);
+                t.layout.kind = LayoutKind::Manual;
+                t.layout.order.clear();
+                t.layout.weights.clear();
+                t.layout.manual = None;
+                t.root = root;
+            }
+        }
+        Ok((t.layout.clone(), t.root.clone()) != before)
+    }
+
+    /// Zooms `zoomed` (focusing it) or unzooms a tab, without activating it:
+    /// for zoom changed elsewhere (ADR 0012). Returns whether it changed.
+    pub fn set_tab_zoom(&mut self, tab: TabId, zoomed: Option<TileId>) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        if let Some(z) = zoomed
+            && t.tile(z).is_none()
+        {
+            return Err(ModelError::TileNotFound(z));
+        }
+        let before = (t.zoomed, t.focused);
+        t.zoomed = zoomed;
+        if let Some(z) = zoomed {
+            t.set_focused(z);
+        }
+        Ok((t.zoomed, t.focused) != before)
+    }
+
+    /// Focuses `tile` within its tab without activating the tab: for a
+    /// Monocle tab whose top tile changed elsewhere (ADR 0012).
+    pub fn set_tab_focus(&mut self, tab: TabId, tile: TileId) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        if t.tile(tile).is_none() {
+            return Err(ModelError::TileNotFound(tile));
+        }
+        if t.focused == tile {
+            return Ok(false);
+        }
+        if t.zoomed.is_some_and(|z| z != tile) {
+            t.zoomed = None;
+        }
+        t.set_focused(tile);
+        Ok(true)
+    }
+
     /// Switches to `kind`, or back to the previous kind if `kind` is already
     /// active (Bismuth's toggle).
     pub fn toggle_layout(&mut self, tab: TabId, kind: LayoutKind) -> Result<bool, ModelError> {
@@ -1431,6 +1513,19 @@ impl Session {
             }
         }
         Ok(())
+    }
+}
+
+/// Brings every split ratio into the allowed range (non-finite ones to ½).
+fn clamp_ratios(node: &mut Node) {
+    if let Node::Split { ratio, a, b, .. } = node {
+        *ratio = if ratio.is_finite() {
+            ratio.clamp(crate::layout::MIN_RATIO, crate::layout::MAX_RATIO)
+        } else {
+            0.5
+        };
+        clamp_ratios(a);
+        clamp_ratios(b);
     }
 }
 

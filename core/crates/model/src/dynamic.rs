@@ -631,6 +631,149 @@ fn cut(items: Vec<(TileId, Rect)>, area: Rect) -> Option<Node> {
     None
 }
 
+/// How far a fitted layout's rects may be from the ones it was fitted to:
+/// half a cell at 100 columns.
+pub const FIT_TOLERANCE: f64 = 0.005;
+
+/// A dynamic layout reading `rects` (one per tile, covering the tab): the
+/// tiles' order, and for Tile and Three Column the ratio and weights, that
+/// reproduce them within [`FIT_TOLERANCE`]. Masters, orientation and kind
+/// stay. `None` when the layout's rule can't produce them: the caller
+/// freezes the tab instead (ADR 0012).
+///
+/// Monocle reads its order off the Tile arrangement it freezes to and keeps
+/// its parameters: it has no sizes of its own.
+pub fn fit(layout: &TabLayout, rects: &[(TileId, Rect)]) -> Option<TabLayout> {
+    let shape = match layout.kind {
+        LayoutKind::Manual => return None,
+        LayoutKind::Monocle => LayoutKind::Tile,
+        k => k,
+    };
+    if rects.len() != layout.order.len() || rects.iter().any(|(t, _)| !layout.order.contains(t)) {
+        return None;
+    }
+    // Which tile now sits in each slot of the current arrangement: nearest
+    // centres first, so a swap trades slots and a resize keeps them.
+    let placed = arrange(shape, &layout.params, &layout.order, &layout.weights, None);
+    let slots: Vec<Rect> = layout
+        .order
+        .iter()
+        .map(|t| {
+            placed
+                .iter()
+                .find(|p| p.tile == *t)
+                .map(|p| p.rect)
+                .expect("arrange places every tile")
+        })
+        .collect();
+    let centre = |r: &Rect| (r.x + r.width / 2.0, r.y + r.height / 2.0);
+    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+    for (i, slot) in slots.iter().enumerate() {
+        for (j, (_, r)) in rects.iter().enumerate() {
+            let (a, b) = (centre(slot), centre(r));
+            pairs.push(((a.0 - b.0).hypot(a.1 - b.1), i, j));
+        }
+    }
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut order: Vec<Option<TileId>> = vec![None; slots.len()];
+    let mut used = vec![false; rects.len()];
+    for (_, i, j) in pairs {
+        if order[i].is_none() && !used[j] {
+            order[i] = Some(rects[j].0);
+            used[j] = true;
+        }
+    }
+    let mut out = layout.clone();
+    out.order = order
+        .into_iter()
+        .map(|t| t.expect("every slot filled"))
+        .collect();
+    // Weights travel with tiles; a reorder alone keeps them.
+    if layout.kind == LayoutKind::Monocle {
+        return Some(out);
+    }
+
+    let rect_of = |t: &TileId| rects.iter().find(|(id, _)| id == t).map(|(_, r)| *r);
+    let groups = match shape {
+        LayoutKind::Tile => tile_groups(&out.params.tile, &out.order),
+        _ => three_column_groups(&out.params.three_column, &out.order),
+    };
+    let bounds = |g: &Group| {
+        g.tiles
+            .iter()
+            .filter_map(rect_of)
+            .reduce(|a, b| {
+                let x = a.x.min(b.x);
+                let y = a.y.min(b.y);
+                Rect {
+                    x,
+                    y,
+                    width: a.right().max(b.right()) - x,
+                    height: a.bottom().max(b.bottom()) - y,
+                }
+            })
+            .expect("groups hold tiles")
+    };
+    // The ratio, from the masters' area.
+    if let Some(masters) = groups.iter().find(|g| g.role == Role::Masters)
+        && groups.len() > 1
+    {
+        let m = bounds(masters);
+        match shape {
+            LayoutKind::Tile => {
+                let p = &mut out.params.tile;
+                let main = p.orientation.main_axis();
+                p.ratio = match (main, p.orientation.masters_first()) {
+                    (Axis::Horizontal, true) => m.right(),
+                    (Axis::Horizontal, false) => 1.0 - m.x,
+                    (Axis::Vertical, true) => m.bottom(),
+                    (Axis::Vertical, false) => 1.0 - m.y,
+                };
+            }
+            _ => {
+                let p = &mut out.params.three_column;
+                p.ratio = if groups.len() == 2 {
+                    m.width
+                } else {
+                    2.0 * m.width / (1.0 + m.width)
+                };
+            }
+        }
+    }
+    out.params.clamp();
+    // Weights: each tile's share of its group, against the group's mean.
+    out.weights.clear();
+    for g in &groups {
+        let extents: Vec<f64> = g
+            .tiles
+            .iter()
+            .filter_map(rect_of)
+            .map(|r| match g.axis {
+                Axis::Horizontal => r.width,
+                Axis::Vertical => r.height,
+            })
+            .collect();
+        let mean = extents.iter().sum::<f64>() / extents.len() as f64;
+        for (t, e) in g.tiles.iter().zip(extents) {
+            let w = e / mean;
+            if (w - 1.0).abs() > 1e-9 && w.is_finite() && w > 0.0 {
+                out.weights.insert(*t, w);
+            }
+        }
+    }
+    let fitted = arrange(shape, &out.params, &out.order, &out.weights, None);
+    let close = |a: f64, b: f64| (a - b).abs() <= FIT_TOLERANCE;
+    let reproduces = fitted.iter().all(|p| {
+        rect_of(&p.tile).is_some_and(|r| {
+            close(r.x, p.rect.x)
+                && close(r.y, p.rect.y)
+                && close(r.width, p.rect.width)
+                && close(r.height, p.rect.height)
+        })
+    });
+    reproduces.then_some(out)
+}
+
 /// Tile parameters and stack weights that reproduce a tree exactly.
 pub(crate) type TileFit = (TileParams, BTreeMap<TileId, f64>);
 

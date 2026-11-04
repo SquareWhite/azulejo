@@ -19,6 +19,7 @@ mod env;
 mod error;
 mod event;
 mod machine;
+mod mirror;
 mod server;
 mod stream;
 mod transport;
@@ -32,6 +33,10 @@ pub use error::{Error, Result, needs_attention};
 pub use event::{HerdrEvent, Subscription};
 pub use machine::{
     MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
+};
+pub use mirror::{
+    ECHO_TOLERANCE, LayoutOps, MirrorError, MirrorOutcome, MirrorTarget, RATIO_TOLERANCE,
+    same_layout, same_shape, same_tree, satisfies,
 };
 pub use server::{Herdr, ServerOrigin, Session};
 pub use stream::{EventStream, StreamItem};

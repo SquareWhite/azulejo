@@ -10,8 +10,9 @@
 //! - Every change is saved, debounced ([`crate::persist`]), and broadcast to
 //!   [`Core::subscribe`] listeners.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 
@@ -23,6 +24,7 @@ use tokio::sync::mpsc as tmpsc;
 
 use crate::files::{self as file_tiles, Files, Handled};
 use crate::link::{self, Effect, HerdrPort, Internal, Machine};
+use crate::mirror::{self, MirrorMsg};
 use crate::persist::{self, Loaded, Saver};
 use crate::preview::{self, Previews};
 use crate::repos::{self, Repos};
@@ -89,6 +91,7 @@ enum Msg {
     SetConfigReplies(ConfigRepliesFn),
     SetOnExit(azulejo_model::OnExit),
     SetLayoutPrefs(azulejo_model::LayoutPrefs),
+    SetMirrorLayout(bool),
     SetSidebarCollapsed(azulejo_model::SidebarState),
     Shutdown(mpsc::Sender<()>),
 }
@@ -227,6 +230,12 @@ impl Core {
     /// model's defaults until this is called.
     pub fn set_layout_prefs(&self, prefs: azulejo_model::LayoutPrefs) {
         let _ = self.tx.send(Msg::SetLayoutPrefs(prefs));
+    }
+
+    /// Whether tabs' layouts are mirrored into herdr, both ways (`[herdr]
+    /// mirror_layout`, ADR 0012). Off until this is called.
+    pub fn set_mirror_layout(&self, on: bool) {
+        let _ = self.tx.send(Msg::SetMirrorLayout(on));
     }
 
     /// What a collapsed sidebar shows as (`[sidebar] collapsed`): a rail,
@@ -383,6 +392,7 @@ fn run<P: HerdrPort>(
             herdr.send(&machine, effect);
         }
         herdr.follow_agents(engine.session());
+        herdr.mirror(engine.session());
     };
 
     while let Ok(msg) = rx.recv() {
@@ -616,6 +626,7 @@ fn run<P: HerdrPort>(
                     }
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
+                herdr.mirror(engine.session());
             }
             Msg::Internal(internal) => {
                 let surveyed = match &internal {
@@ -655,6 +666,15 @@ fn run<P: HerdrPort>(
                 if !matches!(item, StreamItem::Event(_)) {
                     herdr.next_generation(&machine);
                 }
+                if connected {
+                    herdr.mirror_reset(&machine);
+                }
+                if let StreamItem::Event(azulejo_herdr::HerdrEvent::LayoutUpdated {
+                    tab_id, ..
+                }) = &item
+                {
+                    herdr.mirror_pull(&machine, tab_id);
+                }
                 // Going down is news at once, but only once: the stream says
                 // so after every failed retry. Coming back is announced after
                 // the bound tiles are checked (`Internal::Announce`).
@@ -676,6 +696,12 @@ fn run<P: HerdrPort>(
                     herdr.poke_processes(&machine);
                 }
                 let reaction = link::reconcile(&machine, &item, engine.session(), on_exit);
+                if mirror::debug()
+                    && let StreamItem::Event(e) = &item
+                    && !matches!(e, azulejo_herdr::HerdrEvent::PaneUpdated(_))
+                {
+                    (opts.log)(format!("herdr event {e:?} → {:?}", reaction.internals));
+                }
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
                     publish(
@@ -766,6 +792,7 @@ fn run<P: HerdrPort>(
                     }
                 }
             }
+            Msg::SetMirrorLayout(on) => herdr.set_mirror(on, engine.session()),
             Msg::SetLayoutPrefs(prefs) => {
                 let events = engine.set_layout_prefs(prefs);
                 if !events.is_empty() {
@@ -819,6 +846,8 @@ struct Links<P> {
     out: mpsc::Sender<Msg>,
     log: LogFn,
     api_socket: String,
+    /// `[herdr] mirror_layout` (ADR 0012), shared with every worker.
+    mirror: Arc<AtomicBool>,
 }
 
 /// One machine's worker, event stream and agent subscription.
@@ -840,6 +869,9 @@ struct Link<P> {
     /// The post-connect check of bound tiles ([`link::check_bound`]).
     check: Option<tokio::task::JoinHandle<()>>,
     survey: SurveyState,
+    /// The machine's mirror task (ADR 0012), and the targets sent to it.
+    mirror_tx: tmpsc::UnboundedSender<MirrorMsg>,
+    mirror_sent: std::cell::RefCell<BTreeMap<azulejo_model::TabId, azulejo_herdr::MirrorTarget>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -867,6 +899,7 @@ impl<P: HerdrPort> Links<P> {
             out,
             log,
             api_socket,
+            mirror: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -888,12 +921,15 @@ impl<P: HerdrPort> Links<P> {
         self.drop_link(&machine);
         let out = self.out.clone();
         let processes_out = self.out.clone();
+        let mirror_out = self.out.clone();
         let log = self.log.clone();
         let api_socket = self.api_socket.clone();
+        let mirror = self.mirror.clone();
         let label = info.label.clone();
         let runtime = self.runtime();
         let port = Arc::new(port);
         let (effects_tx, effects_rx) = tmpsc::unbounded_channel::<Effect>();
+        let (mirror_tx, mirror_rx) = tmpsc::unbounded_channel::<MirrorMsg>();
         let mut tasks = Vec::new();
         {
             let out = out.clone();
@@ -902,15 +938,27 @@ impl<P: HerdrPort> Links<P> {
             } else {
                 String::new()
             };
+            let mirror_log = log.clone();
+            let mirror_prefix = prefix.clone();
             tasks.push(runtime.spawn(link::run_worker(
                 machine.clone(),
                 port.clone(),
                 effects_rx,
-                api_socket,
+                (api_socket, mirror),
                 move |internal| {
                     let _ = out.send(Msg::Internal(internal));
                 },
                 move |line| log(format!("{prefix}{line}")),
+            )));
+            let out = mirror_out;
+            tasks.push(runtime.spawn(mirror::run(
+                machine.clone(),
+                port.clone(),
+                mirror_rx,
+                move |internal| {
+                    let _ = out.send(Msg::Internal(internal));
+                },
+                move |line| mirror_log(format!("{mirror_prefix}{line}")),
             )));
         }
         {
@@ -975,6 +1023,8 @@ impl<P: HerdrPort> Links<P> {
                 generation: 0,
                 check: None,
                 survey: SurveyState::InFlight,
+                mirror_tx,
+                mirror_sent: Default::default(),
                 tasks,
             },
         );
@@ -1116,6 +1166,77 @@ impl<P: HerdrPort> Links<P> {
         }
         if again {
             self.request_survey(machine);
+        }
+        self.mirror(engine.session());
+    }
+
+    /// Sends each machine's mirror task the tab targets that changed (ADR
+    /// 0012). Only while mirroring is on, and only for machines that are
+    /// connected and surveyed: pushes start once restored tiles are checked.
+    fn mirror(&self, session: &azulejo_model::Session) {
+        if !self.mirror.load(Ordering::Relaxed) {
+            return;
+        }
+        for (machine, link) in &self.links {
+            let connected = self
+                .info
+                .get(machine)
+                .is_some_and(|i| i.state == MachineState::Connected);
+            if !link.restored || !connected {
+                continue;
+            }
+            let want = mirror::targets(session, machine);
+            let mut sent = link.mirror_sent.borrow_mut();
+            sent.retain(|tab, _| {
+                let keep = want.contains_key(tab);
+                if !keep {
+                    let _ = link.mirror_tx.send(MirrorMsg::Target(*tab, None));
+                }
+                keep
+            });
+            for (tab, target) in want {
+                if sent.get(&tab) != Some(&target) {
+                    let _ = link
+                        .mirror_tx
+                        .send(MirrorMsg::Target(tab, Some(Box::new(target.clone()))));
+                    sent.insert(tab, target);
+                }
+            }
+        }
+    }
+
+    /// herdr (re)connected: its mirror task forgets what it recorded, and
+    /// every target goes again once the machine is announced.
+    fn mirror_reset(&self, machine: &Machine) {
+        if let Some(link) = self.links.get(machine) {
+            let _ = link.mirror_tx.send(MirrorMsg::Reset);
+            link.mirror_sent.borrow_mut().clear();
+        }
+    }
+
+    /// herdr says a tab's layout changed.
+    fn mirror_pull(&self, machine: &Machine, tab: &azulejo_herdr::TabId) {
+        if !self.mirror.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Some(link) = self.links.get(machine) {
+            let _ = link.mirror_tx.send(MirrorMsg::Pull(tab.clone()));
+        }
+    }
+
+    /// `[herdr] mirror_layout` changed: on pushes every tab, off stops.
+    fn set_mirror(&self, on: bool, session: &azulejo_model::Session) {
+        if self.mirror.swap(on, Ordering::Relaxed) == on {
+            return;
+        }
+        if on {
+            self.mirror(session);
+        } else {
+            for link in self.links.values() {
+                for (tab, _) in std::mem::take(&mut *link.mirror_sent.borrow_mut()) {
+                    let _ = link.mirror_tx.send(MirrorMsg::Target(tab, None));
+                }
+            }
         }
     }
 

@@ -11,6 +11,7 @@ mod files;
 pub mod layout_file;
 pub mod link;
 mod meta;
+pub mod mirror;
 pub mod persist;
 mod preview;
 mod repos;

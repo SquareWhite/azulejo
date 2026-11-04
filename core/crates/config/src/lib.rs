@@ -32,6 +32,7 @@
 //! [herdr]
 //! session = "default"    # herdr session for terminal tiles: "default" (herdr's own) or a name
 //! enabled = true         # false: terminal tiles stay unbound (no herdr)
+//! mirror_layout = true   # tabs' splits, zoom and Monocle mirrored into herdr, both ways (ADR 0012)
 //!
 //! [terminal]
 //! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
@@ -189,6 +190,10 @@ pub struct HerdrConfig {
     pub machines_file: Option<PathBuf>,
     /// Tests and dev profiles: run this instead of `ssh`.
     pub ssh: Option<PathBuf>,
+    /// Mirror each tab's layout into herdr, both ways: one herdr tab per
+    /// Azulejo tab, its splits, zoom and Monocle (ADR 0012). Off: one herdr
+    /// tab per terminal tile, herdr's tree left alone. Applies live.
+    pub mirror_layout: bool,
 }
 
 /// What Azulejo does with one of herdr's saved machines. Connection details
@@ -229,6 +234,7 @@ impl Default for HerdrConfig {
             machine: Default::default(),
             machines_file: None,
             ssh: None,
+            mirror_layout: true,
         }
     }
 }
@@ -758,6 +764,10 @@ fn parse_herdr(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mu
                 }
             }
             ("session", _) => sink.error(value.span(), "`herdr.session` must be a string"),
+            ("mirror_layout", DeValue::Boolean(b)) => out.mirror_layout = *b,
+            ("mirror_layout", _) => {
+                sink.error(value.span(), "`herdr.mirror_layout` must be true or false")
+            }
             ("machines", DeValue::Boolean(b)) => out.machines = Some(*b),
             ("machines", _) => sink.error(value.span(), "`herdr.machines` must be true or false"),
             ("machine", DeValue::Table(machines)) => {
