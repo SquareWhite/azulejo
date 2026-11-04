@@ -259,6 +259,9 @@ shot n4-overflow-tab4
 window-size 480 320
 wait 1000
 remember tab.overflow
+# N4c: the selected tab still shows; V25: the banner is capped.
+expect tab.overflow selected
+expect banner.capped yes
 shot n4-overflow-min-banner
 window-size 1440 900
 wait 800
