@@ -79,7 +79,7 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
 | Move to next/previous position (new) | — | Move one step in `order`; past either end, wrap round to the other end (Bismuth's `swapOrder`; amended Nov 4) |
 | Resize left/down/up/right | Move nearest divider; flip to the opposite one at the edge | Same edge rule, translated into parameters: master ratio, stack weights, three-column ratio. Monocle ignores it. Matches Bismuth for tiles at an edge; see the Nov 4 note for tiles with neighbours on both sides |
 | Promote (`alt+enter`) | Swap with master | Move to the front of `order` |
-| Rotate (`alt+o`) | Master left ↔ top | Tile: Bismuth's clockwise quarter turn, left → top → right → bottom (amended Nov 4). Anticlockwise, "rotate part" and the old left ↔ top flip are separate actions |
+| Rotate (`alt+o`) | A quarter turn of the whole tree, any shape (amended Nov 4; was master left ↔ top) | Tile: Bismuth's clockwise quarter turn, left → top → right → bottom (amended Nov 4). Anticlockwise, "rotate part" and the old left ↔ top flip are separate actions |
 | Equalize | Even out the stack | Reset all weights to 1.0 (ratio unchanged) |
 | Zoom | Overlay | Unchanged; works in every kind |
 
@@ -190,7 +190,7 @@ the maintainer answered the open questions:
 
 Every default layout chord was run end to end through the key router (`apps/macos/automation/bismuth.azs`, `just mac-bismuth`), with the order, parameters and rects traced after each key. The results were compared with Bismuth's source. The table and every difference are in [docs/keybindings.md, "Bismuth mapping"](../keybindings.md#bismuth-mapping). What changed:
 
-- **`alt+o` is Bismuth's rotate** (`Meta+R`): a clockwise quarter turn of a Tile tab, left → top → right → bottom. `layout.rotate` with no params now turns clockwise; `reverse: true` turns back; `flip: true` is the old left ↔ top toggle, kept as the `flip_layout` action with no chord. A manual tab flips its tree either way: a split tree's tall reading always puts the master first, so a master on the right or at the bottom has no tree to go to. `rotate_clockwise` is gone, and the name still binds `rotate_layout` with a warning.
+- **`alt+o` is Bismuth's rotate** (`Meta+R`): a clockwise quarter turn of a Tile tab, left → top → right → bottom. `layout.rotate` with no params now turns clockwise; `reverse: true` turns back; `flip: true` is the old left ↔ top toggle, kept as the `flip_layout` action with no chord. A manual tab flips its tree either way: a split tree's tall reading always puts the master first, so a master on the right or at the bottom has no tree to go to. *Amended Nov 4 (after dogfooding): a manual tab now turns its whole tree as a picture, see [Manual rotate](#manual-rotate-nov-4-2026).* `rotate_clockwise` is gone, and the name still binds `rotate_layout` with a warning.
 - **`alt+]` / `alt+[` switch layouts** (`cycle_layout_next` / `previous`). `alt+\` / `alt+shift+\`, Bismuth's own chords, stay as second bindings, on Linux too. `cycle_tile_next` / `previous` are unbound, as Bismuth's focus next/previous are: no `alt` chord is free that fits, since Hammerspoon owns `alt+tab` and shells use `alt+.`. They stay in quick open and prefix mode.
 - **Fixed to match Bismuth:**
   - Moving past the end of the order wraps the tile round to the other end, with the rest moving up. It used to swap the two ends.
@@ -199,3 +199,14 @@ Every default layout chord was run end to end through the key router (`apps/maco
   - With the master area on the right or at the bottom, side-by-side masters (rotate part) are mirrored, so the first master keeps the outer edge.
 - **Kept on purpose:** resizing moves 5 % (Bismuth 3 %), the same step as manual tabs. A tile with neighbours on both sides moves the edge on the pressed side (herdr's rule, as in manual tabs), where Bismuth always moves its east or south edge. Swap in Monocle trades places in the order (a no-op in Bismuth). Close picks the next focus. Master count is on `alt+=` / `alt+-`.
 - The 10,000-sequence proptest gives the four-way turn more weight, and a new property checks that four turns (or one turn and one back) restore the arrangement exactly, with the masters on the expected side after each turn.
+
+## Manual rotate (Nov 4, 2026)
+
+the maintainer found that `alt+o` "doesn't seem to work". Every tab he has is adopted from his herdr session (ADR 0008), so every one is manual, and in a manual tab `alt+o` was the old `tall.py` flip: it read the tree as master + stack, rebuilt it in that shape and flipped master left ↔ top. A tall tab only ever went left ↔ top, never right or bottom, and a 2×2 grid or three columns from repeated split-right lost their shape on the first press and then flipped between two tall shapes. The key reached the router (`key.last` was `action:rotate_layout` in a terminal), and the mirror pushed each result to herdr without pulling it back, so the four-way rotate simply never ran in his tabs.
+
+- **A manual tab now turns its whole split tree** a quarter turn clockwise, as a picture (`Node::rotate_clockwise`): a side-by-side split `a | b` becomes `a` over `b` with the same ratio, and a stacked split `a` over `b` becomes `b | a` with ratio 1 − r. `reverse` (`rotate_anticlockwise`) is the exact inverse. Every tile keeps its size with width and height swapped. A tall tab's master goes left → top → right → bottom, as in a Tile tab, but its stack is turned with it rather than kept in reading order.
+- **Four turns give the tree back bit for bit.** Each split is complemented twice in four turns, and `1 − (1 − r)` isn't always `r` in floating point (1/3 isn't), so the turn first snaps ratios to multiples of 2⁻⁵³, where `1 − r` is exact. That moves a ratio under ½ by at most 2⁻⁵⁴ the first time and never again. Proptests (10,000 cases each) check four turns, a turn and a turn back, and that every tile's rect turns as geometry.
+- **`flip_layout`** (`layout.rotate {flip}`) keeps the old tall flip, in quick open.
+- **Monocle and Three Column** (and a lone tile) have nothing to turn: `layout.rotate` succeeds and changes nothing, so the key does nothing and the HUD stays quiet, as with the other edges since the silent-edges change.
+- **herdr** follows each turn: the push rebuilds herdr's tab to the turned tree (a structural change, ADR 0012), and the pull that follows is an echo. `just test-herdr` turns an adopted grid and a Tile tab four times each and checks `layout.export` after every turn.
+
