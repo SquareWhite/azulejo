@@ -38,8 +38,24 @@ final class TileContainerView: NSView, ThemeAware {
     private var motionEnds: CFTimeInterval = 0
     /// Per terminal over the current motion chain: its resize count and size
     /// at the start, and how many of the chain's motions changed its size.
-    private var resizeCheck: [String: (start: Int, expected: Int, size: CGSize)] = [:]
+    /// `live`: how many of those motions reflowed it (each may add up to
+    /// `Motion.maxLiveResizes`).
+    private var resizeCheck: [String: (start: Int, expected: Int, size: CGSize, live: Int)] = [:]
     private var resizeKind = ""
+    /// The last motion `motionEnded` ran for (the reflow clock and its
+    /// fallback timer can both get there).
+    private var endedGeneration = -1
+
+    /// Reflow motion: a tile whose frame the display link steps along the
+    /// curve, from where it showed to its final frame (`driveReflow`).
+    private struct Reflow {
+        let view: NSView
+        let from: CGRect
+        let to: CGRect
+        let start: CFTimeInterval
+        let duration: CFTimeInterval
+    }
+    private var reflowing: [String: Reflow] = [:]
 
     let clock = MotionClock()
     private var link: CADisplayLink?
@@ -264,7 +280,8 @@ final class TileContainerView: NSView, ThemeAware {
     override func layout() {
         super.layout()
         let frames = tileFrames()
-        for (id, frame) in frames { views[id]?.frame = frame }
+        // Reflowing tiles are on their way there, a step per display frame.
+        for (id, frame) in frames where reflowing[id] == nil { views[id]?.frame = frame }
     }
 
     // MARK: Motion
@@ -302,6 +319,7 @@ final class TileContainerView: NSView, ThemeAware {
         let finals = tileFrames()
         let frames = finals.filter { shown.contains($0.key) }
         let style = Motion.style
+        let reflow = style == .reflow
         let stacked = kind == "monocle_focus"
 
         // Who moves, from where. A tile already on its way to the same frame
@@ -310,9 +328,11 @@ final class TileContainerView: NSView, ThemeAware {
         for (id, to) in frames {
             guard let view = views[id] else { continue }
             if let from = before[id], !appearing.contains(id) {
-                // The frame is the target of any motion in flight: unchanged
-                // means it's there already, or on its way.
-                if !Self.close(view.frame, to) {
+                // The frame is the target of any motion in flight (reflow:
+                // the one it's stepping towards): unchanged means it's there
+                // already, or on its way.
+                let target = reflowing[id]?.to ?? view.frame
+                if !Self.close(target, to) {
                     movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: nil))
                 }
             } else if created.contains(id) {
@@ -352,9 +372,19 @@ final class TileContainerView: NSView, ThemeAware {
         //    tiles to the whole tab). Crop and outline keep it at 1:1, so
         //    note where it shows now; one already up (mid-motion) stays.
         var snapshotAt: [String: CGRect] = [:]
+        // Reflow: nothing freezes on its way; a terminal whose path changes
+        // its size resizes a few times (live) and exactly once at the end.
+        func countLive(_ m: Mover) {
+            guard let aware = m.view as? MotionAware, aware.resizesLive else { return }
+            if resizeCheck[m.id] == nil { resizeCheck[m.id] = (aware.surfaceResizes, 0, m.view.frame.size, 0) }
+            guard !Self.close(CGRect(origin: .zero, size: m.from.size), CGRect(origin: .zero, size: m.to.size))
+            else { return }
+            resizeCheck[m.id]?.expected += 1
+            resizeCheck[m.id]?.live += 1
+        }
         func freeze(_ id: String, _ view: NSView, to: CGRect?, onScreen: Bool) {
             guard let aware = view as? MotionAware else { return }
-            if resizeCheck[id] == nil { resizeCheck[id] = (aware.surfaceResizes, 0, view.frame.size) }
+            if resizeCheck[id] == nil { resizeCheck[id] = (aware.surfaceResizes, 0, view.frame.size, 0) }
             if let to, view.frame.size != to.size {
                 guard Perf.measure("motion.snapshot", { aware.motionWillStart(freeze: true, fill: style == .scale) })
                 else { return }
@@ -375,7 +405,11 @@ final class TileContainerView: NSView, ThemeAware {
         }
         Perf.measure("motion.freeze") {
             for m in movers where !created.contains(m.id) {
-                freeze(m.id, m.view, to: m.to, onScreen: before[m.id] != nil)
+                if reflow {
+                    countLive(m)
+                } else {
+                    freeze(m.id, m.view, to: m.to, onScreen: before[m.id] != nil)
+                }
             }
             for (view, _) in hiding {
                 guard let id = (view as? any TileView)?.tileID else { continue }
@@ -387,13 +421,33 @@ final class TileContainerView: NSView, ThemeAware {
             }
         }
 
-        // 2. Final frames now: the one resize, under the snapshots.
+        // Reflow: tiles that were on their way and now leave the screen (a
+        // close, Monocle) stop reflowing; the movers start, or turn round
+        // from where they are.
+        if reflow {
+            let shownIDs = Set(frames.keys)
+            for (id, r) in reflowing where !shownIDs.contains(id) {
+                reflowing[id] = nil
+                (r.view as? MotionAware)?.liveResizeDidEnd()
+            }
+            let now = CACurrentMediaTime()
+            for m in movers {
+                (m.view as? MotionAware)?.liveResizeWillStart(final: m.to.size)
+                reflowing[m.id] = Reflow(view: m.view, from: m.from, to: m.to, start: now, duration: duration)
+            }
+        }
+
+        // 2. Final frames now: the one resize, under the snapshots. Reflow:
+        //    the movers start where they show instead (layout skips them).
         for m in movers { stopMotion(m.view) }
         Perf.measure("motion.layout") {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             needsLayout = true
             layoutSubtreeIfNeeded()
+            if reflow {
+                for m in movers where !Self.close(m.view.frame, m.from) { m.view.frame = m.from }
+            }
             CATransaction.commit()
         }
 
@@ -415,12 +469,35 @@ final class TileContainerView: NSView, ThemeAware {
         ticksAtMotionStart = linkTicks
         removeGhosts()
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
-            Perf.measure("motion.end") { self?.motionEnded(gen, via: "completion") }
+        if reflow {
+            // Nothing Core Animation runs says when a reflow is over (a
+            // transaction with no animations completes at once): the clock
+            // does, and a timer if the display link isn't ticking (screen
+            // locked, display asleep).
+            clock.add { [weak self] now in
+                guard let self, gen == self.generation else { return false }
+                guard now >= self.motionEnds else { return true }
+                Perf.measure("motion.end") { self.motionEnded(gen, via: "clock") }
+                return false
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
+                guard let self, gen == self.generation, CACurrentMediaTime() >= self.motionEnds else { return }
+                self.motionEnded(gen, via: "timer, no display-link tick")
+            }
+        } else {
+            CATransaction.setCompletionBlock { [weak self] in
+                Perf.measure("motion.end") { self?.motionEnded(gen, via: "completion") }
+            }
         }
         for m in movers {
             guard let layer = m.view.layer else { continue }
             switch style {
+            case .reflow:
+                if let fadeFrom = m.fadeFrom {
+                    let fade = fadeAnimation(from: fadeFrom, to: layer.opacity)
+                    Motion.configure(fade, duration: duration)
+                    layer.add(fade, forKey: Self.motionKey)
+                }
             case .scale:
                 scaleMotion(layer, from: m.from, to: m.to, fadeFrom: m.fadeFrom, duration: duration)
             case .crop:
@@ -669,7 +746,9 @@ final class TileContainerView: NSView, ThemeAware {
             move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: model, anchor: layer.anchorPoint))
             move.toValue = NSValue(caTransform3D: Motion.transform(from: shrunk, to: model, anchor: layer.anchorPoint))
             group.animations = [move] + fade
-        case .crop:
+        case .crop, .reflow:
+            // Reflow too: a closed terminal has no surface left to reflow,
+            // and one Monocle hides is already at the whole tab's size.
             layer.masksToBounds = true
             let anchor = Motion.anchors(from: from, to: target)
             let flipped = view.isFlipped
@@ -758,7 +837,9 @@ final class TileContainerView: NSView, ThemeAware {
     }
 
     private func motionEnded(_ gen: Int, via: String) {
-        guard gen == generation else { return }
+        guard gen == generation, gen != endedGeneration else { return }
+        endedGeneration = gen
+        finishReflow()
         if !frozen.isEmpty || linkTicks == ticksAtMotionStart {
             Motion.log("motion \(gen) ended (\(via)): \(frozen.count) frozen terminal(s), "
                 + "\(linkTicks - ticksAtMotionStart) display-link tick(s)")
@@ -782,14 +863,16 @@ final class TileContainerView: NSView, ThemeAware {
             // had its resizes merged away.
             let resized = abs(view.frame.width - check.size.width) >= 0.5
                 || abs(view.frame.height - check.size.height) >= 0.5
+            let maximum = check.live > 0 ? check.expected + check.live * Motion.maxLiveResizes(Motion.duration) : nil
             MotionStats.shared.resizes(tile: id, expected: check.expected, minimum: resized ? 1 : 0,
-                                       actual: aware.surfaceResizes - check.start, kind: resizeKind)
+                                       maximum: maximum, actual: aware.surfaceResizes - check.start, kind: resizeKind)
         }
         resizeCheck = [:]
     }
 
     /// Ends any motion at once (tab switch, motion off).
     private func cancelMotion() {
+        finishReflow()
         generation += 1
         motionEnds = 0
         for view in subviews {
@@ -970,11 +1053,57 @@ final class TileContainerView: NSView, ThemeAware {
         } else {
             MotionStats.shared.idle()
         }
+        // Where the reflowing tiles are when this frame shows.
+        if !reflowing.isEmpty { Perf.measure("motion.reflow") { driveReflow(at: link.targetTimestamp) } }
         Perf.measure("clock.tick") { clock.tick(now) }
-        if clock.isEmpty, now > motionEnds + 0.05 {
+        if clock.isEmpty, reflowing.isEmpty, now > motionEnds + 0.05 {
             link.isPaused = true
             MotionStats.shared.idle()
         }
+    }
+
+    // MARK: Reflow
+
+    /// Steps every reflowing tile to where the curve puts it at `time`,
+    /// whole device pixels, so a terminal's surface never sits between
+    /// them. Its content lays out at that size (`liveResizeWillStart`).
+    private func driveReflow(at time: CFTimeInterval) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        var done = false
+        for r in reflowing.values {
+            let t = r.duration > 0 ? (time - r.start) / r.duration : 1
+            if t >= 1 {
+                done = true
+                continue
+            }
+            let e = CGFloat(Motion.progress(t))
+            func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * e }
+            let step = backingAlignedRect(
+                CGRect(x: mix(r.from.minX, r.to.minX), y: mix(r.from.minY, r.to.minY),
+                       width: mix(r.from.width, r.to.width), height: mix(r.from.height, r.to.height)),
+                options: .alignAllEdgesNearest)
+            if r.view.frame != step { r.view.frame = step }
+        }
+        if done { finishReflow(at: time) }
+        CATransaction.commit()
+    }
+
+    /// Puts reflowing tiles at their final frame and has their content take
+    /// its exact size: those whose time is up at `time`, or all of them.
+    private func finishReflow(at time: CFTimeInterval = .infinity) {
+        guard !reflowing.isEmpty else { return }
+        let finals = tileFrames()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (id, r) in reflowing where time >= r.start + r.duration {
+            reflowing[id] = nil
+            // A window resize mid-motion moved the target: the latest one.
+            let to = finals[id] ?? r.to
+            if r.view.frame != to { r.view.frame = to }
+            (r.view as? MotionAware)?.liveResizeDidEnd()
+        }
+        CATransaction.commit()
     }
 
     // MARK: Input

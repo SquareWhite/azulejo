@@ -25,7 +25,7 @@
 //! enabled = true
 //! duration_ms = 200
 //! curve = "ease_out"     # or "ease_in_out", "linear"
-//! style = "crop"         # moving tiles: "crop" (content at 1:1, revealed or cut off), "scale", "outline"
+//! style = "reflow"       # moving tiles: "reflow" (content resizes live), "crop" (content at 1:1, revealed or cut off), "scale", "outline"
 //! tab_switch = "fade"    # tab/workspace switches: "fade", "slide" or "none"
 //! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
 //!
@@ -113,7 +113,7 @@ impl Default for Animation {
             enabled: true,
             duration_ms: 200,
             curve: Curve::EaseOut,
-            style: Style::Crop,
+            style: Style::Reflow,
             tab_switch: TabSwitch::Fade,
             reduce_motion: ReduceMotion::System,
         }
@@ -131,6 +131,9 @@ pub enum Curve {
 /// What a tile's content does while its frame moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
+    /// The content lays out at every step of the motion: a terminal's grid
+    /// follows the moving frame (whole cells, a few PTY resizes per motion).
+    Reflow,
     /// The frame is a clip: content stays at 1:1, revealed or cut off.
     Crop,
     /// The content scales with the frame (text stretches mid-motion).
@@ -170,7 +173,7 @@ macro_rules! named {
     };
 }
 named!(Curve { EaseOut = "ease_out", EaseInOut = "ease_in_out", Linear = "linear" });
-named!(Style { Crop = "crop", Scale = "scale", Outline = "outline" });
+named!(Style { Reflow = "reflow", Crop = "crop", Scale = "scale", Outline = "outline" });
 named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
 named!(ReduceMotion { System = "system", Ignore = "ignore" });
 

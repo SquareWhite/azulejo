@@ -4,10 +4,14 @@ import QuartzCore
 /// Layout motion settings (`[animation]` in the config, F4) and the helpers
 /// the tile container animates with.
 ///
-/// How motion works (ADR 0004): every tile goes to its final frame at the
-/// start of a motion — so a terminal's PTY is resized exactly once, while a
-/// snapshot covers it — and Core Animation carries it visually from where it
-/// was to where it is. Nothing re-lays out per frame.
+/// How motion works (ADR 0004): with `reflow` (the default) every moving
+/// tile's frame steps along the curve once per display frame on the main
+/// thread, like a window being drag-resized, and a terminal's grid follows
+/// it (`TerminalTileView`'s live resize: whole cells only, at most one PTY
+/// resize per `reflowInterval`, then an exact one at the end). The other
+/// styles send every tile to its final frame at the start of a motion — so a
+/// terminal's PTY is resized exactly once, while a snapshot covers it — and
+/// Core Animation carries it visually from where it was to where it is.
 ///
 /// Every layout change with a geometric relation moves: each tile goes from
 /// its old frame to its new one (rotate, layout switches, Monocle in and
@@ -17,7 +21,9 @@ import QuartzCore
 /// stacked tiles (the next one dissolves in over the last).
 ///
 /// `style` says what the content does on the way:
-/// - "crop" (default): the tile's frame is a clip. Its bounds and position
+/// - "reflow" (default): the content lays out at every step; a terminal's
+///   text rewraps and its TUI redraws as the tile grows or shrinks.
+/// - "crop": the tile's frame is a clip. Its bounds and position
 ///   animate; content stays at 1:1, revealed or cut off by the moving edges.
 /// - "scale": a transform scales the whole tile (text stretches mid-motion).
 /// - "outline": tiles jump to their new place hidden; only outlines move, and
@@ -28,7 +34,7 @@ enum Motion {
         var enabled = true
         var durationMs = 200
         var curve = "ease_out"
-        var style = "crop"
+        var style = "reflow"
         var tabSwitch = "fade"
         var reduceMotion = "system"
         /// Ghostty's `unfocused-split-opacity` and `-fill`, when its config
@@ -45,14 +51,71 @@ enum Motion {
     /// The app log (motion ends, reveals).
     static var log: (String) -> Void = { _ in }
 
-    enum Style { case crop, scale, outline }
+    enum Style { case reflow, crop, scale, outline }
 
     static var style: Style {
         switch styleOverride ?? settings.style {
+        case "crop": .crop
         case "scale": .scale
         case "outline": .outline
-        default: .crop
+        default: .reflow
         }
+    }
+
+    /// Reflow: the shortest gap between two PTY resizes of one terminal
+    /// mid-motion (each is a SIGWINCH for its TUI, through herdr). libghostty
+    /// itself sends at most one per 25 ms. `AZJ_REFLOW_MS` overrides it
+    /// (automation: `anim reflow-ms`).
+    static var reflowInterval: CFTimeInterval = {
+        if let v = ProcessInfo.processInfo.environment["AZJ_REFLOW_MS"].flatMap(Double.init), v >= 0 {
+            return v / 1000
+        }
+        return 0.033
+    }()
+
+    /// Reflow: the most PTY resizes one motion of `duration` can cost a
+    /// terminal (the live ones, plus the exact one at the end).
+    static func maxLiveResizes(_ duration: CFTimeInterval) -> Int {
+        guard reflowInterval > 0 else { return Int.max / 4 }
+        return Int((duration / reflowInterval).rounded(.up)) + 1
+    }
+
+    /// The motion curve at `t` (0…1 of the time): how far along its path a
+    /// reflowing tile is. Core Animation's own curve, solved for x.
+    static func progress(_ t: Double) -> Double {
+        if t <= 0 { return 0 }
+        if t >= 1 { return 1 }
+        var c1: [Float] = [0, 0], c2: [Float] = [0, 0]
+        let f = timing
+        f.getControlPoint(at: 1, values: &c1)
+        f.getControlPoint(at: 2, values: &c2)
+        let (x1, y1, x2, y2) = (Double(c1[0]), Double(c1[1]), Double(c2[0]), Double(c2[1]))
+        func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
+            let u = 1 - s
+            return 3 * u * u * s * a + 3 * u * s * s * b + s * s * s
+        }
+        func slope(_ s: Double, _ a: Double, _ b: Double) -> Double {
+            let u = 1 - s
+            return 3 * u * u * a + 6 * u * s * (b - a) + 3 * s * s * (1 - b)
+        }
+        // Newton from t; bisection if it doesn't settle.
+        var s = t
+        for _ in 0..<8 {
+            let dx = bezier(s, x1, x2) - t
+            if abs(dx) < 1e-6 { return bezier(s, y1, y2) }
+            let d = slope(s, x1, x2)
+            if abs(d) < 1e-6 { break }
+            s = min(max(s - dx / d, 0), 1)
+        }
+        var lo = 0.0, hi = 1.0
+        s = t
+        for _ in 0..<40 {
+            let x = bezier(s, x1, x2)
+            if abs(x - t) < 1e-6 { break }
+            if x < t { lo = s } else { hi = s }
+            s = (lo + hi) / 2
+        }
+        return bezier(s, y1, y2)
     }
 
     /// How long content takes to fade in after an outline motion.
@@ -216,10 +279,20 @@ enum Motion {
 }
 
 /// Tile views that need to know about motion. Terminal tiles freeze behind a
-/// snapshot of their last frame while they move, because their PTY is resized
-/// at the start of the motion and the redraw (via herdr) takes ~100 ms.
+/// snapshot of their last frame while they move (crop, scale, outline),
+/// because their PTY is resized at the start of the motion and the redraw
+/// (via herdr) takes ~100 ms; with reflow they resize live instead.
 @MainActor
 protocol MotionAware: AnyObject {
+    /// Reflow: the container is about to step this tile's frame towards a
+    /// frame of `final` size, once per display frame. Repeated calls (a
+    /// retarget) only move the target.
+    func liveResizeWillStart(final: CGSize)
+    /// Reflow: the tile is at its final frame (or the motion was cut short):
+    /// size everything exactly to the bounds now.
+    func liveResizeDidEnd()
+    /// Reflow: whether moving resizes something (a running terminal).
+    var resizesLive: Bool { get }
     /// About to move. `freeze`: cover live content with a snapshot of the last
     /// frame (the tile changes size, or is closing). Returns whether it froze.
     /// `fill`: the snapshot follows the tile's bounds (scale style); otherwise
@@ -248,6 +321,9 @@ protocol MotionAware: AnyObject {
 }
 
 extension MotionAware {
+    func liveResizeWillStart(final: CGSize) {}
+    func liveResizeDidEnd() {}
+    var resizesLive: Bool { false }
     var headerInset: CGFloat { 0 }
     var contentLeft: CGFloat { 0 }
 }
@@ -284,6 +360,8 @@ final class MotionStats {
     private(set) var retargets = 0
     private(set) var expectedResizes = 0
     private(set) var actualResizes = 0
+    /// Reflow: resizes on top of one per motion (the live ones).
+    private(set) var liveResizes = 0
     private(set) var mismatches: [String] = []
     private var lastTick: CFTimeInterval?
     /// When the last tick's callback ran (not its vsync timestamp): a missed
@@ -305,6 +383,7 @@ final class MotionStats {
         retargets = 0
         expectedResizes = 0
         actualResizes = 0
+        liveResizes = 0
         mismatches = []
         lastTick = nil
         lastCallback = nil
@@ -356,11 +435,16 @@ final class MotionStats {
     /// faster than the terminal's 50 ms resize coalescing can merge, so a
     /// chain needs at least `minimum` (1 when it ends at a new size) and at
     /// most `expected`; a chain of one motion is exact.
-    func resizes(tile: String, expected: Int, minimum: Int, actual: Int, kind: String) {
+    /// Reflow: `maximum` allows the live resizes (a few per motion, see
+    /// `Motion.maxLiveResizes`) on top.
+    func resizes(tile: String, expected: Int, minimum: Int, maximum: Int? = nil, actual: Int, kind: String) {
+        let maximum = maximum ?? expected
         expectedResizes += expected
         actualResizes += actual
-        if actual > expected || actual < min(minimum, expected) {
-            let want = minimum < expected ? "\(minimum) to \(expected)" : "\(expected)"
+        if maximum > expected { liveResizes += max(actual - expected, 0) }
+        if actual > maximum || actual < min(minimum, expected) {
+            let low = min(minimum, expected)
+            let want = low < maximum ? "\(low) to \(maximum)" : "\(expected)"
             mismatches.append("\(kind) \(Short.id(tile)): expected \(want) resize(s), saw \(actual)")
         }
     }
@@ -389,6 +473,9 @@ final class MotionStats {
             "setup_max_ms": round2(setups.last ?? 0),
             "pty_resizes_expected": expectedResizes,
             "pty_resizes_actual": actualResizes,
+            "pty_resizes_live": liveResizes,
+            "style": "\(Motion.style)",
+            "reflow_interval_ms": round2(Motion.reflowInterval * 1000),
             "resize_mismatches": mismatches,
             "drop_causes_ms": dropCauses.mapValues(round2),
             "drops": drops,

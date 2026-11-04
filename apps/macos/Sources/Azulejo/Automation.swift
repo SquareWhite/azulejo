@@ -47,10 +47,13 @@ import AppKit
 ///                            tile kinds add `tile.*` keys to expect/until
 ///     anim duration MS       slow (or speed up) layout motion; `default` resets
 ///     anim enabled BOOL      force motion on or off; `default` follows config
+///     anim style NAME        reflow|crop|scale|outline; `default` follows config
+///     anim reflow-ms MS      reflow: shortest gap between a terminal's live resizes
 ///     anim reset             clear motion stats
 ///     anim stats [name]      write motion stats → <out>/name.json (anim-stats)
 ///     anim expect-clean [N]  fail if more than N (default 0) frames dropped, or
 ///                            PTY resizes ≠ one per terminal per motion
+///                            (reflow: one to `Motion.maxLiveResizes`)
 ///     capture name [ms]      after ms, ask the harness to `screencapture` the
 ///                            window → <out>/name.png (Metal and in-flight
 ///                            motion included, unlike `shot`)
@@ -351,6 +354,8 @@ final class Automation {
             Motion.enabledOverride = value == "default" ? nil : value == "true"
         case "style":
             Motion.styleOverride = value == "default" ? nil : value
+        case "reflow-ms":
+            if let ms = Double(value), ms >= 0 { Motion.reflowInterval = ms / 1000 }
         case "reset":
             MotionStats.shared.reset()
         case "stats":
@@ -368,7 +373,7 @@ final class Automation {
             if dropped > allowed { failures.append("line \(step): \(dropped) dropped frame(s), allowed \(allowed)") }
             if !mismatches.isEmpty { failures.append("line \(step): \(mismatches.joined(separator: ", "))") }
         default:
-            failures.append("line \(step): anim needs duration|enabled|reset|stats|expect-clean")
+            failures.append("line \(step): anim needs duration|enabled|style|reflow-ms|reset|stats|expect-clean")
         }
         record("anim \(arg)")
     }
