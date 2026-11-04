@@ -36,3 +36,9 @@ That means Azulejo has to deal with herdr state it didn't create: workspaces, ta
 - `core/crates/engine/src/driver_tests.rs`: `adopting_and_restoring_never_change_herdr` (a fake herdr records every call; adopt and restore make only reads, on first launch and on relaunch).
 - `core/crates/engine/tests/live.rs`: `adopts_what_herdr_already_runs_without_changing_it`. A throwaway session with a three-pane tab is adopted with the same split tree, and herdr's structure is identical before and after, including after a relaunch.
 - [herdr notes](../herdr-notes.md), questions 3 and 6
+
+## Amendment (Nov 4, 2026): closing a workspace detaches it
+
+`cmd+w` now closes the workspace (`close_workspace`, `cmd+shift+w` closes the tab). A closed workspace follows the closed-tile rule above: every terminal's pane goes on `Session.detached_herdr`, nothing is killed, and herdr keeps the workspace, its tabs and panes. A survey skips the herdr workspace because all its panes are known, and so does a relaunch (the list is saved with the session). No separate list of closed workspaces is needed. One gap closed on the way: a pane herdr finishes making after its tile (or the tile's workspace) closed now counts as detached too, instead of being adopted as a new workspace on the next survey. A tab created later in that herdr workspace (from the phone, say) is new work and is adopted as usual. Reopening a closed workspace is future work, like reattaching a closed tile.
+
+Evidence: `adopt_tests.rs` `a_closed_workspace_detaches_and_stays_closed`, `a_pane_made_for_a_closed_workspace_isnt_adopted`; live `closing_a_workspace_detaches_it_and_a_relaunch_keeps_it_closed` (herdr's structure identical after the close and after a relaunch).

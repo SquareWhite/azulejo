@@ -55,6 +55,9 @@ pub enum Action {
     NewWorkspace,
     /// 1-based position in the window.
     SwitchWorkspace(u8),
+    /// The last workspace in the window's order (browser-style ⌘9).
+    SwitchWorkspaceLast,
+    /// The workspace that was active before the current one.
     LastWorkspace,
     NextWorkspace,
     PreviousWorkspace,
@@ -64,6 +67,9 @@ pub enum Action {
     NewTab,
     /// 1-based position in the workspace.
     SwitchTab(u8),
+    /// The last tab in the workspace's order (browser-style).
+    SwitchTabLast,
+    /// The tab that was active before the current one.
     LastTab,
     NextTab,
     PreviousTab,
@@ -159,12 +165,14 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("rotate_clockwise", RotateClockwise),
         ("rotate_anticlockwise", RotateAnticlockwise),
         ("new_workspace", NewWorkspace),
+        ("switch_workspace_last", SwitchWorkspaceLast),
         ("last_workspace", LastWorkspace),
         ("next_workspace", NextWorkspace),
         ("previous_workspace", PreviousWorkspace),
         ("close_workspace", CloseWorkspace),
         ("rename_workspace", RenameWorkspace),
         ("new_tab", NewTab),
+        ("switch_tab_last", SwitchTabLast),
         ("last_tab", LastTab),
         ("next_tab", NextTab),
         ("previous_tab", PreviousTab),
@@ -258,13 +266,12 @@ impl Action {
             GrowMasterArea | ShrinkMasterArea => "layout.master_ratio",
             MovePositionNext | MovePositionPrevious => "layout.move_order",
             NewWorkspace => "workspace.create",
-            SwitchWorkspace(_) | LastWorkspace | NextWorkspace | PreviousWorkspace => {
-                "workspace.focus"
-            }
+            SwitchWorkspace(_) | SwitchWorkspaceLast | LastWorkspace | NextWorkspace
+            | PreviousWorkspace => "workspace.focus",
             CloseWorkspace => "workspace.close",
             RenameWorkspace => "workspace.rename",
             NewTab => "tab.create",
-            SwitchTab(_) | LastTab | NextTab | PreviousTab => "tab.focus",
+            SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab => "tab.focus",
             CloseTab => "tab.close",
             RenameTab => "tab.rename",
             NewWindow => "window.create",

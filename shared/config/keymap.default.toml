@@ -75,18 +75,22 @@ move_position_next     = "alt+shift+bracketright"
 move_position_previous = "alt+shift+bracketleft"
 rotate_part            = "alt+shift+o"           # several masters side by side <-> stacked
 
-# Workspaces (herdr: cmd+t, cmd+1..9, alt+0)
-new_workspace    = "cmd+t"
-switch_workspace = "cmd+1..8"
-last_workspace   = ["cmd+9", "alt+0"] # browser-style "last", no forwarding trick needed
+# Workspaces (herdr: cmd+t, cmd+1..9, alt+0). cmd+w closes the workspace and
+# cmd+shift+w the tab, like cmd+t / cmd+shift+t open them. Closing detaches:
+# herdr keeps the panes running (F14).
+new_workspace         = "cmd+t"
+switch_workspace      = "cmd+1..8"
+switch_workspace_last = "cmd+9"       # the last one in the sidebar, as cmd+9 in a browser
+last_workspace        = "alt+0"       # the previously active one (herdr's last.py space)
+close_workspace       = "cmd+w"
 
-# Tabs (herdr: cmd+shift+t, ctrl+tab, cmd+w; prefix+1..9)
-new_tab      = "cmd+shift+t"
-switch_tab   = "ctrl+1..8"
-last_tab     = "ctrl+9"               # herdr used alt+9; Hammerspoon owns it now
-next_tab     = "ctrl+tab"
-previous_tab = "ctrl+shift+tab"
-close_tab    = "cmd+w"
+# Tabs (herdr: cmd+shift+t, ctrl+tab; prefix+1..9)
+new_tab         = "cmd+shift+t"
+switch_tab      = "ctrl+1..8"
+switch_tab_last = "ctrl+9"            # the last tab in order; last_tab (previously active) is palette-only
+next_tab        = "ctrl+tab"
+previous_tab    = "ctrl+shift+tab"
+close_tab       = "cmd+shift+w"
 
 # App
 quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/tiles (">" commands, "@" jump)
@@ -145,16 +149,18 @@ move_position_next     = "alt+shift+bracketright"
 move_position_previous = "alt+shift+bracketleft"
 rotate_part            = "alt+shift+o"
 
-new_workspace    = "super+t"
-switch_workspace = "super+1..8"
-last_workspace   = ["super+9", "alt+0"]
+new_workspace         = "super+t"
+switch_workspace      = "super+1..8"
+switch_workspace_last = "super+9"
+last_workspace        = "alt+0"
+close_workspace       = "super+w"
 
-new_tab      = "super+shift+t"
-switch_tab   = "ctrl+1..8"
-last_tab     = "ctrl+9"
-next_tab     = "ctrl+tab"
-previous_tab = "ctrl+shift+tab"
-close_tab    = "super+w"
+new_tab         = "super+shift+t"
+switch_tab      = "ctrl+1..8"
+switch_tab_last = "ctrl+9"
+next_tab        = "ctrl+tab"
+previous_tab    = "ctrl+shift+tab"
+close_tab       = "super+shift+w"
 
 quick_open      = "super+k"
 find            = "super+f"
