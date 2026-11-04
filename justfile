@@ -16,10 +16,15 @@ lint:
     cargo clippy --all-targets -- -D warnings
     scripts/design-tokens --check
     cargo run -q -p azulejo-config --bin azj-keys-doc -- --check docs/keybindings.md
+    scripts/icon/build.sh --check
 
 # Regenerate the macOS shell's Design.swift from shared/design/tokens.json
 design-tokens:
     scripts/design-tokens
+
+# Regenerate the app icon (apps/macos/Resources/AppIcon.icns) and docs/design/icon from scripts/icon/draw.swift
+icon:
+    scripts/icon/build.sh
 
 # Regenerate the keybinding reference in docs/keybindings.md from shared/config/keymap.default.toml
 keys-doc:

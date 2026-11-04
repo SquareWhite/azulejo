@@ -77,6 +77,8 @@ printf 'APPL????' > "$app/Contents/PkgInfo"
 # Contents/Resources/terminfo/78/xterm-ghostty marks Contents/Resources/ghostty.
 cp -R "$share/ghostty" "$app/Contents/Resources/ghostty"
 cp -R "$share/terminfo" "$app/Contents/Resources/terminfo"
+# The app icon (CFBundleIconFile; `just icon` regenerates it).
+cp apps/macos/Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 
 # 5. Sign. Developer ID if given or found, otherwise ad-hoc (runs locally,
 #    can't be notarised, Gatekeeper rejects it on other Macs).
