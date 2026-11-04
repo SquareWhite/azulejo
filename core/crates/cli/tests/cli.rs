@@ -699,6 +699,21 @@ fn config_keys_and_defaults() {
         "{text}"
     );
     assert_eq!(stdout(&azj(&socket, &[], &["keys", "list"])), text);
+    // send_text: one row per chord, its text in config syntax.
+    let clear = row("send_text", "terminal");
+    assert_eq!(clear["current"], json!(["cmd+l"]));
+    assert_eq!(clear["text"], "\u{c}");
+    assert_eq!(clear["default_text"], "\u{c}");
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("send_text "))
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(
+        line.starts_with("send_text \"\\u000c\"")
+            && line.contains("terminal")
+            && line.contains("cmd+l"),
+        "{line}"
+    );
 
     // The template: every action, commented out, parseable as is.
     let defaults = azj(&socket, &[], &["config", "defaults"]);

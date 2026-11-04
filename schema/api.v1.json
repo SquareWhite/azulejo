@@ -2928,9 +2928,23 @@
           },
           "type": "array"
         },
+        "default_text": {
+          "description": "`send_text` rows: the text the bundled defaults type on that chord.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "source": {
           "description": "`default` (bundled keymap) or `user` (the config file sets it).",
           "type": "string"
+        },
+        "text": {
+          "description": "`send_text` rows (one per chord, terminal context): the text the\nchord types now, as raw text. Absent when unbound, and on other rows.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "title": {
           "type": "string"

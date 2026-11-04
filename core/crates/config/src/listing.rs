@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use azulejo_protocol::KeyBinding;
 
-use crate::action::{NameSpec, names};
-use crate::catalogue::describe;
+use crate::action::{NameSpec, SEND_TEXT, names, quote_text};
+use crate::catalogue::{describe, title};
 use crate::keymap::Written;
 use crate::{Action, Chord, Config, Key, KeyContext, Platform};
 
@@ -105,9 +105,12 @@ pub fn key_listing(config: &Config) -> Vec<KeyBinding> {
                     "default"
                 }
                 .to_owned(),
+                text: None,
+                default_text: None,
             });
         }
     }
+    out.extend(text_listing(cur, def, platform));
     if config.keymap.prefix_enabled() {
         let cur = config.keymap.prefix_written();
         let def = defaults.keymap.prefix_written();
@@ -129,10 +132,65 @@ pub fn key_listing(config: &Config) -> Vec<KeyBinding> {
                     "default"
                 }
                 .to_owned(),
+                text: None,
+                default_text: None,
             });
         }
     }
     out
+}
+
+/// Every chord a `send_text` line in `lists` names, sorted.
+fn text_chords(lists: &[&[Written]]) -> Vec<Chord> {
+    let mut chords: Vec<Chord> = lists
+        .iter()
+        .flat_map(|l| l.iter())
+        .filter_map(Written::send_text_chord)
+        .collect();
+    chords.sort();
+    chords.dedup();
+    chords
+}
+
+fn find_text(list: &[Written], chord: Chord) -> Option<&Written> {
+    list.iter().find(|w| w.send_text_chord() == Some(chord))
+}
+
+/// What a `send_text` row does: `Type "\u000c" (ctrl+l) into the pane`.
+fn text_title(text: Option<&'static str>) -> String {
+    text.map_or_else(
+        || "Type nothing (unbound)".to_owned(),
+        |t| title(Action::SendText(t)),
+    )
+}
+
+/// `send_text` rows for `config.keys`: one per chord, in the terminal context.
+fn text_listing(cur: &[Written], def: &[Written], platform: Platform) -> Vec<KeyBinding> {
+    text_chords(&[cur, def])
+        .into_iter()
+        .map(|chord| {
+            let c = find_text(cur, chord);
+            let text = c.and_then(Written::send_text);
+            let default_text = find_text(def, chord).and_then(Written::send_text);
+            let on =
+                |text: Option<&str>| text.map_or_else(Vec::new, |_| vec![chord.display(platform)]);
+            KeyBinding {
+                action: SEND_TEXT.to_owned(),
+                context: KeyContext::Terminal.name().to_owned(),
+                title: text_title(text.or(default_text)),
+                default: on(default_text),
+                current: on(text),
+                source: if c.is_some_and(|w| w.user) {
+                    "user"
+                } else {
+                    "default"
+                }
+                .to_owned(),
+                text: text.map(str::to_owned),
+                default_text: default_text.map(str::to_owned),
+            }
+        })
+        .collect()
 }
 
 /// A TOML value for `chords`: `"x"`, `["x", "y"]`, or `""` when unbound.
@@ -148,12 +206,20 @@ fn toml_value(chords: &[String]) -> String {
     }
 }
 
-/// Rows of one template section: (name, chords, title).
-fn section_rows(
-    def: &[Written],
-    context: Option<KeyContext>,
-    platform: Platform,
-) -> Vec<(String, Vec<String>, String)> {
+/// One template line: `name = "chords"` (uncommented, it's valid config),
+/// what it does, and whether it's unbound.
+type Row = (String, String, bool);
+
+fn action_row(name: &str, chords: &[String], title: String) -> Row {
+    (
+        format!("{name} = {}", toml_value(chords)),
+        title,
+        chords.is_empty(),
+    )
+}
+
+/// Rows of one template section.
+fn section_rows(def: &[Written], context: Option<KeyContext>, platform: Platform) -> Vec<Row> {
     let mut rows = Vec::new();
     for (name, spec) in names() {
         let home = match &spec {
@@ -171,21 +237,30 @@ fn section_rows(
             continue;
         }
         let chords = written.map_or_else(Vec::new, |w| chord_patterns(&w.bindings, platform));
-        rows.push((name.clone(), chords, describe(&name, &spec)));
+        rows.push(action_row(&name, &chords, describe(&name, &spec)));
+    }
+    // The terminal's `send_text` lines, one per chord.
+    if context == Some(KeyContext::Terminal) {
+        for chord in text_chords(&[def]) {
+            let text = find_text(def, chord).and_then(Written::send_text);
+            rows.push((
+                format!(
+                    "\"{}\" = {{ {SEND_TEXT} = {} }}",
+                    chord.display(platform),
+                    quote_text(text.unwrap_or_default())
+                ),
+                text_title(text),
+                text.is_none(),
+            ));
+        }
     }
     rows
 }
 
-fn push_rows(out: &mut String, rows: &[(String, Vec<String>, String)]) {
+fn push_rows(out: &mut String, rows: &[Row]) {
     let lines: Vec<(String, &str, bool)> = rows
         .iter()
-        .map(|(name, chords, title)| {
-            (
-                format!("# {name} = {}", toml_value(chords)),
-                title.as_str(),
-                chords.is_empty(),
-            )
-        })
+        .map(|(line, title, unbound)| (format!("# {line}"), title.as_str(), *unbound))
         .collect();
     let width = lines
         .iter()
@@ -221,6 +296,10 @@ pub fn keys_template(platform: Platform) -> String {
 # a, 1, f5, enter, escape, tab, space, up, pagedown, minus, equal, [, ], /,
 # period or comma. switch_workspace and switch_tab take digit ranges
 # (\"{cmd}+1..8\").
+#
+# Terminal tiles can also type text on a chord, like kitty's send_text: put
+# \"shift+enter\"={{send_text=\"\\n\"}} under [keys.{p}.terminal]. The text goes
+# to the pane as is (TOML escapes: \\n, \\x1b for escape); \"\" unbinds it.
 ",
         cmd = match platform {
             Platform::Macos => "cmd",
@@ -258,7 +337,7 @@ pub fn keys_template(platform: Platform) -> String {
                 .into_iter()
                 .map(|c| format!("prefix+{c}"))
                 .collect();
-            Some((name.clone(), chords, describe(&name, &spec)))
+            Some(action_row(&name, &chords, describe(&name, &spec)))
         })
         .collect();
     let mut block = String::new();
@@ -304,6 +383,19 @@ pub fn reference_markdown() -> String {
                 describe(&name, &spec).replace('|', "\\|"),
             );
         }
+    }
+    for chord in text_chords(&[m, l]) {
+        let text = |list: &[Written]| find_text(list, chord).and_then(Written::send_text);
+        let on = |list: &[Written], platform| {
+            text(list).map_or_else(Vec::new, |_| vec![chord.display(platform)])
+        };
+        let _ = writeln!(
+            out,
+            "| `{SEND_TEXT}` | terminal | {} | {} | {} |",
+            md_chords(&on(m, Platform::Macos)),
+            md_chords(&on(l, Platform::Linux)),
+            text_title(text(m).or(text(l))).replace('|', "\\|"),
+        );
     }
     let (pm, pl) = (mac.keymap.prefix_written(), linux.keymap.prefix_written());
     let key = |c: &Config, p| {

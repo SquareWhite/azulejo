@@ -11,6 +11,11 @@
 //! and win over the global bindings there. Actions that only work in one
 //! context (`palette_next`, `browser_back`) go to that context wherever
 //! they're written.
+//!
+//! `send_text` lines turn that round: the chord is the key and the value says
+//! what to type (`"shift+enter" = { send_text = "\n" }`). They become
+//! [`Action::SendText`] bindings in the terminal context, one entry per
+//! chord, so a layer replaces a chord's text without touching the others.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -19,7 +24,7 @@ use azulejo_protocol::TileKind;
 use toml::Spanned;
 use toml::de::{DeTable, DeValue};
 
-use crate::action::{Action, NameSpec, names};
+use crate::action::{Action, NameSpec, SEND_TEXT, intern, names};
 use crate::chord::{Chord, ChordPattern, Key, Mods, Platform};
 use crate::diag::{Diagnostic, Location, Severity, Sink, Source};
 
@@ -228,6 +233,10 @@ impl<'s, 'a> LayerParser<'s, 'a> {
                         self.platform_section(platform, sub, out);
                     } else if let Some(kind) = KeyContext::from_name(name) {
                         self.action_section(None, Some(kind), sub, out);
+                    } else if is_chord(name) {
+                        if let Some(entry) = self.text_entry(key, value, None, None) {
+                            out.entries.push(entry);
+                        }
                     } else {
                         self.sink.warn(
                             key.span(),
@@ -253,6 +262,11 @@ impl<'s, 'a> LayerParser<'s, 'a> {
             match value.get_ref() {
                 DeValue::Table(sub) => match KeyContext::from_name(name) {
                     Some(kind) => self.action_section(Some(platform), Some(kind), sub, out),
+                    None if is_chord(name) => {
+                        if let Some(entry) = self.text_entry(key, value, Some(platform), None) {
+                            out.entries.push(entry);
+                        }
+                    }
                     None => self.sink.warn(
                         key.span(),
                         format!(
@@ -280,6 +294,12 @@ impl<'s, 'a> LayerParser<'s, 'a> {
     ) {
         for (key, value) in table.iter() {
             if let DeValue::Table(_) = value.get_ref() {
+                if is_chord(key.get_ref()) {
+                    if let Some(entry) = self.text_entry(key, value, platform, context) {
+                        out.entries.push(entry);
+                    }
+                    continue;
+                }
                 self.sink.warn(
                     key.span(),
                     format!("unexpected table `{}` here", key.get_ref()),
@@ -409,8 +429,17 @@ impl<'s, 'a> LayerParser<'s, 'a> {
             name = new;
         }
         let Some(order) = self.names.iter().position(|(n, _)| n == name) else {
-            self.sink
-                .warn(key.span(), format!("unknown action `{name}`"));
+            if !prefix && is_chord(name) {
+                self.sink.error(
+                    value.span(),
+                    format!(
+                        "to type text on `{name}`, write `\"{name}\" = {{ {SEND_TEXT} = \"…\" }}`"
+                    ),
+                );
+            } else {
+                self.sink
+                    .warn(key.span(), format!("unknown action `{name}`"));
+            }
             return None;
         };
         // Actions that only work in one context go there from a global
@@ -532,6 +561,100 @@ impl<'s, 'a> LayerParser<'s, 'a> {
             origin: self.origin(key.span().start..value.span().end),
         })
     }
+}
+
+impl LayerParser<'_, '_> {
+    /// One `"chord" = { send_text = "…" }` line: typing text into terminal
+    /// tiles on a chord, like kitty's `map … send_text` and Ghostty's
+    /// `keybind = …=text:…`. It lives in the terminal context wherever it's
+    /// written ([keys], [keys.<platform>] or their `terminal` sections), and
+    /// replaces the layer below's text on the same chord. An empty text
+    /// unbinds it, so the chord reaches the terminal as a key again.
+    fn text_entry(
+        &mut self,
+        key: &Spanned<std::borrow::Cow<'_, str>>,
+        value: &Spanned<DeValue<'_>>,
+        platform: Option<Platform>,
+        context: Option<KeyContext>,
+    ) -> Option<Entry> {
+        let written = key.get_ref().as_ref();
+        let chord = match Chord::parse(written) {
+            Ok(chord) => chord,
+            Err(message) => {
+                self.sink
+                    .error(key.span(), format!("`{written}`: {message}"));
+                return None;
+            }
+        };
+        if let Some(other) = context.filter(|c| *c != KeyContext::Terminal) {
+            self.sink.warn(
+                key.span(),
+                format!(
+                    "`{SEND_TEXT}` only works {}, so `{written}` does nothing under `{}`; ignored",
+                    KeyContext::Terminal.describe(),
+                    other.name()
+                ),
+            );
+            return None;
+        }
+        let DeValue::Table(table) = value.get_ref() else {
+            self.sink.error(
+                value.span(),
+                format!("`{written}` must be `{{ {SEND_TEXT} = \"…\" }}`"),
+            );
+            return None;
+        };
+        let mut text = None;
+        for (k, v) in table.iter() {
+            match (k.get_ref().as_ref(), v.get_ref()) {
+                (SEND_TEXT, DeValue::String(s)) => text = Some(s.to_string()),
+                (SEND_TEXT, _) => {
+                    self.sink.error(
+                        v.span(),
+                        format!("`{written}`: `{SEND_TEXT}` must be a string (\"\" unbinds it)"),
+                    );
+                    return None;
+                }
+                (other, _) => self.sink.warn(
+                    k.span(),
+                    format!("`{written}`: unknown setting `{other}`; expected `{SEND_TEXT}`"),
+                ),
+            }
+        }
+        let Some(text) = text else {
+            self.sink.error(
+                value.span(),
+                format!("`{written}` needs `{SEND_TEXT} = \"…\"`"),
+            );
+            return None;
+        };
+        let bindings = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![(chord, Action::SendText(intern(&text)))]
+        };
+        Some(Entry {
+            platform,
+            context: Some(KeyContext::Terminal),
+            name: text_entry_name(chord),
+            // After every named action: one of those wins a tie in the same
+            // layer and context.
+            order: self.names.len(),
+            bindings,
+            origin: self.origin(key.span().start..value.span().end),
+        })
+    }
+}
+
+/// Whether a config key names a chord (`"shift+enter"`) rather than an action.
+fn is_chord(name: &str) -> bool {
+    Chord::parse(name).is_ok()
+}
+
+/// The merge key of a `send_text` line: one per chord, so a later layer's
+/// line replaces only that chord's text.
+fn text_entry_name(chord: Chord) -> String {
+    format!("{SEND_TEXT} {chord}")
 }
 
 fn is_unbound(s: &str) -> bool {
@@ -685,6 +808,20 @@ pub struct Written {
     pub user: bool,
 }
 
+impl Written {
+    /// The chord of a `send_text` line (`"cmd+l" = { send_text = … }`),
+    /// even when it's unbound; `None` for action lines.
+    pub fn send_text_chord(&self) -> Option<Chord> {
+        let rest = self.name.strip_prefix(SEND_TEXT)?.strip_prefix(' ')?;
+        Chord::parse(rest).ok()
+    }
+
+    /// What a `send_text` line types; `None` when unbound or not one.
+    pub fn send_text(&self) -> Option<&'static str> {
+        self.bindings.first().and_then(|(_, action)| action.text())
+    }
+}
+
 /// The resolved keymap for one platform.
 #[derive(Debug, Clone)]
 pub struct Keymap {
@@ -712,7 +849,9 @@ fn written(merged: &HashMap<(Option<KeyContext>, String), Entry>) -> Vec<Written
             )
         })
         .collect();
-    out.sort_by_key(|(order, w)| (*order, w.context));
+    // `send_text` lines share one order; their names (one per chord) keep
+    // them in a stable order.
+    out.sort_by(|(a, x), (b, y)| (a, x.context, &x.name).cmp(&(b, y.context, &y.name)));
     out.into_iter().map(|(_, w)| w).collect()
 }
 
@@ -847,6 +986,8 @@ impl Keymap {
                         ),
                     );
                 } else if terminal
+                    // Typing something on a ctrl chord is what that line asks for.
+                    && !matches!(slot.action, Action::SendText(_))
                     && chord.mods
                         == (Mods {
                             ctrl: true,

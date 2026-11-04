@@ -294,6 +294,8 @@ pub unsafe extern "C" fn azj_core_execute(
 ///   "method":"layout.focus","command":{…}}`: run it. `method` is null for
 ///   shell-local actions; `command` is null when the shell has to build the
 ///   command from session state (switch to tab N, renames, cycling).
+///   `context` names the one context a context-only action works in;
+///   `text` is what a `send_text` binding types into the terminal.
 /// - `{"outcome":"prefix_armed"}`, `{"outcome":"prefix_cancelled"}`: consume
 ///   the chord.
 /// - `{"outcome":"unhandled"}`: pass the chord to the focused tile.
@@ -373,6 +375,8 @@ fn action_json(action: Action) -> Value {
         // Set for actions that only work in one context (`browser_back`):
         // the shell hands those to the view that has the keyboard.
         "context": action.context().map(|c| c.name()),
+        // `send_text`: what to type into the pane.
+        "text": action.text(),
     })
 }
 
@@ -438,6 +442,7 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
                     "action": action.name(),
                     "index": action.index(),
                     "chord": chord.display(platform),
+                    "text": action.text(),
                 })
             })
             .collect()
@@ -779,6 +784,12 @@ mod tests {
                 assert_eq!(term["method"], Value::Null);
                 let browser = key(c"{\"chord\":\"cmd+a\",\"tile\":\"browser\"}");
                 assert_eq!(browser["outcome"], "unhandled");
+                // send_text: the text to type rides along.
+                let clear = key(c"{\"chord\":\"cmd+l\",\"context\":\"terminal\"}");
+                assert_eq!(clear["action"], "send_text");
+                assert_eq!(clear["context"], "terminal");
+                assert_eq!(clear["text"], "\u{c}");
+                assert_eq!(term["text"], Value::Null);
             }
 
             // Modes and tile-local actions: `context`.

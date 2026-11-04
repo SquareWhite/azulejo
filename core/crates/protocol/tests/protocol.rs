@@ -669,14 +669,28 @@ fn replies_round_trip() {
             platform: "macos".into(),
             path: Some("/Users/me/.config/azulejo/config.toml".into()),
             prefix: None,
-            keys: vec![KeyBinding {
-                action: "browser_back".into(),
-                context: "browser".into(),
-                title: "Browser: back".into(),
-                default: vec!["cmd+[".into()],
-                current: vec!["alt+left".into()],
-                source: "user".into(),
-            }],
+            keys: vec![
+                KeyBinding {
+                    action: "browser_back".into(),
+                    context: "browser".into(),
+                    title: "Browser: back".into(),
+                    default: vec!["cmd+[".into()],
+                    current: vec!["alt+left".into()],
+                    source: "user".into(),
+                    text: None,
+                    default_text: None,
+                },
+                KeyBinding {
+                    action: "send_text".into(),
+                    context: "terminal".into(),
+                    title: "Type \"\\n\" (ctrl+j) into the pane".into(),
+                    default: vec![],
+                    current: vec!["shift+enter".into()],
+                    source: "user".into(),
+                    text: Some("\n".into()),
+                    default_text: None,
+                },
+            ],
         },
         Reply::Machines {
             machines: vec![MachineInfo {

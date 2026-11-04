@@ -2,7 +2,8 @@
 # Live rebinding of every keymap context (PLAN 2.3; docs/keybindings.md), in
 # process on its own dev instance (AZJ_DEV_NAME=rebind by default). One key in
 # each of palette, find_bar, resize, browser, preview and files moves to a new
-# chord through the instance's config file: the new chord works without a
+# chord through the instance's config file, and the terminal gets a send_text
+# line and loses its cmd+l one: the new chord works without a
 # restart, the old one doesn't, "" and "none" unbind, and putting the old
 # file back restores the defaults. Also checks that `azj config keys` shows the
 # overrides and that "Open config file" writes `azj config defaults` when the
@@ -62,6 +63,10 @@ preview_toggle_source = "cmd+shift+u"
 [keys.macos.files]
 files_down = "n"
 files_toggle_hidden = ""
+
+[keys.macos.terminal]
+"shift+enter" = { send_text = "\n" }
+"cmd+l" = { send_text = "" }
 TOML
 
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$fixtures/site" >/dev/null 2>&1 &
@@ -102,6 +107,13 @@ for (action, context), (default, current) in checks.items():
     r = row(action, context)
     assert (r["default"], r["current"], r["source"]) == (default, current, "user"), r
 assert row("browser_back", "browser")["source"] == "default"
+# send_text: one row per chord, with the text.
+texts = {(k["default"] or k["current"])[0]: k for k in keys if k["action"] == "send_text"}
+newline, clear = texts["shift+enter"], texts["cmd+l"]
+assert (newline["default"], newline["current"], newline.get("text"), newline["source"]) \
+    == ([], ["shift+enter"], "\n", "user"), newline
+assert (clear["default"], clear["current"], clear.get("text"), clear["default_text"], clear["source"]) \
+    == (["cmd+l"], [], None, "\x0c", "user"), clear
 print(f"rebind: azj config keys lists {len(keys)} rows with the overrides")
 PY
 
