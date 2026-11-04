@@ -25,12 +25,25 @@ shot 01-tall-four
 
 key alt+enter                 # promote the focused stack tile to master
 expect focus 1
-key alt+o                     # rotate: a split tree only flips, master on top
+# rotate: a manual tab turns its whole tree a quarter turn clockwise (ADR 0010,
+# "Manual rotate"), and four turns give the same tree back
+remember tree
+expect rect.focused 0,0,500x1000
+key alt+o                     # the master goes to the top…
 expect axis v
+expect rect.focused 0,0,1000x500
 shot 02-rotated
-key alt+o                     # and back
+key alt+o                     # …the right…
 expect axis h
-action flip_layout            # the flip on its own (palette-only)
+expect rect.focused 500,0,500x1000
+key alt+o                     # …the bottom…
+expect axis v
+expect rect.focused 0,500,1000x500
+key alt+o                     # …and home
+expect axis h
+expect rect.focused 0,0,500x1000
+unchanged tree
+action flip_layout            # the old tall flip, master left ↔ top (palette-only)
 expect axis v
 action flip_layout
 expect axis h
