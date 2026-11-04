@@ -320,6 +320,18 @@ fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
 }
 
 #[test]
+fn the_layout_is_mirrored_into_herdr_unless_turned_off() {
+    // ADR 0012: on by default.
+    assert!(Config::defaults(MAC).herdr.mirror_layout);
+    let off = user("[herdr]\nmirror_layout = false\n", MAC);
+    assert!(off.diagnostics.is_empty(), "{:?}", off.diagnostics);
+    assert!(!off.herdr.mirror_layout);
+    let bad = user("[herdr]\nmirror_layout = \"no\"\n", MAC);
+    assert!(bad.has_errors());
+    assert!(bad.herdr.mirror_layout, "a bad value keeps the default");
+}
+
+#[test]
 fn a_collapsed_sidebar_is_a_rail_unless_hidden() {
     use azulejo_protocol::SidebarState;
     assert_eq!(Config::defaults(MAC).sidebar.collapsed, SidebarState::Rail);
