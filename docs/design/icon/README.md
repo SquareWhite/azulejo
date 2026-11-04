@@ -1,5 +1,11 @@
 # App icon
 
+**Chosen: X, pinwheel, white on cobalt (Nov 4, 2026).** the maintainer's pick: four tiles linked by one woven spiral says "tiles that complete each other" in a single mark, and white on cobalt stays bold from the Dock down to 16 px.
+
+![X, pinwheel, white on cobalt, at 1024 (shown at 256), 128, 64, 32 and 16 px beside Terminal and Notes](chosen.png)
+
+[`chosen.png`](chosen.png) shows the shipping icon at 1024 (shown at 256), 128, 64, 32 and 16 px, then 32 and 16 blown up 4×, next to Terminal and Notes, on light and dark. Under that the three sit in a row at each size, as in the Dock. The rest of this page is how we got here.
+
 ![All eight candidates](options.png)
 
 the maintainer's brief (Nov 4, 2026): "a pretty azulejo tile, slightly stylized to match the macOS Liquid Glass aesthetic". Cobalt on a warm tin glaze, a symmetric floral-geometric motif, corner quarter-motifs that would join up with the next tile, and a fine border.
@@ -23,7 +29,7 @@ the maintainer's brief (Nov 4, 2026): "a pretty azulejo tile, slightly stylized 
 
 **How to choose.** Set `chosen` in `scripts/icon/draw.swift`, then run `just icon`. A candidate is `let chosen: Icon = .candidate(.night)`; a minimal mark takes a style too, as in `.mark(.knot, .cobalt)` (see "Minimal marks" below). `just icon` rebuilds `AppIcon.icns`, the dark and tinted variants, sheet.png and the stamp `just lint` checks. Commit them together.
 
-**Why A.** It's the one that reads as an azulejo: the kind of tile you'd see on a Lisbon facade, not a pattern that just has the colours. It also holds up small. At 32 and 16 px it drops the border, buds and outlines (see "Small sizes") and stays a blue flower on a white tile. B makes a nice point about tiling, but at 16 px its four tiles blur into a checkerboard. C is the boldest at 16 px, but a blue square with a white blob reads as a generic badge in a row of Dock icons, and it loses the warm glaze. (This was written before D–H existed; A stays the default until the maintainer picks.)
+**Why A.** It's the one that reads as an azulejo: the kind of tile you'd see on a Lisbon facade, not a pattern that just has the colours. It also holds up small. At 32 and 16 px it drops the border, buds and outlines (see "Small sizes") and stays a blue flower on a white tile. B makes a nice point about tiling, but at 16 px its four tiles blur into a checkerboard. C is the boldest at 16 px, but a blue square with a white blob reads as a generic badge in a row of Dock icons, and it loses the warm glaze. (This was written before D–H existed. A was the default until the maintainer picked X; see the top of this page.)
 
 ## Minimal marks (I–Q)
 
@@ -76,7 +82,103 @@ Every mark is cleaner at 32 and 16 px than A–H, mostly because one weight and 
 
 To ship one, set `let chosen: Icon = .mark(.diamond, .glaze)` (names: `knot`, `petals`, `framed`, `joined`, `linked`, `counter`, `woven`, `diamond`, `cut`; styles: `glaze`, `cobalt`, `gradient`, `flat`) and run `just icon`. The dark and tinted variants come from the same mark.
 
-**The weave.** I, M and O are closed strands drawn at one weight. `weave()` finds every place they cross, themselves included, and picks over or under so each strand alternates as it goes. Then it cuts a gap either side of the strand on top, only along the two passages at that crossing. Nothing is hand-placed, so a mark can change shape and stay woven.
+## Woven marks (R–W)
+
+![Top four woven marks](woven-hero.png)
+
+the maintainer's feedback on I–Q (Nov 4, 2026): M, linked tiles, in style 1 is the favourite. Before committing he wants versions that are more woven and more flowery, still minimal and OpenAI-like, and to see other colours.
+
+[`woven-hero.png`](woven-hero.png) is the quick look: the top four pairs of mark and palette at 512 px on light and dark, with 32 and 16 px under each. [`woven.png`](woven.png) has every one: M for reference, then six new marks, each in seven palettes at 160 px, with the 32 and 16 px renders of palettes 1 and 3 at 1:1 and zoomed.
+
+| | Grown from | What it is |
+| --- | --- | --- |
+| **R · linked bloom** | M | M's four tiles. The ring becomes two four-lobed loops woven through each other, one with its lobes in the tiles and one in the joints: an eight-petal garland linked through all four tiles |
+| **S · woven quatrefoil** | K | Four circles interlaced over and under, a Celtic or Islamic quatrefoil, inside one rounded tile outline |
+| **T · woven daisy** | I | Eight petal loops round an open centre, each woven through the next |
+| **U · petal tiles** | M | M with each tile drawn as a petal (tight corners on its diagonal, full ones either side), the ring woven through all four. The tiles are the flower |
+| V · flower of four tiles | L, M | L's four tiles with a circle bitten out where they meet. R's flower sits in it, and each tile holds a quarter: the lobes on the diagonals reach through the bite and weave with their tile |
+| W · woven star-flower | O | O's two woven squares as two four-lobed loops: an eight-pointed star whose points are round petals |
+
+Departures from the brief's suggestions:
+
+- **R** was going to be four petal loops, one per joint. Petals in the joints run along the tile edges instead of crossing them, and petals on the diagonals hooked through the tiles like fish hooks. Two four-lobed loops give the eight petals and keep every crossing clean.
+- **T** was going to be a rosette from two squares and two circles on a 2×2 grid. That came to more than 24 crossings, which is a doily, not a mark. The woven daisy keeps the eight petals and drops the grid.
+- **U** was going to be tile outlines that weave into each other with no ring. Four rounded squares can't overlap their neighbours without all four piling up in the middle at this line weight. So the tiles became petals and kept M's ring.
+
+**Palettes.** Seven, each a `Style` in `draw.swift`, so any mark (I–W) takes any of them:
+
+1. **Cobalt on glaze** (`glaze`): the maintainer's current favourite. The warm tin glaze, cobalt multiplied in with a faint bleed.
+2. **Indigo on porcelain** (`indigo`): a darker, inkier navy on a cooler white.
+3. **White on cobalt** (`cobalt`).
+4. **Sky glass** (`sky`): ultramarine at the foot lifting to sky blue at the top, a white mark, a subtle sheen.
+5. **Manganese on glaze** (`manganese`): aubergine, the purple-brown of 16th- and 17th-century Portuguese tiles.
+6. **Verdigris on glaze** (`verdigris`): the green-blue of older tiles.
+7. **Two-tone blue** (`twoTone`): cobalt, with the floral strands in a lighter sky blue and the petals washed paler still. Each mark has `main` strands (tiles, frames) and `second` ones (the flower), and some have a `fill`. The wash stays a gap clear of every line, so it never touches one.
+
+I–Q's `gradient` (ultramarine glass) and `flat` still work too. All of them keep the macOS 26 squircle, shadow, sheen and rim rules; only the colours and the sheen's strength change.
+
+**Small sizes.** Each mark has its own 32 and 16 px form. Where it's tiled, it's set in whole pixels like M.
+
+- **R**: at 32 px, sixteen crossings are mush, so it's M's 32 px tiles with one four-lobed loop. That reads as M, plainly. At 16 px it's M's four bold outlined tiles. R is M once it's small.
+- **S**: at 32 px the frame stays at 2 px and the circles thin to 1.5 px with a 1 px gap. The knot shows, just. At 16 px it's a solid four-lobed clover in a frame, which holds up well.
+- **T**: at 32 px the line thins to 1.5 px so all sixteen crossings still show, and it's clearly a daisy. At 16 px it's eight solid petals from the centre, I's little flower. Petals round an open centre made a cog.
+- **U**: at 32 px it's M's grid with petal corners and the ring woven through, crisp. At 16 px it's M's four outlined tiles, since the petal corners are a pixel at most there.
+- **V**: the weakest small. At 32 px any loop through the bites tangles, so the flower comes loose: four small solid petals in the circle. At 16 px it's L at 16, four solid tiles round a hole.
+- **W**: a pinwheel at 32 px. At 16 px it's a solid eight-petal flower with no hole (with a hole it was a cog), which reads more as a seal than a flower. Weak at 16.
+
+**Picks** (bold in the table above):
+
+1. **U · petal tiles, two-tone blue.** M, which the maintainer already likes, made into a flower: the tiles are petals, the ring still links them, and the pale wash in each petal gives depth without another shape. At 32 and 16 px it's as crisp as M, because it is M there.
+2. **R · linked bloom, cobalt on glaze.** The most woven M: a garland of eight petals through all four tiles. Busier at 512 than U. Small, it falls back to M.
+3. **T · woven daisy, white on cobalt.** The most flowery and the most OpenAI-like: one primitive, eight times, every crossing woven. It's the only pick that stays a flower at 16 px. Less obviously a tile.
+4. **S · woven quatrefoil, indigo on porcelain.** The most traditional interlace, framed as a tile. The ink-dark navy suits its Celtic weight. A clover in a frame at 16 px.
+
+W in two-tone (a pale heart inside the woven star) and V in any palette are worth a look in woven.png too.
+
+**How to choose.** Set `chosen` in `scripts/icon/draw.swift` to a mark and a palette, then run `just icon`. For example, `let chosen: Icon = .mark(.petalTiles, .twoTone)`. Marks: `bloom`, `quatrefoil`, `daisy`, `petalTiles`, `fourTiles`, `starFlower` (plus I–Q's `knot` … `cut`). Palettes: `glaze`, `indigo`, `cobalt`, `sky`, `manganese`, `verdigris`, `twoTone` (plus `gradient`, `flat`). `swift scripts/icon/draw.swift --woven DIR` writes just the two woven sheets.
+
+**The weave.** I, M, O and R–X are closed strands drawn at one weight, each strand in its own colour if it likes. `weave()` finds every place they cross, themselves included, and picks over or under so each strand alternates as it goes. Then it cuts a gap either side of the strand on top, only along the two passages at that crossing. Nothing is hand-placed, so a mark can change shape and stay woven.
+
+## Pinwheel (X)
+
+![X beside the maintainer's screenshot, then X1–X6](pinwheel.png)
+
+the maintainer's feedback on R–W (Nov 4, 2026): the one he likes is a 32 px rendering in woven-hero.png ([`pinwheel-liked-32px.png`](pinwheel-liked-32px.png)). That's **R, linked bloom, cobalt on glaze, at 32 px**, not U: U's 32 px has a sky-blue ring and pale petals, and this is one cobalt. Four chunky outlined tiles and one four-lobed loop, woven, so each lobe reads as a hook and the four hooks as a pinwheel. He likes that simplified form, not the full-size R.
+
+**X** is that 32 px rendering grown up. Its geometry is set in pixels of a 32 px icon at every size: tiles 1 to 11 px out from the centre, a 2 px line, 1.5 px corners, the loop `lobes(6 px, 0.32)` and a 1 px gap where strands cross. At 1024 that's a 64 px line and a 32 px gap, as smooth vectors with true over and under. X's own 32 px render matches R's pixel for pixel. At 16 px every line moves out to a pixel's centre, so the tiles stay crisp at 1 px. X's 1 px spiral couldn't: its curves smeared into grey and its weave gaps broke the tiles. So from Nov 4, 2026, X at 16 px keeps its tiles whole and swaps each hook for a 2 × 1 px tongue, from the tile's centre to the side the hook comes in by at 32 px. The four tiles read as C, n, Ↄ, U, turning clockwise like the hooks. X1–X6 still draw the spiral at 16 px.
+
+X1–X6 keep the spiral exactly, the same loop with the same over and under, and change the tiles round it. The loop is passed to `weave()` first, so it sets the over and under and the hooks turn the same way in every variant.
+
+| | What it is |
+| --- | --- |
+| **X · pinwheel** | R at 32 px, grown up: four 8 × 8 tiles, four hooks |
+| **X1 · pinwheel tiling** | Four 7 × 9 rectangles, each running on past the next one's end, so the outline turns like a windmill round the spiral |
+| X2 · master and stack | One tall tile holding two lobes, two tiles stacked beside it, like the app's default layout |
+| X3 · steps | Each tile's inner corner stays put while the tiles grow clockwise from top left: 7 × 7, 8 × 7, 8 × 8, 9 × 8 |
+| X4 · four-point star | Inner corners rounded wide, so the joints open into a four-point star at the centre, the hooks curling round it |
+| **X5 · pinwheel star** | Each tile turned 15° anticlockwise: the joints become blades and the gap a four-point pinwheel star |
+| X6 · big and small | Two 9 × 9 tiles on one diagonal and two 7 × 7 on the other, the big ones' outer corners rounded to sit in the icon's |
+
+[`pinwheel.png`](pinwheel.png) has the screenshot, X's 32 px and X at 1024 side by side at the top. Under them every X is at 256 px with 32 and 16 px at 1:1 and zoomed, on light and dark. At the bottom are X, X5 and X1 in white on cobalt and two-tone blue (the loop in sky blue).
+
+Departures from the brief's suggestions:
+
+- **The spiral is the same size in every variant**, so the tiles can't change much. Each tile has to hold a lobe that reaches 7 px out, and the icon ends 12.9 px out. The sizes vary between 7 and 9 px, and X1 and X6 run their long sides out to 12 px.
+- **X1** isn't four rectangles round a central square tile. Any edge near the spiral's waist, 4 px out on the axes, runs alongside the loop and leaves slivers. So the windmill turns in the tiles' outer ends, and the open centre is the square.
+- **X2** has one tall tile and two stacked, not three. A third tile's joint would run through a lobe.
+- **An eight-point star gap didn't work.** Its four diagonal points poke into the tiles right where the lobes are. Notched corners left the loop running alongside the notch, a mess of short cut ends. Tiles set on point (diamonds) put a crossing on every corner. So X4 and X5 are the two star gaps: a four-point star and a four-point pinwheel star.
+- **X5** turns anticlockwise. Turned clockwise, the loop crosses each tile at a corner and slices it into a flame.
+
+**Small sizes.** At 32 px every X is set in the same pixels as X, so the hooks read in all of them. X5 shows its turn at 32 px. At 16 px the turn moves a corner by less than a pixel and blurs every line, so X5's tiles stay square there. At 16 px, X2, X3 and X4 read best as tiles plus a spiral. X1 and X6 read a little looser, because their long sides crowd the edge.
+
+**Picks:**
+
+1. **X5 · pinwheel star.** The most movement: the tiles turn with the hooks, and the gap is a little turbine. Strong in white on cobalt. At 16 px it's X.
+2. **X1 · pinwheel tiling.** The windmill outline says "tiling" before you see the hooks. It's the closest to an actual tiling-window layout, and it reads well in two-tone.
+
+X itself is the safe one: exactly what the maintainer picked, made crisp.
+
+**How to choose.** Set `chosen` in `scripts/icon/draw.swift` and run `just icon`, for example `let chosen: Icon = .mark(.pinwheelStar, .glaze)`. Marks: `pinwheel` (X), `pinwheelTiling`, `masterStack`, `steps`, `astroid`, `pinwheelStar`, `bigSmall` (X1–X6). Any palette works, and `twoTone` draws the loop in sky blue. `swift scripts/icon/draw.swift --pinwheel docs/design/icon` writes just pinwheel.png.
 
 ## Liquid Glass, baked in
 
@@ -107,7 +209,7 @@ Icon Composer (with Xcode 26) saves a layered `.icon` document. `actool` compile
 
 ## Files and commands
 
-- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png.
-- `just icon` (`scripts/icon/build.sh`): renders the iconset (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png included) and `scripts/icon/AppIcon.sha256`.
+- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png, `--woven DIR` just woven.png and woven-hero.png, `--pinwheel DIR` just pinwheel.png, and `--chosen DIR` just chosen.png.
+- `just icon` (`scripts/icon/build.sh`): renders the iconset (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png, the woven sheets, pinwheel.png and chosen.png included) and `scripts/icon/AppIcon.sha256`.
 - `just lint` runs `scripts/icon/build.sh --check`. It fails when `draw.swift` or the `.icns` changed without a `just icon`. It compares hashes and doesn't re-render, so a different macOS version's antialiasing can't trip it.
 - `apps/macos/bundle.sh` (`just mac`) and `scripts/release/build-mac.sh` (`just release-mac`, `just dogfood`) copy the `.icns` into `Contents/Resources`. `Info.plist` sets `CFBundleIconFile` and `CFBundleIconName` to `AppIcon`.

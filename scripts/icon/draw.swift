@@ -1,12 +1,17 @@
 // Draws Azulejo's app icon: eight candidates (A–H), nine minimal marks (I–Q)
-// in four styles, the chosen one's dark and tinted variants, the .iconset that
-// scripts/icon/build.sh packs into AppIcon.icns, a contact sheet and
-// side-by-sides of the candidates and the marks. Pure CoreGraphics, so it's
-// reproducible on any Mac with the Command Line Tools (docs/design/icon/README.md).
+// in four styles, six woven marks (R–W) in seven, seven pinwheel marks (X,
+// X1–X6) grown from R at 32 px, the chosen one's dark and
+// tinted variants, the .iconset that scripts/icon/build.sh packs into
+// AppIcon.icns, a contact sheet and side-by-sides of the candidates and the
+// marks. Pure CoreGraphics, so it's reproducible on any Mac with the Command
+// Line Tools (docs/design/icon/README.md).
 //
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
-//   swift scripts/icon/draw.swift --docs DIR      # candidates, variants, sheet.png, options.png, minimal.png
+//   swift scripts/icon/draw.swift --docs DIR      # everything below, plus candidates, variants, sheet.png, options.png
 //   swift scripts/icon/draw.swift --minimal DIR   # minimal.png only
+//   swift scripts/icon/draw.swift --woven DIR     # woven.png and woven-hero.png only
+//   swift scripts/icon/draw.swift --pinwheel DIR  # pinwheel.png only (reads DIR/pinwheel-liked-32px.png)
+//   swift scripts/icon/draw.swift --chosen DIR    # chosen.png only: the shipping icon beside Terminal and Notes
 //
 // Geometry follows Apple's macOS icon template: a 1024 px canvas, an 824 px
 // rounded square (continuous corners, radius 185.4) centred in it, fully
@@ -49,6 +54,10 @@ struct Palette {
   /// with no sheen is a flat icon (the minimal marks' fourth style).
   var rim: CGFloat = 1
   var shade: CGFloat = 1
+  /// The woven marks' second blue (two-tone only): their floral strands, and
+  /// the pale wash some of them fill their petals with. Nil is one colour.
+  var second: CGColor? = nil
+  var fill: CGColor? = nil
 }
 
 let tinGlaze = Palette(
@@ -290,10 +299,10 @@ enum Candidate: String, CaseIterable {
   var bleeds: Bool { self != .glass }
 }
 
-/// What ships: one of the candidates A–H, or a minimal mark I–Q in one of its
-/// four styles, e.g. `.mark(.woven, .glaze)`. See docs/design/icon/README.md
-/// for why it's A.
-let chosen: Icon = .candidate(.classic)
+/// What ships: one of the candidates A–H, or a mark (I–X6) in one of the
+/// styles, e.g. `.mark(.woven, .glaze)`. the maintainer picked X, pinwheel, white on
+/// cobalt (docs/design/icon/README.md).
+let chosen: Icon = .mark(.pinwheel, .cobalt)
 
 enum Icon: Equatable {
   case candidate(Candidate)
@@ -707,12 +716,22 @@ func drawNight(_ g: CGContext, _ p: Palette, lod: Int) {
 // (`ink`) and cuts its negative space with `punch`, so a style is just a
 // palette: cobalt on glaze, white on cobalt and so on.
 
-/// The four styles a mark comes in.
+/// The styles a mark comes in: the minimal marks' four (minimal.png), and
+/// the woven marks' seven (woven.png). Any mark takes any style.
 enum Style: Int, CaseIterable {
   case glaze = 1  // cobalt on the warm tin glaze, with A's sheen and ink bleed
   case cobalt  // white on a cobalt tile
   case gradient  // white on cobalt fading to ultramarine, the glass kept faint
   case flat  // cobalt on white, no sheen, no rim, no bleed
+  case indigo  // navy ink on a cool porcelain white
+  case sky  // white on ultramarine lifting to sky blue, a little more glass
+  case manganese  // aubergine on the warm glaze, the old Portuguese purple
+  case verdigris  // green-blue on the warm glaze, like older tiles
+  case twoTone  // cobalt and a lighter sky blue on the warm glaze
+
+  /// minimal.png's columns, and woven.png's, in order.
+  static let minimal: [Style] = [.glaze, .cobalt, .gradient, .flat]
+  static let woven: [Style] = [.glaze, .indigo, .cobalt, .sky, .manganese, .verdigris, .twoTone]
 
   var name: String {
     switch self {
@@ -720,6 +739,11 @@ enum Style: Int, CaseIterable {
     case .cobalt: "white on cobalt"
     case .gradient: "ultramarine glass"
     case .flat: "flat"
+    case .indigo: "indigo on porcelain"
+    case .sky: "sky glass"
+    case .manganese: "manganese on glaze"
+    case .verdigris: "verdigris on glaze"
+    case .twoTone: "two-tone blue"
     }
   }
   var palette: Palette {
@@ -728,10 +752,15 @@ enum Style: Int, CaseIterable {
     case .cobalt: cobaltGround
     case .gradient: ultramarineGlaze
     case .flat: flatGlaze
+    case .indigo: porcelain
+    case .sky: skyGlass
+    case .manganese: manganeseGlaze
+    case .verdigris: verdigrisGlaze
+    case .twoTone: twoToneGlaze
     }
   }
-  /// Only cobalt soaks into a tin glaze.
-  var bleeds: Bool { self == .glaze }
+  /// Only a pigment fired into a white glaze bleeds.
+  var bleeds: Bool { palette.multiply && self != .flat }
 }
 
 /// Style 3: cobalt at the top deepening to ultramarine, a white mark, the
@@ -749,6 +778,45 @@ let flatGlaze = Palette(
   ink: rgb(0x1F4FA3), line: rgb(0x123578), wash: rgb(0x86A8DC),
   grout: rgb(0xDCD4C2),
   multiply: true, sheen: 0, shadow: 0.5, rim: 0, shade: 0)
+
+/// Woven style 2: a darker, inkier navy on a cooler porcelain white.
+let porcelain = Palette(
+  groundTop: rgb(0xF9F9F6), groundBottom: rgb(0xE5E7E9),
+  ink: rgb(0x1B2A5E), line: rgb(0x0F183D), wash: rgb(0x8290BC),
+  grout: rgb(0xD6D9DD),
+  multiply: true, sheen: 0.55, shadow: 0.5)
+
+/// Woven style 4: ultramarine at the foot lifting to sky blue at the top, a
+/// white mark, the sheen kept subtle.
+let skyGlass = Palette(
+  groundTop: rgb(0x5BA8EE), groundBottom: rgb(0x2638A8),
+  ink: rgb(0xFFFFFF), line: rgb(0x0E2D6B), wash: rgb(0x8FB0E2),
+  grout: rgb(0x173F88),
+  multiply: false, sheen: 0.3, shadow: 0.5, rim: 0.55, shade: 0.5)
+
+/// Woven style 5: manganese, the aubergine purple-brown of 16th- and
+/// 17th-century Portuguese tiles, on the warm glaze.
+let manganeseGlaze = Palette(
+  groundTop: rgb(0xFBF8F1), groundBottom: rgb(0xEDE6D6),
+  ink: rgb(0x5A2B4E), line: rgb(0x3C1A33), wash: rgb(0xB898AE),
+  grout: rgb(0xDCD4C2),
+  multiply: true, sheen: 0.55, shadow: 0.5)
+
+/// Woven style 6: verdigris, the green-blue of older tiles, on the warm glaze.
+let verdigrisGlaze = Palette(
+  groundTop: rgb(0xFBF8F1), groundBottom: rgb(0xEDE6D6),
+  ink: rgb(0x1C6675), line: rgb(0x10434D), wash: rgb(0x8CC2C4),
+  grout: rgb(0xDCD4C2),
+  multiply: true, sheen: 0.55, shadow: 0.5)
+
+/// Woven style 7: cobalt, with the floral strands in a lighter sky blue and
+/// the petals washed paler still.
+let twoToneGlaze = Palette(
+  groundTop: rgb(0xFBF8F1), groundBottom: rgb(0xEDE6D6),
+  ink: rgb(0x1F4FA3), line: rgb(0x123578), wash: rgb(0x86A8DC),
+  grout: rgb(0xDCD4C2),
+  multiply: true, sheen: 0.55, shadow: 0.5,
+  second: rgb(0x5E93DB), fill: rgb(0xC6D9F2))
 
 /// The one stroke weight a mark uses at a given size, and the gap cut round a
 /// strand where it passes over another. Each grows as the icon shrinks so a
@@ -857,10 +925,21 @@ struct Polyline {
 /// held to the two passages (each runs about halfway to the crossings either
 /// side), so it never touches anything else.
 func weave(_ g: CGContext, _ strands: [CGPath], _ ink: CGColor, _ pen: Pen) {
+  weave(g, strands, inks: strands.map { _ in ink }, pen)
+}
+
+/// The same, each strand in its own colour (`inks` lines up with `strands`).
+///
+/// `reach` is how far each cut runs along the strand on top, as a share of
+/// the way to the next crossing, and how far along the one underneath it may
+/// touch.
+func weave(_ g: CGContext, _ strands: [CGPath], inks: [CGColor], _ pen: Pen, reach: (top: CGFloat, under: CGFloat) = (0.5, 0.6)) {
   // Strands are drawn as the same polylines the crossings are found on, so a
   // redrawn passage lands exactly on the strand under it.
   let lines = strands.map(Polyline.init)
-  for l in lines { g.fill(l.path.copy(strokingWithWidth: pen.w, lineCap: .round, lineJoin: .round, miterLimit: 4), ink) }
+  for (l, ink) in zip(lines, inks) {
+    g.fill(l.path.copy(strokingWithWidth: pen.w, lineCap: .round, lineJoin: .round, miterLimit: 4), ink)
+  }
   guard pen.gap > 0 else { return }
 
   // Every crossing is two passes, one along each strand (or two along one).
@@ -933,8 +1012,8 @@ func weave(_ g: CGContext, _ strands: [CGPath], _ ink: CGColor, _ pen: Pen) {
   for e in ends {
     let over = e.first { (offset[$0.strand]! + $0.place) % 2 == 0 }!
     let under = e.first { !($0.strand == over.strand && $0.place == over.place) }!
-    let top = passage(over.strand, over.place, 0.5)
-    let region = passage(under.strand, under.place, 0.6)
+    let top = passage(over.strand, over.place, reach.top)
+    let region = passage(under.strand, under.place, reach.under)
       .copy(strokingWithWidth: pen.w + 2 * pen.gap + 0.04, lineCap: .butt, lineJoin: .round, miterLimit: 4)
     g.saveGState()
     g.addPath(region)
@@ -1009,13 +1088,36 @@ enum Mark: String, CaseIterable {
   case woven = "o-woven"
   case diamond = "p-diamond"
   case cut = "q-cut"
+  // The woven marks (R–W), grown from M.
+  case bloom = "r-bloom"
+  case quatrefoil = "s-quatrefoil"
+  case daisy = "t-daisy"
+  case petalTiles = "u-petal-tiles"
+  case fourTiles = "v-four-tiles"
+  case starFlower = "w-star-flower"
+  // Pinwheel marks (X): R's 32 px rendering grown up, and the spiral in other tilings.
+  case pinwheel = "x-pinwheel"
+  case pinwheelTiling = "x1-pinwheel-tiling"
+  case masterStack = "x2-master-stack"
+  case steps = "x3-steps"
+  case astroid = "x4-four-point-star"
+  case pinwheelStar = "x5-pinwheel-star"
+  case bigSmall = "x6-big-small"
 
-  var letter: String { String(rawValue.prefix(1)).uppercased() }
+  /// minimal.png's rows, and woven.png's (M first, for reference).
+  static let minimal: [Mark] = [.knot, .petals, .framed, .joined, .linked, .counter, .woven, .diamond, .cut]
+  static let wovenSet: [Mark] = [.linked, .bloom, .quatrefoil, .daisy, .petalTiles, .fourTiles, .starFlower]
+  /// pinwheel.png's rows.
+  static let pinwheelSet: [Mark] = [.pinwheel, .pinwheelTiling, .masterStack, .steps, .astroid, .pinwheelStar, .bigSmall]
+
+  var letter: String { String(rawValue.prefix { $0 != "-" }).uppercased() }
   var parent: Candidate {
     switch self {
     case .knot, .petals, .framed: .classic
     case .joined, .linked, .counter: .cluster
     case .woven, .diamond, .cut: .ochre
+    case .bloom, .quatrefoil, .daisy, .petalTiles, .fourTiles, .starFlower: .cluster
+    case .pinwheel, .pinwheelTiling, .masterStack, .steps, .astroid, .pinwheelStar, .bigSmall: .cluster
     }
   }
   var name: String {
@@ -1029,9 +1131,22 @@ enum Mark: String, CaseIterable {
     case .woven: "Woven star"
     case .diamond: "Star diamond"
     case .cut: "Cut star"
+    case .bloom: "Linked bloom"
+    case .quatrefoil: "Woven quatrefoil"
+    case .daisy: "Woven daisy"
+    case .petalTiles: "Petal tiles"
+    case .fourTiles: "Flower of four tiles"
+    case .starFlower: "Woven star-flower"
+    case .pinwheel: "Pinwheel"
+    case .pinwheelTiling: "Pinwheel tiling"
+    case .masterStack: "Master and stack"
+    case .steps: "Steps"
+    case .astroid: "Four-point star"
+    case .pinwheelStar: "Pinwheel star"
+    case .bigSmall: "Big and small"
     }
   }
-  /// One line for minimal.png.
+  /// One line for minimal.png and woven.png.
   var blurb: String {
     switch self {
     case .knot: "one line, 8 petals, woven"
@@ -1043,10 +1158,25 @@ enum Mark: String, CaseIterable {
     case .woven: "2 rounded squares, woven"
     case .diamond: "star cut from a diamond, corners"
     case .cut: "star cut from a cobalt tile"
+    case .bloom: "M's ring as two woven 4-lobed loops"
+    case .quatrefoil: "4 circles woven, in a tile"
+    case .daisy: "8 petal loops, each woven through the next"
+    case .petalTiles: "M's tiles as petals, the ring through them"
+    case .fourTiles: "L's tiles hold one woven flower"
+    case .starFlower: "2 four-lobed loops woven, 8 petals"
+    case .pinwheel: "R at 32 px, grown up: 4 tiles, 4 hooks"
+    case .pinwheelTiling: "4 rectangles turn round an open square"
+    case .masterStack: "1 tall tile and 2 stacked, like the app"
+    case .steps: "tiles grow clockwise, small to large"
+    case .astroid: "rounded inner corners: a 4-point star gap"
+    case .pinwheelStar: "tiles turned 15°: a pinwheel-star gap"
+    case .bigSmall: "two 9 × 9 tiles and two 7 × 7, checkered"
     }
   }
 
-  func draw(_ g: CGContext, _ ink: CGColor, _ pen: Pen) {
+  func draw(_ g: CGContext, _ p: Palette, _ pen: Pen) {
+    let ink = p.ink
+    let inks = Inks(p)
     switch self {
     case .knot: drawKnot(g, ink, pen)
     case .petals: drawPetals(g, ink, pen)
@@ -1057,6 +1187,13 @@ enum Mark: String, CaseIterable {
     case .woven: drawWoven(g, ink, pen)
     case .diamond: drawStarDiamond(g, ink, pen)
     case .cut: drawCutStar(g, ink, pen)
+    case .bloom: drawBloom(g, inks, pen)
+    case .quatrefoil: drawQuatrefoil(g, inks, pen)
+    case .daisy: drawDaisy(g, inks, pen)
+    case .petalTiles: drawPetalTiles(g, inks, pen)
+    case .fourTiles: drawFourTiles(g, inks, pen)
+    case .starFlower: drawStarFlower(g, inks, pen)
+    case .pinwheel, .pinwheelTiling, .masterStack, .steps, .astroid, .pinwheelStar, .bigSmall: drawPinwheel(g, inks, pen, self)
     }
   }
 }
@@ -1222,6 +1359,431 @@ func drawCutStar(_ g: CGContext, _ ink: CGColor, _ pen: Pen) {
   for p in softStar(pen.small ? 0.58 : 0.54, round: 0.05) { g.punch(p) }
 }
 
+// MARK: - Woven marks (R–W)
+//
+// M grown towards flowers: still one even weight and few primitives, but
+// more of them woven, and the loops turned into petals. They draw in two
+// roles, so the two-tone style can tell them apart: `main` for tiles and
+// frames, `second` for the floral strands, and an optional pale `fill`
+// washed into the petals. In every other style all three are the one ink
+// (and there's no fill).
+
+struct Inks {
+  let main: CGColor
+  let second: CGColor
+  let fill: CGColor?
+  init(_ p: Palette) {
+    main = p.ink
+    second = p.second ?? p.ink
+    fill = p.fill
+  }
+}
+
+/// A closed loop through `n` points of `f`, for t from 0 to 2π.
+func loop(_ n: Int = 1440, _ f: (CGFloat) -> CGPoint) -> CGPath {
+  let p = CGMutablePath()
+  p.addLines(between: (0..<n).map { f(CGFloat($0) / CGFloat(n) * 2 * .pi) })
+  p.closeSubpath()
+  return p
+}
+
+/// A four-lobed loop, r = R(1 + a cos 4θ + b cos 8θ), lobes at `rot` and
+/// every quarter turn on. Two with opposite `a` cross eight times, halfway
+/// between their lobes: an eight-petal flower.
+func lobes(_ R: CGFloat, _ a: CGFloat, _ b: CGFloat = 0, rot: CGFloat = 0) -> CGPath {
+  loop { t in
+    let r = R * (1 + a * cos(4 * (t - rot)) + b * cos(8 * (t - rot)))
+    return CGPoint(x: r * cos(t), y: r * sin(t))
+  }
+}
+
+/// A petal loop along `angle`, from `r0` to `r1` out, `w` across at its
+/// widest. Both ends round; `egg` above 0 swells the outer half.
+func petalLoop(angle: CGFloat, from r0: CGFloat, to r1: CGFloat, width w: CGFloat, egg k: CGFloat) -> CGPath {
+  let (c, a) = ((r0 + r1) / 2, (r1 - r0) / 2)
+  return loop(720) { t in
+    let u = c + a * cos(t)
+    let v = w / 2 * sin(t) * (1 + k * cos(t)) / (1 + k)
+    return CGPoint(x: u * cos(angle) - v * sin(angle), y: u * sin(angle) + v * cos(angle))
+  }
+}
+
+/// A rounded square centred `c` (off the axes), half-width `h`, as a petal:
+/// tight corners `rs` on the diagonal through it, full ones `rb` either side.
+func leafTile(_ c: CGPoint, _ h: CGFloat, tight rs: CGFloat, full rb: CGFloat) -> CGPath {
+  let (sx, sy): (CGFloat, CGFloat) = (c.x >= 0 ? 1 : -1, c.y >= 0 ? 1 : -1)
+  let ks: [(CGFloat, CGFloat)] = [(1, -1), (1, 1), (-1, 1), (-1, -1)]
+  func pt(_ k: (CGFloat, CGFloat)) -> CGPoint { CGPoint(x: c.x + k.0 * h, y: c.y + k.1 * h) }
+  let p = CGMutablePath()
+  p.move(to: CGPoint(x: c.x, y: c.y - h))
+  for (i, k) in ks.enumerated() {
+    let (a, b) = (pt(k), pt(ks[(i + 1) % 4]))
+    p.addArc(tangent1End: a, tangent2End: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), radius: k.0 * sx == k.1 * sy ? rs : rb)
+  }
+  p.closeSubpath()
+  return p
+}
+
+/// A rounded square centred `c` (off the axes), half-width `h`, its inner
+/// corner bitten out by a circle of radius `rho` round the centre, as in L.
+func notchedTile(_ c: CGPoint, _ h: CGFloat, _ rc: CGFloat, rho: CGFloat) -> CGPath {
+  let (a, b) = (abs(c.x) - h, abs(c.x) + h)
+  let s = (rho * rho - a * a).squareRoot()
+  let p = CGMutablePath()
+  p.move(to: CGPoint(x: s, y: a))
+  p.addArc(tangent1End: CGPoint(x: b, y: a), tangent2End: CGPoint(x: b, y: (a + b) / 2), radius: rc)
+  p.addArc(tangent1End: CGPoint(x: b, y: b), tangent2End: CGPoint(x: (a + b) / 2, y: b), radius: rc)
+  p.addArc(tangent1End: CGPoint(x: a, y: b), tangent2End: CGPoint(x: a, y: (a + b) / 2), radius: rc)
+  p.addLine(to: CGPoint(x: a, y: s))
+  p.addArc(center: .zero, radius: rho, startAngle: atan2(s, a), endAngle: atan2(a, s), clockwise: true)
+  p.closeSubpath()
+  var t = CGAffineTransform(scaleX: c.x >= 0 ? 1 : -1, y: c.y >= 0 ? 1 : -1)
+  return p.copy(using: &t)!
+}
+
+/// Washes petals in `color` under strands about to be woven, held a gap
+/// clear of every strand so the wash never touches a line. `regions` fills
+/// the areas with the current fill colour.
+func wash(_ g: CGContext, _ color: CGColor?, clear strands: [CGPath], _ pen: Pen, _ regions: () -> Void) {
+  guard let color else { return }
+  g.saveGState()
+  g.beginTransparencyLayer(auxiliaryInfo: nil)
+  g.setFillColor(color)
+  regions()
+  g.setBlendMode(.clear)
+  let clearance = pen.w + 2 * max(pen.gap, pen.pixels(1))
+  for s in strands {
+    g.fill(Polyline(s).path.copy(strokingWithWidth: clearance, lineCap: .round, lineJoin: .round, miterLimit: 4), rgb(0x000000))
+  }
+  g.endTransparencyLayer()
+  g.restoreGState()
+}
+
+/// M's tiles, pixel-snapped from 64 px down as in `drawLinked`: centres
+/// (±o, ±o), half-width h, corner radius rc.
+func linkedTiles(_ pen: inout Pen) -> (o: CGFloat, h: CGFloat, rc: CGFloat) {
+  if pen.lod == 0 { return (0.42, 0.28, 0.1) }
+  let (inner, outer, w, corner, gap): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+    [(2, 20, 3, 3, 1.5), (1, 11, 2, 1.5, 1), (1, 6, 2, 1, 0)][pen.lod - 1]
+  pen.w = pen.pixels(w)
+  pen.gap = pen.pixels(gap)
+  return (pen.pixels(inner + outer) / 2, pen.pixels(outer - inner - w) / 2, pen.pixels(corner))
+}
+
+/// Strands drawn plain, without a weave (at 16 px, where there's no room
+/// for a gap).
+func outline(_ g: CGContext, _ strands: [CGPath], _ ink: CGColor, _ w: CGFloat) {
+  for s in strands { g.fill(s.copy(strokingWithWidth: w, lineCap: .round, lineJoin: .round, miterLimit: 4), ink) }
+}
+
+/// R (from M): M's four tiles; the ring becomes two four-lobed loops woven
+/// through each other, one with its lobes in the tiles, one in the joints.
+/// Eight petals, linked through all four tiles.
+///
+/// At 32 px sixteen crossings are mush, so it's M's 32 px tiles with one
+/// four-lobed loop, its lobes reaching into the tiles: the ring in bloom.
+/// At 16 px it's M's four bold outlined tiles.
+func drawBloom(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  var pen = pen
+  let (o, h, rc) = linkedTiles(&pen)
+  let tiles = corners.map { k in roundSquare(CGPoint(x: k.x * o, y: k.y * o), h, rc) }
+  let garland: [CGPath]
+  switch pen.lod {
+  case 3: return outline(g, tiles, ink.main, pen.w)
+  case 2: garland = [lobes(pen.pixels(6), 0.32, rot: .pi / 4)]
+  default: garland = [lobes(0.4, 0.22, rot: .pi / 4), lobes(0.4, -0.22, rot: .pi / 4)]
+  }
+  weave(g, tiles + garland, inks: tiles.map { _ in ink.main } + garland.map { _ in ink.second }, pen)
+}
+
+/// S: four circles woven into a quatrefoil, inside a rounded tile outline.
+/// Two-tone washes the four lens-shaped petals where neighbours overlap.
+///
+/// From 64 px down the frame is set in whole pixels. At 32 px the circles
+/// pull in to clear it by a pixel. At 16 px the weave can't show, so it's a
+/// solid quatrefoil in the frame.
+func drawQuatrefoil(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  var pen = pen
+  var (d, r, edge, corner, fw): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (0.24, 0.38, 0.74, 0.2, pen.w)
+  if pen.lod > 0 {
+    // In pixels from the centre: the frame's centre line, weight and corner;
+    // the circles' offset, radius and weight; the gap. The circles never
+    // reach the frame, so at 32 px they can be finer than it.
+    let (f, w, fc, cd, cr, cw, gap): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+      [(19, 3, 5, 4.6, 7.4, 3, 1.5), (10, 2, 3, 2.7, 4.6, 1.5, 1), (5, 2, 1.5, 1.8, 1.5, 0, 0)][pen.lod - 1]
+    (d, r, edge, corner) = (pen.pixels(cd), pen.pixels(cr), pen.pixels(f), pen.pixels(fc))
+    fw = pen.pixels(w)
+    pen.w = pen.pixels(cw)
+    pen.gap = pen.pixels(gap)
+  }
+  let circles = edgeMids.map { disc(CGPoint(x: $0.x * d, y: $0.y * d), r) }
+  let frame = roundSquare(.zero, edge, corner)
+  outline(g, [frame], ink.main, fw)
+  if pen.lod == 3 {
+    // A solid quatrefoil: the weave can't show at 16 px.
+    for c in circles { g.fill(c, ink.second) }
+    return
+  }
+  wash(g, ink.fill, clear: circles, pen) {
+    for i in 0..<4 {
+      g.saveGState()
+      g.addPath(circles[i])
+      g.clip()
+      g.addPath(circles[(i + 1) % 4])
+      g.fillPath()
+      g.restoreGState()
+    }
+  }
+  weave(g, circles, ink.second, pen)
+}
+
+/// T: eight petal loops round an open centre, each woven through the next,
+/// a daisy. Two-tone washes the petals.
+///
+/// At 32 px the line thins to a pixel and a half so sixteen crossings still
+/// show. At 16 px it's eight solid round petals round an open centre.
+func drawDaisy(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  var pen = pen
+  if pen.lod == 3 {
+    for a in quarter + diagonals { g.fill(oval(angle: a, at: 0.4, length: 0.64, width: 0.26), ink.main) }
+    return
+  }
+  if pen.lod == 2 {
+    pen.w = pen.pixels(1.5)
+    pen.gap = pen.pixels(1)
+  }
+  let petals = (quarter + diagonals).map { petalLoop(angle: $0, from: 0.16, to: pen.small ? 0.8 : 0.76, width: 0.42, egg: 0.2) }
+  wash(g, ink.fill, clear: petals, pen) {
+    for p in petals { g.addPath(p) }
+    g.fillPath()
+  }
+  weave(g, petals, ink.main, pen)
+}
+
+/// U (from M): M with each tile drawn as a petal (tight corners on its
+/// diagonal, full ones either side) and the ring woven through all four.
+/// Two-tone washes the petals.
+///
+/// Set in whole pixels from 64 px down, like M. At 16 px there's no ring:
+/// four bold outlined petals.
+func drawPetalTiles(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  var pen = pen
+  var (o, h, rs, rb, r): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (0.42, 0.29, 0.06, 0.26, 0.4)
+  if pen.lod > 0 {
+    // As in M: the outlines' inner and outer edges, their weight, the tight
+    // and full corners, the ring radius and the gap, in pixels.
+    let (inner, outer, w, tight, full, ring, gap): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+      [(2, 20, 3, 1.5, 7, 11, 1.5), (1, 11, 2, 1, 3.5, 6.5, 1), (1, 6, 2, 0.5, 1.5, 0, 0)][pen.lod - 1]
+    o = pen.pixels(inner + outer) / 2
+    h = pen.pixels(outer - inner - w) / 2
+    (rs, rb, r) = (pen.pixels(tight), pen.pixels(full), pen.pixels(ring))
+    pen.w = pen.pixels(w)
+    pen.gap = pen.pixels(gap)
+  }
+  let tiles = corners.map { k in leafTile(CGPoint(x: k.x * o, y: k.y * o), h, tight: rs, full: rb) }
+  if pen.lod == 3 { return outline(g, tiles, ink.main, pen.w) }
+  let ring = disc(.zero, r)
+  wash(g, ink.fill, clear: tiles + [ring], pen) {
+    for t in tiles { g.addPath(t) }
+    g.fillPath()
+  }
+  weave(g, tiles + [ring], inks: tiles.map { _ in ink.main } + [ink.second], pen)
+}
+
+/// V (from L): L's four tiles, a circle bitten from where they meet, and in
+/// it R's eight-petal flower, each tile holding a quarter of it: the lobes
+/// on the diagonals reach through the bite and weave with their tile.
+///
+/// Set in whole pixels from 64 px down. At 32 px any loop through the bites
+/// tangles, so the flower comes loose: four solid petals in the circle, one
+/// pointing into each tile. At 16 px it is L at 16: four solid tiles round a
+/// hole.
+func drawFourTiles(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  if pen.lod == 3 { return drawJoined(g, ink.main, pen) }
+  var pen = pen
+  var (o, h, rc, rho): (CGFloat, CGFloat, CGFloat, CGFloat) = (0.44, 0.28, 0.1, 0.42)
+  if pen.lod > 0 {
+    // The outlines' inner and outer edges, weight, corner, bite and gap.
+    let (inner, outer, w, corner, bite, gap): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+      [(2, 20, 3, 3, 10.5, 1.5), (1, 11, 2, 1.5, 6, 1)][pen.lod - 1]
+    o = pen.pixels(inner + outer) / 2
+    h = pen.pixels(outer - inner - w) / 2
+    (rc, rho) = (pen.pixels(corner), pen.pixels(bite))
+    pen.w = pen.pixels(w)
+    pen.gap = pen.pixels(gap)
+  }
+  let tiles = corners.map { k in notchedTile(CGPoint(x: k.x * o, y: k.y * o), h, rc, rho: rho) }
+  if pen.lod == 2 {
+    outline(g, tiles, ink.main, pen.w)
+    for a in diagonals {
+      g.fill(teardrop(angle: a, tip: pen.pixels(0.3), d: pen.pixels(2.4), r: pen.pixels(1.3)), ink.second)
+    }
+    return
+  }
+  let garland = [lobes(0.4, 0.24, rot: .pi / 4), lobes(0.4, -0.24, rot: .pi / 4)]
+  weave(g, tiles + garland, inks: tiles.map { _ in ink.main } + garland.map { _ in ink.second }, pen)
+}
+
+/// W (from O): O's two rounded squares, woven, as two four-lobed loops: an
+/// eight-pointed star whose points are round petals. Two-tone washes the
+/// whole flower inside the line.
+///
+/// At 32 px it's a pixel smaller, at a bolder 2 px. At 16 px it's solid, a
+/// little eight-petalled flower with no hole (eight bumps round a hole is a
+/// cog).
+func drawStarFlower(_ g: CGContext, _ ink: Inks, _ pen: Pen) {
+  var pen = pen
+  var reach: CGFloat = 0.54
+  if pen.lod == 2 {
+    (pen.w, pen.gap, reach) = (pen.pixels(2), pen.pixels(1), pen.pixels(6.6))
+  }
+  let loops = [lobes(reach, 0.3, 0.06), lobes(reach, -0.3, 0.06)]
+  if pen.lod == 3 {
+    // Solid, with no hole: eight bumps round a hole is a cog.
+    let solid = [lobes(pen.pixels(4.2), 0.36, 0.06), lobes(pen.pixels(4.2), -0.36, 0.06)]
+    for l in solid { g.fill(l, ink.main) }
+    return
+  }
+  wash(g, ink.fill, clear: loops, pen) {
+    for l in loops { g.addPath(l) }
+    g.fillPath()
+  }
+  weave(g, loops, ink.main, pen)
+}
+
+// MARK: - Pinwheel marks (X)
+//
+// the maintainer's favourite of R–W was R's 32 px rendering: four chunky outlined
+// tiles and one four-lobed loop through them, woven so each lobe reads as a
+// hook and the four hooks as a pinwheel. X is that rendering grown up, so its
+// geometry is set in pixels of a 32 px icon (`u32`) at every size. X1–X6 keep
+// the spiral exactly and change the tiles round it.
+
+/// One pixel of a 32 px icon, in tile space.
+let u32: CGFloat = 1024 / 412 / 32
+
+/// The spiral: R's 32 px loop, its lobes on the diagonals 7.9 px out and its
+/// waist on the axes 4.1 px out. The same in every X. At 16 px it opens a
+/// little to follow the tiles out half a pixel.
+func pinwheelSpiral(_ pen: Pen) -> CGPath {
+  pen.lod == 3 ? lobes(6.6 * u32, 0.3, rot: .pi / 4) : lobes(6 * u32, 0.32, rot: .pi / 4)
+}
+
+/// A tile outline on its stroke's centre line, from (x0, y0) to (x1, y1) in
+/// 32 px pixels, corner radius `r`, turned by `turn` round its own centre.
+func tile32(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat, r: CGFloat = 1.5, turn: CGFloat = 0) -> CGPath {
+  let (cx, cy) = ((x0 + x1) / 2 * u32, (y0 + y1) / 2 * u32)
+  let (w, h) = (abs(x1 - x0) * u32, abs(y1 - y0) * u32)
+  var t = CGAffineTransform(translationX: cx, y: cy).rotated(by: turn)
+  return CGPath(roundedRect: CGRect(x: -w / 2, y: -h / 2, width: w, height: h), cornerWidth: r * u32, cornerHeight: r * u32, transform: &t)
+}
+
+/// A closed outline through `points` (x, y and corner radius, in 32 px
+/// pixels).
+func outline32(_ points: [(CGFloat, CGFloat, CGFloat)]) -> CGPath {
+  let pts = points.map { CGPoint(x: $0.0 * u32, y: $0.1 * u32) }
+  let n = pts.count
+  let p = CGMutablePath()
+  p.move(to: CGPoint(x: (pts[n - 1].x + pts[0].x) / 2, y: (pts[n - 1].y + pts[0].y) / 2))
+  for i in 0..<n {
+    let a = pts[i], b = pts[(i + 1) % n]
+    p.addArc(tangent1End: a, tangent2End: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), radius: points[i].2 * u32)
+  }
+  p.closeSubpath()
+  return p
+}
+
+/// The four quarter turns of a tile drawn in the top-right quadrant.
+func quarterTurns(_ tile: CGPath) -> [CGPath] {
+  quarter.map { a in
+    var t = CGAffineTransform(rotationAngle: a)
+    return tile.copy(using: &t)!
+  }
+}
+
+/// The tiles round the spiral, in 32 px pixels on the stroke's centre line.
+/// R's tiles run 2 to 10 px out (1 to 11 to the outline's edges), so the
+/// spiral crosses each tile's two inner sides about 5 px out. At 16 px every
+/// coordinate moves out to the next odd one, so a 1 px line lands on a
+/// pixel's centre.
+func pinwheelTiles(_ mark: Mark, _ pen: Pen) -> [CGPath] {
+  let tiny = pen.lod == 3
+  func s(_ v: CGFloat) -> CGFloat {
+    guard tiny, v != 0 else { return v }
+    return (v < 0 ? -1 : 1) * (2 * ((abs(v) - 1) / 2).rounded(.up) + 1)
+  }
+  let r: CGFloat = tiny ? 1 : 1.5
+  func t(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> CGPath { tile32(s(x0), s(y0), s(x1), s(y1), r: r) }
+  let (a, b) = (s(2), s(10))  // a quarter tile's inner and outer sides
+  switch mark {
+  case .pinwheelTiling:
+    // Four 7 × 9 rectangles, each running on past the next one's end, so
+    // the outline turns like a windmill round the spiral.
+    return quarterTurns(t(2, 2, 9, 11))
+  case .masterStack:
+    // One tall tile holding two lobes, two tiles stacked beside it.
+    return [t(-10, -10, -2, 10), t(2, 2, 10, 10), t(2, -10, 10, -2)]
+  case .steps:
+    // Each tile's inner corner stays put; the tiles grow clockwise from top
+    // left, 7 × 7, 8 × 7, 8 × 8, 9 × 8.
+    return [t(-9, 2, -2, 9), t(2, 2, 10, 9), t(2, -10, 10, -2), t(-11, -10, -2, -2)]
+  case .astroid:
+    // Inner corners rounded wide, so the joints open into a four-point star.
+    return quarterTurns(outline32([(a, a, tiny ? 3 : 4.5), (a, b, r), (b, b, r), (b, a, r)]))
+  case .pinwheelStar:
+    // Each tile a touch smaller and turned 15° anticlockwise on its centre:
+    // the joints become blades, and the gap a four-point pinwheel star.
+    // (Turned the other way, the spiral crosses each tile at a corner.) At
+    // 16 px the turn moves a corner under a pixel and blurs every line, so
+    // the tiles stay square.
+    if tiny { return quarterTurns(t(2, 2, 10, 10)) }
+    return quarterTurns(tile32(2.2, 2.2, 9.8, 9.8, r: r, turn: .pi / 12))
+  case .bigSmall:
+    // Two sizes on the diagonals: 9 × 9 top left and bottom right, their
+    // outer corners rounded wide to sit in the icon's own, and 7 × 7 in
+    // between.
+    let (big, round) = (s(11), tiny ? CGFloat(3) : 4)
+    let large = outline32([(a, a, r), (a, big, round / 2), (big, big, round), (big, a, round / 2)])
+    let small = t(2, 2, 9, 9)
+    var flip = CGAffineTransform(scaleX: -1, y: 1)
+    var half = CGAffineTransform(rotationAngle: .pi)
+    let tl = large.copy(using: &flip)!
+    return [tl, small, tl.copy(using: &half)!, small.copy(using: &half)!]
+  default:
+    return quarterTurns(t(2, 2, 10, 10))
+  }
+}
+
+/// X and X1–X6: the spiral and the tiles woven at one weight, a 2 px line and
+/// a 1 px gap in a 32 px icon (64 and 32 at 1024). At 16 px the line is one
+/// pixel and so is the gap.
+func drawPinwheel(_ g: CGContext, _ ink: Inks, _ pen: Pen, _ mark: Mark) {
+  var pen = pen
+  pen.w = 2 * u32
+  pen.gap = pen.lod == 3 ? 2 * u32 : u32
+  let tiles = pinwheelTiles(mark, pen)
+  // The spiral goes first, so it sets the over and under: every X's hooks
+  // turn the same way whatever the tiles. From 64 px up each cut may run
+  // most of the way along the strand underneath, so a slanting crossing is
+  // cut clean through, with no sliver at its sharp corner. At 32 px and below
+  // that sliver is under a pixel, and R's reach keeps X's 32 px R's own.
+  let under: CGFloat = pen.small ? 0.6 : 0.9
+  if pen.lod == 3 && mark == .pinwheel {
+    // X at 16 px: a 1 px curve can't land on the grid, so the hooks smeared
+    // into grey and their weave gaps broke the tiles. Instead each tile is
+    // whole, with a 2 × 1 px tongue from its centre to the inner side the
+    // hook comes in by at 32 px. The tiles turn clockwise like the hooks.
+    pen.gap = 0
+    weave(g, tiles, ink.main, pen)
+    let p = 2 * u32  // one pixel at 16 px
+    for tongue in quarterTurns(CGPath(rect: CGRect(x: -4 * p, y: 3 * p, width: 2 * p, height: p), transform: nil)) {
+      g.fill(tongue, ink.second)
+    }
+    return
+  }
+  weave(g, [pinwheelSpiral(pen)] + tiles, inks: [ink.second] + tiles.map { _ in ink.main }, pen, reach: (0.5, under))
+}
+
 // MARK: - Glass
 
 func bitmap(_ px: Int) -> CGContext {
@@ -1274,7 +1836,7 @@ func render(_ candidate: Candidate, palette p: Palette, px: Int) -> CGImage {
 
 /// Renders a minimal mark at `px` × `px` pixels, in `p.ink` on `p`'s glaze.
 func renderMark(_ mark: Mark, palette p: Palette, bleeds: Bool, px: Int) -> CGImage {
-  renderTile(p, px: px, bleeds: bleeds) { g in mark.draw(g, p.ink, Pen(px: px)) }
+  renderTile(p, px: px, bleeds: bleeds) { g in mark.draw(g, p, Pen(px: px)) }
 }
 
 /// The tile around a motif: shadow, glaze, the motif, the glass over it.
@@ -1586,7 +2148,7 @@ func writeMinimal(_ dir: URL) {
   // Column heads.
   g.setFillColor(rgb(0xC9C9CF))
   g.fill(CGRect(x: CGFloat(margin), y: y - 2, width: CGFloat(width - 2 * margin), height: 2))
-  for (i, s) in Style.allCases.enumerated() {
+  for (i, s) in Style.minimal.enumerated() {
     label(g, "\(s.rawValue) · \(s.name)", at: CGPoint(x: CGFloat(iconsX + i * (cell + gap)) + 4, y: y - 32), size: 17, color: ink, bold: true)
   }
   for (i, s) in stripStyles.enumerated() {
@@ -1597,11 +2159,11 @@ func writeMinimal(_ dir: URL) {
   for parent in groups {
     label(g, "From \(parent.letter) · \(parent.name)", at: CGPoint(x: CGFloat(margin), y: y - 36), size: 20, color: dim, bold: true)
     y -= CGFloat(groupH)
-    for m in Mark.allCases where m.parent == parent {
+    for m in Mark.minimal where m.parent == parent {
       let top = y
       label(g, "\(m.letter)  \(m.name)", at: CGPoint(x: CGFloat(margin), y: top - 40), size: 22, color: ink, bold: true)
       label(g, m.blurb, at: CGPoint(x: CGFloat(margin), y: top - 66), size: 15, color: dim)
-      for (i, s) in Style.allCases.enumerated() {
+      for (i, s) in Style.minimal.enumerated() {
         let x = CGFloat(iconsX + i * (cell + gap))
         g.interpolationQuality = .high
         g.draw(renderMark(m, palette: s.palette, bleeds: s.bleeds, px: cell), in: CGRect(x: x, y: top - CGFloat(cell), width: CGFloat(cell), height: CGFloat(cell)))
@@ -1626,6 +2188,308 @@ func writeMinimal(_ dir: URL) {
   writePNG(g.makeImage()!, dir.appendingPathComponent("minimal.png"))
 }
 
+/// The woven marks: M for reference, then R–W, one row each. Columns: the
+/// seven woven styles at 160 px, then the 32 and 16 px renders of styles 1
+/// and 3 (glaze and cobalt) at 1:1 and blown up (3× and 4×, nearest
+/// neighbour).
+func writeWoven(_ url: URL) {
+  let cell = 160
+  let gap = 18
+  let margin = 40
+  let labelW = 250
+  let header = 84
+  let colHead = 44
+  let rowH = cell + 34
+  let stripStyles: [Style] = [.glaze, .cobalt]
+  let stripW = 32 + 10 + 16 + 18 + 96 + 10 + 64
+  let stripGap = 30
+  let iconsX = margin + labelW
+  let styles = Style.woven
+  let stripX = iconsX + styles.count * cell + (styles.count - 1) * gap + 44
+  let width = stripX + stripStyles.count * stripW + (stripStyles.count - 1) * stripGap + margin
+  let height = header + colHead + Mark.wovenSet.count * rowH + 20
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let ink = NSColor(white: 0.12, alpha: 1)
+  let dim = NSColor(white: 0.42, alpha: 1)
+  g.setFillColor(rgb(0xECECEF))
+  g.fill(CGRect(x: 0, y: 0, width: width, height: height))
+  var y = CGFloat(height - 50)
+  label(g, "Azulejo app icon · woven marks R–W, grown from M · 160 px in seven palettes, then 32 and 16 px at 1:1 and zoomed", at: CGPoint(x: CGFloat(margin), y: y), size: 22, color: ink, bold: true)
+  y = CGFloat(height - header)
+
+  g.setFillColor(rgb(0xC9C9CF))
+  g.fill(CGRect(x: CGFloat(margin), y: y - 2, width: CGFloat(width - 2 * margin), height: 2))
+  for (i, s) in styles.enumerated() {
+    label(g, "\(i + 1) · \(s.name)", at: CGPoint(x: CGFloat(iconsX + i * (cell + gap)) + 2, y: y - 32), size: 15, color: ink, bold: true)
+  }
+  for (i, s) in stripStyles.enumerated() {
+    let n = styles.firstIndex(of: s)! + 1
+    label(g, "\(n) · 32 and 16 px", at: CGPoint(x: CGFloat(stripX + i * (stripW + stripGap)), y: y - 32), size: 15, color: ink, bold: true)
+  }
+  y -= CGFloat(colHead)
+
+  for m in Mark.wovenSet {
+    let top = y - 10
+    label(g, "\(m.letter)  \(m.name)", at: CGPoint(x: CGFloat(margin), y: top - 60), size: 21, color: ink, bold: true)
+    label(g, m == .linked ? "reference: a ring woven through 4 tiles" : m.blurb, at: CGPoint(x: CGFloat(margin), y: top - 84), size: 13, color: dim)
+    for (i, s) in styles.enumerated() {
+      let x = CGFloat(iconsX + i * (cell + gap))
+      g.interpolationQuality = .high
+      g.draw(renderMark(m, palette: s.palette, bleeds: s.bleeds, px: cell), in: CGRect(x: x, y: top - CGFloat(cell), width: CGFloat(cell), height: CGFloat(cell)))
+    }
+    for (i, s) in stripStyles.enumerated() {
+      let i32 = renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 32)
+      let i16 = renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 16)
+      g.interpolationQuality = .none
+      var x = CGFloat(stripX + i * (stripW + stripGap))
+      let base = top - CGFloat(cell) / 2
+      g.draw(i32, in: CGRect(x: x, y: base - 16, width: 32, height: 32))
+      x += 32 + 10
+      g.draw(i16, in: CGRect(x: x, y: base - 8, width: 16, height: 16))
+      x += 16 + 18
+      g.draw(i32, in: CGRect(x: x, y: base - 48, width: 96, height: 96))
+      x += 96 + 10
+      g.draw(i16, in: CGRect(x: x, y: base - 32, width: 64, height: 64))
+    }
+    y -= CGFloat(rowH)
+  }
+  writePNG(g.makeImage()!, url)
+}
+
+/// The quick look: the top four woven mark and palette pairs, best first, at
+/// 512 on a light and a dark band, with their 32 and 16 px renders under
+/// each at 1:1 and 4×.
+let wovenPicks: [(Mark, Style)] = [(.petalTiles, .twoTone), (.bloom, .glaze), (.daisy, .cobalt), (.quatrefoil, .indigo)]
+
+func writeWovenHero(_ url: URL) {
+  let cell = 512
+  let gap = 48
+  let margin = 40
+  let header = 80
+  let labelH = 48
+  let bandH = labelH + cell + 26 + 128 + 40
+  let width = margin * 2 + wovenPicks.count * cell + (wovenPicks.count - 1) * gap
+  let height = header + bandH * 2
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let bands: [(CGColor, NSColor)] = [(rgb(0xECECEF), NSColor(white: 0.12, alpha: 1)), (rgb(0x1E1F23), NSColor(white: 0.9, alpha: 1))]
+  g.setFillColor(bands[0].0)
+  g.fill(CGRect(x: 0, y: height - header, width: width, height: header))
+  label(g, "Azulejo app icon · woven marks, top four · 512 px, then 32 and 16 px at 1:1 and 4×, on light and dark", at: CGPoint(x: CGFloat(margin), y: CGFloat(height - 52)), size: 24, color: bands[0].1, bold: true)
+  let renders = wovenPicks.map { m, s in
+    (renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 1024), renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 32), renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 16))
+  }
+  for (b, (bg, ink)) in bands.enumerated() {
+    let top = height - header - b * bandH
+    g.setFillColor(bg)
+    g.fill(CGRect(x: 0, y: top - bandH, width: width, height: bandH))
+    for (i, (m, s)) in wovenPicks.enumerated() {
+      let x = CGFloat(margin + i * (cell + gap))
+      let iconTop = CGFloat(top - labelH)
+      label(g, "\(i + 1).  \(m.letter) · \(m.name), \(s.name)", at: CGPoint(x: x + 4, y: iconTop + 10), size: 22, color: ink, bold: true)
+      let (big, i32, i16) = renders[i]
+      g.interpolationQuality = .high
+      g.draw(big, in: CGRect(x: x, y: iconTop - CGFloat(cell), width: CGFloat(cell), height: CGFloat(cell)))
+      let smallTop = iconTop - CGFloat(cell) - 26
+      g.interpolationQuality = .none
+      var sx = x + 40
+      g.draw(i32, in: CGRect(x: sx, y: smallTop - 32 - 48, width: 32, height: 32))
+      sx += 32 + 16
+      g.draw(i16, in: CGRect(x: sx, y: smallTop - 16 - 56, width: 16, height: 16))
+      sx += 16 + 40
+      g.draw(i32, in: CGRect(x: sx, y: smallTop - 128, width: 128, height: 128))
+      sx += 128 + 24
+      g.draw(i16, in: CGRect(x: sx, y: smallTop - 64 - 32, width: 64, height: 64))
+    }
+  }
+  writePNG(g.makeImage()!, url)
+}
+
+/// pinwheel.png's colour rows: X and the two picks among X1–X6.
+let pinwheelPicks: [Mark] = [.pinwheel, .pinwheelStar, .pinwheelTiling]
+
+/// pinwheel.png: the maintainer's screenshot of R's 32 px rendering beside X's own
+/// 32 px and X at full size; then X and X1–X6 at 256 px with 32 and 16 px
+/// under each, on light and dark; then X and the two picks in white on
+/// cobalt and two-tone blue. The screenshot is `pinwheel-liked-32px.png` in
+/// `dir`; without it, the panel shows R's 32 px rendering instead.
+func writePinwheel(_ dir: URL) {
+  let margin = 40
+  let cell = 256
+  let gap = 36
+  let width = margin * 2 + Mark.pinwheelSet.count * cell + (Mark.pinwheelSet.count - 1) * gap
+  let header = 76
+  let heroH = 52 + 512 + 40
+  let bandH = 44 + cell + 18 + 96 + 34
+  let colourH = 52 + bandH
+  let height = header + heroH + bandH * 2 + colourH
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let light = (rgb(0xECECEF), NSColor(white: 0.12, alpha: 1), NSColor(white: 0.42, alpha: 1))
+  let darkBand = (rgb(0x1E1F23), NSColor(white: 0.9, alpha: 1), NSColor(white: 0.62, alpha: 1))
+  g.setFillColor(light.0)
+  g.fill(CGRect(x: 0, y: 0, width: width, height: height))
+  var top = CGFloat(height)
+  label(g, "Azulejo app icon · X, pinwheel: R's 32 px rendering grown up, and the spiral in six other tilings", at: CGPoint(x: CGFloat(margin), y: top - 50), size: 24, color: light.1, bold: true)
+  top -= CGFloat(header)
+
+  // The match: the screenshot, X at 32 px, X at full size, each 512 high.
+  let shot = NSImage(contentsOf: dir.appendingPathComponent("pinwheel-liked-32px.png"))
+  let x32 = renderMark(.pinwheel, palette: tinGlaze, bleeds: true, px: 32)
+  let panels: [(String, String)] = [
+    (shot == nil ? "R · linked bloom at 32 px, zoomed" : "the maintainer's screenshot: R at 32 px, zoomed", "the one he liked, from woven-hero.png"),
+    ("X at 32 px, zoomed", "the same pixels: X is set in them"),
+    ("X at 1024 px", "the same geometry as vectors: 2 px line, 1 px gap, woven"),
+  ]
+  for (i, (title, note)) in panels.enumerated() {
+    let x = CGFloat(margin + i * (512 + 80))
+    label(g, title, at: CGPoint(x: x, y: top - 30), size: 19, color: light.1, bold: true)
+    label(g, note, at: CGPoint(x: x, y: top - 50), size: 13, color: light.2)
+    let rect = CGRect(x: x, y: top - 52 - 512, width: 512, height: 512)
+    switch i {
+    case 0:
+      if let shot {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: g, flipped: false)
+        shot.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
+        NSGraphicsContext.restoreGraphicsState()
+      } else {
+        g.interpolationQuality = .none
+        g.draw(renderMark(.bloom, palette: tinGlaze, bleeds: true, px: 32), in: rect)
+      }
+    case 1:
+      g.interpolationQuality = .none
+      g.draw(x32, in: rect)
+    default:
+      g.interpolationQuality = .high
+      g.draw(renderMark(.pinwheel, palette: tinGlaze, bleeds: true, px: 1024), in: rect)
+    }
+  }
+  top -= CGFloat(heroH)
+
+  /// One icon at 256 with its 32 and 16 px renders under it, 1:1 and zoomed.
+  func column(_ m: Mark, _ s: Style, x: CGFloat, top: CGFloat, title: String, ink: NSColor) {
+    label(g, title, at: CGPoint(x: x + 2, y: top - 30), size: 16, color: ink, bold: true)
+    g.interpolationQuality = .high
+    g.draw(renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 512), in: CGRect(x: x, y: top - 40 - CGFloat(cell), width: CGFloat(cell), height: CGFloat(cell)))
+    let i32 = renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 32)
+    let i16 = renderMark(m, palette: s.palette, bleeds: s.bleeds, px: 16)
+    let base = top - 40 - CGFloat(cell) - 18
+    g.interpolationQuality = .none
+    var sx = x + 8
+    g.draw(i32, in: CGRect(x: sx, y: base - 32 - 32, width: 32, height: 32))
+    sx += 32 + 8
+    g.draw(i16, in: CGRect(x: sx, y: base - 16 - 40, width: 16, height: 16))
+    sx += 16 + 16
+    g.draw(i32, in: CGRect(x: sx, y: base - 96, width: 96, height: 96))
+    sx += 96 + 12
+    g.draw(i16, in: CGRect(x: sx, y: base - 64 - 16, width: 64, height: 64))
+  }
+
+  // Every X, cobalt on glaze, on light and dark.
+  for band in [light, darkBand] {
+    g.setFillColor(band.0)
+    g.fill(CGRect(x: 0, y: top - CGFloat(bandH), width: CGFloat(width), height: CGFloat(bandH)))
+    for (i, m) in Mark.pinwheelSet.enumerated() {
+      column(m, .glaze, x: CGFloat(margin + i * (cell + gap)), top: top, title: "\(m.letter) · \(m.name)", ink: band.1)
+    }
+    top -= CGFloat(bandH)
+  }
+
+  // The colour alternates.
+  label(g, "White on cobalt and two-tone blue: X and the two picks", at: CGPoint(x: CGFloat(margin), y: top - 40), size: 19, color: light.1, bold: true)
+  top -= 52
+  var i = 0
+  for m in pinwheelPicks {
+    for s in [Style.cobalt, .twoTone] {
+      column(m, s, x: CGFloat(margin + i * (cell + gap)), top: top, title: "\(m.letter) · \(s.name)", ink: light.1)
+      i += 1
+    }
+  }
+  writePNG(g.makeImage()!, dir.appendingPathComponent("pinwheel.png"))
+}
+
+/// The shipping icon on its own: the 1024 master shown at 256, then 128, 64,
+/// 32 and 16 at their real pixel sizes, then 32 and 16 blown up 4× (nearest
+/// neighbour), next to Terminal and Notes for scale. Under that, the three
+/// side by side at each size, as they'd sit in a Dock. Light left, dark right.
+func writeChosen(_ url: URL) {
+  typealias Draw = (CGContext, Int, CGRect) -> Void
+  func ns(_ path: String) -> Draw? {
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    let image = NSWorkspace.shared.icon(forFile: path)
+    return { g, px, rect in
+      // Rasterise at the real size first, so a zoom shows the real pixels.
+      let small = CGContext(
+        data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+      drawNSImage(small, image, in: CGRect(x: 0, y: 0, width: px, height: px))
+      g.draw(small.makeImage()!, in: rect)
+    }
+  }
+  let ours: Draw = { g, px, rect in g.draw(chosen.image(chosen.palette, px: px), in: rect) }
+  var icons: [(String, Draw)] = [("Azulejo", ours)]
+  for (name, path) in [("macOS: Terminal", "/System/Applications/Utilities/Terminal.app"), ("macOS: Notes", "/System/Applications/Notes.app")] {
+    if let d = ns(path) { icons.append((name, d)) }
+  }
+  // The Dock strip puts Azulejo in the middle.
+  let strip = icons.count == 3 ? [icons[1], icons[0], icons[2]] : icons
+
+  let sizes = [256, 128, 64, 32, 16]
+  let gap = 28
+  let labelH = 40
+  let stripSizes = [128, 64, 32, 16]
+  let stripW = stripSizes.reduce(0) { $0 + 3 * ($1 + max(4, $1 / 8)) + gap }
+  let half = max(sizes.reduce(0, +) + 32 * 4 + 16 * 4 + gap * (sizes.count + 3), stripW + 2 * gap)
+  let rowH = 256 + labelH + gap
+  let stripH = 128 + labelH + gap
+  let width = half * 2
+  let height = 80 + icons.count * rowH + stripH + gap
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let bands = [(rgb(0xECECEF), NSColor(white: 0.15, alpha: 1)), (rgb(0x1E1F23), NSColor(white: 0.85, alpha: 1))]
+  for (i, (bg, ink)) in bands.enumerated() {
+    g.setFillColor(bg)
+    g.fill(CGRect(x: i * half, y: 0, width: half, height: height))
+    let ox = CGFloat(i * half + gap)
+    label(g, "\(chosen.title) · \(i == 0 ? "light" : "dark") · 1024 at 256, then 128 / 64 / 32 / 16 at 1:1, then 32 and 16 at 4×", at: CGPoint(x: ox, y: CGFloat(height - 50)), size: 18, color: ink, bold: true)
+    var top = CGFloat(height - 80)
+    for (name, draw) in icons {
+      label(g, name, at: CGPoint(x: ox, y: top - 30), size: 18, color: ink, bold: true)
+      let base = top - CGFloat(labelH) - 256
+      var x = ox
+      for d in sizes {
+        g.interpolationQuality = .high
+        draw(g, d == 256 ? 1024 : d, CGRect(x: x, y: base, width: CGFloat(d), height: CGFloat(d)))
+        x += CGFloat(d + gap)
+      }
+      for d in [32, 16] {
+        g.interpolationQuality = .none
+        draw(g, d, CGRect(x: x, y: base, width: CGFloat(d * 4), height: CGFloat(d * 4)))
+        x += CGFloat(d * 4 + gap)
+      }
+      top -= CGFloat(rowH)
+    }
+    label(g, "In a row, as in the Dock: 128 / 64 / 32 / 16 at 1:1", at: CGPoint(x: ox, y: top - 30), size: 18, color: ink, bold: true)
+    let base = top - CGFloat(labelH) - 128
+    var x = ox
+    for d in stripSizes {
+      for (_, draw) in strip {
+        g.interpolationQuality = .high
+        draw(g, d, CGRect(x: x, y: base, width: CGFloat(d), height: CGFloat(d)))
+        x += CGFloat(d + max(4, d / 8))
+      }
+      x += CGFloat(gap)
+    }
+  }
+  writePNG(g.makeImage()!, url)
+}
+
 func writeDocs(_ dir: URL) {
   try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   for c in Candidate.allCases {
@@ -1634,8 +2498,12 @@ func writeDocs(_ dir: URL) {
   writePNG(chosen.image(dark, px: 1024), dir.appendingPathComponent("appearance-dark.png"))
   writePNG(chosen.image(tinted, px: 1024), dir.appendingPathComponent("appearance-tinted.png"))
   writeSheet(dir.appendingPathComponent("sheet.png"))
+  writeChosen(dir.appendingPathComponent("chosen.png"))
   writeOptions(dir.appendingPathComponent("options.png"))
   writeMinimal(dir)
+  writeWoven(dir.appendingPathComponent("woven.png"))
+  writeWovenHero(dir.appendingPathComponent("woven-hero.png"))
+  writePinwheel(dir)
 }
 
 // MARK: - Main
@@ -1654,6 +2522,16 @@ while !args.isEmpty {
   case "--iconset": writeIconset(url)
   case "--docs": writeDocs(url)
   case "--minimal": writeMinimal(url)
+  case "--woven":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writeWoven(url.appendingPathComponent("woven.png"))
+    writeWovenHero(url.appendingPathComponent("woven-hero.png"))
+  case "--chosen":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writeChosen(url.appendingPathComponent("chosen.png"))
+  case "--pinwheel":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writePinwheel(url)
   default: fatalError("unknown option \(flag)")
   }
 }
