@@ -173,11 +173,14 @@ mod tests {
     use std::path::PathBuf;
     use tokio::net::UnixListener;
 
-    fn temp_socket(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("azj-hs-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("s.sock")
+    /// A socket path in a fresh temp folder, removed when the guard drops.
+    fn temp_socket(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("azj-hs-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().join("s.sock");
+        (dir, path)
     }
 
     const TAB_CLOSED: &str = r#"{"data":{"tab_id":"w1:t2","type":"tab_closed","workspace_id":"w1"},"event":"tab_closed"}"#;
@@ -197,7 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconnects_and_asks_for_resync() {
-        let path = temp_socket("re");
+        let (_dir, path) = temp_socket("re");
         let listener = UnixListener::bind(&path).unwrap();
         let client = Client::new(
             &path,

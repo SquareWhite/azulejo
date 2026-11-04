@@ -306,8 +306,11 @@ async fn attach_command_runs_and_reports_takeover() {
 
     // herdr attach needs a terminal with a size, so run it under `script`,
     // which gives it a PTY. stderr goes to a file via with_stderr_file.
-    let dir = std::env::temp_dir().join(format!("azj-attach-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let errs = tempfile::Builder::new()
+        .prefix("azj-attach-")
+        .tempdir()
+        .unwrap();
+    let dir = errs.path();
     let spawn = |takeover: bool, name: &str| {
         let err = dir.join(format!("{name}.err"));
         let _ = std::fs::remove_file(&err);
