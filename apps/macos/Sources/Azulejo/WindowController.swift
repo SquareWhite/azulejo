@@ -27,11 +27,18 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// Set while applying a frame from the core, so it isn't echoed back.
     private var applyingFrame = false
 
+    /// The sidebar card opens and closes with layout motion (it slides and
+    /// fades, the tiles grow or shrink to match); instantly on the first
+    /// refresh, and when motion is off.
     var sidebarVisible = true {
         didSet {
-            sidebar.isHidden = !sidebarVisible
-            sidebarCard.isHidden = !sidebarVisible
-            content.needsLayout = true
+            guard sidebarVisible != oldValue else { return }
+            // The keyboard doesn't stay in a sidebar that's going away (the
+            // Files panel): back to the focused tile, as Esc would.
+            if !sidebarVisible, let responder = window.firstResponder as? NSView, responder.isDescendant(of: sidebar) {
+                sidebar.onReturnFocus?()
+            }
+            content.setSidebar(shown: sidebarVisible, animated: model != nil && window.isVisible)
         }
     }
 
@@ -97,10 +104,11 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     func apply(_ model: WindowModel) {
         let first = self.model == nil
-        self.model = model
         if first { placeWindow(model.frame) }
         let showSidebar = model.sidebarHidden != true
+        // Before `self.model` is set: the first refresh shows it as it was.
         if sidebarVisible != showSidebar { sidebarVisible = showSidebar }
+        self.model = model
         Perf.measure("apply.sidebar") { sidebar.apply(model, machines: app?.machines ?? []) }
         Perf.measure("apply.tabbar") { tabBar.apply(model.workspace) }
         Perf.measure("apply.tiles") { tiles.apply(model) }
@@ -138,6 +146,16 @@ final class WindowController: NSObject, NSWindowDelegate {
             // other apps' windows.
             window.orderBack(nil)
         }
+    }
+
+    /// Automation, for captures: the tile area in window points from the
+    /// top left, and the sidebar card as it shows now in the tile area's
+    /// coordinates ("container=246,60,846,632 card=-238,0,230,684"; "-"
+    /// while it's hidden).
+    var describeChrome: String {
+        let t = tiles.frame
+        let container = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
+        return "container=\(container) card=\(content.describeSidebarCard ?? "-")"
     }
 
     /// Automation: the sidebar's and tab bar's attention markers.
@@ -252,6 +270,110 @@ final class ChromeLayoutView: NSView {
         layer?.backgroundColor = Design.Color.window.cgColor
     }
 
+    // MARK: Sidebar motion
+
+    /// Whether the sidebar card is open. Closed, it waits off the window's
+    /// left edge, hidden.
+    private(set) var sidebarShown = true
+    /// Set for the one layout pass that opens or closes the sidebar: the
+    /// tiles move as a layout motion instead of jumping.
+    private var animatingSidebar = false
+    /// Bumped by each open or close; a finished close only hides the card if
+    /// it's still the latest.
+    private var sidebarGeneration = 0
+    private static let chromeKey = "azj.chrome"
+
+    /// Opens or closes the sidebar. Animated (and motion on), the card and
+    /// its rows slide and fade while the tile area grows or shrinks to match
+    /// with the tiles' own motion (same length, curve and style; crop rules
+    /// for terminals), the toggle and the tab strip slide along. The card's
+    /// edge and the tiles' edge move in step, a gutter apart. A toggle
+    /// mid-motion starts from where everything shows now. The traffic
+    /// lights don't move: they sit in the same spot open or closed.
+    func setSidebar(shown: Bool, animated: Bool) {
+        guard shown != sidebarShown else { return }
+        sidebarShown = shown
+        sidebarGeneration += 1
+        let generation = sidebarGeneration
+        let animate = animated && Motion.active && window != nil && bounds.width > 1 && bounds.height > 1
+        let card = [sidebarCard, sidebar].compactMap { $0 }
+        let others: [NSView?] = [sidebarToggle, tabBar, search, banner, hud]
+        let sliding = card + others.compactMap { $0 }
+        var before: [ObjectIdentifier: (frame: CGRect, opacity: Float)] = [:]
+        for view in sliding {
+            if animate { before[ObjectIdentifier(view)] = Self.visual(view) }
+            view.layer?.removeAnimation(forKey: Self.chromeKey)
+        }
+        // The card stays up while it slides out; hidden once it's gone.
+        for view in card where shown || !animate { view.isHidden = !shown }
+
+        animatingSidebar = animate
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        animatingSidebar = false
+        guard animate else { return }
+
+        let duration = Motion.duration
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, generation == self.sidebarGeneration else { return }
+            for view in card {
+                if !self.sidebarShown { view.isHidden = true }
+                view.layer?.removeAnimation(forKey: Self.chromeKey)
+            }
+        }
+        for view in sliding {
+            guard let layer = view.layer, let was = before[ObjectIdentifier(view)] else { continue }
+            let isCard = card.contains { $0 === view }
+            let group = CAAnimationGroup()
+            var parts: [CAAnimation] = []
+            if !Self.close(was.frame, view.frame) {
+                let position = CABasicAnimation(keyPath: "position")
+                position.fromValue = NSValue(point: Motion.position(of: was.frame, anchorPoint: layer.anchorPoint))
+                position.toValue = NSValue(point: Motion.position(of: view.frame, anchorPoint: layer.anchorPoint))
+                parts.append(position)
+            }
+            if isCard {
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = was.opacity
+                fade.toValue = shown ? 1 : 0
+                parts.append(fade)
+                // Held at 0 until the completion hides it.
+                group.fillMode = .forwards
+                group.isRemovedOnCompletion = false
+            }
+            guard !parts.isEmpty else { continue }
+            group.animations = parts
+            Motion.configure(group, duration: duration)
+            layer.add(group, forKey: Self.chromeKey)
+        }
+        CATransaction.commit()
+    }
+
+    /// Where a view shows right now and how opaque (mid-motion: the
+    /// presentation).
+    private static func visual(_ view: NSView) -> (frame: CGRect, opacity: Float) {
+        guard let layer = view.layer else { return (view.frame, view.isHidden ? 0 : 1) }
+        if view.isHidden { return (view.frame, 0) }
+        guard layer.animation(forKey: chromeKey) != nil, let p = layer.presentation() else {
+            return (view.frame, layer.opacity)
+        }
+        return (p.frame, p.opacity)
+    }
+
+    private static func close(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) < 0.5 && abs(a.minY - b.minY) < 0.5
+            && abs(a.width - b.width) < 0.5 && abs(a.height - b.height) < 0.5
+    }
+
+    /// Automation: the sidebar card's frame as it shows now, in the tile
+    /// container's coordinates (bottom-up), or nil while it's hidden.
+    var describeSidebarCard: String? {
+        guard let card = sidebarCard, !card.isHidden, let tiles else { return nil }
+        let r = tiles.convert(Self.visual(card).frame, from: self)
+        return "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))"
+    }
+
     /// The toolbar row along the top. Its empty space moves the window; the
     /// tabs, "+", the toggle and the search field take their own clicks.
     var toolbarRect: NSRect {
@@ -264,15 +386,17 @@ final class ChromeLayoutView: NSView {
         let inset = Design.Space.windowInset
         // The toolbar row's centre line: level with the traffic lights.
         let rowMidY = bounds.height - Design.Space.titlebarLightsY - 7
-        let sidebarShown = sidebar.map { !$0.isHidden } ?? false
         let fullScreen = window?.styleMask.contains(.fullScreen) == true
         var tilesLeft = inset
         var toolbarLeft: CGFloat
+        // Closed, the card waits just off the left edge, where it slides
+        // out to and in from: its right edge a gutter left of the tiles'.
+        var card = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
+        if !sidebarShown { card.origin.x = -card.width }
+        sidebarCard?.frame = card
+        sidebar?.frame = NSRect(x: card.minX, y: card.minY, width: card.width,
+                                height: max(0, card.height - Design.Space.titlebarZone))
         if sidebarShown {
-            let card = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
-            sidebarCard?.frame = card
-            sidebar?.frame = NSRect(x: card.minX, y: card.minY, width: card.width,
-                                    height: max(0, card.height - Design.Space.titlebarZone))
             sidebarToggle?.frame = NSRect(
                 x: card.maxX - Design.Space.titlebarToggleInset - 11, y: rowMidY - 11, width: 22, height: 22)
             tilesLeft = card.maxX + inset
@@ -319,7 +443,11 @@ final class ChromeLayoutView: NSView {
             banner.frame = NSRect(x: rest.minX, y: rest.maxY - height, width: rest.width, height: height)
             rest.size.height = max(0, rest.height - height - Design.Space.gutter)
         }
-        tiles?.frame = rest
+        if let container = tiles as? TileContainerView {
+            container.setChromeFrame(rest, animated: animatingSidebar)
+        } else {
+            tiles?.frame = rest
+        }
         if let attention, let container = tiles as? TileContainerView {
             attention.frame = rest
             attention.relayout(frames: container.visibleTileFrames())
