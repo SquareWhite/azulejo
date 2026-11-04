@@ -16,7 +16,13 @@ import GhosttyKit
 /// - **ended**: the pane is gone. Respawn starts a new pane in the tile's
 ///   place; Close closes the tile.
 /// - **waiting**: no pane yet, herdr is unreachable (retries with backoff), or
-///   the core runs without herdr.
+///   the core runs without herdr. A tile also waits until the core says its
+///   machine is connected: the core checks every bound pane first, so after
+///   a herdr restart the tile attaches to the pane herdr has now, not to the
+///   terminal the restart replaced (attaching to that one, then switching,
+///   cost a failed attach and up to a second's back-off).
+/// - **gone**: herdr says the terminal is gone; the core is about to close
+///   the tile, end it or rebind it. Nothing restarts until it does.
 ///
 /// Closing the tile only detaches: the pane keeps running in herdr. Killing it
 /// is the core's `tile.close {kill: true}`.
@@ -32,6 +38,8 @@ final class TerminalTileView: NSView, TileView {
         case observing(takenOver: Bool)
         case ended
         case retrying(attempt: Int)
+        /// The attach ended with "terminal gone": wait for the core's verdict.
+        case gone
     }
 
     private var phase: Phase = .waiting("starting…")
@@ -43,6 +51,8 @@ final class TerminalTileView: NSView, TileView {
     private var focused = false
     private var closed = false
     private var retryWork: DispatchWorkItem?
+    /// Attaches anyway if the core never says the machine is connected.
+    private var connectWait: DispatchWorkItem?
     private var resizeWork: DispatchWorkItem?
     private var observedSize: (cols: Int, rows: Int)?
     /// Recent detaches (ctrl+b q); a burst means something keeps detaching us.
@@ -81,6 +91,10 @@ final class TerminalTileView: NSView, TileView {
     private static var log: (String) -> Void = { _ in }
     /// Every open terminal tile, for herdr.status and wake health checks.
     private static let live = NSHashTable<TerminalTileView>.weakObjects()
+    /// Machines (`local` or herdr's ID) the core has said are connected, with
+    /// their bound panes checked: `machines.list`, then `herdr.status` and
+    /// `machine.status`.
+    private static var connected: Set<String> = []
     /// When the current wait for an attach began (launch, wake, herdr back),
     /// and why; logged with the time it took (PLAN 1.12: ≤ 2 s).
     private var attachClock: (start: Date, reason: String)?
@@ -144,6 +158,7 @@ final class TerminalTileView: NSView, TileView {
         pendingSurfaceResize?.cancel()
         Self.live.remove(self)
         retryWork?.cancel()
+        connectWait?.cancel()
         resizeWork?.cancel()
         stopSurface()
         try? FileManager.default.removeItem(at: runDir)
@@ -220,6 +235,12 @@ final class TerminalTileView: NSView, TileView {
                 : .waiting("no herdr: this terminal has no session")
             return render()
         }
+        if let last = lastTerminal, last != herdr.terminalId {
+            // A new terminal: the old one's failures say nothing about it.
+            failures.removeAll()
+            detaches.removeAll()
+            ghostRetries.removeAll()
+        }
         if phase == .ended {
             phase = .waiting("reattaching…")
             if attachClock == nil { attachClock = (Date(), "rebind") }
@@ -235,6 +256,10 @@ final class TerminalTileView: NSView, TileView {
             case .observing(let takenOver): startObserve(takenOver: takenOver)
             case .retrying where lastTerminal == herdr.terminalId:
                 break // the timer restarts it
+            case .gone where lastTerminal == herdr.terminalId:
+                break // the core closes, ends or rebinds it
+            case .waiting where connectWait != nil && !Self.isConnected(herdr.machine):
+                break // the core says when the machine is connected
             case .retrying:
                 // Rebound while backing off (herdr respawned the pane): no
                 // reason to wait for the timer.
@@ -247,8 +272,14 @@ final class TerminalTileView: NSView, TileView {
         render()
     }
 
-    private func startAttach(takeover: Bool) {
+    private func startAttach(takeover: Bool, force: Bool = false) {
         guard let herdr = model.herdr else { return }
+        if !takeover, !force, !Self.isConnected(herdr.machine) {
+            waitForConnection()
+            return
+        }
+        connectWait?.cancel()
+        connectWait = nil
         let started = startSurface(
             mode: takeover ? "takeover" : "attach", herdr: herdr, readOnly: false)
         if started {
@@ -261,6 +292,31 @@ final class TerminalTileView: NSView, TileView {
             }
         }
         render()
+    }
+
+    /// Holds the attach until the core says the tile's machine is connected
+    /// (`herdrBack`), or 2 s at most.
+    private func waitForConnection() {
+        if case .waiting = phase {} else { phase = .waiting("connecting to herdr…") }
+        render()
+        guard connectWait == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.closed, self.surface == nil, self.model.ended != true else { return }
+            self.connectWait = nil
+            Self.log("terminal \(Short.id(self.tileID)): no word from the core; attaching anyway")
+            self.startAttach(takeover: false, force: true)
+        }
+        connectWait = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    private static func isConnected(_ machine: String?) -> Bool {
+        connected.contains(machine ?? MachineModel.local)
+    }
+
+    /// The core's machine list (`machines.list`): which machines are connected.
+    static func noteMachines(_ machines: [MachineModel]) {
+        connected = Set(machines.filter { $0.state == .connected }.map(\.id))
     }
 
     private func startObserve(takenOver: Bool) {
@@ -375,7 +431,8 @@ final class TerminalTileView: NSView, TileView {
             // let go of it yet. Try again shortly rather than going read-only.
             phase = .waiting("reattaching…")
             render()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            let delay = 0.1 * Double(max(1, ghostRetries.count))
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.closed, self.surface == nil,
                       self.model.herdr?.terminalId == herdr.terminalId else { return }
                 self.startAttach(takeover: false)
@@ -395,6 +452,8 @@ final class TerminalTileView: NSView, TileView {
             if case .retrying(let n) = phase {
                 retry(attempt: n + 1)
             } else {
+                phase = .gone
+                render()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self, !self.closed, self.surface == nil,
                           self.model.ended != true, self.model.herdr?.terminalId == herdr.terminalId
@@ -507,6 +566,8 @@ final class TerminalTileView: NSView, TileView {
         switch phase {
         case .retrying, .waiting:
             retryWork?.cancel()
+            connectWait?.cancel()
+            connectWait = nil
             if attachClock == nil { attachClock = (Date(), reason) }
             Self.log("terminal \(Short.id(tileID)): reattaching (\(reason))")
             startAttach(takeover: false)
@@ -535,9 +596,13 @@ final class TerminalTileView: NSView, TileView {
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            object["event"] as? String == "machine.status",
            let machine = (object["data"] as? [String: Any])?["machine"] as? [String: Any],
-           let id = machine["id"] as? String,
-           machine["state"] as? String == "connected"
+           let id = machine["id"] as? String
         {
+            guard machine["state"] as? String == "connected" else {
+                Self.connected.remove(id)
+                return
+            }
+            Self.connected.insert(id)
             log("machine \(machine["label"] as? String ?? id) connected")
             for tile in live.allObjects where (tile.model.herdr?.machine ?? MachineModel.local) == id {
                 tile.herdrBack(reason: "machine back")
@@ -552,6 +617,7 @@ final class TerminalTileView: NSView, TileView {
         else { return }
         let connected = body["connected"] as? Bool == true
         log("herdr \(connected ? "connected" : "disconnected: \(body["message"] as? String ?? "")")")
+        if connected { Self.connected.insert(MachineModel.local) } else { Self.connected.remove(MachineModel.local) }
         guard connected else { return }
         for tile in live.allObjects where tile.model.herdr?.machine == nil {
             tile.herdrBack(reason: "herdr back")
@@ -593,7 +659,7 @@ final class TerminalTileView: NSView, TileView {
             Self.log("terminal \(Short.id(tileID)): phase \(phaseName)")
         }
         switch phase {
-        case .attached:
+        case .attached, .gone:
             overlay.show(nil)
         case .waiting(let text):
             overlay.show(.init(style: .placeholder, title: text, detail: nil, buttons: []))
@@ -661,6 +727,7 @@ final class TerminalTileView: NSView, TileView {
         case .observing(let takenOver): takenOver ? "observing-taken-over" : "observing"
         case .ended: "ended"
         case .retrying: "retrying"
+        case .gone: "gone"
         }
     }
 }

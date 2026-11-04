@@ -52,6 +52,21 @@ pub trait HerdrPort: Send + Sync + 'static {
         stored: herdr::TerminalRef,
     ) -> impl Future<Output = Result<herdr::Resolved, String>> + Send;
 
+    /// [`HerdrPort::reresolve`] for several terminals at once: one answer
+    /// per stored ref, in order. [`herdr::Client`] reads herdr's panes once.
+    fn reresolve_many(
+        &self,
+        stored: Vec<herdr::TerminalRef>,
+    ) -> impl Future<Output = Result<Vec<herdr::Resolved>, String>> + Send {
+        async move {
+            let mut out = Vec::with_capacity(stored.len());
+            for s in stored {
+                out.push(self.reresolve(s).await?);
+            }
+            Ok(out)
+        }
+    }
+
     /// What herdr is running, for adoption (ADR 0008). Must only read.
     fn survey(&self) -> impl Future<Output = Result<herdr::Survey, String>> + Send;
 
@@ -146,6 +161,15 @@ impl HerdrPort for herdr::Client {
 
     async fn reresolve(&self, stored: herdr::TerminalRef) -> Result<herdr::Resolved, String> {
         herdr::Client::reresolve(self, &stored)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn reresolve_many(
+        &self,
+        stored: Vec<herdr::TerminalRef>,
+    ) -> Result<Vec<herdr::Resolved>, String> {
+        herdr::Client::reresolve_many(self, &stored)
             .await
             .map_err(|e| e.to_string())
     }
@@ -337,6 +361,11 @@ pub enum Internal {
     },
     /// The survey failed (logged); nothing to adopt this time.
     SurveyFailed(Machine),
+    /// `machine`'s event stream (re)connected and its bound tiles have been
+    /// checked ([`check_bound`]): shells may attach now, to current panes.
+    /// The `u64` is the link's connection generation when the check started;
+    /// a newer one means the news is stale.
+    Announce(Machine, u64),
 }
 
 impl Engine {
@@ -469,6 +498,8 @@ impl Engine {
                 }
                 Vec::new()
             }
+            // The driver handles it; nothing in the session changes.
+            Internal::Announce(..) => Vec::new(),
             Internal::PaneInfo {
                 machine,
                 pane_id,
@@ -894,6 +925,92 @@ impl Engine {
     }
 }
 
+/// The herdr query for a stored pane.
+fn reresolve_query(stored: &HerdrRef, herdr_workspace: Option<String>) -> herdr::TerminalRef {
+    herdr::TerminalRef {
+        workspace_id: herdr::WorkspaceId(herdr_workspace.unwrap_or_default()),
+        tab_id: herdr::TabId(stored.tab_id.clone()),
+        pane_id: herdr::PaneId(stored.pane_id.clone()),
+        terminal_id: herdr::TerminalId(stored.terminal_id.clone()),
+    }
+}
+
+/// What to tell the engine about a re-resolved tile, if anything changed.
+fn resolved_internal(
+    machine: &Machine,
+    tile: TileId,
+    resolved: herdr::Resolved,
+) -> Option<Internal> {
+    match resolved {
+        herdr::Resolved::Same(_) => None,
+        // Moved: same process, new IDs. Respawned: herdr restarted; the slot
+        // has a fresh shell (without the tile's env vars).
+        herdr::Resolved::Moved(p) | herdr::Resolved::Respawned(p) => Some(Internal::BindTerminal {
+            tile,
+            herdr: to_ref(machine, &p.terminal_ref()),
+        }),
+        herdr::Resolved::Gone => Some(Internal::MarkEnded { tile }),
+    }
+}
+
+/// When [`check_bound`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Check {
+    /// The machine was just added: herdr may not be reachable yet. herdr's
+    /// panes are read even with no tile to check, and only an answer
+    /// announces the machine.
+    Added,
+    /// Its event stream just (re)connected, which already proves herdr is
+    /// there.
+    Connected,
+}
+
+/// Re-checks `machine`'s bound tiles (the [`Effect::Reresolve`]s in
+/// `checks`) with one read of herdr's panes, then sends
+/// [`Internal::Announce`]: when the machine is added, and whenever its event
+/// stream (re)connects.
+///
+/// Runs beside the worker, not in its queue: it only reads, so it can't race
+/// pane creation, and a slow survey queued ahead (a herdr that just started
+/// can take 100 ms over one) doesn't hold it up. Shells hear that the machine
+/// is connected only after this, so they attach to the panes herdr has now,
+/// not to terminals a herdr restart replaced.
+pub(crate) async fn check_bound<P: HerdrPort>(
+    machine: Machine,
+    port: Arc<P>,
+    checks: Vec<Effect>,
+    (when, generation): (Check, u64),
+    out: impl Fn(Internal),
+    log: impl Fn(String),
+) {
+    let (tiles, queries): (Vec<TileId>, Vec<herdr::TerminalRef>) = checks
+        .into_iter()
+        .filter_map(|effect| match effect {
+            Effect::Reresolve {
+                tile,
+                stored,
+                herdr_workspace,
+            } => Some((tile, reresolve_query(&stored, herdr_workspace))),
+            _ => None,
+        })
+        .unzip();
+    if !queries.is_empty() || when == Check::Added {
+        match port.reresolve_many(queries).await {
+            Ok(resolved) => {
+                for (tile, resolved) in tiles.into_iter().zip(resolved) {
+                    if let Some(internal) = resolved_internal(&machine, tile, resolved) {
+                        out(internal);
+                    }
+                }
+            }
+            // Not there yet: the event stream says when it is.
+            Err(_) if when == Check::Added => return,
+            Err(e) => log(format!("herdr: checking terminal tiles: {e}")),
+        }
+    }
+    out(Internal::Announce(machine, generation));
+}
+
 /// Runs effects one at a time, so a terminal never races its workspace's
 /// creation. `out` delivers results to the engine's thread; `log` reports
 /// herdr failures.
@@ -1003,23 +1120,13 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 stored,
                 herdr_workspace,
             } => {
-                let query = herdr::TerminalRef {
-                    workspace_id: herdr::WorkspaceId(herdr_workspace.unwrap_or_default()),
-                    tab_id: herdr::TabId(stored.tab_id.clone()),
-                    pane_id: herdr::PaneId(stored.pane_id.clone()),
-                    terminal_id: herdr::TerminalId(stored.terminal_id.clone()),
-                };
+                let query = reresolve_query(&stored, herdr_workspace);
                 match port.reresolve(query).await {
-                    Ok(herdr::Resolved::Same(_)) => {}
-                    // Moved: same process, new IDs. Respawned: herdr restarted;
-                    // the slot has a fresh shell (without the tile's env vars).
-                    Ok(herdr::Resolved::Moved(p) | herdr::Resolved::Respawned(p)) => {
-                        out(Internal::BindTerminal {
-                            tile,
-                            herdr: to_ref(&machine, &p.terminal_ref()),
-                        });
+                    Ok(resolved) => {
+                        if let Some(internal) = resolved_internal(&machine, tile, resolved) {
+                            out(internal);
+                        }
                     }
-                    Ok(herdr::Resolved::Gone) => out(Internal::MarkEnded { tile }),
                     Err(e) => log(format!("herdr: checking tile {tile}: {e}")),
                 }
             }

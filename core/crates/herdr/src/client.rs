@@ -341,22 +341,13 @@ impl Client {
     /// `--env` vars.
     pub async fn reresolve(&self, stored: &TerminalRef) -> Result<Resolved> {
         let panes = self.panes().await?;
-        if let Some(p) = panes.iter().find(|p| p.terminal_id == stored.terminal_id) {
-            return Ok(
-                if p.pane_id == stored.pane_id && p.tab_id == stored.tab_id {
-                    Resolved::Same(p.clone())
-                } else {
-                    Resolved::Moved(p.clone())
-                },
-            );
-        }
-        if let Some(p) = panes
-            .iter()
-            .find(|p| p.pane_id == stored.pane_id && p.tab_id == stored.tab_id)
-        {
-            return Ok(Resolved::Respawned(p.clone()));
-        }
-        Ok(Resolved::Gone)
+        Ok(resolve_in(&panes, stored))
+    }
+
+    /// [`Client::reresolve`] for several terminals with one `pane.list`.
+    pub async fn reresolve_many(&self, stored: &[TerminalRef]) -> Result<Vec<Resolved>> {
+        let panes = self.panes().await?;
+        Ok(stored.iter().map(|s| resolve_in(&panes, s)).collect())
     }
 
     // ---- terminal operations (F20) -----------------------------------------
@@ -485,6 +476,24 @@ impl Client {
             }
         }
     }
+}
+
+/// What became of `stored`, given every pane herdr has now.
+fn resolve_in(panes: &[PaneInfo], stored: &TerminalRef) -> Resolved {
+    if let Some(p) = panes.iter().find(|p| p.terminal_id == stored.terminal_id) {
+        return if p.pane_id == stored.pane_id && p.tab_id == stored.tab_id {
+            Resolved::Same(p.clone())
+        } else {
+            Resolved::Moved(p.clone())
+        };
+    }
+    if let Some(p) = panes
+        .iter()
+        .find(|p| p.pane_id == stored.pane_id && p.tab_id == stored.tab_id)
+    {
+        return Resolved::Respawned(p.clone());
+    }
+    Resolved::Gone
 }
 
 async fn round_trip(conn: &mut Conn, line: &str) -> Result<Option<String>> {

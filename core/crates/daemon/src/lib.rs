@@ -22,7 +22,7 @@ use azulejo_api::{CoreDispatcher, Server, ServerHandle, WithInfo};
 use azulejo_config::{Config, HerdrConfig, Platform};
 use azulejo_engine::{Core, CoreOptions, LogFn, persist};
 use azulejo_herdr::{
-    AttachCommand, Backoff, Client, ClientOptions, Herdr, PaneId, RemoteMachine,
+    AttachCommand, Backoff, Client, ClientOptions, Herdr, PaneId, RemoteMachine, ServerOrigin,
     Session as HerdrSession, Ssh, TerminalId,
 };
 use serde_json::{Map, Value};
@@ -239,7 +239,13 @@ impl App {
             log: log.clone(),
         };
         let (core, herdr_info) = match herdr {
-            Some((client, info)) => (Core::start_with_herdr(core_opts, client), Some(info)),
+            Some((client, info, ServerOrigin::Running)) => (
+                Core::start_with_running_herdr(core_opts, client),
+                Some(info),
+            ),
+            Some((client, info, ServerOrigin::Started)) => {
+                (Core::start_with_herdr(core_opts, client), Some(info))
+            }
             None => (Core::start(core_opts), None),
         };
         let core = Arc::new(core);
@@ -425,15 +431,30 @@ fn herdr_session(config: &HerdrConfig) -> Option<HerdrSession> {
     })
 }
 
+/// The core's client for the local herdr. Trying a Unix socket that isn't
+/// there yet costs microseconds, so the event stream retries at least every
+/// 250 ms while herdr is down: after a herdr restart, tiles reattach within
+/// a quarter second of the server coming up, not up to a second later.
+fn local_client_options() -> ClientOptions {
+    ClientOptions {
+        connect: Backoff {
+            max: std::time::Duration::from_millis(250),
+            ..Backoff::default()
+        },
+        ..ClientOptions::default()
+    }
+}
+
 fn connect_herdr(
     session: &HerdrSession,
-) -> Result<(azulejo_herdr::Client, HerdrInfo), azulejo_herdr::Error> {
+) -> Result<(azulejo_herdr::Client, HerdrInfo, ServerOrigin), azulejo_herdr::Error> {
     let herdr = Herdr::locate()?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| azulejo_herdr::Error::Binary(format!("tokio runtime: {e}")))?;
-    let (client, _) = runtime.block_on(herdr.ensure_server(session, ClientOptions::default()))?;
+    let (client, _, origin) =
+        runtime.block_on(herdr.connect_or_start(session, local_client_options()))?;
     let info = HerdrInfo {
         socket: client
             .socket_path()
@@ -442,7 +463,7 @@ fn connect_herdr(
         herdr,
         session: session.clone(),
     };
-    Ok((client, info))
+    Ok((client, info, origin))
 }
 
 #[cfg(test)]

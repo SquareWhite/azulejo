@@ -230,6 +230,13 @@ async fn full_lifecycle_against_real_herdr() {
         Resolved::Same(_)
     ));
     assert_eq!(client.reresolve(&term).await.unwrap(), Resolved::Gone);
+    // The same answers, in order, from one read of herdr's panes.
+    let many = client
+        .reresolve_many(&[keep.clone(), term.clone()])
+        .await
+        .unwrap();
+    assert!(matches!(many[0], Resolved::Same(_)), "{many:?}");
+    assert_eq!(many[1], Resolved::Gone);
 
     // Restart the server mid-test: requests and the event stream recover.
     client.stop_server().await.unwrap();
@@ -262,6 +269,13 @@ async fn full_lifecycle_against_real_herdr() {
     };
     assert_eq!(p.pane_id, keep.pane_id);
     assert_ne!(p.terminal_id, keep.terminal_id);
+    assert_eq!(
+        client
+            .reresolve_many(std::slice::from_ref(&keep))
+            .await
+            .unwrap(),
+        [Resolved::Respawned(p)]
+    );
 
     // Events flow on the recovered stream.
     client
