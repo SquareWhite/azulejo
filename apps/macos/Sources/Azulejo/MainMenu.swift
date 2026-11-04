@@ -87,6 +87,8 @@ enum MainMenu {
             item("Toggle Sidebar", "toggle_sidebar"),
             item("Zoom Tile", "zoom_tile"),
             .separator(),
+            ThemeMenu.item(target: target),
+            .separator(),
             item("Quick Open…", "quick_open"),
             item("Commands…", "command_palette"),
             item("Go To…", "goto"),

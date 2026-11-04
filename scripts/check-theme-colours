@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Fails when a macOS view could keep a stale colour after a theme change.
+
+    scripts/check-theme-colours        (run by `just lint`)
+
+A CGColor is a snapshot: `Design.Color.x.cgColor` taken once in `init` keeps
+the old theme's colour forever. So every `.cgColor` in the shell has to sit
+where it's taken again on a theme change:
+
+- in `applyTheme()` (ThemeAware: Theme.set calls it on every change), or in
+  `updateLayer()` / `draw(_:)` (Theme.set redraws every view); or
+- in a function with a `// theme:` note saying how it stays current (a
+  helper `applyTheme()` calls, a layer made fresh for one motion, …).
+
+And every class that adopts ThemeAware must register with `Theme.track(self)`,
+or nobody calls its `applyTheme()`. See Theme.swift for the mechanism.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCES = ROOT / "apps" / "macos" / "Sources" / "Azulejo"
+SKIP = {"Design.swift", "Theme.swift"}
+REAPPLIED = {"applyTheme", "updateLayer", "draw"}
+FUNC = re.compile(r"\bfunc\s+(\w+)|\b(init)\s*[(<?]")
+CLASS = re.compile(r"^\s*(?:@\w+\s+)*(?:(?:private|fileprivate|public|final|open)\s+)*class\s+(\w+)([^{]*)")
+
+
+def strip(line: str) -> str:
+    """The line without string literals and // comments (for brace counting)."""
+    line = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
+    return line.split("//", 1)[0]
+
+
+def check(path: Path) -> list[str]:
+    problems: list[str] = []
+    lines = path.read_text().splitlines()
+    depth = 0
+    # (name, depth at its opening brace, first line index)
+    stack: list[tuple[str, int, int]] = []
+    pending: tuple[str, int] | None = None
+    for i, raw in enumerate(lines):
+        code = strip(raw)
+        m = FUNC.search(code)
+        if m:
+            pending = (m.group(1) or m.group(2), i)
+        for ch in code:
+            if ch == "{":
+                depth += 1
+                if pending:
+                    stack.append((pending[0], depth, pending[1]))
+                    pending = None
+            elif ch == "}":
+                while stack and stack[-1][1] >= depth:
+                    stack.pop()
+                depth -= 1
+        if ".cgColor" not in code:
+            continue
+        names = {name for name, _, _ in stack}
+        if names & REAPPLIED:
+            continue
+        start = stack[-1][2] if stack else 0
+        if any("// theme:" in lines[j] for j in range(start, i + 1)):
+            continue
+        where = stack[-1][0] if stack else "top level"
+        problems.append(
+            f"{path.name}:{i + 1}: `.cgColor` in {where}() is taken once: set it in applyTheme() "
+            f"(ThemeAware), or add a `// theme:` note saying how it stays current"
+        )
+
+    # ThemeAware classes register.
+    classes = [(i, m) for i, l in enumerate(lines) if (m := CLASS.match(l))]
+    for n, (i, m) in enumerate(classes):
+        if "ThemeAware" not in m.group(2):
+            continue
+        end = classes[n + 1][0] if n + 1 < len(classes) else len(lines)
+        body = "\n".join(lines[i:end])
+        if "Theme.track(self)" not in body:
+            problems.append(f"{path.name}:{i + 1}: {m.group(1)} is ThemeAware but never calls Theme.track(self)")
+        if "func applyTheme()" not in body:
+            problems.append(f"{path.name}:{i + 1}: {m.group(1)} is ThemeAware but has no applyTheme()")
+    return problems
+
+
+def main() -> int:
+    problems: list[str] = []
+    for path in sorted(SOURCES.glob("*.swift")):
+        if path.name not in SKIP:
+            problems += check(path)
+    for p in problems:
+        print(p, file=sys.stderr)
+    if problems:
+        print(f"check-theme-colours: {len(problems)} problem(s); see Theme.swift", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

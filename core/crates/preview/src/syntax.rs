@@ -275,6 +275,12 @@ pub(crate) fn scoped(css: &str, scope: &str) -> String {
             None => ("", head),
         };
         out.push_str(comment);
+        // The page's own CSS owns a code block's text and fill (the theme's
+        // `textSecondary` and `sunken`); scoped, the syntax theme's base
+        // `.syn-code` rule would outrank it.
+        if selectors.trim() == ".syn-code" {
+            continue;
+        }
         let list: Vec<String> = selectors
             .split(',')
             .map(str::trim)
@@ -329,16 +335,16 @@ mod tests {
         let css = "/*\n * theme\n */\n.syn-code {\n color: #fff;\n}\n\n.syn-a, .syn-b.syn-c {\n color: #000;\n}\n";
         let out = scoped(css, "html[data-azj-syntax=\"x\"]");
         assert!(out.contains("/*\n * theme\n */"), "{out}");
-        assert!(
-            out.contains("html[data-azj-syntax=\"x\"] .syn-code {"),
-            "{out}"
-        );
+        assert!(!out.contains(".syn-code"), "the base rule is the page's: {out}");
         assert!(
             out.contains(
                 "html[data-azj-syntax=\"x\"] .syn-a,\nhtml[data-azj-syntax=\"x\"] .syn-b.syn-c {"
             ),
             "{out}"
         );
-        assert_eq!(out.matches('{').count(), 2);
+        assert_eq!(out.matches('{').count(), 1);
+        let code = scoped(".syn-code {\n color: #fff;\n background-color: #000;\n}\n.syn-a {\n color: #111;\n}\n", "html");
+        assert!(!code.contains("#fff") && !code.contains("#000"), "{code}");
+        assert!(code.contains("html .syn-a {"), "{code}");
     }
 }

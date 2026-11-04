@@ -31,6 +31,7 @@ import AppKit
 ///     remember key           note a state value now…
 ///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
+///     theme set|preview|system|picker …   see `ThemeAutomation`
 ///     menu workspace N|tile [invoke TITLE]   build a right-click menu, log
 ///                            its items, run one (see `MenuAutomation`);
 ///                            `menu answer TEXT` answers the next prompt,
@@ -148,6 +149,11 @@ final class Automation {
             }
             record("menu \(arg)")
             for note in notes where note.hasPrefix("menu ") { record("      · \(note)") }
+        case "theme":
+            if let problem = ThemeAutomation.run(arg, app: app) {
+                failures.append("line \(step): theme \(arg): \(problem)")
+            }
+            record("theme \(arg)")
         case "sidebar":
             if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
@@ -392,6 +398,7 @@ final class Automation {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return }
         ctx.scaleBy(x: scale, y: scale)
+        // theme: read per render.
         ctx.setFillColor(Design.Color.window.cgColor)
         ctx.fill(CGRect(origin: .zero, size: size))
         ctx.saveGState()
@@ -553,6 +560,7 @@ final class Automation {
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(SidebarAutomation.state(controller)) { $1 }
+        s.merge(ThemeAutomation.state(controller)) { $1 }
         s.merge(MenuAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(controller.chromeState()) { $1 }
         return s

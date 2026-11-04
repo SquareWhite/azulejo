@@ -82,6 +82,8 @@ enum Design {
         static let overlay = Theme.token("overlay")
         /// text on terminal state overlays
         static let overlayText = Theme.token("overlayText")
+        /// titles on terminal state overlays (Session ended, reconnecting)
+        static let overlayTitle = Theme.token("overlayTitle")
         /// read-only / taken-over banner on terminals
         static let takeover = Theme.token("takeover")
         /// drop shadows (⌘K)
@@ -181,6 +183,7 @@ enum Design {
             "badge",
             "overlay",
             "overlayText",
+            "overlayTitle",
             "takeover",
             "shadow",
             "ghostFill",
@@ -250,6 +253,7 @@ enum Design {
                     "badge": .rgba(0x0000008c),
                     "overlay": .rgba(0x1b1d23eb),
                     "overlayText": .rgba(0xbfbfbfff),
+                    "overlayTitle": .rgba(0xffffffff),
                     "takeover": .rgba(0x8c610df2),
                     "shadow": .rgba(0x000000ff),
                     "ghostFill": .rgba(0x8080801a),
@@ -323,6 +327,7 @@ enum Design {
                     "badge": .rgba(0x0000008c),
                     "overlay": .rgba(0xfafafaeb),
                     "overlayText": .rgba(0x5c5f69ff),
+                    "overlayTitle": .rgba(0x383a42ff),
                     "takeover": .rgba(0x8c610df2),
                     "shadow": .rgba(0x000000ff),
                     "ghostFill": .rgba(0x8080801a),
@@ -396,6 +401,7 @@ enum Design {
                     "badge": .rgba(0x0000008c),
                     "overlay": .rgba(0x1e1e1eeb),
                     "overlayText": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "overlayTitle": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
                     "takeover": .rgba(0x8c610df2),
                     "shadow": .system("shadowColor", alpha: nil, fallback: 0x000000ff),
                     "ghostFill": .rgba(0x8080801a),
@@ -469,6 +475,7 @@ enum Design {
                     "badge": .rgba(0x0000008c),
                     "overlay": .rgba(0xffffffeb),
                     "overlayText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "overlayTitle": .system("labelColor", alpha: nil, fallback: 0x000000d8),
                     "takeover": .rgba(0x8c610df2),
                     "shadow": .system("shadowColor", alpha: nil, fallback: 0x000000ff),
                     "ghostFill": .rgba(0x8080801a),
@@ -771,13 +778,15 @@ enum Design {
         }
 
         /// The state's symbol as a tinted image, or nil if the symbol is missing.
+        /// Its colour is resolved now, in the theme's appearance: the image is
+        /// often baked into a layer (StatusIconView makes it again per theme).
         /// Symbols named `azulejo.*` are drawn by the app (DesignSupport.swift).
         static func image(_ status: Status, pointSize: CGFloat = 11) -> NSImage? {
             if status.symbol.hasPrefix("azulejo.") {
                 return Design.customSymbol(status.symbol, color: status.color, pointSize: pointSize)
             }
             let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-                .applying(.init(paletteColors: [status.color]))
+                .applying(.init(paletteColors: [Theme.resolved(status.color)]))
             return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
                 .withSymbolConfiguration(config)
         }
