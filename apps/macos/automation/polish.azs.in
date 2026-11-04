@@ -8,8 +8,10 @@ window-size 1440 900
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 
-# --- V4: long working-directory subtitles; V8: the agent badge ---
-# The first terminal prints text at its top-right edge, where the badge used to sit.
+# --- V4: long working-directory subtitles; V8: agent state in headers ---
+# The first terminal prints text at its top-right edge, where the badge used to
+# sit over it. Headers carry no badge now: the working tile's strip is all
+# title, the blocked one shows the blocked icon at its right end.
 core {"method":"terminal.send_text","params":{"text":"cd @DEEP@; @FX@/right.sh\n"}}
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@HOME@"}}}
 until tiles 2 5000
@@ -24,6 +26,8 @@ sh {herdr} --session {session} pane report-agent {pane:2} --source polish --agen
 wait 400
 sh {herdr} --session {session} pane report-agent {pane:2} --source polish --agent codex --state blocked
 until agents working,blocked!,none,none 5000
+expect tile.badge.setting off
+until header.agents none,blocked,none,none 2000
 wait 800
 shot 01-subtitles-badge
 key alt+h
@@ -31,6 +35,7 @@ key alt+h
 wait 300
 remember tile.header.subtitle
 remember tile.header.shown
+expect tile.header.inset 0
 
 # --- V9: a broken config: the banner ---
 sh cp {config} {config}.orig

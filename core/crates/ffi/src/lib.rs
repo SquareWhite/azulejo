@@ -501,7 +501,7 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
 /// The themes and the `[appearance]` choice, as JSON (docs/themes.md):
 /// `{"theme":"atom-one-dark"|"auto","theme_light":…,"theme_dark":…,
 /// "terminal_colors":"theme"|"ghostty","terminal_colors_set":false,
-/// "ghostty_sets_colors":false,"themes":[{"id","name","appearance",
+/// "ghostty_sets_colors":false,"tile_agent_badge":false,"themes":[{"id","name","appearance",
 /// "syntax","sidebar_material","builtin","path","inherits","colors":{token:
 /// "#rrggbb[aa]" | {"system","alpha"?,"hex"}},"terminal":{"background",…,
 /// "palette":[16],"ghostty":"<config lines>"}},…]}`. `terminal_colors` is
@@ -526,6 +526,7 @@ pub unsafe extern "C" fn azj_core_theme(core: *const AzjCore) -> *mut c_char {
         "terminal_colors": a.terminal_colors(&ghostty).name(),
         "terminal_colors_set": a.terminal_colors.is_some(),
         "ghostty_sets_colors": ghostty.sets_colors(),
+        "tile_agent_badge": a.tile_agent_badge,
         "themes": config.themes.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
     }))
 }
@@ -869,6 +870,7 @@ mod tests {
             assert_eq!(theme["theme_light"], "atom-one-light");
             assert_eq!(theme["terminal_colors"], "theme");
             assert_eq!(theme["terminal_colors_set"], false);
+            assert_eq!(theme["tile_agent_badge"], false, "off by default");
             let themes = theme["themes"].as_array().unwrap();
             assert_eq!(themes.len(), 4);
             assert_eq!(themes[0]["colors"]["window"], "#1b1d23");

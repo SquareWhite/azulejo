@@ -344,6 +344,13 @@ pub fn keys_template(platform: Platform) -> String {
     push_rows(&mut block, &rows);
     // `# # name = …` reads badly; these lines are already comments.
     out.push_str(&block);
+    out.push_str(
+        "\n# Agent state lives in the sidebar, rail, tab strip, ⌘K and Dock. Set this\n\
+         # to also show \"● claude · working\" in terminal tile headers (off, a\n\
+         # blocked tile still gets a yellow mark there). docs/themes.md.\n\
+         # [appearance]\n\
+         # tile_agent_badge = false\n",
+    );
     out
 }
 
@@ -523,6 +530,7 @@ mod tests {
             for (name, _) in names() {
                 assert!(text.contains(&format!("# {name} = ")), "{name} missing");
             }
+            assert!(text.contains("\n# tile_agent_badge = false\n"));
             let defaults = Config::defaults(platform);
             for ctx in std::iter::once(None).chain(KeyContext::ALL.into_iter().map(Some)) {
                 let a: std::collections::HashSet<_> = uncommented.keymap.bindings(ctx).collect();

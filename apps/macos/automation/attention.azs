@@ -25,9 +25,12 @@ expect tab.markers ●
 expect dock none
 shot 20-working
 
-# Blocked on a tile that isn't focused: red badge, border, counts, Dock badge.
+# Blocked on a tile that isn't focused: the header's blocked icon, border,
+# counts, Dock badge. Working showed nothing in the header.
+expect header.agents none,none
 sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state blocked
 until agents blocked!,none 3000
+expect header.agents blocked,none
 expect sidebar.markers ●1
 expect tab.markers ●1
 expect dock 1

@@ -1,5 +1,6 @@
 # B5: agent supervision. Four terminals; herdr reports one blocked, one
-# working, one idle. Every indicator must follow within 1 s. Then
+# working, one idle. Every indicator must follow within 1 s. Tile headers
+# carry no badge, only the blocked icon on blocked tiles. Then
 # subscription churn, tile.seen, and the working ring with motion on and off.
 log B5 agents
 delivery direct
@@ -27,6 +28,10 @@ until sidebar.footer working=0,blocked=1,idle=0,done=0 1000
 until dock 1 1000
 until tab.markers ●1 1000
 until sidebar.markers ●1 1000
+# Tile headers: no badge for working or idle agents; the blocked tile shows
+# the blocked icon alone (`[appearance] tile_agent_badge` is off).
+expect tile.badge.setting off
+expect header.agents blocked,none,none,none
 wait 300
 shot 01-blocked-working-idle
 # --- subscription churn: tiles come and go while states change ---
@@ -63,6 +68,8 @@ until agents blocked!,working,blocked,none 3000
 key alt+h
 until agents blocked,working,blocked,none 3000
 seen-visible off
+# Seen, still blocked: the header icon stays.
+expect header.agents blocked,none,blocked,none
 # --- working ring: turns while motion is on ---
 sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
 sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
