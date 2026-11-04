@@ -23,7 +23,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use azulejo_config::{Action, Chord, KeyOutcome, KeyRouter, Target};
-use azulejo_daemon::{App, HerdrChoice, Options};
+use azulejo_daemon::{App, GhosttyFiles, HerdrChoice, Options};
 use azulejo_herdr::Session as HerdrSession;
 use azulejo_protocol::{Command, Event, TileKind};
 use serde_json::{Value, json};
@@ -141,6 +141,9 @@ pub extern "C" fn azj_core_new() -> *mut AzjCore {
 /// optional; `null` turns the thing off):
 ///
 /// - `state_path`, `socket_path`, `config_path`: paths
+/// - `ghostty_config_path`: the one Ghostty config file to read the settings
+///   Azulejo shares with Ghostty from (a dev profile's; it may be missing),
+///   instead of Ghostty's default locations
 /// - `herdr`: `false` for no herdr
 /// - `herdr_session`: a session name, or `"default"` for herdr's own
 /// - `api_required`: fail instead of running without the API
@@ -182,6 +185,9 @@ fn parse_options(text: &str) -> Result<Options, String> {
             "state_path" => opts.state_path = path(v, key)?,
             "socket_path" => opts.socket_path = path(v, key)?,
             "config_path" => opts.config_path = path(v, key)?,
+            "ghostty_config_path" => {
+                opts.ghostty = path(v, key)?.map_or(GhosttyFiles::Off, GhosttyFiles::Only)
+            }
             "api_required" => {
                 opts.api_required = v.as_bool().ok_or("`api_required` must be a bool")?
             }
@@ -431,8 +437,12 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
 
 /// The current `[animation]` settings, as JSON: `{"enabled":true,
 /// "duration_ms":200,"curve":"ease_out","tab_switch":"fade",
-/// "dim_inactive":false,"reduce_motion":"system"}`. Follows config reloads.
-/// Free with `azj_string_free`; NULL on a bad handle.
+/// "reduce_motion":"system","unfocused_split_opacity":null,
+/// "unfocused_split_fill":null}`. The last two are Ghostty's settings for
+/// dimming unfocused splits (`0.15`–`1`, `"#rrggbb"`), `null` when its config
+/// doesn't set them; the shell dims unfocused tiles with them. Follows config
+/// reloads (Ghostty's file is read again each call). Free with
+/// `azj_string_free`; NULL on a bad handle.
 ///
 /// # Safety
 /// `core` must come from `azj_core_new*` and not be freed.
@@ -442,14 +452,19 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
         return std::ptr::null_mut();
     };
     let a = app.config().animation;
+    let ghostty = app.ghostty();
+    let fill = ghostty
+        .unfocused_split_fill
+        .map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b));
     out(json!({
         "enabled": a.enabled,
         "duration_ms": a.duration_ms,
         "curve": a.curve.name(),
         "style": a.style.name(),
         "tab_switch": a.tab_switch.name(),
-        "dim_inactive": a.dim_inactive,
         "reduce_motion": a.reduce_motion.name(),
+        "unfocused_split_opacity": ghostty.unfocused_split_opacity,
+        "unfocused_split_fill": fill,
     }))
 }
 
@@ -545,7 +560,7 @@ mod tests {
     }
 
     const IN_MEMORY: &CStr =
-        c"{\"state_path\":null,\"socket_path\":null,\"config_path\":null,\"herdr\":false}";
+        c"{\"state_path\":null,\"socket_path\":null,\"config_path\":null,\"ghostty_config_path\":null,\"herdr\":false}";
 
     #[test]
     fn commands_and_events_cross_the_c_abi() {
@@ -709,8 +724,37 @@ mod tests {
             assert_eq!(animation["style"], "crop");
             assert_eq!(animation["tab_switch"], "fade");
             assert_eq!(animation["reduce_motion"], "system");
+            assert_eq!(animation["unfocused_split_opacity"], Value::Null);
+            assert_eq!(animation["unfocused_split_fill"], Value::Null);
             azj_core_free(core);
         }
+    }
+
+    #[test]
+    fn ghostty_dimming_reaches_the_shell() {
+        let dir = std::env::temp_dir().join(format!("azj-ffi-gh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("config");
+        std::fs::write(
+            &file,
+            "unfocused-split-opacity = 0.6\nunfocused-split-fill = #102030\n",
+        )
+        .unwrap();
+        let options = json!({
+            "state_path": null, "socket_path": null, "config_path": null, "herdr": false,
+            "ghostty_config_path": file.display().to_string(),
+        })
+        .to_string();
+        let options = CString::new(options).unwrap();
+        unsafe {
+            let core = azj_core_new_with_options(options.as_ptr());
+            assert!(!core.is_null());
+            let animation = take(azj_core_animation(core));
+            assert_eq!(animation["unfocused_split_opacity"], 0.6);
+            assert_eq!(animation["unfocused_split_fill"], "#102030");
+            azj_core_free(core);
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

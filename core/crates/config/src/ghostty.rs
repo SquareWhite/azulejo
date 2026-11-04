@@ -1,6 +1,7 @@
-//! The small part of the user's Ghostty config the Linux VTE tile needs (step
-//! 3.2): fonts and colours. Read-only. On macOS libghostty reads the full
-//! config itself.
+//! The small part of the user's Ghostty config Azulejo reads itself: fonts
+//! and colours for the Linux VTE tile (step 3.2), and how unfocused splits
+//! dim, which both shells use for unfocused tiles. Read-only. On macOS
+//! libghostty reads the full config for the terminals themselves.
 //!
 //! Format: `key = value` lines, `#` comments, repeated keys allowed. An empty
 //! value resets a key to its default. `config-file = path` includes another
@@ -63,6 +64,12 @@ pub struct GhosttyConfig {
     pub selection_foreground: Option<Rgb>,
     /// ANSI palette overrides, index 0–255.
     pub palette: BTreeMap<u8, Rgb>,
+    /// `unfocused-split-opacity`, clamped to 0.15–1 as Ghostty does; `None`
+    /// when the config doesn't set it. 1 turns dimming off.
+    pub unfocused_split_opacity: Option<f64>,
+    /// `unfocused-split-fill`: the colour unfocused splits fade towards.
+    /// Hex only; Ghostty's X11 colour names are ignored with a warning.
+    pub unfocused_split_fill: Option<Rgb>,
     /// Files read, in order.
     pub files: Vec<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -94,12 +101,22 @@ pub fn default_paths(platform: Platform) -> Vec<PathBuf> {
 
 /// Reads the user's Ghostty config from its default locations.
 pub fn load(platform: Platform) -> GhosttyConfig {
+    load_from(&default_paths(platform))
+}
+
+/// Reads `paths` in order, as Ghostty reads its default files. A path that
+/// doesn't exist is skipped quietly (a dev profile's optional config).
+pub fn load_from(paths: &[PathBuf]) -> GhosttyConfig {
     let mut config = GhosttyConfig::default();
-    for path in default_paths(platform) {
-        config.read_file(&path, false, 0);
+    for path in paths {
+        config.read_file(path, true, 0);
     }
     config
 }
+
+/// Ghostty's lower bound for `unfocused-split-opacity`: 0 would hide a split
+/// altogether, so it clamps to 0.15.
+pub const UNFOCUSED_SPLIT_OPACITY_MIN: f64 = 0.15;
 
 /// Includes nest at most this deep, which also stops include cycles.
 const MAX_DEPTH: usize = 8;
@@ -171,16 +188,34 @@ impl GhosttyConfig {
                     }
                 }
                 "theme" => self.theme = (!value.is_empty()).then(|| value.to_string()),
+                "unfocused-split-opacity" => {
+                    if value.is_empty() {
+                        self.unfocused_split_opacity = None;
+                    } else {
+                        match value.parse::<f64>() {
+                            Ok(v) if v.is_finite() => {
+                                self.unfocused_split_opacity =
+                                    Some(v.clamp(UNFOCUSED_SPLIT_OPACITY_MIN, 1.0))
+                            }
+                            _ => warn(
+                                self,
+                                format!("unfocused-split-opacity `{value}` isn't a number"),
+                            ),
+                        }
+                    }
+                }
                 "background"
                 | "foreground"
                 | "cursor-color"
                 | "selection-background"
-                | "selection-foreground" => {
+                | "selection-foreground"
+                | "unfocused-split-fill" => {
                     let slot = match key {
                         "background" => &mut self.background,
                         "foreground" => &mut self.foreground,
                         "cursor-color" => &mut self.cursor_color,
                         "selection-background" => &mut self.selection_background,
+                        "unfocused-split-fill" => &mut self.unfocused_split_fill,
                         _ => &mut self.selection_foreground,
                     };
                     if value.is_empty() {
@@ -312,6 +347,53 @@ cursor-color = nonsense
         assert_eq!(config.cursor_color, None);
         assert_eq!(config.diagnostics.len(), 1);
         assert_eq!(config.diagnostics[0].location.unwrap().line, 11);
+    }
+
+    #[test]
+    fn unfocused_split_dimming() {
+        let path = Path::new("/tmp/config");
+        let config = GhosttyConfig::parse(
+            "unfocused-split-opacity = 0.6\nunfocused-split-fill = #101010\n",
+            path,
+        );
+        assert_eq!(config.unfocused_split_opacity, Some(0.6));
+        assert_eq!(config.unfocused_split_fill, Rgb::parse("101010"));
+        assert!(config.diagnostics.is_empty());
+
+        // Clamped as Ghostty does: 0.15 to 1.
+        let low = GhosttyConfig::parse("unfocused-split-opacity = 0\n", path);
+        assert_eq!(low.unfocused_split_opacity, Some(0.15));
+        let high = GhosttyConfig::parse("unfocused-split-opacity = 3\n", path);
+        assert_eq!(high.unfocused_split_opacity, Some(1.0));
+
+        // Unset, reset, junk.
+        let none = GhosttyConfig::parse("font-size = 12\n", path);
+        assert_eq!(none.unfocused_split_opacity, None);
+        let reset = GhosttyConfig::parse(
+            "unfocused-split-opacity = 0.5\nunfocused-split-opacity =\n",
+            path,
+        );
+        assert_eq!(reset.unfocused_split_opacity, None);
+        let junk = GhosttyConfig::parse(
+            "unfocused-split-opacity = dim\nunfocused-split-fill = red\n",
+            path,
+        );
+        assert_eq!(junk.unfocused_split_opacity, None);
+        assert_eq!(junk.unfocused_split_fill, None);
+        assert_eq!(junk.diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn load_from_skips_missing_files() {
+        let dir = std::env::temp_dir().join(format!("azj-ghostty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("config");
+        std::fs::write(&file, "unfocused-split-opacity = 0.8\n").unwrap();
+        let config = load_from(&[dir.join("missing"), file.clone()]);
+        assert_eq!(config.unfocused_split_opacity, Some(0.8));
+        assert!(config.diagnostics.is_empty());
+        assert_eq!(config.files, [file]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
