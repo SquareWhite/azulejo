@@ -389,7 +389,7 @@ fn run<P: HerdrPort>(
         }
         listeners.retain(|l| events.iter().all(|e| l.send(e.clone()).is_ok()));
         for (machine, effect) in link::effects(events, engine.session()) {
-            herdr.send(&machine, effect);
+            herdr.send(&machine, effect, engine.session());
         }
         herdr.follow_agents(engine.session());
         herdr.mirror(engine.session());
@@ -534,7 +534,9 @@ fn run<P: HerdrPort>(
             // let the engine do the rest.
             Msg::Command(Command::LayoutApply(p), reply) if p.path.is_some() => {
                 let result = layout_file_io::read(p).and_then(|p| {
+                    let before = mirror::arrangements(engine.session());
                     let outcome = engine.execute(Command::LayoutApply(p))?;
+                    herdr.authorise(&before, engine.session());
                     publish(
                         &engine,
                         &outcome.events,
@@ -571,7 +573,9 @@ fn run<P: HerdrPort>(
             Msg::Command(Command::WorkspaceCreate(mut p), reply) if p.machine.is_some() => {
                 let result = herdr.resolve(p.machine.as_deref()).and_then(|machine| {
                     p.machine = machine;
+                    let before = mirror::arrangements(engine.session());
                     let outcome = engine.execute(Command::WorkspaceCreate(p))?;
+                    herdr.authorise(&before, engine.session());
                     publish(
                         &engine,
                         &outcome.events,
@@ -590,11 +594,17 @@ fn run<P: HerdrPort>(
                     Command::TerminalRespawn(p) => engine.session().target(p.tile).ok(),
                     _ => None,
                 };
+                // A command is an Azulejo op: the tabs it rearranges may
+                // change herdr's structure (ADR 0012, amendment).
+                let before = mirror::arrangements(engine.session());
                 let result = engine.execute(command);
+                if result.is_ok() {
+                    herdr.authorise(&before, engine.session());
+                }
                 if let (Ok(_), Some(tile)) = (&result, respawn)
                     && let Some((machine, effect)) = link::respawn_effect(engine.session(), tile)
                 {
-                    herdr.send(&machine, effect);
+                    herdr.send(&machine, effect, engine.session());
                 }
                 if let Ok(outcome) = &result {
                     publish(
@@ -720,12 +730,12 @@ fn run<P: HerdrPort>(
                         .into_iter()
                         .partition(|e| matches!(e, Effect::Reresolve { .. }));
                     for effect in rest {
-                        herdr.send(&machine, effect);
+                        herdr.send(&machine, effect, engine.session());
                     }
                     herdr.check_bound(&machine, checks, link::Check::Connected);
                 } else {
                     for effect in reaction.effects {
-                        herdr.send(&machine, effect);
+                        herdr.send(&machine, effect, engine.session());
                     }
                 }
                 if reaction.survey {
@@ -794,7 +804,10 @@ fn run<P: HerdrPort>(
             }
             Msg::SetMirrorLayout(on) => herdr.set_mirror(on, engine.session()),
             Msg::SetLayoutPrefs(prefs) => {
+                // The config is Azulejo's too.
+                let before = mirror::arrangements(engine.session());
                 let events = engine.set_layout_prefs(prefs);
+                herdr.authorise(&before, engine.session());
                 if !events.is_empty() {
                     if let Some(saver) = &saver {
                         saver.schedule(engine.session().clone());
@@ -848,6 +861,12 @@ struct Links<P> {
     api_socket: String,
     /// `[herdr] mirror_layout` (ADR 0012), shared with every worker.
     mirror: Arc<AtomicBool>,
+    /// Each tab's latest Azulejo op (ADR 0012, amendment): bumped when a
+    /// command rearranges the tab or a terminal is made for it, and sent
+    /// with its targets. Only a push for an intent not yet carried out may
+    /// change the structure of the tab's herdr tab.
+    intents: std::cell::RefCell<HashMap<azulejo_model::TabId, u64>>,
+    clock: std::cell::Cell<u64>,
 }
 
 /// One machine's worker, event stream and agent subscription.
@@ -900,7 +919,36 @@ impl<P: HerdrPort> Links<P> {
             log,
             api_socket,
             mirror: Arc::new(AtomicBool::new(false)),
+            intents: Default::default(),
+            clock: Default::default(),
         }
+    }
+
+    /// An Azulejo op ran: every tab it rearranged (`before` is how they were
+    /// arranged, from [`mirror::arrangements`]) gets a new intent.
+    fn authorise(
+        &self,
+        before: &HashMap<azulejo_model::TabId, azulejo_model::Node>,
+        session: &azulejo_model::Session,
+    ) {
+        for (tab, now) in mirror::arrangements(session) {
+            if before
+                .get(&tab)
+                .is_none_or(|was| !mirror::same_arrangement(was, &now))
+            {
+                self.authorise_tab(tab);
+            }
+        }
+    }
+
+    fn authorise_tab(&self, tab: azulejo_model::TabId) {
+        let next = self.clock.get() + 1;
+        self.clock.set(next);
+        self.intents.borrow_mut().insert(tab, next);
+    }
+
+    fn intent(&self, tab: &azulejo_model::TabId) -> u64 {
+        self.intents.borrow().get(tab).copied().unwrap_or(0)
     }
 
     fn runtime(&mut self) -> &tokio::runtime::Runtime {
@@ -1119,14 +1167,19 @@ impl<P: HerdrPort> Links<P> {
 
     /// Queues herdr work on `machine`, once per tile for pane creation. A
     /// machine that isn't connected gets it when it connects (restore).
-    fn send(&self, machine: &Machine, effect: Effect) {
+    /// Making a terminal is Azulejo's op: its tab may be rearranged in herdr
+    /// to put the new pane in place (herdr always adds it second).
+    fn send(&self, machine: &Machine, effect: Effect, session: &azulejo_model::Session) {
         let Some(link) = self.links.get(machine) else {
             return;
         };
-        if let Effect::CreateTerminal { tile, .. } = &effect
-            && !link.creating.borrow_mut().insert(*tile)
-        {
-            return;
+        if let Effect::CreateTerminal { tile, .. } = &effect {
+            if !link.creating.borrow_mut().insert(*tile) {
+                return;
+            }
+            if let Ok(path) = session.locate(*tile) {
+                self.authorise_tab(session.ids_at(path).2);
+            }
         }
         let _ = link.effects_tx.send(effect);
     }
@@ -1161,7 +1214,7 @@ impl<P: HerdrPort> Links<P> {
         link.survey = SurveyState::Idle;
         if restore {
             for effect in link::restore_effects(engine.session(), machine) {
-                self.send(machine, effect);
+                self.send(machine, effect, engine.session());
             }
         }
         if again {
@@ -1190,15 +1243,21 @@ impl<P: HerdrPort> Links<P> {
             sent.retain(|tab, _| {
                 let keep = want.contains_key(tab);
                 if !keep {
-                    let _ = link.mirror_tx.send(MirrorMsg::Target(*tab, None));
+                    let _ = link.mirror_tx.send(MirrorMsg::Target {
+                        tab: *tab,
+                        target: None,
+                        intent: 0,
+                    });
                 }
                 keep
             });
             for (tab, target) in want {
                 if sent.get(&tab) != Some(&target) {
-                    let _ = link
-                        .mirror_tx
-                        .send(MirrorMsg::Target(tab, Some(Box::new(target.clone()))));
+                    let _ = link.mirror_tx.send(MirrorMsg::Target {
+                        tab,
+                        target: Some(Box::new(target.clone())),
+                        intent: self.intent(&tab),
+                    });
                     sent.insert(tab, target);
                 }
             }
@@ -1234,7 +1293,11 @@ impl<P: HerdrPort> Links<P> {
         } else {
             for link in self.links.values() {
                 for (tab, _) in std::mem::take(&mut *link.mirror_sent.borrow_mut()) {
-                    let _ = link.mirror_tx.send(MirrorMsg::Target(tab, None));
+                    let _ = link.mirror_tx.send(MirrorMsg::Target {
+                        tab,
+                        target: None,
+                        intent: 0,
+                    });
                 }
             }
         }

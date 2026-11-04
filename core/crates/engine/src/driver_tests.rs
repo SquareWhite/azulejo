@@ -53,6 +53,20 @@ struct FakeState {
     /// What runs in each pane, by pane ID. `None`: process info isn't
     /// supported (the poller stops).
     processes: Option<HashMap<String, herdr::ProcessInfo>>,
+    /// herdr's split tree per tab, for the layout mirror (ADR 0012).
+    trees: HashMap<String, herdr::LayoutNode>,
+    /// Every mirror push, in order.
+    pushes: Vec<herdr::MirrorTarget>,
+}
+
+fn tab_layout(tab: &str, root: &herdr::LayoutNode) -> herdr::TabLayout {
+    herdr::TabLayout {
+        workspace_id: herdr::WorkspaceId(tab.split(':').next().unwrap_or_default().into()),
+        tab_id: herdr::TabId(tab.into()),
+        zoomed: false,
+        focused_pane_id: root.first_pane().cloned(),
+        root: root.clone(),
+    }
 }
 
 #[derive(Clone, Default)]
@@ -337,6 +351,38 @@ impl HerdrPort for Fake {
             None => Err(crate::meta::UNSUPPORTED.into()),
             Some(map) => Ok(map.get(&pane_id).cloned().unwrap_or_default()),
         }
+    }
+
+    async fn layout_export(&self, tab: String) -> Result<herdr::TabLayout, String> {
+        let s = self.state();
+        s.trees
+            .get(&tab)
+            .map(|root| tab_layout(&tab, root))
+            .ok_or_else(|| format!("tab {tab} not_found"))
+    }
+
+    /// herdr as the push planner sees it: a target that may not restructure
+    /// and finds the panes arranged otherwise writes nothing.
+    async fn mirror(
+        &self,
+        target: herdr::MirrorTarget,
+    ) -> Result<herdr::MirrorOutcome, herdr::MirrorError> {
+        let mut s = self.state();
+        s.calls.push("mirror");
+        s.pushes.push(target.clone());
+        let tab = target.tab.clone().expect("a mirrored tab");
+        let Some(now) = s.trees.get(tab.as_str()).cloned() else {
+            return Err(herdr::MirrorError::TabGone(tab));
+        };
+        if !target.restructure && herdr::diverged(&now, &target.root) {
+            return Err(herdr::MirrorError::Diverged(tab_layout(tab.as_str(), &now)));
+        }
+        s.trees.insert(tab.0.clone(), target.root.clone());
+        Ok(herdr::MirrorOutcome {
+            layout: tab_layout(tab.as_str(), &target.root),
+            moved: Vec::new(),
+            writes: 1,
+        })
     }
 }
 
@@ -1989,4 +2035,115 @@ fn a_status_from_before_the_agent_subscription_went_live_still_arrives() {
     assert_eq!(agent_of(&s, tile).unwrap().status, AgentStatus::Blocked);
     assert_eq!(fake.mutations(), before, "reading statuses changes nothing");
     assert_eq!(terminals(&s).len(), 1, "and adopts nothing");
+}
+
+/// The herdr tree of the tab bound to herdr workspace `ws`, in pane IDs.
+fn herdr_tree_of(s: &Session, ws: &str) -> Option<herdr::LayoutNode> {
+    fn walk(s: &Session, n: &azulejo_model::Node) -> Option<herdr::LayoutNode> {
+        Some(match n {
+            azulejo_model::Node::Leaf { id } => match &s.tile(*id).ok()?.content {
+                TileContent::Terminal { herdr: Some(h), .. } => {
+                    herdr::LayoutNode::pane(h.pane_id.as_str())
+                }
+                _ => return None,
+            },
+            azulejo_model::Node::Split { axis, ratio, a, b } => herdr::LayoutNode::split(
+                match axis {
+                    azulejo_model::Axis::Horizontal => herdr::SplitDirection::Right,
+                    azulejo_model::Axis::Vertical => herdr::SplitDirection::Down,
+                },
+                *ratio,
+                walk(s, a)?,
+                walk(s, b)?,
+            ),
+        })
+    }
+    let w = s
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .find(|w| w.herdr_workspace.as_deref() == Some(ws))?;
+    walk(s, &w.tabs.first()?.root)
+}
+
+/// ADR 0012, amendment: herdr's structure changes only for an Azulejo op.
+/// A 2×2 grid made in herdr is adopted as it is and never pushed into
+/// another shape; when herdr's arrangement changes behind the core's back
+/// (an event lost, a change made while Azulejo was away), the tab follows
+/// herdr. Turning the tab in Azulejo does restructure herdr.
+#[test]
+fn herdrs_own_arrangement_is_followed_and_only_azulejo_ops_restructure_it() {
+    use crate::adopt::tests::{hdown, hp, hright, one_tab};
+    let same = |a: &herdr::LayoutNode, b: &herdr::LayoutNode| herdr::same_tree(a, b, 1e-4);
+    let grid = hright(
+        hdown(hp("w9:p1"), hp("w9:p3")),
+        hdown(hp("w9:p2"), hp("w9:p4")),
+    );
+    let fake = Fake::with_existing(one_tab(&["w9:p1", "w9:p2", "w9:p3", "w9:p4"], &grid));
+    fake.state().trees.insert("w9:t1".into(), grid.clone());
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    core.set_mirror_layout(true);
+
+    // Adopted in herdr's shape, and the pushes leave herdr alone.
+    wait_until(&core, |s| {
+        herdr_tree_of(s, "w9").is_some_and(|t| same(&t, &grid))
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.state().pushes.is_empty() {
+        assert!(Instant::now() < deadline, "no push");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    {
+        let s = fake.state();
+        assert!(s.pushes.iter().all(|p| !p.restructure), "{:?}", s.pushes);
+        assert!(same(&s.trees["w9:t1"], &grid));
+    }
+
+    // The columns swapped in herdr, and the core never heard: after a
+    // resync the push finds herdr arranged otherwise and the tab follows.
+    let swapped = hright(
+        hdown(hp("w9:p2"), hp("w9:p4")),
+        hdown(hp("w9:p1"), hp("w9:p3")),
+    );
+    fake.state().trees.insert("w9:t1".into(), swapped.clone());
+    let pushed = fake.state().pushes.len();
+    fake.send(herdr::StreamItem::Resync);
+    wait_until(&core, |s| {
+        herdr_tree_of(s, "w9").is_some_and(|t| same(&t, &swapped))
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    {
+        let s = fake.state();
+        assert!(s.pushes.len() > pushed, "a push was tried");
+        assert!(s.pushes.iter().all(|p| !p.restructure), "{:?}", s.pushes);
+        assert!(
+            same(&s.trees["w9:t1"], &swapped),
+            "herdr kept its arrangement"
+        );
+    }
+
+    // An Azulejo op: alt+o turns the tab, and herdr follows Azulejo.
+    let pushed = fake.state().pushes.len();
+    core.execute(Command::LayoutRotate(
+        azulejo_protocol::LayoutRotate::default(),
+    ))
+    .unwrap();
+    let turned = wait_until(&core, |s| {
+        herdr_tree_of(s, "w9").is_some_and(|t| !same(&t, &swapped))
+    });
+    let turned = herdr_tree_of(&turned, "w9").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        {
+            let s = fake.state();
+            if same(&s.trees["w9:t1"], &turned) {
+                assert!(s.pushes[pushed..].iter().any(|p| p.restructure));
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "herdr never turned");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    core.shutdown();
 }

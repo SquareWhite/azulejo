@@ -3,6 +3,8 @@
 Status: accepted · Nov 3, 2026 · M2 (PLAN 2.6, 2.7) · amends [0008](0008-use-the-users-herdr-session.md) · amended Nov 3, 2026: an exited shell closes its tile (see "Amendment") · amended by [0012](0012-mirror-layout-into-herdr.md)
 
 > Amended by ADR 0012 (Nov 4, 2026): `tab_closed` no longer closes the tiles bound there on the spot. herdr also closes a tab when its last pane moves to another, and reports `tab_closed` before that `pane_moved`, so the core checks each pane first (one `pane.list`): gone closes the tile, moved rebinds it. Layout changes made in herdr (resize, swap, zoom, a different tree) now come back too.
+>
+> Amended by ADR 0012's amendment (Nov 4, 2026, "only Azulejo changes herdr's structure"): placing split-off panes beside their sibling is only a first guess. The tab then takes herdr's own tree from the same survey, so a burst of splits seen half made still ends in herdr's shape, and a dynamic tab absorbs it or freezes to manual instead of having herdr rearranged.
 
 ## Context
 
