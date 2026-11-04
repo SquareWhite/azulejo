@@ -1,0 +1,97 @@
+# Visual polish captures for the e2e findings (V3–V6, V8, V9, V11), in-process.
+# polish.sh fills @FX@ (temp fixtures), @DEEP@ (a deep folder in it), @HOME@
+# (a long folder under the home folder) and @SITE@ (a local test page).
+log polish
+delivery direct
+seen-visible off
+window-size 1440 900
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+
+# --- V4: long working-directory subtitles; V8: the agent badge ---
+# The first terminal prints text at its top-right edge, where the badge used to sit.
+core {"method":"terminal.send_text","params":{"text":"cd @DEEP@; @FX@/right.sh\n"}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@HOME@"}}}
+until tiles 2 5000
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DEEP@/plan.md"}}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DEEP@"}}}
+until tiles 4 5000
+wait 3000
+sh {herdr} --session {session} pane report-agent {pane:1} --source polish --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:1} --source polish --agent claude --state working
+sh {herdr} --session {session} pane report-agent {pane:2} --source polish --agent codex --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:2} --source polish --agent codex --state blocked
+until agents working,blocked!,none,none 5000
+wait 800
+shot 01-subtitles-badge
+key alt+h
+key alt+h
+wait 300
+remember tile.header.subtitle
+remember tile.header.shown
+
+# --- V9: a broken config: the banner ---
+sh cp {config} {config}.orig
+sh printf '\nthis is [not toml\n' >> {config}
+until banner.shown yes 4000
+wait 600
+shot 02-config-banner
+sh cp {config}.orig {config}
+until banner.shown no 4000
+
+# --- V3: a new terminal's placeholder, mid-split in slow motion ---
+key cmd+shift+t
+until tabs 2 3000
+core {"method":"layout.set","params":{"kind":"manual"}}
+wait 1500
+anim duration 1500
+key ctrl+cmd+t
+capture 03-placeholder-a 250
+capture 03-placeholder-b 600
+wait 2500
+anim duration 200
+
+# --- V11 / V6: a failed load, then every kind at the minimum window ---
+key cmd+shift+t
+until tabs 3 3000
+core {"method":"layout.set","params":{"kind":"manual"}}
+wait 1000
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"files","root":"@DEEP@"}}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DEEP@/plan.md"}}}
+wait 2500
+key alt+h
+key alt+k
+wait 300
+core {"method":"browser.open","params":{"url":"https://example.invalid/path/to/page"}}
+wait 2500
+remember tile.url
+remember tile.address
+remember tile.banner
+shot 04-browser-failed
+window-size 480 320
+wait 1200
+shot 05-min-size-kinds
+window-size 1440 900
+wait 600
+
+# --- V5: twelve tabs ---
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+key cmd+shift+t
+until tabs 12 5000
+wait 1500
+remember tab.overflow
+shot 06-many-tabs
+key ctrl+1
+wait 800
+remember tab.overflow
+shot 07-many-tabs-first
