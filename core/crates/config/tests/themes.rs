@@ -8,7 +8,7 @@ use azulejo_config::theme::{
     self, Appearance, ColorValue, Rgba, TerminalColors, Theme, builtin, builtin_themes,
     color_tokens,
 };
-use azulejo_config::{Config, Platform, Severity, reload};
+use azulejo_config::{AppIcon, Config, Platform, Severity, reload};
 
 const MAC: Platform = Platform::Macos;
 
@@ -409,6 +409,38 @@ fn appearance_section() {
             .any(|e| e.contains("tile_agent_badge` must be true or false"))
     );
     assert!(!wrong.appearance.tile_agent_badge);
+
+    // The Dock icon: light unless the config says otherwise.
+    assert_eq!(
+        plain.appearance.app_icon,
+        AppIcon::Light,
+        "light by default"
+    );
+    for (name, icon) in [
+        ("light", AppIcon::Light),
+        ("dark", AppIcon::Dark),
+        ("auto", AppIcon::Auto),
+    ] {
+        let set = Config::from_toml(&format!("[appearance]\napp_icon = \"{name}\"\n"), None, MAC);
+        assert!(set.diagnostics.is_empty(), "{name}: {:?}", set.diagnostics);
+        assert_eq!(set.appearance.app_icon, icon);
+        assert_eq!(icon.name(), name);
+    }
+    for bad in ["\"system\"", "true", "1"] {
+        let wrong = Config::from_toml(&format!("[appearance]\napp_icon = {bad}\n"), None, MAC);
+        assert!(
+            messages(&wrong, Severity::Error).iter().any(
+                |e| e.contains("`appearance.app_icon` must be \"light\", \"dark\" or \"auto\"")
+            ),
+            "{bad}: {:?}",
+            wrong.diagnostics
+        );
+        assert_eq!(
+            wrong.appearance.app_icon,
+            AppIcon::Light,
+            "{bad} keeps the default"
+        );
+    }
 
     // auto follows the system, with the atom pair by default.
     let auto = Config::from_toml("[appearance]\ntheme = \"auto\"\n", None, MAC);

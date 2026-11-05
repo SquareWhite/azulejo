@@ -71,6 +71,21 @@ tile_agent_badge = true    # the badge in every agent tile's header (default fal
 
 On, every terminal with an agent shows its name and state at the right end of its header ("● codex · blocked"; just the dot in a narrow tile) instead of the blocked icon. It applies live when you save the config.
 
+## App icon
+
+The app icon comes in a light and a dark look ([docs/design/icon](design/icon/README.md)). Pick the one the Dock shows:
+
+```toml
+[appearance]
+app_icon = "light"   # the default: the light icon, always
+app_icon = "dark"    # the dark icon in the Dock while Azulejo runs
+app_icon = "auto"    # follows the system's light or dark appearance
+```
+
+`auto` follows macOS's own appearance setting, not the theme's. It applies live when you save the config.
+
+The setting only reaches the Dock, and only while Azulejo runs: the app hands the Dock its icon at run time. Finder, Launchpad, Spotlight and the Dock before launch always show the bundle's light icon. An icon that switches there by itself needs an `Assets.car` compiled by Xcode, which the build doesn't use.
+
 ## Previews
 
 Rendered markdown, Source mode and code previews follow the theme: Azulejo sets the page's CSS variables (`--azj-bg`, `--azj-fg`, …, mapped from colour tokens in tokens.json `webview`) and its syntax colours (`html[data-azj-syntax]`: One Dark, One Light, GitHub dark or GitHub light, built in the core from scope tables) before the page draws, and again on a theme change. Browser tiles show web pages as the site draws them; only their chrome (toolbar, address field, notices) follows the theme.
@@ -184,7 +199,7 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 ## Where it lives
 
 - `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `syntax`, `sidebarMaterial`, `color` and `terminal`), `webview` (CSS variables). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell (M3) reads the same file through `azulejo-config`.
-- `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
+- `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` and `app_icon` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
 - macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config and updates the previews. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
 
 ## Tests
@@ -192,4 +207,5 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 - `cargo test -p azulejo-config --test themes`: the built-ins (all four define every token; atom-one-dark keeps the mockup's values), user theme parsing, inheritance and validation, `[appearance]`, the terminal colour precedence, and WCAG AA contrast for every built-in (body text 4.5:1 and muted or secondary text 3:1 against each background they're drawn on, terminal text 4.5:1; `-- --nocapture` prints the table).
 - `python3 scripts/test_design_tokens.py` (in `just lint`): the generator's validation.
 - `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, the preview, ⌘K and the find bar in each capture. `--docs` writes the captures to `docs/design/theme-<id>.png`.
+- `AZJ_DEV_NAME=icn2 apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs`: `app_icon`'s three values and the default, live, with the app's own idea of the system appearance (`DockIcon.swift`).
 - `AZJ_ANIM_THEME=atom-one-light apps/macos/automation/anim.sh --slow`: layout motion in another theme (`outside.py` measures stray pixels against the window colour, so light themes count the same way).

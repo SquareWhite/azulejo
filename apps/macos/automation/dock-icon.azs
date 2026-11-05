@@ -1,19 +1,55 @@
-# The Dock icon follows dark mode (DockIcon.swift): the bundle's light
-# AppIcon.icns in light, AppIconDark.icns in dark. Switches NSApp.appearance
-# only; the system's appearance is never touched.
-#   AZJ_DEV_NAME=icn apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs --out .dev/icn/out
+# The Dock icon (DockIcon.swift) follows `[appearance] app_icon`: "light"
+# (the default) keeps the bundle's AppIcon.icns, "dark" hands the Dock
+# AppIconDark.icns, "auto" follows the system's light or dark appearance.
+# The system's appearance is never touched: `theme system light|dark` is the
+# app's own idea of it, and `appearance` sets NSApp.appearance only. Edits
+# the dev profile's config as a user would (the watcher reloads it) and puts
+# it back at the end.
+#   AZJ_DEV_NAME=icn2 apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs --out .dev/icn2/out
 
 log dock icon
-appearance light
-expect dockicon light
-dock-icon light
+sh cp {config} {config}.dock
+
+log === default: light, whatever the appearance
+theme system dark
 appearance dark
-expect dockicon dark
-dock-icon dark
-appearance light
 expect dockicon light
-dock-icon light-again
-appearance dark
+dock-icon default-dark-system
+
+log === auto follows the system
+sh printf '\n[appearance]\napp_icon = "auto"\n' >> {config}
+until dockicon dark 4000
+dock-icon auto-dark
+theme system light
+expect dockicon light
+dock-icon auto-light
+theme system dark
 expect dockicon dark
+# The app's own appearance (the theme's) doesn't move it.
+appearance light
+expect dockicon dark
+
+log === dark: dark even in light mode
+sh sed -i '' 's/^app_icon = .*/app_icon = "dark"/' {config}
+theme system light
+until dockicon dark 4000
+dock-icon dark-light-system
+
+log === light: light even in dark mode
+sh sed -i '' 's/^app_icon = .*/app_icon = "light"/' {config}
+theme system dark
+until dockicon light 4000
+dock-icon light-dark-system
+
+log === a bad value is an error: the config before it stays (auto, so dark)
+sh sed -i '' 's/^app_icon = .*/app_icon = "auto"/' {config}
+until dockicon dark 4000
+sh sed -i '' 's/^app_icon = .*/app_icon = "sepia"/' {config}
+wait 1500
+expect dockicon dark
+
+log === back to the profile's own config
+sh mv {config}.dock {config}
+until dockicon light 4000
+theme system real
 appearance system
-dock-icon system

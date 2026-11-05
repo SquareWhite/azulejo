@@ -349,7 +349,10 @@ pub fn keys_template(platform: Platform) -> String {
          # to also show \"● claude · working\" in terminal tile headers (off, a\n\
          # blocked tile still gets a yellow mark there). docs/themes.md.\n\
          # [appearance]\n\
-         # tile_agent_badge = false\n",
+         # tile_agent_badge = false\n\
+         # The Dock icon while Azulejo runs: \"light\", \"dark\" or \"auto\" (follows\n\
+         # the system). Finder always shows the light one.\n\
+         # app_icon = \"light\"\n",
     );
     out
 }
@@ -531,6 +534,17 @@ mod tests {
                 assert!(text.contains(&format!("# {name} = ")), "{name} missing");
             }
             assert!(text.contains("\n# tile_agent_badge = false\n"));
+            assert!(text.contains("\n# app_icon = \"light\"\n"));
+            // The `[appearance]` block uncommented gives the defaults too.
+            let appearance: String = text[text.find("\n# [appearance]\n").unwrap()..]
+                .lines()
+                .filter_map(|l| l.strip_prefix("# "))
+                .filter(|l| l.starts_with('[') || l.contains(" = "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let live = Config::from_toml(&appearance, None, platform);
+            assert!(live.diagnostics.is_empty(), "{:#?}", live.diagnostics);
+            assert_eq!(live.appearance, Config::defaults(platform).appearance);
             let defaults = Config::defaults(platform);
             for ctx in std::iter::once(None).chain(KeyContext::ALL.into_iter().map(Some)) {
                 let a: std::collections::HashSet<_> = uncommented.keymap.bindings(ctx).collect();
