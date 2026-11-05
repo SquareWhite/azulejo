@@ -264,13 +264,21 @@ extension TileContainerView {
     /// Tracking areas over every divider's zone, for the cursor and the
     /// hint; rebuilt whenever the tab or the container's size changes.
     func updateDividerTracking() {
-        for area in dividerAreas { removeTrackingArea(area) }
-        dividerAreas = dividers.map { d in
-            NSTrackingArea(rect: d.zone(slack: Self.dividerSlack),
-                           options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow],
-                           owner: self, userInfo: ["divider": d.path])
+        let all = dividers
+        // Most refreshes (a title, a header, focus) leave the dividers where
+        // they are: keep the areas, AppKit needn't recompute them.
+        let same = all.count == dividerAreas.count && zip(all, dividerAreas).allSatisfy { d, area in
+            area.rect == d.zone(slack: Self.dividerSlack) && area.userInfo?["divider"] as? String == d.path
         }
-        for area in dividerAreas { addTrackingArea(area) }
+        if !same {
+            for area in dividerAreas { removeTrackingArea(area) }
+            dividerAreas = all.map { d in
+                NSTrackingArea(rect: d.zone(slack: Self.dividerSlack),
+                               options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow],
+                               owner: self, userInfo: ["divider": d.path])
+            }
+            for area in dividerAreas { addTrackingArea(area) }
+        }
         if let hovered = hoveredDivider, dividerDrag == nil {
             let still = dividers.first { $0.path == hovered }
             if still == nil { hoverDivider(nil) } else { showDividerHint(still, dragging: false) }
