@@ -908,6 +908,21 @@ extension TerminalTileView: MotionAware {
         liveResize()
     }
 
+    func liveResizeTick() {
+        guard reflow != nil else { return }
+        liveResize()
+    }
+
+    /// Automation: the surface sits at the content's exact size (no live
+    /// resize pending, nothing held back).
+    var surfaceFitsTile: Bool {
+        guard let surface else { return true }
+        return surface.frame == bounds
+    }
+
+    /// Automation: the libghostty surface, for hit-test probes at its edges.
+    var surfaceView: NSView? { surface }
+
     func liveResizeDidEnd() {
         guard reflow != nil else { return }
         reflow = nil
