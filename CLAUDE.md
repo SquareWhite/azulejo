@@ -9,8 +9,16 @@ Rules for coding agents (Claude Code and its sub-agents). Several agents may wor
 - Screenshots: in-app captures (`shot`), or `screencapture -l <id>` of our own dev windows only. Nothing else on screen.
 - Don't change system appearance, restart the Dock or clear icon caches.
 - Don't read or write the general clipboard (the focus suite uses a private pasteboard), and don't touch the keychain.
-- Keep personal names, real hostnames, home paths and workstation details out of fixtures and documentation. Use fictional data. Never commit app or desktop captures, terminal dumps, logs, crash reports or local credentials.
 - Don't run `just release-mac`, `just release-notarize` or anything that submits to Apple without asking.
+
+## Privacy: every file and output
+
+- Treat personal identity, employer/client/project names, email addresses, usernames, home paths, real hosts, device identifiers, exact workstation specifications, local settings and credentials as private by default.
+- Keep private data out of source, fixtures, documentation, commit metadata/messages, screenshots, logs, generated artifacts, issue/PR text, releases and external messages. Access to local data is not permission to disclose it; disclosure requires explicit user authorization for the specific data and destination.
+- Use fictional examples, reserved domains such as `example.invalid`, and throwaway machine labels. Resolve user-specific paths at runtime rather than hard-coding them. Preserve intentional public project identifiers and required third-party attribution.
+- Minimize diagnostic output. Redact private values at the source; don't echo discovered values in tool output, progress reports or chat unless the user specifically requests them. Describe the category instead.
+- Never commit app or desktop captures, terminal dumps, local logs, crash reports or real credentials. Keep them in ignored local locations. Check generated artwork and attachments for visible text and embedded metadata before sharing.
+- Review the actual staged or outgoing content before committing or publishing; `.gitignore` and previous scans are not guarantees. If private data was already committed, report the exposure without repeating it. A current-file edit does not clean Git history; obtain explicit approval before rewriting history or force-pushing.
 
 ## herdr
 
