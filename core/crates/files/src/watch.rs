@@ -1,7 +1,11 @@
-//! Watches folders (not trees) under keys, debounced.
+//! Watches folders under keys, debounced.
 //!
 //! Each expanded folder is watched on its own, non-recursively, so a tile
 //! with three folders open costs three watches however big the repository is.
+//! A tree watch ([`DirWatcher::watch_tree`]) only says that something below
+//! a folder changed, for git status: on macOS that's one FSEvents path
+//! whatever the tree's size; elsewhere (inotify needs a watch per folder) it
+//! covers the folder itself only.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -15,10 +19,11 @@ use std::time::{Duration, Instant};
 use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
-/// Something changed in a watched folder.
+/// Something changed in a watched folder, or anywhere below a watched tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change {
-    /// The folder as the caller passed it to [`DirWatcher::watch`].
+    /// The folder as the caller passed it to [`DirWatcher::watch`] or
+    /// [`DirWatcher::watch_tree`].
     pub dir: PathBuf,
     /// An ignore file changed (`.gitignore`, `.ignore`) in this folder or
     /// above: what's visible may differ although no name did.
@@ -36,7 +41,19 @@ enum Msg {
 struct State<K> {
     /// Canonical folder → (key, folder as given).
     dirs: HashMap<PathBuf, Vec<(K, PathBuf)>>,
+    /// Canonical tree root → (key, folder as given).
+    trees: HashMap<PathBuf, Vec<(K, PathBuf)>>,
+    /// How each canonical folder is registered with `notify`.
+    registered: HashMap<PathBuf, RecursiveMode>,
 }
+
+/// How a tree registers with `notify`: recursive FSEvents costs one path
+/// however big the tree is; recursive inotify costs a watch per folder.
+const TREE_MODE: RecursiveMode = if cfg!(target_os = "macos") {
+    RecursiveMode::Recursive
+} else {
+    RecursiveMode::NonRecursive
+};
 
 #[derive(Default, Clone, Copy)]
 struct Pending {
@@ -63,6 +80,8 @@ where
     {
         let state = Arc::new(Mutex::new(State {
             dirs: HashMap::new(),
+            trees: HashMap::new(),
+            registered: HashMap::new(),
         }));
         let (tx, rx) = mpsc::channel();
         let fs_tx = tx.clone();
@@ -82,22 +101,34 @@ where
     /// Watches `dir` under `key`. Watching the same folder twice under one
     /// key is a no-op.
     pub fn watch(&mut self, key: K, dir: &Path) -> io::Result<()> {
+        self.add(false, key, dir)
+    }
+
+    /// Watches everything below `dir` under `key`, reporting any change in
+    /// the tree as a [`Change`] to `dir` itself (see the module docs for
+    /// platforms where that's `dir` only). [`unwatch_all`](Self::unwatch_all)
+    /// stops it.
+    pub fn watch_tree(&mut self, key: K, dir: &Path) -> io::Result<()> {
+        self.add(true, key, dir)
+    }
+
+    fn add(&mut self, tree: bool, key: K, dir: &Path) -> io::Result<()> {
         let canon = dir.canonicalize()?;
         let mut s = self.state.lock().expect("watch state");
-        let first = !s.dirs.contains_key(&canon);
-        if first {
-            self.notify
-                .watch(&canon, RecursiveMode::NonRecursive)
-                .map_err(io::Error::other)?;
+        let map = if tree { &mut s.trees } else { &mut s.dirs };
+        let keys = map.entry(canon.clone()).or_default();
+        if keys.iter().any(|(k, _)| *k == key) {
+            return Ok(());
         }
-        let keys = s.dirs.entry(canon).or_default();
-        if !keys.iter().any(|(k, _)| *k == key) {
-            keys.push((key, dir.to_path_buf()));
+        keys.push((key.clone(), dir.to_path_buf()));
+        if let Err(e) = register(&mut self.notify, &mut s, &canon) {
+            drop_key(&mut self.notify, &mut s, tree, &key, &canon);
+            return Err(e);
         }
         Ok(())
     }
 
-    /// Stops watching `dir` for `key`.
+    /// Stops watching the folder `dir` for `key` (a tree watch on it stays).
     pub fn unwatch(&mut self, key: &K, dir: &Path) {
         let state = self.state.clone();
         let mut s = state.lock().expect("watch state");
@@ -113,21 +144,23 @@ where
                 None => return,
             },
         };
-        drop_key(&mut self.notify, &mut s, key, &canon);
+        drop_key(&mut self.notify, &mut s, false, key, &canon);
     }
 
-    /// Stops every watch `key` has.
+    /// Stops every watch `key` has, trees included.
     pub fn unwatch_all(&mut self, key: &K) {
         let state = self.state.clone();
         let mut s = state.lock().expect("watch state");
-        let dirs: Vec<PathBuf> = s
-            .dirs
-            .iter()
-            .filter(|(_, keys)| keys.iter().any(|(k, _)| k == key))
-            .map(|(c, _)| c.clone())
-            .collect();
-        for canon in dirs {
-            drop_key(&mut self.notify, &mut s, key, &canon);
+        for tree in [false, true] {
+            let map = if tree { &s.trees } else { &s.dirs };
+            let dirs: Vec<PathBuf> = map
+                .iter()
+                .filter(|(_, keys)| keys.iter().any(|(k, _)| k == key))
+                .map(|(c, _)| c.clone())
+                .collect();
+            for canon in dirs {
+                drop_key(&mut self.notify, &mut s, tree, key, &canon);
+            }
         }
     }
 
@@ -148,17 +181,46 @@ where
 fn drop_key<K: PartialEq>(
     notify: &mut RecommendedWatcher,
     s: &mut State<K>,
+    tree: bool,
     key: &K,
     canon: &Path,
 ) {
-    let Some(keys) = s.dirs.get_mut(canon) else {
+    let map = if tree { &mut s.trees } else { &mut s.dirs };
+    let Some(keys) = map.get_mut(canon) else {
         return;
     };
     keys.retain(|(k, _)| k != key);
     if keys.is_empty() {
-        s.dirs.remove(canon);
+        map.remove(canon);
+        // Narrowing or dropping a registration can't fail in a way worth
+        // reporting: at worst notify had already forgotten the folder.
+        let _ = register(notify, s, canon);
+    }
+}
+
+/// Registers `canon` with `notify` as its watches need: recursively while
+/// any key watches it as a tree, else on its own, else not at all.
+fn register<K>(notify: &mut RecommendedWatcher, s: &mut State<K>, canon: &Path) -> io::Result<()> {
+    let want = if s.trees.contains_key(canon) {
+        Some(TREE_MODE)
+    } else if s.dirs.contains_key(canon) {
+        Some(RecursiveMode::NonRecursive)
+    } else {
+        None
+    };
+    let have = s.registered.get(canon).copied();
+    if want == have {
+        return Ok(());
+    }
+    if have.is_some() {
+        s.registered.remove(canon);
         let _ = notify.unwatch(canon);
     }
+    if let Some(mode) = want {
+        notify.watch(canon, mode).map_err(io::Error::other)?;
+        s.registered.insert(canon.to_path_buf(), mode);
+    }
+    Ok(())
 }
 
 impl<K> Drop for DirWatcher<K> {
@@ -219,7 +281,7 @@ fn debounce_loop<K, F>(
                         p.names |= names;
                     };
                     if event.need_rescan() {
-                        for keys in s.dirs.values() {
+                        for keys in s.dirs.values().chain(s.trees.values()) {
                             for (k, d) in keys {
                                 hit(k, d, true);
                             }
@@ -233,6 +295,14 @@ fn debounce_loop<K, F>(
                         for dir in parent.iter().chain(std::iter::once(path)) {
                             for (k, d) in lookup(&s, dir) {
                                 hit(&k, &d, rules);
+                            }
+                        }
+                        // Anything below a tree is a change to the tree.
+                        for (canon, keys) in &s.trees {
+                            if path.starts_with(canon) {
+                                for (k, d) in keys {
+                                    hit(k, d, false);
+                                }
                             }
                         }
                         // New ignore rules affect watched folders below too.

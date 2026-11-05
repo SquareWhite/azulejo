@@ -386,12 +386,21 @@ fn git_status_decorates_entries() {
     let events = core.subscribe();
     let tile = split_files(&core, &root);
     expand(&core, tile, None);
+    // The first status (clean) comes once the tile's watches are up; an
+    // edit before then could land between that read and the watches.
+    next(
+        &events,
+        Duration::from_secs(10),
+        |e| matches!(e, Event::FilesGit(g) if g.tile == tile && g.paths.is_empty()),
+    )
+    .expect("files.git for the clean tree");
+    // `src` isn't open: only the tree watch can see this edit.
     fs::write(root.join("src/main.rs"), "changed\n").unwrap();
     let main = root.join("src/main.rs").display().to_string();
     let src = root.join("src").display().to_string();
     let e = next(
         &events,
-        Duration::from_secs(5),
+        Duration::from_secs(10),
         |e| matches!(e, Event::FilesGit(g) if g.tile == tile && g.paths.contains_key(&main)),
     )
     .expect("files.git with the change");
