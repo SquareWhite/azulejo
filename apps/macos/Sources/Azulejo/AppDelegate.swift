@@ -76,9 +76,12 @@ final class AppController: NSObject, NSApplicationDelegate {
             // tiles move, they wait for the motion to end.
             self?.scheduleRefresh(event: true)
         }
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.scheduleRefresh() } }
+        // Coming to the front (or leaving it) starts or stops a read (F11).
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleRefresh() }
+            }
+        }
         installWakeObservers()
         refresh()
         if session?.windows.isEmpty ?? true {
@@ -254,7 +257,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func markSeen(_ session: SessionModel) {
-        AttentionTracker.markSeen(session, controllers: Array(controllers.values)) { send($0) }
+        AttentionTracker.markSeen(
+            session, controllers: Array(controllers.values), send: { send($0) },
+            again: { [weak self] in
+                guard let self, let session = self.session else { return }
+                self.markSeen(session)
+            })
     }
 
     /// `config.reloaded` (F25b): problems go in every window's banner; a clean
@@ -337,6 +345,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         keys.reset()
         controller.palette.close()
         controller.setStatus(nil)
+        // A read in progress there stops (F11).
+        scheduleRefresh()
     }
 
     /// The red button and close_window: closing the last window quits instead
