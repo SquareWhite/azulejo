@@ -114,6 +114,12 @@ final class WindowController: NSObject, NSWindowDelegate {
         palette.onShownChange = { [weak self] shown in self?.search.active = shown }
         tabBar.onAdd = { [weak app] in app?.perform(action: "new_tab") }
         tabBar.onMenu = { [weak self] id in self.flatMap { ContextMenus.tabMenu(id, in: $0) } }
+        // A tab dropped in a new place: the core's `tab.move`, as Move Left /
+        // Right in its menu.
+        tabBar.onMove = { [weak self, weak app] id, index in
+            guard let self, let app else { return }
+            app.perform(["command": ["method": "tab.move", "params": ["tab": id, "index": index]]], in: self)
+        }
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
         sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }

@@ -1,0 +1,161 @@
+# Top tabs: drag to reorder (Nov 5 feedback). Mouse events made in the app
+# and handed straight to the tabs (`tabdrag`), no OS input. Checks the click
+# threshold, a drop (order in the strip and in the core, the active tab
+# staying active, ctrl+number following the new order), Escape and a drop
+# away from the strip cancelling, a background tab's drag, and that the
+# right-click menu and the toolbar's hit targets still behave.
+# tabdrag.sh checks the herdr mirror stayed quiet across the drops.
+log top tabs: drag to reorder
+delivery direct
+until terminal.phase attached 10000
+menu answer one
+action rename_tab
+until tab.names one 3000
+action new_tab
+until tabs 2 5000
+menu answer two
+action rename_tab
+action new_tab
+until tabs 3 5000
+menu answer three
+action rename_tab
+until tab.names one|two|three 3000
+action switch_tab 1
+until tab 1 3000
+wait 1500
+expect tab.selected one
+expect chrome.hit.tab1 TabButton
+expect chrome.hit.toolbar ChromeLayoutView
+sh {herdr} --session {session} tab list >{out}/herdr-tabs-before.json
+
+# --- under the threshold: a click, not a drag ---
+tabdrag press 3
+expect tabdrag.phase pressed
+tabdrag move 2 1 2
+expect tabdrag.phase pressed
+expect tabdrag.lifted -
+expect tab.visual one|two|three
+tabdrag release
+until tab 3 3000
+expect tab.selected three
+expect tabdrag.phase idle
+expect tab.names one|two|three
+expect tab.session one|two|three
+action switch_tab 1
+until tab 1 3000
+wait 400
+
+# --- the active tab, dragged to the end: it stays active ---
+tabdrag mark drop-1
+tabdrag press 1
+tabdrag move 6 0 2
+expect tabdrag.phase dragging
+expect tabdrag.lifted one
+expect tabdrag.to 1
+expect tab.leftmost -
+# Slowed down: past tab 2's middle, tab 2 still sliding left under it.
+anim duration 2000
+tabdrag over 2 6
+expect tabdrag.to 2
+capture mid-slide 0
+wait 2000
+anim duration default
+tabdrag over 3 8
+expect tabdrag.to 3
+expect tab.visual two|three|one
+expect tab.leftmost two
+# Mid-drag: the lifted tab over the third slot, the others slid left.
+capture mid-drag 120
+wait 400
+tabdrag release
+expect tabdrag.phase idle
+expect tab.names two|three|one
+until tab.session two|three|one 3000
+expect tab 3
+expect tab.selected one
+wait 1500
+tabdrag mark drop-1-settled
+expect tabdrag.lifted -
+# ctrl+number (switch_tab N) follows the new order.
+action switch_tab 1
+until tab 1 3000
+expect tab.selected two
+action switch_tab 3
+until tab 3 3000
+expect tab.selected one
+wait 400
+
+# --- Escape puts everything back; the press doesn't select ---
+action switch_tab 1
+until tab 1 3000
+tabdrag press 2
+tabdrag over 3
+expect tabdrag.to 3
+expect tab.visual two|one|three
+key escape
+expect tabdrag.phase cancelled
+expect tabdrag.to -
+expect tab.visual two|three|one
+tabdrag release
+expect tabdrag.phase idle
+wait 400
+expect tab 1
+expect tab.selected two
+expect tab.session two|three|one
+
+# --- let go away from the strip: back where it was ---
+tabdrag press 3
+tabdrag over 1
+expect tabdrag.to 1
+tabdrag away
+expect tabdrag.phase outside
+expect tabdrag.to 3
+expect tab.visual two|three|one
+tabdrag release
+expect tabdrag.phase idle
+wait 400
+expect tab.names two|three|one
+expect tab.session two|three|one
+expect tab 1
+expect tab.selected two
+
+# --- a background tab, dragged to the front: the selection stays put ---
+tabdrag mark drop-2
+tabdrag press 3
+tabdrag over 1
+expect tabdrag.to 1
+tabdrag release
+until tab.session one|two|three 3000
+expect tab.names one|two|three
+expect tab 2
+expect tab.selected two
+wait 1500
+tabdrag mark drop-2-settled
+
+# --- motion off: same result, no slide ---
+anim enabled false
+tabdrag press 2
+tabdrag over 3
+expect tab.visual one|three|two
+tabdrag release
+until tab.session one|three|two 3000
+expect tab.selected two
+anim enabled default
+wait 400
+
+# --- the rest of the strip still behaves ---
+expect chrome.hit.tab1 TabButton
+expect chrome.hit.toolbar ChromeLayoutView
+expect chrome.fits yes
+menu tab 3 invoke Move Left
+until tab.session one|two|three 3000
+expect tab.names one|two|three
+menu answer uno
+menu tab 1 invoke Rename…
+until tab.names uno|two|three 3000
+tabdrag click 1
+until tab 1 3000
+expect tab.selected uno
+wait 2000
+sh {herdr} --session {session} tab list >{out}/herdr-tabs-after.json
+quit

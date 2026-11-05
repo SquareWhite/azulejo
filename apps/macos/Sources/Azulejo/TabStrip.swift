@@ -11,10 +11,22 @@ import AppKit
 /// past that width the tabs scroll sideways (trackpad, or the wheel), the
 /// edges with more tabs fade out, the selected tab scrolls into view, and
 /// "+" stays put at the end.
+///
+/// Drag to reorder (Nov 5 feedback): press a tab and move past
+/// `dragThreshold` and it lifts (filled, with a shadow) and follows the
+/// pointer along the strip while the others slide aside; letting go puts it
+/// there through the core's `tab.move`, so the API, the CLI and the saved
+/// session see the same order. Escape, or letting go away from the strip,
+/// puts everything back. A press that stays under the threshold is a plain
+/// click (it selects on mouse up, as before). The slides follow
+/// `[animation]` and Reduce Motion; near a faded edge of an overflowing
+/// strip the tabs scroll along.
 @MainActor
 final class TabStripView: NSView, ThemeAware {
     static let height = Design.Space.tabStripHeight
     var onSelect: ((String) -> Void)?
+    /// A dropped tab: its id and its new index in the workspace (`tab.move`).
+    var onMove: ((String, Int) -> Void)?
     /// "+": a new tab in the active workspace.
     var onAdd: (() -> Void)?
     /// A tab's right-click menu, by tab id (`ContextMenus.tabMenu`).
@@ -89,6 +101,12 @@ final class TabStripView: NSView, ThemeAware {
     var selectedHint: String { buttons.first { $0.selected }?.toolTip ?? "" }
 
     func apply(_ workspace: WorkspaceModel?) {
+        // Mid-drag the tabs stay as they are; the newest model goes in when
+        // the drag ends (`endDrag`).
+        if drag != nil {
+            deferred = .some(workspace)
+            return
+        }
         let tabs = workspace?.tabs ?? []
         let active = workspace?.tab?.id
         let rollups = tabs.map { AttentionStyle.Rollup($0.tiles) }
@@ -104,6 +122,7 @@ final class TabStripView: NSView, ThemeAware {
                 status: Self.status(rollup, hasAgent: Self.hasAgent(tab))
             ) { [weak self] in self?.onSelect?(tab.id) }
             button.menuProvider = { [weak self] in self?.onMenu?(tab.id) }
+            button.strip = self
             self.tabs.addSubview(button)
             return button
         }
@@ -153,6 +172,8 @@ final class TabStripView: NSView, ThemeAware {
         // are a ⌘K or ctrl+number away.
         if let selected = buttons.first(where: \.selected),
            room < min(Design.Space.tabFitMinWidth, selected.naturalWidth) {
+            // Nothing to reorder against any more.
+            if drag != nil { cancelDrag(animated: false) }
             selectedOnly = true
             for button in buttons { button.isHidden = button !== selected }
             let width = max(min(selected.naturalWidth, room), h)
@@ -173,14 +194,11 @@ final class TabStripView: NSView, ThemeAware {
         let total = widths.reduce(0, +) + gaps
         scroll.frame = NSRect(x: p, y: 0, width: min(total, room), height: bounds.height)
         tabs.frame = NSRect(x: 0, y: 0, width: total, height: bounds.height)
-        var x: CGFloat = 0
-        for (button, width) in zip(buttons, widths) {
-            button.frame = NSRect(x: x, y: y, width: width, height: h)
-            x += width + spacing
-        }
+        slotWidths = widths
+        for (button, frame) in slotFrames() { button.frame = frame }
         add.frame = NSRect(x: p + scroll.frame.width + (buttons.isEmpty ? 0 : spacing), y: y,
                            width: addWidth, height: h)
-        if revealSelected {
+        if revealSelected, drag == nil {
             revealSelected = false
             if let selected = buttons.first(where: \.selected) {
                 tabs.scrollToVisible(selected.frame.insetBy(dx: -Design.Space.tabFadeWidth, dy: 0))
@@ -235,6 +253,288 @@ final class TabStripView: NSView, ThemeAware {
     }
 
     @objc private func addClicked() { onAdd?() }
+
+    // MARK: Drag to reorder
+
+    /// How far the pointer moves (any direction) before a press on a tab
+    /// becomes a drag: a click that wobbles a little still just selects.
+    static let dragThreshold: CGFloat = 4
+    /// How far past the strip's edges a drop still lands in it; farther out,
+    /// the tabs go back to where they were and letting go cancels.
+    static let dropMargin = NSSize(width: 24, height: 18)
+    /// The lifted tab, faded while the pointer is away from the strip.
+    static let outsideAlpha: CGFloat = 0.5
+
+    /// A press on a tab, until mouse up.
+    private struct Press {
+        let button: TabButton
+        /// Where it went down, window coordinates.
+        let start: NSPoint
+        /// Escape cancelled its drag: mouse up neither drops nor selects.
+        var cancelled = false
+    }
+
+    /// A tab lifted and following the pointer.
+    private struct Drag {
+        let button: TabButton
+        /// Its index when it lifted, and where it would land now.
+        let from: Int
+        var to: Int
+        /// Pointer x minus the tab's left edge when it lifted, so it doesn't jump.
+        let grab: CGFloat
+        /// Its left edge in the tabs' coordinates (clamped to the strip).
+        var x: CGFloat = 0
+        /// The pointer is away from the strip: a drop there cancels.
+        var outside = false
+        /// The pointer, window coordinates (autoscroll moves the tab under it).
+        var pointer: NSPoint
+    }
+
+    private var press: Press?
+    private var drag: Drag?
+    /// Each tab's width at the last layout, in `buttons` order.
+    private var slotWidths: [CGFloat] = []
+    /// A model that arrived mid-drag (`apply`); `.some(nil)` is "no workspace".
+    private var deferred: WorkspaceModel??
+    private var autoscroll: Timer?
+
+    /// Where every tab sits: in `buttons` order, or with the dragged tab
+    /// moved to its landing index and drawn where the pointer has it.
+    private func slotFrames() -> [(TabButton, NSRect)] {
+        guard slotWidths.count == buttons.count else { return [] }
+        let h = Design.Space.tabHeight, y = (bounds.height - h) / 2
+        var order = Array(zip(buttons, slotWidths))
+        if let drag, let i = order.firstIndex(where: { $0.0 === drag.button }) {
+            let lifted = order.remove(at: i)
+            order.insert(lifted, at: min(drag.to, order.count))
+        }
+        var x: CGFloat = 0
+        return order.map { button, width in
+            defer { x += width + Design.Space.tabSpacing }
+            if let drag, button === drag.button {
+                return (button, NSRect(x: drag.x, y: y, width: width, height: h))
+            }
+            return (button, NSRect(x: x, y: y, width: width, height: h))
+        }
+    }
+
+    /// Moves every tab to its slot; the others slide unless motion is off.
+    /// The dragged tab follows the pointer at once (it's under the hand).
+    private func placeTabs(animated: Bool, alsoDragged: Bool = false) {
+        let frames = slotFrames()
+        let slide = animated && Motion.active && window != nil
+        let moving = frames.filter { button, frame in
+            (alsoDragged || button !== drag?.button) && button.frame != frame
+        }
+        if let drag, !alsoDragged, let frame = frames.first(where: { $0.0 === drag.button })?.1 {
+            drag.button.frame = frame
+        }
+        guard slide, !moving.isEmpty else {
+            for (button, frame) in moving { button.frame = frame }
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.slideDuration
+            context.timingFunction = Motion.timing
+            context.allowsImplicitAnimation = true
+            for (button, frame) in moving { button.animator().frame = frame }
+        }
+    }
+
+    /// The slide: quick and fixed, as Safari's (slowed with layout motion
+    /// for automation).
+    static var slideDuration: CFTimeInterval {
+        Motion.durationOverride.map { $0 * 0.9 } ?? Design.Motion.layout
+    }
+
+    /// Reordering needs another tab to reorder against, all of them on show.
+    private var canDrag: Bool { buttons.count > 1 && !selectedOnly }
+
+    fileprivate func tabPressed(_ button: TabButton, _ event: NSEvent) {
+        if drag != nil { return }
+        // ctrl-click is a right-click (its menu), never a drag.
+        guard !event.modifierFlags.contains(.control) else { press = nil; return }
+        press = Press(button: button, start: event.locationInWindow)
+    }
+
+    fileprivate func tabDragged(_ button: TabButton, _ event: NSEvent) {
+        guard let press, press.button === button, !press.cancelled else { return }
+        let point = event.locationInWindow
+        if drag == nil {
+            let dx = point.x - press.start.x, dy = point.y - press.start.y
+            guard canDrag, dx * dx + dy * dy >= Self.dragThreshold * Self.dragThreshold,
+                  let from = buttons.firstIndex(where: { $0 === button })
+            else { return }
+            let start = tabs.convert(press.start, from: nil)
+            drag = Drag(button: button, from: from, to: from, grab: start.x - button.frame.minX,
+                        x: button.frame.minX, pointer: point)
+            button.lifted = true
+        }
+        moveDrag(to: point)
+    }
+
+    /// Mouse up on a pressed tab: true when it was a drag (dropped or
+    /// cancelled), so the tab doesn't also select.
+    fileprivate func tabReleased(_ button: TabButton, _ event: NSEvent) -> Bool {
+        defer { press = nil }
+        if let drag, drag.button === button {
+            moveDrag(to: event.locationInWindow)
+            endDrag(commit: !(self.drag?.outside ?? true))
+            return true
+        }
+        return press?.button === button && press?.cancelled == true
+    }
+
+    /// The pointer moved to `point` (window coordinates) mid-drag.
+    private func moveDrag(to point: NSPoint) {
+        guard var drag else { return }
+        drag.pointer = point
+        let width = drag.button.frame.width
+        let p = tabs.convert(point, from: nil)
+        drag.x = min(max(0, p.x - drag.grab), max(0, tabs.bounds.width - width))
+        let zone = bounds.insetBy(dx: -Self.dropMargin.width, dy: -Self.dropMargin.height)
+        drag.outside = !zone.contains(convert(point, from: nil))
+        // Where the pointer has it, unclamped: pushing past either end of
+        // the strip takes it to that end, whatever the widths.
+        let to = drag.outside ? drag.from : landing(drag, middle: p.x - drag.grab + width / 2)
+        let reflow = to != drag.to || drag.outside != self.drag?.outside
+        drag.to = to
+        self.drag = drag
+        drag.button.alphaValue = drag.outside ? Self.outsideAlpha : 1
+        if reflow { placeTabs(animated: true) } else { placeTabs(animated: false) }
+        updateAutoscroll()
+    }
+
+    /// Where the dragged tab lands for where it is now: past a neighbour once
+    /// its middle crosses that neighbour's middle (where the neighbour sits
+    /// now, so a tab that just slid aside doesn't slide straight back).
+    private func landing(_ drag: Drag, middle: CGFloat) -> Int {
+        let spacing = Design.Space.tabSpacing
+        guard let i = buttons.firstIndex(where: { $0 === drag.button }), slotWidths.count == buttons.count
+        else { return drag.to }
+        let width = slotWidths[i]
+        var others = Array(slotWidths)
+        others.remove(at: i)
+        var x: CGFloat = 0, to = 0
+        for (j, w) in others.enumerated() {
+            // Its middle with the dragged tab before it (pushed right) or after it.
+            let shift = j >= drag.to ? width + spacing : 0
+            if middle > x + w / 2 + shift { to = j + 1 }
+            x += w + spacing
+        }
+        return to
+    }
+
+    /// Lets go of the dragged tab: into its landing spot (`onMove`) or, when
+    /// cancelled, back where it was. Either way it slides into place.
+    private func endDrag(commit: Bool, animated: Bool = true) {
+        guard let drag else { return }
+        autoscroll?.invalidate()
+        autoscroll = nil
+        var landed = drag
+        if !commit { landed.to = drag.from }
+        self.drag = nil
+        drag.button.alphaValue = 1
+        let moved = commit && landed.to != drag.from
+        if moved {
+            // The order the core will send back: the next refresh finds
+            // nothing new and the tabs stay as they are (no rebuild mid-slide).
+            let button = buttons.remove(at: drag.from)
+            buttons.insert(button, at: landed.to)
+            let width = slotWidths.remove(at: drag.from)
+            slotWidths.insert(width, at: landed.to)
+            if shown.indices.contains(drag.from) {
+                let entry = shown.remove(at: drag.from)
+                shown.insert(entry, at: min(landed.to, shown.count))
+            }
+        }
+        // Still on top while it settles.
+        placeTabs(animated: animated, alsoDragged: true)
+        let settle = animated && Motion.active ? Self.slideDuration : 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self, weak button = drag.button] in
+            guard let button, self?.drag?.button !== button else { return }
+            button.lifted = false
+        }
+        updateFade()
+        if moved {
+            onMove?(drag.button.tabID, landed.to)
+            deferred = nil
+        } else if let model = deferred {
+            deferred = nil
+            apply(model)
+        }
+    }
+
+    /// Escape mid-drag (KeyRouter): everything goes back; true when there
+    /// was a drag to cancel.
+    @discardableResult
+    func cancelDrag(animated: Bool = true) -> Bool {
+        guard drag != nil else { return false }
+        press?.cancelled = true
+        endDrag(commit: false, animated: animated)
+        return true
+    }
+
+    /// Near a faded edge of an overflowing strip, the tabs scroll under the
+    /// dragged one, faster the closer it gets.
+    private func updateAutoscroll() {
+        guard let drag, !drag.outside, tabs.frame.width > scroll.bounds.width + 0.5 else {
+            autoscroll?.invalidate()
+            autoscroll = nil
+            return
+        }
+        let x = scroll.convert(drag.pointer, from: nil).x
+        let edge = Design.Space.tabFadeWidth
+        let speed: CGFloat = x < edge ? -(edge - x) : x > scroll.bounds.width - edge ? x - (scroll.bounds.width - edge) : 0
+        guard speed != 0 else {
+            autoscroll?.invalidate()
+            autoscroll = nil
+            return
+        }
+        guard autoscroll == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.autoscrollTick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autoscroll = timer
+    }
+
+    private func autoscrollTick() {
+        guard let drag else { return }
+        let x = scroll.convert(drag.pointer, from: nil).x
+        let edge = Design.Space.tabFadeWidth
+        let depth = x < edge ? -(edge - x) : x > scroll.bounds.width - edge ? x - (scroll.bounds.width - edge) : 0
+        let clip = scroll.contentView
+        let maxX = max(0, tabs.frame.width - clip.bounds.width)
+        let step = max(-12, min(12, depth / 3))
+        let target = min(max(0, clip.bounds.minX + step), maxX)
+        guard step != 0, target != clip.bounds.minX else { return updateAutoscroll() }
+        clip.scroll(to: NSPoint(x: target, y: 0))
+        scroll.reflectScrolledClipView(clip)
+        moveDrag(to: drag.pointer)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { cancelDrag(animated: false) }
+    }
+
+    /// Automation: the drag's phase (`idle`, `pressed`, `dragging`,
+    /// `outside`, `cancelled`), where the lifted tab would land (1-based, or
+    /// `-`), and the tabs' names in the order they sit on screen: the others
+    /// by their frames (where they slid to), the lifted one where it would land.
+    var dragPhase: String {
+        if let drag { return drag.outside ? "outside" : "dragging" }
+        if let press { return press.cancelled ? "cancelled" : "pressed" }
+        return "idle"
+    }
+    var dragLanding: String { drag.map { "\($0.to + 1)" } ?? "-" }
+    var visualOrder: [String] {
+        var order = buttons.filter { $0 !== drag?.button }.sorted { $0.frame.minX < $1.frame.minX }
+        if let drag { order.insert(drag.button, at: min(drag.to, order.count)) }
+        return order.map(\.title)
+    }
+    var liftedTitle: String { buttons.first { $0.lifted }?.title ?? "-" }
 }
 
 /// The tabs' sideways scroller. A plain mouse wheel (vertical deltas only)
@@ -254,10 +554,23 @@ private final class TabScrollView: NSScrollView {
 }
 
 /// One tab in the strip: state icon and name, filled when selected. A
-/// right-click shows its menu without switching to it.
+/// right-click shows its menu without switching to it; a drag reorders
+/// (`TabStripView`, which gets its mouse events).
 @MainActor
 final class TabButton: NSView, ThemeAware, ContextMenuProviding {
     let status: Design.Status
+    let tabID: String
+    /// The strip that reorders it.
+    weak var strip: TabStripView?
+    /// Lifted by a drag: filled like the selected tab, with a shadow, over
+    /// the others.
+    var lifted = false {
+        didSet {
+            guard lifted != oldValue else { return }
+            layer?.zPosition = lifted ? 1 : 0
+            applyTheme()
+        }
+    }
     /// Automation: the rollup's marker text, as the sidebar shows it.
     let markerText: String
     private let handler: () -> Void
@@ -272,6 +585,7 @@ final class TabButton: NSView, ThemeAware, ContextMenuProviding {
          handler: @escaping () -> Void) {
         self.status = status
         self.selected = selected
+        tabID = tab.id
         self.handler = handler
         icon = StatusIconView(status) { Self.icon(status) }
         markerText = rollup.marker?.string ?? ""
@@ -295,7 +609,11 @@ final class TabButton: NSView, ThemeAware, ContextMenuProviding {
     }
 
     func applyTheme() {
-        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
+        layer?.backgroundColor = selected || lifted ? Design.Color.tabSelected.cgColor : nil
+        layer?.shadowColor = Design.Color.shadow.cgColor
+        layer?.shadowOpacity = lifted ? 0.28 : 0
+        layer?.shadowRadius = 4
+        layer?.shadowOffset = CGSize(width: 0, height: -1)
     }
 
     @available(*, unavailable)
@@ -362,12 +680,127 @@ final class TabButton: NSView, ThemeAware, ContextMenuProviding {
     override func hitTest(_ point: NSPoint) -> NSView? {
         frame.contains(point) ? self : nil
     }
-    override func mouseDown(with event: NSEvent) {}
+    /// A press selects on mouse up unless it became a drag (`TabStripView`).
+    override func mouseDown(with event: NSEvent) { strip?.tabPressed(self, event) }
+    override func mouseDragged(with event: NSEvent) { strip?.tabDragged(self, event) }
     override func mouseUp(with event: NSEvent) {
+        if strip?.tabReleased(self, event) == true { return }
         if bounds.contains(convert(event.locationInWindow, from: nil)) { handler() }
     }
     override var mouseDownCanMoveWindow: Bool { false }
     override func accessibilityPerformPress() -> Bool { handler(); return true }
     override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
     func contextMenu() -> NSMenu? { menuProvider?() }
+}
+
+/// `tabdrag …` in automation scripts: mouse events made with `NSEvent` and
+/// handed straight to a tab's own mouseDown / mouseDragged / mouseUp, as
+/// AppKit would deliver a real drag. Nothing goes through the window server
+/// and no other app sees anything.
+///
+///     tabdrag press N          mouse down in the middle of tab N (1-based)
+///     tabdrag move DX DY [S]   drag to the press point + (DX, DY), in S steps
+///     tabdrag over N [S]       drag until the lifted tab's middle passes tab
+///                              N's middle (where tab N sits now), in S steps
+///     tabdrag away [S]         drag 60 pt below the strip (outside it)
+///     tabdrag release          mouse up where the pointer is
+///     tabdrag click N          press and release without moving
+///     tabdrag mark TEXT        a line in the app log (to find a drop in it)
+///
+/// State: `tabdrag.phase` (idle, pressed, dragging, outside, cancelled),
+/// `tabdrag.to` (where the lifted tab would land, 1-based), `tabdrag.lifted`,
+/// `tab.visual` (names in the order the tabs sit on screen), `tab.selected`
+/// and `tab.session` (the session's order, from the core).
+@MainActor
+enum TabDragAutomation {
+    private static weak var button: TabButton?
+    private static var start = NSPoint.zero
+    private static var pointer = NSPoint.zero
+
+    static func run(_ arg: String, app: AppController?) -> String? {
+        guard let app, let controller = app.focusedController else { return "no window" }
+        let words = arg.split(separator: " ").map(String.init)
+        let strip = controller.tabStrip
+        let number = { (i: Int) in words.count > i ? Int(words[i]) : nil }
+        func tab(_ n: Int?) -> TabButton? {
+            guard let n, strip.tabButtons.indices.contains(n - 1) else { return nil }
+            return strip.tabButtons[n - 1]
+        }
+        func middle(_ tab: TabButton) -> NSPoint {
+            tab.convert(NSPoint(x: tab.bounds.midX, y: tab.bounds.midY), to: nil)
+        }
+        switch words.first ?? "" {
+        case "press", "click":
+            guard let target = tab(number(1)) else {
+                return "\(words[0]) needs a tab number (1–\(strip.tabButtons.count))"
+            }
+            button = target
+            start = middle(target)
+            pointer = start
+            send(.leftMouseDown, to: target, in: controller.window)
+            if words[0] == "click" { send(.leftMouseUp, to: target, in: controller.window) }
+        case "move":
+            guard words.count > 2, let dx = Double(words[1]), let dy = Double(words[2]) else {
+                return "move needs DX DY [steps]"
+            }
+            drag(to: NSPoint(x: start.x + dx, y: start.y + dy), steps: number(3) ?? 1, in: controller.window)
+        case "over":
+            guard let target = tab(number(1)), let lifted = button else { return "over needs a press and a tab number" }
+            // The pointer where the lifted tab's middle passes the target's:
+            // it keeps the offset it was grabbed at (the middle, by `press`).
+            let x = middle(target).x - middle(lifted).x + pointer.x
+            drag(to: NSPoint(x: x + (x > pointer.x ? 3 : -3), y: start.y), steps: number(2) ?? 6,
+                 in: controller.window)
+        case "away":
+            drag(to: NSPoint(x: pointer.x, y: start.y - 60), steps: number(1) ?? 4, in: controller.window)
+        case "release":
+            guard let lifted = button else { return "release needs a press" }
+            send(.leftMouseUp, to: lifted, in: controller.window)
+        case "mark":
+            app.log("tabdrag mark \(words.dropFirst().joined(separator: " "))")
+        default:
+            return "tabdrag needs press N|move DX DY [S]|over N [S]|away [S]|release|click N|mark TEXT"
+        }
+        return nil
+    }
+
+    private static func drag(to end: NSPoint, steps: Int, in window: NSWindow) {
+        guard let lifted = button else { return }
+        let from = pointer
+        let steps = max(1, steps)
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            pointer = NSPoint(x: from.x + (end.x - from.x) * t, y: from.y + (end.y - from.y) * t)
+            send(.leftMouseDragged, to: lifted, in: window)
+        }
+    }
+
+    private static func send(_ type: NSEvent.EventType, to view: TabButton, in window: NSWindow) {
+        guard let event = NSEvent.mouseEvent(
+            with: type, location: pointer, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+            pressure: type == .leftMouseUp ? 0 : 1)
+        else { return }
+        switch type {
+        case .leftMouseDown: view.mouseDown(with: event)
+        case .leftMouseDragged: view.mouseDragged(with: event)
+        default: view.mouseUp(with: event)
+        }
+    }
+
+    static func state(app: AppController, controller: WindowController) -> [String: String] {
+        let strip = controller.tabStrip
+        return [
+            "tabdrag.phase": strip.dragPhase,
+            "tabdrag.to": strip.dragLanding,
+            "tabdrag.lifted": strip.liftedTitle,
+            "tab.visual": strip.visualOrder.joined(separator: "|"),
+            "tab.selected": strip.tabButtons.first { $0.selected }?.title ?? "-",
+            // The tab at the strip's left edge, the lifted one aside (the
+            // others slid under it).
+            "tab.leftmost": strip.tabButtons.filter { !$0.lifted && $0.frame.minX < 0.5 }.first?.title ?? "-",
+            "tab.session": app.session?.window(controller.windowID)?.workspace?.tabs
+                .map(\.label).joined(separator: "|") ?? "-",
+        ]
+    }
 }
