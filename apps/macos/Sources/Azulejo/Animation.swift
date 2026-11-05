@@ -100,12 +100,12 @@ enum Motion {
     }
 
     /// The motion curve at `t` (0…1 of the time): how far along its path a
-    /// reflowing tile is. Core Animation's own curve, solved for x.
-    static func progress(_ t: Double) -> Double {
+    /// reflowing tile is. Core Animation's own curve (`f`, the configured
+    /// one by default), solved for x.
+    static func progress(_ t: Double, curve f: CAMediaTimingFunction = timing) -> Double {
         if t <= 0 { return 0 }
         if t >= 1 { return 1 }
         var c1: [Float] = [0, 0], c2: [Float] = [0, 0]
-        let f = timing
         f.getControlPoint(at: 1, values: &c1)
         f.getControlPoint(at: 2, values: &c2)
         let (x1, y1, x2, y2) = (Double(c1[0]), Double(c1[1]), Double(c2[0]), Double(c2[1]))
@@ -179,6 +179,16 @@ enum Motion {
     /// layout motion's length (slowed in step with it for automation).
     static var dimDuration: CFTimeInterval {
         durationOverride.map { $0 * 0.6 } ?? Design.Motion.focus
+    }
+
+    /// The ⌘K menu growing in and shrinking out: quick and fixed, whatever
+    /// the layout motion's length (slowed in step with it for automation).
+    /// On and off with `active` (`[animation]` and Reduce Motion).
+    static var paletteOpenDuration: CFTimeInterval {
+        durationOverride.map { $0 * 0.8 } ?? Design.Motion.paletteOpen
+    }
+    static var paletteCloseDuration: CFTimeInterval {
+        durationOverride.map { $0 * 0.55 } ?? Design.Motion.paletteClose
     }
 
     /// Whether layout changes animate right now.

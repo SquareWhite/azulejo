@@ -48,7 +48,8 @@ enum TileFocus {
         if let editor = responder as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
             view = field
         }
-        // A closing menu is hidden before it hands the keyboard back.
+        // A closing menu lets go of the keyboard (or is hidden) before it
+        // hands it back.
         if view.isHiddenOrHasHiddenAncestor { return false }
         var holds = view is NSTextView || view is NSTextField
         var current: NSView? = view
