@@ -20,6 +20,8 @@ import AppKit
 ///     wait 300               milliseconds
 ///     palette … / seen-visible … / sh …   see `ShellAutomation`
 ///     ime … / clip … / surface … / responder …   see `FocusAutomation`
+///     drop [@N] files|text|url|image|hover|leave …   a drop on a terminal
+///                            tile from a private pasteboard (`DropAutomation`)
 ///     shot name              PNG of the window's content → <out>/name.png
 ///     expect tiles 3         assert on the focused window's state; keys:
 ///                            windows workspaces workspace tabs tab tiles
@@ -135,6 +137,12 @@ final class Automation {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }
             record("\(parts[0]) \(arg)")
+        case "drop":
+            if let controller = app?.focusedController,
+               let problem = DropAutomation.run(arg, controller: controller, tab: focusedTab(controller)) {
+                failures.append("line \(step): drop \(arg): \(problem)")
+            }
+            record("drop \(arg)")
         case "action":
             let bits = arg.split(separator: " ").map(String.init)
             app?.perform(action: bits[0], index: bits.count > 1 ? Int(bits[1]) : nil)
@@ -574,6 +582,10 @@ final class Automation {
         poll()
     }
 
+    private func focusedTab(_ controller: WindowController) -> TabModel? {
+        app?.session?.window(controller.windowID)?.workspace?.tab
+    }
+
     // MARK: State
 
     private func state() -> [String: String] {
@@ -637,6 +649,7 @@ final class Automation {
         }
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(DropAutomation.state(controller: controller, tab: window.workspace?.tab)) { $1 }
         s.merge(SidebarAutomation.state(controller)) { $1 }
         s.merge(ThemeAutomation.state(controller)) { $1 }
         s.merge(MenuAutomation.state(app: app, controller: controller)) { $1 }

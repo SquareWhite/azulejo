@@ -182,6 +182,13 @@ Each journey runs on a fresh dev profile, driven in-process and through `azj`. E
 - A broken config with a badge and an open find bar: the banner takes its own row under the toolbar, the tiles move down, the bar keeps the keyboard.
 - With 14 tabs and at 480×320. Fixing the file removes the banner and the tile area (`chrome.tiles`) comes back to where it was.
 
+### N7. Drops on terminal tiles (added Nov 5)
+`apps/macos/automation/e2e/drop.sh` (dev instance `e2e-drop`, `run-all.sh` runs it as `drop`). Each drop is a private pasteboard handed to the tile's drag-destination methods; `pastecap.py` in the pane records the bytes that reach the PTY.
+- One file, a path with spaces, quotes, brackets, `$` and unicode, and several files: escaped absolute paths (Ghostty.app's escaping), space-separated, composed (NFC).
+- PNG, TIFF and web-page image data with no file: a PNG in `$TMPDIR/azulejo-drops` at the source's size, typed as its path.
+- Plain text, two lines of text and a URL, as they are; all of it with bracketed paste off and on.
+- The highlight while a drag hovers; a drag of a type no terminal takes is refused; the clipboard stays untouched; a drop on an unfocused tile focuses it.
+
 ## 4. Phase C: does it look right
 
 Compare against `docs/design/mockup-v1.png`, the region notes in `docs/design/README.md`, and D.9's `capture-v1.png` / `compare-v1.md`.
@@ -236,6 +243,7 @@ Things an agent can't check under the ground rules. Add anything else you hit al
 
 - [ ] Real typing feel and real IME (Japanese/Chinese input) in a terminal
 - [ ] System clipboard copy/paste, mouse selection and scroll wheel in terminals
+- [ ] Real drags onto a terminal tile: files from Finder, an image from Safari and Chrome, a screenshot thumbnail, a photo from Photos (promised file); then the pasted image path in Claude Code
 - [ ] Claude Code's interactive keys (shift+enter, esc-esc, ctrl+r) in a tile
 - [ ] Animations with the window in front on the ProMotion display (feel, not numbers)
 - [ ] Real sleep/wake reattach

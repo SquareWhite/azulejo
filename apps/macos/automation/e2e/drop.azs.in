@@ -1,0 +1,119 @@
+# Drops on terminal tiles (TerminalDrop). drop.sh fills @FX@ (fixtures, with
+# expect/<case>: what each drop should type), @HERE@ (e2e/) and @DROPS@ (the
+# app's folder for dropped images). pastecap.py in the pane records the bytes
+# that reach the PTY; drop-check.py compares them and empties the capture.
+log drop suite
+delivery direct
+seen-visible off
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+clip clear
+remember drop.dir
+
+log --- bracketed paste off
+sh {herdr} --session {session} pane run {pane} "python3 @HERE@/pastecap.py @FX@/cap.bin off 300"
+sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} 'pastecap ready'
+
+log === D01 one file: its escaped absolute path
+drop files @FX@/plain.txt
+expect drop.op dropped
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/single off
+
+log === D02 a path with spaces, quotes, brackets, $ and unicode: escaped as Ghostty.app does
+drop files @FX@/it's a "quoted" (file) & ünï 文件 $x [1].txt
+expect drop.op dropped
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/tricky off
+
+log === D03 several files: their paths, space-separated, in order
+drop files @FX@/plain.txt|@FX@/it's a "quoted" (file) & ünï 文件 $x [1].txt|@FX@/other file.md
+expect drop.op dropped
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/several off
+
+log === D04 image data with no file: a PNG in the app's drop folder, and its path
+drop image @FX@/shot.png
+expect drop.op dropped
+sh @HERE@/drop-check.py --image @FX@/cap.bin @DROPS@ @FX@/shot.png off
+
+log === D05 TIFF image data becomes a PNG too
+drop image @FX@/shot.tiff
+sh @HERE@/drop-check.py --image @FX@/cap.bin @DROPS@ @FX@/shot.png off
+
+log === D06 an image off a web page (data and its URL): the image, not the URL
+drop web-image @FX@/shot.tiff https://example.com/shot.tiff
+sh @HERE@/drop-check.py --image @FX@/cap.bin @DROPS@ @FX@/shot.png off
+
+log === D07 plain text, as it is
+drop text hello from a drop
+expect drop.op dropped
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/text off
+
+log === D07b text over two lines with bracketed paste off still arrives
+drop text line one\nline two
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/lines off
+
+log === D08 a URL, as text
+drop url https://example.com/a?b=1&c=2
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/url off
+
+log === D09 a drag that hovers shows the highlight, and loses it when it leaves
+drop hover files @FX@/plain.txt
+expect drop.op copy
+expect drop.highlight 1
+shot d09-drop-highlight
+drop leave
+expect drop.highlight none
+sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
+
+log === D10 a drag of something a terminal doesn't take (a tile, say): refused, no highlight
+drop hover custom tile
+expect drop.op none
+expect drop.highlight none
+drop custom tile
+expect drop.op refused
+sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
+
+log === D11 drops never touch the clipboard
+expect clipboard -
+
+log --- bracketed paste on
+key ctrl+c
+sh {herdr} --session {session} pane run {pane} "python3 @HERE@/pastecap.py @FX@/cap.bin on 300"
+sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} 'pastecap ready (bracketed on)'
+
+log === D12 one file, as a bracketed paste
+drop files @FX@/plain.txt
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/single on
+
+log === D13 several files, as one bracketed paste
+drop files @FX@/plain.txt|@FX@/it's a "quoted" (file) & ünï 文件 $x [1].txt|@FX@/other file.md
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/several on
+
+log === D14 image data, as a bracketed paste of its PNG's path
+drop image @FX@/shot.png
+sh @HERE@/drop-check.py --image @FX@/cap.bin @DROPS@ @FX@/shot.png on
+
+log === D15 text over two lines, as one bracketed paste
+drop text line one\nline two
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/lines on
+
+log --- two tiles
+key ctrl+c
+key ctrl+cmd+t
+until tiles 2 3000
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane:2} "python3 @HERE@/pastecap.py @FX@/cap2.bin off 300"
+sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane:2} 'pastecap ready'
+key alt+h
+until focus 1
+
+log === D16 a drop on an unfocused tile focuses it and types there
+drop @2 hover text dropped on tile two
+expect drop.highlight 2
+drop @2 text dropped on tile two
+expect drop.op dropped
+until focus 2
+until responder.focused yes
+expect responder terminal
+sh @HERE@/drop-check.py @FX@/cap2.bin @FX@/expect/focus off
+expect drop.highlight none
+key ctrl+c
