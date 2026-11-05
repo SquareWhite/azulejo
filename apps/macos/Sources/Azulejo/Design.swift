@@ -821,5 +821,7 @@ enum Design {
         static let tabSwitch: TimeInterval = 0.15
         static let outlineFade: TimeInterval = 0.08
         static let revealMax: TimeInterval = 0.25
+        static let paletteOpen: TimeInterval = 0.16
+        static let paletteClose: TimeInterval = 0.11
     }
 }

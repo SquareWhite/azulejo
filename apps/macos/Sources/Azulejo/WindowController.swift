@@ -178,7 +178,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     var describeChrome: String {
         let t = tiles.frame
         let container = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
-        return "container=\(container) card=\(content.describeSidebarCard ?? "-")"
+        return "container=\(container) card=\(content.describeSidebarCard ?? "-") "
+            + "palette=\(palette.motion.rawValue):\(palette.describeLook)"
     }
 
     /// Automation: the sidebar's and tab bar's attention markers.
@@ -541,7 +542,7 @@ final class ChromeLayoutView: NSView {
             attention.frame = rest
             attention.relayout(frames: container.visibleTileFrames())
         }
-        if let palette, !palette.isHidden {
+        if let palette, palette.isOpen {
             // D.8: a dropdown from the search field: right edges aligned, its
             // own field over the toolbar field.
             let anchor = search?.frame ?? NSRect(x: rest.maxX, y: rest.maxY, width: 0, height: 0)
@@ -794,7 +795,7 @@ extension WindowController {
         s["tab.hint"] = tabBar.selectedHint
         s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText
         s["search.active"] = search.active ? "yes" : "no"
-        if palette.isHidden {
+        if !palette.isOpen {
             s["palette.anchor"] = "-"
         } else {
             let p = palette.frame, f = search.frame

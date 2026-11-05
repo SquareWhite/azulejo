@@ -8,6 +8,8 @@ import AppKit
 ///     palette type TEXT            set the search text (as if typed)
 ///     palette key CHORD            hand a navigation key to the palette
 ///     palette close
+///     palette toggle N [MS]        ⌘K's open/close N times, MS apart (0: all in
+///                                  this turn), from the empty query
 ///     seen-visible on|off          treat background windows as on screen
 ///                                  (so focused tiles get `tile.seen`)
 ///     sh COMMAND                   run a shell command and wait; `{herdr}`,
@@ -20,6 +22,11 @@ import AppKit
 /// Keys: `palette` (closed / all / commands / jump / prompt:<id>), `palette.top`,
 /// `palette.topkind` (Command / Workspace / Tab / Terminal …), `palette.kinds`
 /// (the distinct kinds in the results), `palette.count`, `palette.selected`,
+/// `palette.motion` (none / opening / closing), `palette.visible` (on screen,
+/// a closing menu included), `palette.look` (scale@opacity as shown, `-`
+/// hidden), `palette.anims` (motion animations on its layer), `palette.typing`
+/// (its field takes the keys), `palette.open.ms` / `palette.close.ms` (how
+/// long the last finished grow / shrink took, `-` before one),
 /// `banner` (first line or `none`),
 /// `badges` (`ABCD=blocked!,…` or `none`: agent state on tiles), `agents`
 /// (each tile's agent in reading order: `blocked!,none`), `header.agents`
@@ -59,6 +66,21 @@ enum ShellAutomation {
                 controller.layoutChrome()
             case "close":
                 controller.palette.close()
+            case "toggle":
+                let bits = rest.split(separator: " ").compactMap { Int($0) }
+                guard let count = bits.first, count > 0 else { return "palette toggle N [MS]" }
+                let gap = Double(bits.count > 1 ? bits[1] : 0) / 1000
+                for i in 0..<count {
+                    if gap == 0 {
+                        app.openQuickOpen(in: controller)
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + gap * Double(i)) {
+                            [weak app, weak controller] in
+                            guard let app, let controller else { return }
+                            app.openQuickOpen(in: controller)
+                        }
+                    }
+                }
             case "select":
                 // A row by id (the theme picker's `theme:<id>`), as if
                 // arrowed to.
@@ -68,7 +90,7 @@ enum ShellAutomation {
                 // Fresh recents for a deterministic run (dev keys only).
                 guard PaletteStore.forgetDevRecents() else { return "palette forget is dev-only" }
             default:
-                return "palette open|type|key|close|forget"
+                return "palette open|type|key|close|toggle|select|forget"
             }
         case "seen-visible":
             AttentionTracker.assumeVisible = arg != "off"
@@ -134,6 +156,14 @@ enum ShellAutomation {
             s["palette"] = palette.isOpen ? palette.scope.rawValue : "closed"
         }
         s["palette.count"] = "\(palette.results.count)"
+        s["palette.motion"] = palette.motion.rawValue
+        s["palette.visible"] = palette.isHidden ? "no" : "yes"
+        s["palette.look"] = palette.describeLook
+        s["palette.anims"] = "\(palette.layer?.animationKeys()?.count ?? 0)"
+        let editor = palette.field.currentEditor()
+        s["palette.typing"] = editor != nil && controller.window.firstResponder === editor ? "yes" : "no"
+        s["palette.open.ms"] = palette.lastMotionMs[.opening].map(String.init) ?? "-"
+        s["palette.close.ms"] = palette.lastMotionMs[.closing].map(String.init) ?? "-"
         s["palette.index"] = palette.isOpen ? "\(palette.selected)" : "-"
         s["palette.top"] = palette.results.first?.item.title ?? "-"
         s["palette.topkind"] = palette.results.first?.item.kind.label ?? "-"

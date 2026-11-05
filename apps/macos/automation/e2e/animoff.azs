@@ -14,3 +14,12 @@ wait 600
 capture off-zoom-end 0
 wait 300
 anim stats off-stats
+# The ⌘K menu shows and hides at once too.
+key cmd+k
+expect palette all
+expect palette.motion none
+expect palette.visible yes
+expect palette.anims 0
+key escape
+expect palette closed
+expect palette.visible no

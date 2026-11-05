@@ -202,6 +202,7 @@ Compare against `docs/design/mockup-v1.png`, the region notes in `docs/design/RE
 - **C5. Appearance.** The theme is dark-only for now. Launch with the system set to light (through the app's own override or `-AppleInterfaceStyle`, never the system pref): nothing becomes unreadable.
 - **C6. Motion polish.** From the slow captures in B4: the focus dim cross-fades smoothly, tab switches fade, the sidebar slides in step with the tiles, and nothing flashes white or black between frames.
 - **C7. Focus dim** (`e2e/dim.sh`, Nov 4). Unfocused tiles dim and the focused one doesn't, nothing dims in zoom, Monocle or with one tile, ⌘K and the Files panel change nothing, the cross-fade is mid-way when slowed and instant with motion off; then the same with `unfocused-split-opacity` and `-fill` in the dev profile's Ghostty config. Checked on the captures' pixels.
+- **C8. ⌘K motion** (`e2e/palette-motion.sh`, Nov 5). The menu grows in (~160 ms) and shrinks out (~110 ms); typing, Esc, ⌘K and Enter mid-motion; rapid toggles end fully open or fully closed, with no animation left on the layer; motion off is instant; mid-motion captures in all four themes.
 
 Rate each finding **blocker**, **major**, **minor** or **designer question**.
 

@@ -69,6 +69,14 @@ struct PaletteItem {
 /// targets. Its keys are the keymap's `palette` context: the key router
 /// resolves them and calls `perform(keyAction:)`; plain typing goes to the
 /// field.
+///
+/// It grows in from its top centre (a little smaller and transparent) and
+/// shrinks back out, on its layer only (`Motion.paletteOpenDuration`,
+/// `paletteCloseDuration`); motion off or Reduce Motion, it just shows and
+/// hides. Open and closed are immediate either way: the field takes keys
+/// from the first frame, and a closing menu no longer counts as open (the
+/// router, clicks and the run that closed it go on at once) while it fades.
+/// An open or close mid-motion starts from where the menu shows.
 @MainActor
 final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
     /// What the current query lists, from its leading character.
@@ -135,6 +143,8 @@ final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
         layer?.shadowOpacity = Float(Design.Alpha.paletteShadow)
         layer?.shadowRadius = 18
         layer?.shadowOffset = CGSize(width: 0, height: -6)
+        // The shadow from a path (set in `layout`), not the content's alpha:
+        // nothing to re-render offscreen while the menu scales and fades.
 
         backdrop.material = .popover
         backdrop.blendingMode = .withinWindow
@@ -195,12 +205,14 @@ final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
         promptItem = nil
         field.stringValue = query
         field.placeholderString = Self.placeholder
+        let look = currentLook
         isHidden = false
         onShownChange?(true)
         refilter()
         window?.makeFirstResponder(field)
         field.currentEditor()?.moveToEndOfDocument(nil)
         installClickMonitor()
+        startMotion(.opening, from: look)
     }
 
     /// A list of its own (the theme picker): `items` in their order, the
@@ -230,11 +242,150 @@ final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
         listID = nil
         isOpen = false
         promptItem = nil
-        isHidden = true
+        // Still on screen while it shrinks: let go of the keyboard now, so
+        // the next key goes to the tile `onClose` focuses, not this field.
+        if let editor = field.currentEditor(), window?.firstResponder === editor {
+            window?.makeFirstResponder(nil)
+        }
+        startMotion(.closing, from: currentLook)
         onShownChange?(false)
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
         onClose?()
+    }
+
+    /// Closing, it's only a picture: clicks go to what's under it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isOpen ? super.hitTest(point) : nil
+    }
+
+    // MARK: Motion
+
+    enum MotionPhase: String { case none, opening, closing }
+
+    /// What the menu's layer is doing now.
+    private(set) var motion: MotionPhase = .none
+    /// Automation: how long the last finished open and close took, in ms.
+    private(set) var lastMotionMs: [MotionPhase: Int] = [:]
+    /// Each open and close bumps it; a motion that ends only tidies up if
+    /// it's still the latest.
+    private var motionGeneration = 0
+    /// The running motion: when it started (media time), how long it runs,
+    /// and the scale and opacity it started from.
+    private var motionStart: CFTimeInterval = 0
+    private var motionDuration: CFTimeInterval = 0
+    private var motionFrom: Look = (1, 1)
+    /// The bounds the running motion's transform was built for.
+    private var motionBounds: CGSize = .zero
+    private static let motionKey = "azj.palette"
+    /// How small (and transparent) it starts opening and ends closing.
+    static let restScale: CGFloat = 0.96
+
+    /// Grows in or shrinks out, from `look` (where it shows now; mid-motion,
+    /// part way). Motion off, or nothing to travel: shows or hides at once.
+    private func startMotion(_ phase: MotionPhase, from look: Look) {
+        motionGeneration += 1
+        layer?.removeAnimation(forKey: Self.motionKey)
+        let opening = phase == .opening
+        // How much of the way is left, by opacity.
+        let left = Double(opening ? 1 - look.opacity : look.opacity)
+        guard Motion.active, window != nil, layer != nil, left > 0.01 else {
+            motion = .none
+            if !opening { isHidden = true }
+            return
+        }
+        motion = phase
+        motionStart = CACurrentMediaTime()
+        motionFrom = look
+        motionDuration = max(0.03, left * (opening ? Motion.paletteOpenDuration : Motion.paletteCloseDuration))
+        applyMotion()
+        // Insurance: a layer that's never drawn may not report its
+        // animation's end; the motion ends on time regardless.
+        let generation = motionGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionDuration + 0.25) { [weak self] in
+            guard let self, generation == self.motionGeneration, self.motion != .none else { return }
+            self.endMotion()
+        }
+    }
+
+    typealias Look = (scale: CGFloat, opacity: Float)
+    private static let curve = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
+
+    /// Scale and opacity where the menu shows now, from the motion's own
+    /// clock (a motion added this turn hasn't reached the presentation yet).
+    private var currentLook: Look {
+        if isHidden { return (Self.restScale, 0) }
+        guard motion != .none, motionDuration > 0 else { return (1, 1) }
+        let p = Motion.progress((CACurrentMediaTime() - motionStart) / motionDuration, curve: Self.curve)
+        let to: Look = motion == .opening ? (1, 1) : (Self.restScale, 0)
+        return (motionFrom.scale + (to.scale - motionFrom.scale) * CGFloat(p),
+                motionFrom.opacity + (to.opacity - motionFrom.opacity) * Float(p))
+    }
+
+    /// (Re)adds the running motion's animation for the current bounds, as
+    /// far along as the clock says: the pivot follows the top centre when
+    /// the list changes height mid-open.
+    private func applyMotion() {
+        guard let layer, motion != .none else { return }
+        motionBounds = bounds.size
+        let opening = motion == .opening
+        let scale = CABasicAnimation(keyPath: "transform")
+        scale.fromValue = NSValue(caTransform3D: transform(scale: motionFrom.scale))
+        scale.toValue = NSValue(caTransform3D: opening ? CATransform3DIdentity : transform(scale: Self.restScale))
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = motionFrom.opacity
+        fade.toValue = opening ? 1 : 0
+        for part in [scale, fade] {
+            part.duration = motionDuration
+            part.timingFunction = Self.curve
+        }
+        let group = CAAnimationGroup()
+        group.animations = [scale, fade]
+        group.duration = motionDuration
+        let rate = Motion.refreshRate
+        group.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+        group.beginTime = layer.convertTime(motionStart, from: nil)
+        if !opening {
+            // Held at nothing until the end hides it.
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+        }
+        let generation = motionGeneration
+        group.delegate = MotionEnd { [weak self] finished in
+            guard let self, finished, generation == self.motionGeneration else { return }
+            self.endMotion()
+        }
+        layer.add(group, forKey: Self.motionKey)
+    }
+
+    private func endMotion() {
+        lastMotionMs[motion] = Int(((CACurrentMediaTime() - motionStart) * 1000).rounded())
+        if motion == .closing { isHidden = true }
+        motion = .none
+        layer?.removeAnimation(forKey: Self.motionKey)
+    }
+
+    /// Scales by `scale` about the top centre (the layer's transform turns
+    /// about its anchor point, in its superlayer's orientation: y up unless
+    /// the superview is flipped).
+    private func transform(scale: CGFloat) -> CATransform3D {
+        guard let layer else { return CATransform3DIdentity }
+        let a = layer.anchorPoint
+        let size = layer.bounds.size
+        let top: CGFloat = superview?.isFlipped == true ? 0 : 1
+        let pivot = CGPoint(x: size.width * (0.5 - a.x), y: size.height * (top - a.y))
+        var t = CATransform3DMakeScale(scale, scale, 1)
+        t.m41 = pivot.x * (1 - scale)
+        t.m42 = pivot.y * (1 - scale)
+        return t
+    }
+
+    /// Automation: scale and opacity as Core Animation shows them now
+    /// ("0.98@0.50"; hidden: "-").
+    var describeLook: String {
+        guard !isHidden, let layer else { return "-" }
+        let p = layer.presentation() ?? layer
+        return String(format: "%.2f@%.2f", p.transform.m11, p.opacity)
     }
 
     /// Clicking anywhere outside the palette closes it.
@@ -410,6 +561,11 @@ final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
 
     override func layout() {
         super.layout()
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Design.Radius.palette,
+                                   cornerHeight: Design.Radius.palette, transform: nil)
+        // Opening and the list changed height: the same motion, pivoting
+        // round the new top centre.
+        if motion != .none, bounds.size != motionBounds { applyMotion() }
         backdrop.frame = bounds
         let top = bounds.maxY
         if promptItem != nil {
@@ -555,5 +711,16 @@ final class PaletteListView: NSView {
         let maxOffset = max(0, rows.count - PaletteView.maxRows)
         offset = max(0, min(maxOffset, offset + delta))
         needsDisplay = true
+    }
+}
+
+/// A `CAAnimation` delegate that calls back once it stops (`finished`: it
+/// ran to its end, not removed or replaced). Core Animation calls it on the
+/// main thread.
+private final class MotionEnd: NSObject, CAAnimationDelegate, @unchecked Sendable {
+    private let done: @MainActor (Bool) -> Void
+    init(_ done: @escaping @MainActor (Bool) -> Void) { self.done = done }
+    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
+        MainActor.assumeIsolated { done(flag) }
     }
 }
