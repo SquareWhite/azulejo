@@ -1,0 +1,19 @@
+# The Dock icon follows dark mode (DockIcon.swift): the bundle's light
+# AppIcon.icns in light, AppIconDark.icns in dark. Switches NSApp.appearance
+# only; the system's appearance is never touched.
+#   AZJ_DEV_NAME=icn apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs --out .dev/icn/out
+
+log dock icon
+appearance light
+expect dockicon light
+dock-icon light
+appearance dark
+expect dockicon dark
+dock-icon dark
+appearance light
+expect dockicon light
+dock-icon light-again
+appearance dark
+expect dockicon dark
+appearance system
+dock-icon system

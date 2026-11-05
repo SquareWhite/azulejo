@@ -1,12 +1,16 @@
 // Draws Azulejo's app icon: eight candidates (A–H), nine minimal marks (I–Q)
 // in four styles, six woven marks (R–W) in seven, seven pinwheel marks (X,
-// X1–X6) grown from R at 32 px, the chosen one's dark and
-// tinted variants, the .iconset that scripts/icon/build.sh packs into
-// AppIcon.icns, a contact sheet and side-by-sides of the candidates and the
-// marks. Pure CoreGraphics, so it's reproducible on any Mac with the Command
-// Line Tools (docs/design/icon/README.md).
+// X1–X6) grown from R at 32 px, Y (the prompt key, the maintainer's own design) in
+// light, dark and clear, the chosen one's variants, the .iconsets that
+// scripts/icon/build.sh packs into AppIcon.icns and AppIconDark.icns, a
+// contact sheet and side-by-sides of the candidates and the marks. Pure
+// CoreGraphics, so it's reproducible on any Mac with the Command Line Tools
+// (docs/design/icon/README.md).
 //
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
+//   swift scripts/icon/draw.swift --iconset-dark DIR  # the same, dark look
+//   swift scripts/icon/draw.swift --key DIR       # prompt.png and prompt-vs-mockup.png (reads DIR/prompt-mockup.png)
+//   swift scripts/icon/draw.swift --composer DIR  # Y's layers as SVG, for Icon Composer
 //   swift scripts/icon/draw.swift --docs DIR      # everything below, plus candidates, variants, sheet.png, options.png
 //   swift scripts/icon/draw.swift --minimal DIR   # minimal.png only
 //   swift scripts/icon/draw.swift --woven DIR     # woven.png and woven-hero.png only
@@ -14,10 +18,11 @@
 //   swift scripts/icon/draw.swift --chosen DIR    # chosen.png only: the shipping icon beside Terminal and Notes
 //
 // Geometry follows Apple's macOS icon template: a 1024 px canvas, an 824 px
-// rounded square (continuous corners, radius 185.4) centred in it, fully
-// opaque inside, and the template's drop shadow (black 50 %, blur 28, 12 px
-// down) in the margin. macOS 26 clips icons of that shape with its own mask,
-// rather than shrinking them onto a grey "legacy" plate.
+// rounded square (continuous corners, radius 185.4; Y uses macOS 26's own
+// 214, `tahoeRadius`) centred in it, fully opaque inside, and the template's
+// drop shadow (black 50 %, blur 28, 12 px down) in the margin. macOS 26 clips
+// icons of that shape with its own mask, rather than shrinking them onto a
+// grey "legacy" plate.
 
 import AppKit
 import CoreGraphics
@@ -58,6 +63,9 @@ struct Palette {
   /// the pale wash some of them fill their petals with. Nil is one colour.
   var second: CGColor? = nil
   var fill: CGColor? = nil
+  /// The dark hairline inside the edge; nil is 0.10 on a multiplied glaze
+  /// and 0.18 otherwise.
+  var hairline: CGFloat? = nil
 }
 
 let tinGlaze = Palette(
@@ -300,30 +308,47 @@ enum Candidate: String, CaseIterable {
 }
 
 /// What ships: one of the candidates A–H, or a mark (I–X6) in one of the
-/// styles, e.g. `.mark(.woven, .glaze)`. the maintainer picked X, pinwheel, white on
-/// cobalt (docs/design/icon/README.md).
-let chosen: Icon = .mark(.pinwheel, .cobalt)
+/// styles, e.g. `.mark(.woven, .glaze)`, or `.key`. the maintainer picked X,
+/// pinwheel, white on cobalt (Nov 4, 2026), then drew Y himself (Nov 5);
+/// docs/design/icon/README.md.
+let chosen: Icon = .key
 
 enum Icon: Equatable {
   case candidate(Candidate)
   case mark(Mark, Style)
+  /// Y, the prompt key: the maintainer's own design, drawn in its three looks.
+  case key
 
   var title: String {
     switch self {
     case .candidate(let c): c.title
     case .mark(let m, let s): "\(m.letter) · \(m.name.lowercased()), \(s.name)"
+    case .key: "Y · prompt key"
     }
   }
   var palette: Palette {
     switch self {
     case .candidate(let c): c.palette
     case .mark(_, let s): s.palette
+    case .key: keyLook(.light).tile
     }
   }
   func image(_ p: Palette, px: Int) -> CGImage {
     switch self {
     case .candidate(let c): render(c, palette: p, px: px)
     case .mark(let m, let s): renderMark(m, palette: p, bleeds: s.bleeds, px: px)
+    case .key: renderKey(.light, px: px)
+    }
+  }
+  /// One appearance. Y draws its own dark and clear; the others recolour
+  /// with the shared `dark` palette, and clear falls back to the `tinted`
+  /// mono source.
+  func image(_ look: Look, px: Int) -> CGImage {
+    switch (self, look) {
+    case (.key, _): renderKey(look, px: px)
+    case (_, .light): image(palette, px: px)
+    case (_, .dark): image(dark, px: px)
+    case (_, .clear): image(tinted, px: px)
     }
   }
 }
@@ -1784,6 +1809,247 @@ func drawPinwheel(_ g: CGContext, _ ink: Inks, _ pen: Pen, _ mark: Mark) {
   weave(g, [pinwheelSpiral(pen)] + tiles, inks: [ink.second] + tiles.map { _ in ink.main }, pen, reach: (0.5, under))
 }
 
+// MARK: - Prompt key (Y)
+//
+// the maintainer's own design (Nov 5, 2026; prompt-mockup.png): a cream glaze tile
+// with a pale blue-grey key in the middle and a cobalt `>_` on the key. The
+// edge pattern tiles: every corner holds a quarter ring with a quarter dot
+// inside it, every edge midpoint a half dot. Lay four tiles side by side and
+// the corners make whole rings round whole dots, the edges whole dots. The
+// squircle's corner cuts the quarter dot away on the icon itself; the 2 × 2
+// check in prompt.png draws the tiles square, so the dots show there.
+//
+// Three looks: light (AppIcon.icns), dark (AppIconDark.icns, swapped in at
+// run time) and clear (review only; it needs Icon Composer to ship).
+
+/// The corner macOS 26 masks every app icon with. Fitted to what IconServices
+/// drew for our bundle on macOS 26: a continuous corner of radius 214 on
+/// the 824 px body (Apple's older template says 185.4). Drawing the tile with
+/// the same corner means the Dock shows the same outline whether it masks the
+/// bundle's icon itself or shows the image the app hands it at run time.
+let tahoeRadius: CGFloat = 214
+
+enum Look: String, CaseIterable {
+  case light, dark, clear
+}
+
+/// Y's geometry in tile units (the 824 px body spans -1...1), measured off
+/// the mockup: its tile is 219.5 px across, so one mockup pixel is 0.0091.
+enum KeyGeometry {
+  static let ringIn: CGFloat = 0.32  // corner ring, centred on the tile's corner
+  static let ringOut: CGFloat = 0.47
+  static let cornerDot: CGFloat = 0.16  // inside the ring; the squircle hides it
+  static let edgeDot: CGFloat = 0.10  // half dots at the edge midpoints
+  static let keyHalf: CGFloat = 0.515  // the key, a rounded square
+  static let keyRadius: CGFloat = 0.14
+  static let stroke: CGFloat = 0.146  // the prompt's weight, about the ring's
+  // `>`: two arms meeting at the apex, round caps and join; `_` level with
+  // the chevron's foot.
+  static let chevronX: CGFloat = -0.31
+  static let apexX: CGFloat = -0.064
+  static let armY: CGFloat = 0.237
+  static let barFrom: CGFloat = 0.064
+  static let barTo: CGFloat = 0.337
+}
+
+struct KeyLook {
+  var tile: Palette  // glaze gradient, shadow, sheen, rim, shade
+  var pocket: CGColor?  // glaze inside each corner ring, a shade lighter
+  var ring: CGColor
+  var dot: CGColor
+  var keyTop: CGColor
+  var keyBottom: CGColor
+  var keyShadow: CGFloat
+  var keyRim: CGColor  // hairline catching the light along the key's top
+  var glyph: CGColor
+  /// The mockup's top-left glare on the pattern: the ring in that corner and
+  /// the top dot come out paler.
+  var glare: CGFloat
+}
+
+func keyLook(_ look: Look) -> KeyLook {
+  switch look {
+  case .light:
+    KeyLook(
+      tile: Palette(
+        groundTop: rgb(0xFEFDFB), groundBottom: rgb(0xEAE3D3),
+        ink: rgb(0x1F4AA8), line: rgb(0x1F4AA8), wash: rgb(0xD3D7E1), grout: rgb(0xD8D2C4),
+        multiply: false, sheen: 0.35, shadow: 0.5, rim: 0.8, shade: 0.12, hairline: 0.07),
+      pocket: rgb(0xFFFFFF, 0.55), ring: rgb(0x1F4AA8, 0.5), dot: rgb(0x1F4AA8),
+      keyTop: rgb(0xD9DDE9), keyBottom: rgb(0xC9CDD6), keyShadow: 0.14,
+      keyRim: rgb(0xFFFFFF, 0.55), glyph: rgb(0x1F4AA8), glare: 0.5)
+  case .dark:
+    KeyLook(
+      tile: Palette(
+        groundTop: rgb(0x30343E), groundBottom: rgb(0x121419),
+        ink: rgb(0x849BCF), line: rgb(0x849BCF), wash: rgb(0x343A49), grout: rgb(0x0C0D11),
+        multiply: false, sheen: 0.3, shadow: 0.6, rim: 0.45, shade: 0.4),
+      pocket: rgb(0x000000, 0.12), ring: rgb(0x849BCF, 0.5), dot: rgb(0x849BCF),
+      keyTop: rgb(0x3C4152), keyBottom: rgb(0x2A2F3D), keyShadow: 0.35,
+      keyRim: rgb(0xFFFFFF, 0.1), glyph: rgb(0x8AA1D4), glare: 0.12)
+  case .clear:
+    KeyLook(
+      tile: Palette(
+        groundTop: rgb(0x8C8F98, 0.82), groundBottom: rgb(0x4C505B, 0.82),
+        ink: rgb(0xFFFFFF), line: rgb(0xFFFFFF), wash: rgb(0xFFFFFF, 0.14), grout: rgb(0x3A3D45),
+        multiply: false, sheen: 0.4, shadow: 0.45, rim: 0.9, shade: 0.2),
+      pocket: rgb(0xFFFFFF, 0.06), ring: rgb(0xFFFFFF, 0.42), dot: rgb(0xFFFFFF, 0.85),
+      keyTop: rgb(0xFFFFFF, 0.2), keyBottom: rgb(0xFFFFFF, 0.1), keyShadow: 0.2,
+      keyRim: rgb(0xFFFFFF, 0.3), glyph: rgb(0xFFFFFF), glare: 0.25)
+  }
+}
+
+/// Y's prompt, `>_`, as one fillable outline, in tile units. Below 32 px it
+/// gets bolder so it stays at least ~1.6 px wide.
+func keyPrompt(px: Int) -> CGPath {
+  typealias K = KeyGeometry
+  let unit = 412 * CGFloat(px) / 1024  // pixels per tile unit
+  let w = max(K.stroke, 1.6 / unit)
+  let h = w / 2
+  // The chevron's outline by hand: round caps, but a near-sharp point at the
+  // apex, as in the mockup (a round join stops 0.03 short of its tip).
+  let a = CGPoint(x: K.chevronX, y: K.armY)
+  let v = CGPoint(x: K.apexX, y: 0)
+  let b = CGPoint(x: K.chevronX, y: -K.armY)
+  func direction(_ p: CGPoint, _ q: CGPoint) -> CGPoint {
+    let d = hypot(q.x - p.x, q.y - p.y)
+    return CGPoint(x: (q.x - p.x) / d, y: (q.y - p.y) / d)
+  }
+  let u1 = direction(a, v)
+  let u2 = direction(v, b)
+  let n1 = CGPoint(x: -u1.y, y: u1.x)  // the outer side of each arm
+  let n2 = CGPoint(x: -u2.y, y: u2.x)
+  let k = h / (1 + n1.x * n2.x + n1.y * n2.y)  // miter offset along n1 + n2
+  let outer = CGPoint(x: v.x + k * (n1.x + n2.x), y: v.y + k * (n1.y + n2.y))
+  let inner = CGPoint(x: v.x - k * (n1.x + n2.x), y: v.y - k * (n1.y + n2.y))
+  let p = CGMutablePath()
+  p.move(to: CGPoint(x: a.x - n1.x * h, y: a.y - n1.y * h))
+  p.addLine(to: inner)
+  p.addLine(to: CGPoint(x: b.x - n2.x * h, y: b.y - n2.y * h))
+  p.addArc(center: b, radius: h, startAngle: atan2(-n2.y, -n2.x), endAngle: atan2(n2.y, n2.x), clockwise: false)
+  p.addArc(tangent1End: outer, tangent2End: CGPoint(x: a.x + n1.x * h, y: a.y + n1.y * h), radius: 0.5 * h)
+  p.addLine(to: CGPoint(x: a.x + n1.x * h, y: a.y + n1.y * h))
+  p.addArc(center: a, radius: h, startAngle: atan2(n1.y, n1.x), endAngle: atan2(-n1.y, -n1.x), clockwise: false)
+  p.closeSubpath()
+  p.addPath(strokeShape([CGPoint(x: K.barFrom, y: -K.armY), CGPoint(x: K.barTo, y: -K.armY)], w))
+  return p
+}
+
+/// The edge pattern alone: corner rings and dots, edge half dots. Drawn on
+/// the tile's square, so whatever clips it decides how much shows.
+func drawKeyPattern(_ g: CGContext, _ k: KeyLook, px: Int) {
+  typealias K = KeyGeometry
+  g.beginTransparencyLayer(auxiliaryInfo: nil)
+  for c in corners {
+    if let pocket = k.pocket { g.fill(disc(c, K.ringIn), pocket) }
+    let band = CGMutablePath()
+    band.addPath(disc(c, K.ringOut))
+    band.addPath(disc(c, K.ringIn))
+    g.setFillColor(k.ring)
+    g.addPath(band)
+    g.fillPath(using: .evenOdd)
+    g.fill(disc(c, K.cornerDot), k.dot)
+  }
+  // The half dots are 1.3 px across at 32 px and a smudge at 16: from 32 px
+  // down the rings carry the pattern alone, as in the mockup's Dock row.
+  if px > 32 {
+    for m in edgeMids { g.fill(disc(m, K.edgeDot), k.dot) }
+  }
+  if k.glare > 0 {
+    g.setBlendMode(.sourceAtop)
+    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+    g.drawRadialGradient(
+      CGGradient(
+        colorsSpace: cs,
+        colors: [rgb(0xFFFFFF, k.glare * 1.1), rgb(0xFFFFFF, k.glare * 0.9), rgb(0xFFFFFF, 0)] as CFArray,
+        locations: [0, 0.5, 1])!,
+      startCenter: CGPoint(x: -0.55, y: 1.05), startRadius: 0, endCenter: CGPoint(x: -0.55, y: 1.05), endRadius: 1,
+      options: [])
+    g.setBlendMode(.normal)
+  }
+  g.endTransparencyLayer()
+}
+
+/// Y at 16 px, set in whole pixels: an 8 × 8 key and a one-pixel prompt.
+/// Drawn to scale, the prompt's 1 px strokes ran together into a blob.
+func drawKey16(_ g: CGContext, _ k: KeyLook) {
+  let u: CGFloat = 412 * 16 / 1024  // pixels per tile unit
+  // A pixel's square in tile units; col and row count from the top left.
+  func px(_ col: Int, _ row: Int, w: Int = 1) -> CGRect {
+    CGRect(x: (CGFloat(col) - 8) / u, y: (8 - CGFloat(row) - 1) / u, width: CGFloat(w) / u, height: 1 / u)
+  }
+  let key = CGRect(x: -4 / u, y: -4 / u, width: 8 / u, height: 8 / u)
+  g.fill(CGPath(roundedRect: key, cornerWidth: 1.2 / u, cornerHeight: 1.2 / u, transform: nil), k.keyBottom)
+  g.setFillColor(k.glyph)
+  // >
+  for (col, row) in [(5, 5), (6, 6), (7, 7), (6, 8), (5, 9)] { g.fill(px(col, row)) }
+  // _
+  g.fill(px(8, 9, w: 3))
+}
+
+/// The key and its prompt.
+func drawKey(_ g: CGContext, _ k: KeyLook, px: Int) {
+  typealias K = KeyGeometry
+  if px <= 16 { return drawKey16(g, k) }
+  let s = CGFloat(px) / 1024
+  let unit = 412 * s
+  let key = squircle(CGRect(x: -K.keyHalf, y: -K.keyHalf, width: 2 * K.keyHalf, height: 2 * K.keyHalf), K.keyRadius)
+  // A soft shadow under the key. CG shadows are in device pixels.
+  g.saveGState()
+  g.setShadow(
+    offset: CGSize(width: 0, height: -0.022 * unit), blur: max(0.06 * unit, 1),
+    color: rgb(0x000000, k.keyShadow * (px <= 32 ? 0.5 : 1)))
+  g.fill(key, k.keyBottom)
+  g.restoreGState()
+  g.saveGState()
+  g.addPath(key)
+  g.clip()
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  g.drawLinearGradient(
+    CGGradient(colorsSpace: cs, colors: [k.keyTop, k.keyBottom] as CFArray, locations: [0, 1])!,
+    start: CGPoint(x: 0, y: K.keyHalf), end: CGPoint(x: 0, y: -K.keyHalf), options: [])
+  if px > 32 {
+    // Light catching the key's top edge, fading down its sides.
+    g.addPath(key)
+    g.setLineWidth(max(0.016, 2 / unit))
+    g.replacePathWithStrokedPath()
+    g.clip()
+    g.drawLinearGradient(
+      CGGradient(colorsSpace: cs, colors: [k.keyRim, rgb(0xFFFFFF, 0)] as CFArray, locations: [0, 1])!,
+      start: CGPoint(x: 0, y: K.keyHalf), end: CGPoint(x: 0, y: 0), options: [])
+  }
+  g.restoreGState()
+  g.fill(keyPrompt(px: px), k.glyph)
+}
+
+/// Y at `px` × `px`: the tile with macOS 26's corner, the glass over it.
+func renderKey(_ look: Look, px: Int) -> CGImage {
+  let k = keyLook(look)
+  return renderTile(k.tile, px: px, bleeds: false, radius: tahoeRadius) { g in
+    drawKeyPattern(g, k, px: px)
+    drawKey(g, k, px: px)
+  }
+}
+
+/// Y's face on a plain square, no squircle and no glass: what a tile would
+/// look like set in a wall, for the 2 × 2 check.
+func keyFace(_ look: Look, px: Int) -> CGImage {
+  let k = keyLook(look)
+  let g = bitmap(px)
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  g.translateBy(x: CGFloat(px) / 2, y: CGFloat(px) / 2)
+  g.scaleBy(x: CGFloat(px) / 2, y: CGFloat(px) / 2)
+  g.drawLinearGradient(
+    CGGradient(colorsSpace: cs, colors: [k.tile.groundTop, k.tile.groundBottom] as CFArray, locations: [0, 1])!,
+    start: CGPoint(x: 0, y: 1), end: CGPoint(x: 0, y: -1), options: [])
+  // The motif is drawn at the icon's scale (an 824 px body in 1024), so pass
+  // the pixel size it would have as an icon.
+  let iconPx = Int((CGFloat(px) * 1024 / 824).rounded())
+  drawKeyPattern(g, k, px: iconPx)
+  drawKey(g, k, px: iconPx)
+  return g.makeImage()!
+}
+
 // MARK: - Glass
 
 func bitmap(_ px: Int) -> CGContext {
@@ -1796,11 +2062,11 @@ func bitmap(_ px: Int) -> CGContext {
 /// The motif alone, on transparency, in its own bitmap: its knock-outs
 /// (`punch`) only cut the motif, never the glaze under it. `draw` works in
 /// tile space.
-func motifLayer(px: Int, _ draw: (CGContext) -> Void) -> CGImage {
+func motifLayer(px: Int, radius: CGFloat = 185.4, _ draw: (CGContext) -> Void) -> CGImage {
   let g = bitmap(px)
   let s = CGFloat(px) / 1024
   g.scaleBy(x: s, y: s)
-  g.addPath(squircle(CGRect(x: 100, y: 100, width: 824, height: 824), 185.4))
+  g.addPath(squircle(CGRect(x: 100, y: 100, width: 824, height: 824), radius))
   g.clip()
   g.translateBy(x: 512, y: 512)
   g.scaleBy(x: 412, y: 412)
@@ -1840,7 +2106,9 @@ func renderMark(_ mark: Mark, palette p: Palette, bleeds: Bool, px: Int) -> CGIm
 }
 
 /// The tile around a motif: shadow, glaze, the motif, the glass over it.
-func renderTile(_ p: Palette, px: Int, bleeds: Bool, motif: (CGContext) -> Void) -> CGImage {
+/// `radius` is the corner: 185.4 is Apple's Big Sur template, `tahoeRadius`
+/// the mask macOS 26 puts on every app icon.
+func renderTile(_ p: Palette, px: Int, bleeds: Bool, radius: CGFloat = 185.4, motif: (CGContext) -> Void) -> CGImage {
   let g = CGContext(
     data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
     space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -1851,7 +2119,7 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, motif: (CGContext) -> Void)
   g.interpolationQuality = .high
 
   let body = CGRect(x: 100, y: 100, width: 824, height: 824)
-  let shape = squircle(body, 185.4)
+  let shape = squircle(body, radius)
 
   // Drop shadow (Apple's template: black 50 %, blur 28, 12 down). At 16 px
   // it's a smudge, so it fades out with size.
@@ -1875,7 +2143,7 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, motif: (CGContext) -> Void)
 
   // The pattern. On a white glaze the blue is multiplied in, over a faint
   // blurred copy of itself: cobalt bleeding into tin glaze.
-  let art = motifLayer(px: px, motif)
+  let art = motifLayer(px: px, radius: radius, motif)
   let canvas = CGRect(x: 0, y: 0, width: 1024, height: 1024)
   g.saveGState()
   if p.multiply { g.setBlendMode(.multiply) }
@@ -1925,7 +2193,7 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, motif: (CGContext) -> Void)
   g.clip()
   g.addPath(shape)
   g.setLineWidth(lod == 2 ? 24 : 4)
-  g.setStrokeColor(rgb(0x000000, p.multiply ? 0.10 : 0.18))
+  g.setStrokeColor(rgb(0x000000, p.hairline ?? (p.multiply ? 0.10 : 0.18)))
   g.strokePath()
   g.restoreGState()
 
@@ -1945,10 +2213,10 @@ let iconsetSizes: [(String, Int)] = [16, 32, 128, 256, 512].flatMap { pt in
   [("icon_\(pt)x\(pt).png", pt), ("icon_\(pt)x\(pt)@2x.png", pt * 2)]
 }
 
-func writeIconset(_ dir: URL) {
+func writeIconset(_ dir: URL, look: Look = .light) {
   try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   for (name, px) in iconsetSizes {
-    writePNG(chosen.image(chosen.palette, px: px), dir.appendingPathComponent(name))
+    writePNG(chosen.image(look, px: px), dir.appendingPathComponent(name))
   }
 }
 
@@ -1980,8 +2248,8 @@ func writeSheet(_ url: URL) {
   var rows: [Row] = [Candidate.classic, .cluster, .minimal].map { c in
     Row(name: c.title + (.candidate(c) == chosen ? "  (default)" : ""), images: { render(c, palette: c.palette, px: $0) }, ns: nil)
   }
-  rows.append(Row(name: chosen.title + " · dark", images: { chosen.image(dark, px: $0) }, ns: nil))
-  rows.append(Row(name: chosen.title + " · tinted (mono source)", images: { chosen.image(tinted, px: $0) }, ns: nil))
+  rows.append(Row(name: chosen.title + " · dark", images: { chosen.image(Look.dark, px: $0) }, ns: nil))
+  rows.append(Row(name: chosen.title + (chosen == .key ? " · clear" : " · tinted (mono source)"), images: { chosen.image(Look.clear, px: $0) }, ns: nil))
   let system = [
     "/System/Applications/Utilities/Terminal.app", "/System/Applications/Notes.app",
     "/System/Applications/Freeform.app", "/System/Applications/System Settings.app",
@@ -2490,13 +2758,298 @@ func writeChosen(_ url: URL) {
   writePNG(g.makeImage()!, url)
 }
 
+// MARK: - Prompt key sheets
+
+func cgImage(_ url: URL) -> CGImage? {
+  guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+  return CGImageSourceCreateImageAtIndex(src, 0, nil)
+}
+
+/// A system app's icon rasterised at its real size, or nil if it's missing.
+func systemIcon(_ path: String, px: Int) -> CGImage? {
+  guard FileManager.default.fileExists(atPath: path) else { return nil }
+  let g = bitmap(px)
+  drawNSImage(g, NSWorkspace.shared.icon(forFile: path), in: CGRect(x: 0, y: 0, width: px, height: px))
+  return g.makeImage()
+}
+
+/// Four faces in a 2 × 2 with a grout line, the way tiles sit in a wall.
+func keyWall(_ g: CGContext, _ look: Look, at origin: CGPoint, tile: Int, grout: CGFloat) {
+  let face = keyFace(look, px: tile)
+  let t = CGFloat(tile)
+  g.setFillColor(keyLook(look).tile.grout)
+  g.fill(CGRect(x: origin.x - grout, y: origin.y - grout, width: 2 * t + 3 * grout, height: 2 * t + 3 * grout))
+  for (i, j) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+    g.draw(face, in: CGRect(x: origin.x + CGFloat(i) * (t + grout), y: origin.y + CGFloat(j) * (t + grout), width: t, height: t))
+  }
+}
+
+/// prompt.png: Y's three looks at every size on light and dark, the 2 × 2
+/// wall, then each look on a light and a dark desktop with Terminal and
+/// Notes either side.
+func writeKeySheet(_ url: URL) {
+  let gap = 28
+  let shown = 384  // the 1024 master, scaled down
+  let sizes = [256, 64, 32, 16]
+  let half = gap + shown + sizes.reduce(0) { $0 + $1 + gap } + gap + 32 * 4 + gap + 16 * 4 + gap
+  let width = half * 2
+  let labelH = 40
+  let rowH = labelH + shown + gap
+  let wallTile = 220
+  let wallH = 60 + 2 * wallTile + 3 * 6 + gap * 2
+  let deskH = 360
+  let height = 80 + Look.allCases.count * rowH + wallH + 2 * deskH
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  g.interpolationQuality = .high
+  let bands = [(rgb(0xECECEF), NSColor(white: 0.15, alpha: 1)), (rgb(0x1E1F23), NSColor(white: 0.85, alpha: 1))]
+  var top = CGFloat(height)
+  // Sizes, on light (left) and dark (right).
+  for (i, (bg, ink)) in bands.enumerated() {
+    g.setFillColor(bg)
+    g.fill(CGRect(x: i * half, y: 0, width: half, height: height))
+    let ox = CGFloat(i * half + gap)
+    label(g, "Y · prompt key · \(i == 0 ? "light" : "dark") background · 1024 at 384, then 256 / 64 / 32 / 16 at 1:1, then 32 and 16 at 4×", at: CGPoint(x: ox, y: top - 50), size: 18, color: ink, bold: true)
+    var rowTop = top - 80
+    for look in Look.allCases {
+      let name = look == .clear ? "clear (review only)" : look == .dark ? "dark (AppIconDark.icns, at run time)" : "light (AppIcon.icns)"
+      label(g, name, at: CGPoint(x: ox, y: rowTop - 28), size: 18, color: ink, bold: true)
+      let base = rowTop - CGFloat(labelH) - CGFloat(shown)
+      var x = ox
+      g.interpolationQuality = .high
+      g.draw(renderKey(look, px: 1024), in: CGRect(x: x, y: base, width: CGFloat(shown), height: CGFloat(shown)))
+      x += CGFloat(shown + gap)
+      for d in sizes {
+        g.draw(renderKey(look, px: d), in: CGRect(x: x, y: base, width: CGFloat(d), height: CGFloat(d)))
+        x += CGFloat(d + gap)
+      }
+      g.interpolationQuality = .none
+      for d in [32, 16] {
+        g.draw(renderKey(look, px: d), in: CGRect(x: x, y: base, width: CGFloat(d * 4), height: CGFloat(d * 4)))
+        x += CGFloat(d * 4 + gap)
+      }
+      rowTop -= CGFloat(rowH)
+    }
+  }
+  top -= CGFloat(80 + Look.allCases.count * rowH)
+
+  // The wall: four square faces per look, on a neutral band.
+  g.setFillColor(rgb(0xD9D9DE))
+  g.fill(CGRect(x: 0, y: top - CGFloat(wallH), width: CGFloat(width), height: CGFloat(wallH)))
+  label(g, "Tiled 2 × 2: square faces with a grout line, so the corners make whole rings round whole dots and the edges whole dots", at: CGPoint(x: CGFloat(gap), y: top - 44), size: 18, color: NSColor(white: 0.15, alpha: 1), bold: true)
+  let wallW = 2 * wallTile + 3 * 6
+  let spacing = (width - 3 * wallW) / 4
+  for (i, look) in Look.allCases.enumerated() {
+    keyWall(g, look, at: CGPoint(x: CGFloat(spacing + i * (wallW + spacing) + 6), y: top - CGFloat(wallH) + CGFloat(gap) + 6), tile: wallTile, grout: 6)
+  }
+  top -= CGFloat(wallH)
+
+  // Desktops: a light and a dark wallpaper, a Dock-ish shelf on each.
+  let terminal = "/System/Applications/Utilities/Terminal.app"
+  let notes = "/System/Applications/Notes.app"
+  let desks: [(String, CGColor, CGColor, CGColor, NSColor)] = [
+    ("Light desktop", rgb(0xDCE3F2), rgb(0xF1EEF6), rgb(0xFFFFFF, 0.45), NSColor(white: 0.15, alpha: 1)),
+    ("Dark desktop", rgb(0x10162A), rgb(0x2A3352), rgb(0xFFFFFF, 0.10), NSColor(white: 0.88, alpha: 1)),
+  ]
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  for (name, low, high, shelf, ink) in desks {
+    let rect = CGRect(x: 0, y: top - CGFloat(deskH), width: CGFloat(width), height: CGFloat(deskH))
+    g.saveGState()
+    g.clip(to: rect)
+    g.drawLinearGradient(
+      CGGradient(colorsSpace: cs, colors: [high, low] as CFArray, locations: [0, 1])!,
+      start: CGPoint(x: 0, y: rect.maxY), end: CGPoint(x: CGFloat(width), y: rect.minY), options: [])
+    g.restoreGState()
+    label(g, "\(name): Terminal, then Y light, dark and clear, then Notes, at 128 and 64 px", at: CGPoint(x: CGFloat(gap), y: rect.maxY - 44), size: 18, color: ink, bold: true)
+    var x = CGFloat(gap)
+    for d in [128, 64] {
+      let pad = CGFloat(d) / 8
+      let n = 5
+      let shelfRect = CGRect(x: x, y: rect.minY + 50, width: CGFloat(n) * (CGFloat(d) + pad) + pad, height: CGFloat(d) + 2 * pad)
+      g.setFillColor(shelf)
+      g.addPath(CGPath(roundedRect: shelfRect, cornerWidth: pad * 2, cornerHeight: pad * 2, transform: nil))
+      g.fillPath()
+      var ix = x + pad
+      let icons: [CGImage?] = [systemIcon(terminal, px: d), renderKey(.light, px: d), renderKey(.dark, px: d), renderKey(.clear, px: d), systemIcon(notes, px: d)]
+      for icon in icons {
+        if let icon { g.draw(icon, in: CGRect(x: ix, y: shelfRect.minY + pad, width: CGFloat(d), height: CGFloat(d))) }
+        ix += CGFloat(d) + pad
+      }
+      x = shelfRect.maxX + CGFloat(gap * 2)
+    }
+    top -= CGFloat(deskH)
+  }
+  writePNG(g.makeImage()!, url)
+}
+
+/// prompt-vs-mockup.png: the mockup beside Y at the same scale, with a 50 %
+/// onion skin of the two, for the big icon, the 2 × 2 wall and the three
+/// looks in a row.
+func writeKeyVsMockup(_ dir: URL) {
+  guard let mock = cgImage(dir.appendingPathComponent("prompt-mockup.png")) else {
+    FileHandle.standardError.write("no prompt-mockup.png in \(dir.path); skipping prompt-vs-mockup.png\n".data(using: .utf8)!)
+    return
+  }
+  let z: CGFloat = 2  // the mockup is @1x; blow both up 2×
+  let gap: CGFloat = 32
+  // Crops in mockup pixels (top-left origin): the big icon, the wall, the row.
+  // The mockup's tile is 219.5 px across, centred at (149, 217.75).
+  let mockTile: CGFloat = 219.5
+  let big = CGRect(x: 149 - 120, y: 217.75 - 120, width: 240, height: 240)
+  let wall = CGRect(x: 302, y: 112, width: 220, height: 220)
+  let row = CGRect(x: 130, y: 528, width: 300, height: 88)
+  func crop(_ r: CGRect) -> CGImage { mock.cropping(to: r.integral)! }
+  let panels: [(String, CGRect)] = [("big icon", big), ("tiled 2 × 2", wall), ("default, dark, clear", row)]
+  let width = Int(gap + 3 * (row.width * z + gap))
+  let height = Int(gap + 60 + big.height * z + gap + 60 + wall.height * z + gap + 60 + row.height * z + gap)
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  g.setFillColor(rgb(0xE9ECF4))
+  g.fill(CGRect(x: 0, y: 0, width: width, height: height))
+  let ink = NSColor(white: 0.15, alpha: 1)
+  var top = CGFloat(height) - gap
+
+  // Each panel: mockup | ours | onion skin. `ours` draws into a context set
+  // up in mockup pixels (y up), over the mockup's own background.
+  func panel(_ title: String, _ r: CGRect, _ ours: (CGContext) -> Void) {
+    label(g, "\(title): mockup, Y, both at 50 %", at: CGPoint(x: gap, y: top - 30), size: 18, color: ink, bold: true)
+    let h = r.height * z
+    let base = top - 50 - h
+    let m = crop(r)
+    let mine = CGContext(
+      data: nil, width: Int(r.width * z), height: Int(r.height * z), bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    mine.interpolationQuality = .high
+    mine.scaleBy(x: z, y: z)
+    mine.translateBy(x: -r.minX, y: r.maxY)
+    mine.scaleBy(x: 1, y: -1)  // now in mockup coordinates, y down
+    ours(mine)
+    let oursImage = mine.makeImage()!
+    g.interpolationQuality = .high
+    var x = gap
+    g.draw(m, in: CGRect(x: x, y: base, width: r.width * z, height: h))
+    x += r.width * z + gap
+    g.draw(oursImage, in: CGRect(x: x, y: base, width: r.width * z, height: h))
+    x += r.width * z + gap
+    g.draw(m, in: CGRect(x: x, y: base, width: r.width * z, height: h))
+    g.setAlpha(0.5)
+    g.draw(oursImage, in: CGRect(x: x, y: base, width: r.width * z, height: h))
+    g.setAlpha(1)
+    top = base - gap
+  }
+  /// Draws `image` (y up) into a y-down context with its top-left at `rect`'s.
+  func put(_ c: CGContext, _ image: CGImage, _ rect: CGRect) {
+    c.saveGState()
+    c.translateBy(x: rect.minX, y: rect.maxY)
+    c.scaleBy(x: 1, y: -1)
+    c.draw(image, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
+    c.restoreGState()
+  }
+  // The icon canvas is 1024/824 of the tile.
+  func iconRect(centre: CGPoint, tile: CGFloat) -> CGRect {
+    let s = tile * 1024 / 824
+    return CGRect(x: centre.x - s / 2, y: centre.y - s / 2, width: s, height: s)
+  }
+  panel(panels[0].0, panels[0].1) { c in
+    c.setFillColor(rgb(0xE9ECF4))  // the mockup's page, under our shadow
+    c.fill(big)
+    put(c, renderKey(.light, px: Int(mockTile * 1024 / 824 * z)), iconRect(centre: CGPoint(x: 149, y: 217.75), tile: mockTile))
+  }
+  panel(panels[1].0, panels[1].1) { c in
+    // The mockup's wall: 4 tiles of ~104 px with a 3.5 px grout, from (306, 116).
+    let t: CGFloat = 104
+    c.setFillColor(keyLook(.light).tile.grout)
+    c.fill(wall)
+    let face = keyFace(.light, px: Int(t * z))
+    for (i, j) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+      put(c, face, CGRect(x: 306 + CGFloat(i) * (t + 3.5), y: 116 + CGFloat(j) * (t + 3.5), width: t, height: t))
+    }
+  }
+  panel(panels[2].0, panels[2].1) { c in
+    c.setFillColor(rgb(0x2E3342))
+    c.fill(row)
+    // The mockup's 72 px tiles, centred at x 180, 280, 380 and y 571.
+    for (i, look) in Look.allCases.enumerated() {
+      put(c, renderKey(look, px: Int(72 * 1024 / 824 * z)), iconRect(centre: CGPoint(x: 180 + CGFloat(i) * 100, y: 571), tile: 72))
+    }
+  }
+  writePNG(g.makeImage()!, dir.appendingPathComponent("prompt-vs-mockup.png"))
+}
+
+// MARK: - Icon Composer layers
+
+/// A path in tile units as SVG path data on a full-bleed 1024 canvas: the
+/// tile's edge is the canvas's edge, y down.
+func svgPath(_ path: CGPath) -> String {
+  func f(_ p: CGPoint) -> String {
+    String(format: "%.2f %.2f", 512 + 512 * p.x, 512 - 512 * p.y)
+  }
+  var d: [String] = []
+  path.applyWithBlock { e in
+    let pts = e.pointee.points
+    switch e.pointee.type {
+    case .moveToPoint: d.append("M" + f(pts[0]))
+    case .addLineToPoint: d.append("L" + f(pts[0]))
+    case .addQuadCurveToPoint: d.append("Q" + f(pts[0]) + " " + f(pts[1]))
+    case .addCurveToPoint: d.append("C" + f(pts[0]) + " " + f(pts[1]) + " " + f(pts[2]))
+    case .closeSubpath: d.append("Z")
+    @unknown default: break
+    }
+  }
+  return d.joined()
+}
+
+func hex(_ c: CGColor) -> (String, CGFloat) {
+  let comps = c.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)!.components!
+  let rgb = comps.prefix(3).map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
+  return ("#" + rgb, comps.count > 3 ? comps[3] : 1)
+}
+
+/// Y as Icon Composer layers: one SVG per layer, full bleed on a 1024
+/// canvas, in the light look's colours. scripts/icon/composer/README.md
+/// says how to assemble them and lists every look's colours.
+func writeComposer(_ dir: URL) {
+  typealias K = KeyGeometry
+  try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  let k = keyLook(.light)
+  func svg(_ body: String) -> String {
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">\n\(body)</svg>\n"
+  }
+  func fill(_ c: CGColor) -> String {
+    let (h, a) = hex(c)
+    return a < 1 ? "fill=\"\(h)\" fill-opacity=\"\(String(format: "%.2f", a))\"" : "fill=\"\(h)\""
+  }
+  let band = CGMutablePath()
+  let dots = CGMutablePath()
+  for c in corners {
+    band.addPath(disc(c, K.ringOut))
+    band.addPath(disc(c, K.ringIn))
+    dots.addPath(disc(c, K.cornerDot))
+  }
+  for m in edgeMids { dots.addPath(disc(m, K.edgeDot)) }
+  let key = squircle(CGRect(x: -K.keyHalf, y: -K.keyHalf, width: 2 * K.keyHalf, height: 2 * K.keyHalf), K.keyRadius)
+  let layers: [(String, String)] = [
+    ("1-rings.svg", "  <path fill-rule=\"evenodd\" \(fill(k.ring)) d=\"\(svgPath(band))\"/>\n"),
+    ("2-dots.svg", "  <path \(fill(k.dot)) d=\"\(svgPath(dots))\"/>\n"),
+    ("3-key.svg", "  <path \(fill(k.keyTop)) d=\"\(svgPath(key))\"/>\n"),
+    ("4-prompt.svg", "  <path \(fill(k.glyph)) d=\"\(svgPath(keyPrompt(px: 1024)))\"/>\n"),
+  ]
+  for (name, body) in layers {
+    try! svg(body).write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+  }
+}
+
 func writeDocs(_ dir: URL) {
   try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
   for c in Candidate.allCases {
     writePNG(render(c, palette: c.palette, px: 1024), dir.appendingPathComponent("candidate-\(c.rawValue).png"))
   }
-  writePNG(chosen.image(dark, px: 1024), dir.appendingPathComponent("appearance-dark.png"))
-  writePNG(chosen.image(tinted, px: 1024), dir.appendingPathComponent("appearance-tinted.png"))
+  writePNG(chosen.image(Look.dark, px: 1024), dir.appendingPathComponent("appearance-dark.png"))
+  writePNG(
+    chosen.image(Look.clear, px: 1024),
+    dir.appendingPathComponent(chosen == .key ? "appearance-clear.png" : "appearance-tinted.png"))
   writeSheet(dir.appendingPathComponent("sheet.png"))
   writeChosen(dir.appendingPathComponent("chosen.png"))
   writeOptions(dir.appendingPathComponent("options.png"))
@@ -2504,6 +3057,8 @@ func writeDocs(_ dir: URL) {
   writeWoven(dir.appendingPathComponent("woven.png"))
   writeWovenHero(dir.appendingPathComponent("woven-hero.png"))
   writePinwheel(dir)
+  writeKeySheet(dir.appendingPathComponent("prompt.png"))
+  writeKeyVsMockup(dir)
 }
 
 // MARK: - Main
@@ -2520,6 +3075,7 @@ while !args.isEmpty {
   let url = URL(fileURLWithPath: path)
   switch flag {
   case "--iconset": writeIconset(url)
+  case "--iconset-dark": writeIconset(url, look: .dark)
   case "--docs": writeDocs(url)
   case "--minimal": writeMinimal(url)
   case "--woven":
@@ -2532,6 +3088,11 @@ while !args.isEmpty {
   case "--pinwheel":
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     writePinwheel(url)
+  case "--composer": writeComposer(url)
+  case "--key":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writeKeySheet(url.appendingPathComponent("prompt.png"))
+    writeKeyVsMockup(url)
   default: fatalError("unknown option \(flag)")
   }
 }
