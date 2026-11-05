@@ -342,7 +342,12 @@ final class TileContainerView: NSView, ThemeAware {
                 movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: 0))
             } else if let from = before[id] {
                 // Turned round while fading out: back from where it shows.
-                movers.append(Mover(id: id, view: view, from: from, to: to, fadeFrom: opacityBefore[id] ?? 0))
+                // Switching tiles in Monocle: in place, as below. Going into
+                // Monocle sized it to the whole tab already, so it's there;
+                // carrying it from where it shows (its old slot, shrinking)
+                // would reflow its PTY down and back up for nothing.
+                movers.append(Mover(id: id, view: view, from: stacked ? to : from, to: to,
+                                    fadeFrom: opacityBefore[id] ?? 0))
             } else {
                 // Back on screen (out of Monocle or zoom): it fades and grows
                 // in at its place. Switching tiles in Monocle: in place.
