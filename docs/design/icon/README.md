@@ -11,9 +11,9 @@
 [`prompt-mockup.png`](prompt-mockup.png) is the maintainer's mockup. `draw.swift` redraws it procedurally (`Icon.key`), to measurements taken off the mockup's pixels: its tile is 219.5 px across, so a mockup pixel is 0.009 of the tile's half-width (the units below).
 
 - **Glaze**: `#FEFDFB` at the top to `#EAE3D3` at the foot, under the usual sheen and rim, turned down.
-- **Corners**: a quarter ring centred on each corner, from 0.32 to 0.47 out, cobalt at 50 %. Inside it the glaze is a shade whiter, and a solid quarter dot of 0.16 sits in the very corner. The squircle cuts that dot away on the icon; it only shows when tiles are laid square.
+- **Corners**: a quarter ring centred on each corner, from 0.32 to 0.47 out, in `#899DC7` (cobalt at 50 % on the glaze, made opaque). Inside it the glaze is a shade whiter, and a solid quarter dot of 0.16 sits in the very corner. The squircle cuts that dot away on the icon; it only shows when tiles are laid square.
 - **Edges**: a solid half dot of radius 0.10 at each edge midpoint.
-- **Glare**: the mockup's top-left ring and top dot come out paler, so a white glare from the top left lightens the pattern only.
+- **No glare on the pattern.** The mockup lightens its top-left ring and top dot. In a wall that left every full ring with one pale quarter (the maintainer, Nov 5: "tiles weirdly because of top left circle"), so the pattern's colours are opaque and the same in every corner and on every edge, whatever the glaze gradient under them. The glass's sheen still lightens the top of the icon itself.
 - **Key**: a continuous-corner rounded square 1.03 across, corner 0.14, `#D9DDE9` to `#C9CDD6` with a soft shadow and a light rim along its top.
 - **Prompt**: one weight, 0.146, about the ring's. The chevron runs from (−0.31, ±0.237) to an apex at (−0.064, 0), with round ends and a nearly sharp point, as in the mockup. The bar runs from 0.064 to 0.337, level with the chevron's foot.
 
@@ -28,6 +28,7 @@ Four tiles side by side make whole rings round whole dots at the corners and who
 - **The corner.** The mockup uses Apple's older template (radius 185.4 on the 824 px body). macOS 26 masks every app icon with a rounder corner, which we fitted to what IconServices drew for our bundle: a continuous corner of radius 214 (`tahoeRadius`; 166 pixels off at 1024). Y uses 214 so the bundle icon and the Dock image the app hands over at run time (below) have the same outline.
 - **The half dots at 32 and 16 px** go, as above. The mockup's 72 px Dock row has none either; we keep them from 64 px up.
 - **Clear** is close, not exact: the mockup's glass is darker at the foot.
+- **The top-left glare** is left out on purpose (above), so the top-left ring and top dot are a little darker than in the mockup.
 
 ## Dark mode without Xcode
 

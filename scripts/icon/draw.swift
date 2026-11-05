@@ -1852,19 +1852,20 @@ enum KeyGeometry {
   static let barTo: CGFloat = 0.337
 }
 
+/// The pattern's colours are opaque, so every corner and edge is drawn the
+/// same whatever the glaze gradient under it: four tiles side by side make
+/// one even ring, not one with a pale quarter. (The mockup's glare on its
+/// top-left ring and top dot broke that, so the pattern takes no glare.)
 struct KeyLook {
   var tile: Palette  // glaze gradient, shadow, sheen, rim, shade
   var pocket: CGColor?  // glaze inside each corner ring, a shade lighter
-  var ring: CGColor
+  var ring: CGColor  // cobalt at 50 % over the glaze's middle, made opaque
   var dot: CGColor
   var keyTop: CGColor
   var keyBottom: CGColor
   var keyShadow: CGFloat
   var keyRim: CGColor  // hairline catching the light along the key's top
   var glyph: CGColor
-  /// The mockup's top-left glare on the pattern: the ring in that corner and
-  /// the top dot come out paler.
-  var glare: CGFloat
 }
 
 func keyLook(_ look: Look) -> KeyLook {
@@ -1875,27 +1876,27 @@ func keyLook(_ look: Look) -> KeyLook {
         groundTop: rgb(0xFEFDFB), groundBottom: rgb(0xEAE3D3),
         ink: rgb(0x1F4AA8), line: rgb(0x1F4AA8), wash: rgb(0xD3D7E1), grout: rgb(0xD8D2C4),
         multiply: false, sheen: 0.35, shadow: 0.5, rim: 0.8, shade: 0.12, hairline: 0.07),
-      pocket: rgb(0xFFFFFF, 0.55), ring: rgb(0x1F4AA8, 0.5), dot: rgb(0x1F4AA8),
+      pocket: rgb(0xFAF8F3), ring: rgb(0x899DC7), dot: rgb(0x1F4AA8),
       keyTop: rgb(0xD9DDE9), keyBottom: rgb(0xC9CDD6), keyShadow: 0.14,
-      keyRim: rgb(0xFFFFFF, 0.55), glyph: rgb(0x1F4AA8), glare: 0.5)
+      keyRim: rgb(0xFFFFFF, 0.55), glyph: rgb(0x1F4AA8))
   case .dark:
     KeyLook(
       tile: Palette(
         groundTop: rgb(0x30343E), groundBottom: rgb(0x121419),
         ink: rgb(0x849BCF), line: rgb(0x849BCF), wash: rgb(0x343A49), grout: rgb(0x0C0D11),
         multiply: false, sheen: 0.3, shadow: 0.6, rim: 0.45, shade: 0.4),
-      pocket: rgb(0x000000, 0.12), ring: rgb(0x849BCF, 0.5), dot: rgb(0x849BCF),
+      pocket: rgb(0x1C1E25), ring: rgb(0x525F7D), dot: rgb(0x849BCF),
       keyTop: rgb(0x3C4152), keyBottom: rgb(0x2A2F3D), keyShadow: 0.35,
-      keyRim: rgb(0xFFFFFF, 0.1), glyph: rgb(0x8AA1D4), glare: 0.12)
+      keyRim: rgb(0xFFFFFF, 0.1), glyph: rgb(0x8AA1D4))
   case .clear:
     KeyLook(
       tile: Palette(
         groundTop: rgb(0x8C8F98, 0.82), groundBottom: rgb(0x4C505B, 0.82),
         ink: rgb(0xFFFFFF), line: rgb(0xFFFFFF), wash: rgb(0xFFFFFF, 0.14), grout: rgb(0x3A3D45),
         multiply: false, sheen: 0.4, shadow: 0.45, rim: 0.9, shade: 0.2),
-      pocket: rgb(0xFFFFFF, 0.06), ring: rgb(0xFFFFFF, 0.42), dot: rgb(0xFFFFFF, 0.85),
+      pocket: rgb(0x6A6D77), ring: rgb(0xB4B7BF), dot: rgb(0xEDEEF1),
       keyTop: rgb(0xFFFFFF, 0.2), keyBottom: rgb(0xFFFFFF, 0.1), keyShadow: 0.2,
-      keyRim: rgb(0xFFFFFF, 0.3), glyph: rgb(0xFFFFFF), glare: 0.25)
+      keyRim: rgb(0xFFFFFF, 0.3), glyph: rgb(0xFFFFFF))
   }
 }
 
@@ -1939,7 +1940,6 @@ func keyPrompt(px: Int) -> CGPath {
 /// the tile's square, so whatever clips it decides how much shows.
 func drawKeyPattern(_ g: CGContext, _ k: KeyLook, px: Int) {
   typealias K = KeyGeometry
-  g.beginTransparencyLayer(auxiliaryInfo: nil)
   for c in corners {
     if let pocket = k.pocket { g.fill(disc(c, K.ringIn), pocket) }
     let band = CGMutablePath()
@@ -1955,19 +1955,6 @@ func drawKeyPattern(_ g: CGContext, _ k: KeyLook, px: Int) {
   if px > 32 {
     for m in edgeMids { g.fill(disc(m, K.edgeDot), k.dot) }
   }
-  if k.glare > 0 {
-    g.setBlendMode(.sourceAtop)
-    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-    g.drawRadialGradient(
-      CGGradient(
-        colorsSpace: cs,
-        colors: [rgb(0xFFFFFF, k.glare * 1.1), rgb(0xFFFFFF, k.glare * 0.9), rgb(0xFFFFFF, 0)] as CFArray,
-        locations: [0, 0.5, 1])!,
-      startCenter: CGPoint(x: -0.55, y: 1.05), startRadius: 0, endCenter: CGPoint(x: -0.55, y: 1.05), endRadius: 1,
-      options: [])
-    g.setBlendMode(.normal)
-  }
-  g.endTransparencyLayer()
 }
 
 /// Y at 16 px, set in whole pixels: an 8 × 8 key and a one-pixel prompt.
