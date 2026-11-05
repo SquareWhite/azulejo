@@ -135,6 +135,33 @@ pub enum Node {
 
 const EPS: f64 = 1e-9;
 
+/// A split path written as `a`/`b` steps, for messages.
+pub fn path_text(path: &[bool]) -> String {
+    if path.is_empty() {
+        return "the root".into();
+    }
+    let steps: String = path.iter().map(|b| if *b { 'b' } else { 'a' }).collect();
+    format!("path `{steps}`")
+}
+
+/// Reads a split path written as `a`/`b` steps (`""` is the root, `"ba"` is
+/// the first child of the root's second child).
+pub fn parse_path(text: &str) -> Result<Vec<bool>, ModelError> {
+    text.chars()
+        .map(|c| match c {
+            'a' | 'A' => Ok(false),
+            'b' | 'B' => Ok(true),
+            _ => Err(ModelError::InvalidValue(format!(
+                "split path {text:?}: use `a` and `b` steps from the root"
+            ))),
+        })
+        .collect()
+}
+
+fn no_split(path: &[bool]) -> ModelError {
+    ModelError::InvalidValue(format!("no split at {}", path_text(path)))
+}
+
 /// `r` rounded to a multiple of 2⁻⁵³, where `1 − r` is exact both ways.
 /// Ratios from ½ up already are; one below moves by at most 2⁻⁵⁴. A ratio
 /// that would round to 0 or 1 stays as it is.
@@ -224,6 +251,98 @@ impl Node {
                 a.place(ra, out);
                 b.place(rb, out);
             }
+        }
+    }
+
+    // ----- splits by path (divider drags) -----
+    //
+    // A path names a node by the child taken at each step from the root:
+    // `false` for `a`, `true` for `b`; `[]` is the root. Same convention as
+    // herdr's `layout.set_split_ratio`.
+
+    /// The node at `path`, if there is one.
+    pub fn node_at(&self, path: &[bool]) -> Option<&Node> {
+        let mut node = self;
+        for &second in path {
+            match node {
+                Node::Split { a, b, .. } => node = if second { b } else { a },
+                Node::Leaf { .. } => return None,
+            }
+        }
+        Some(node)
+    }
+
+    fn node_at_mut(&mut self, path: &[bool]) -> Option<&mut Node> {
+        let mut node = self;
+        for &second in path {
+            match node {
+                Node::Split { a, b, .. } => node = if second { b } else { a },
+                Node::Leaf { .. } => return None,
+            }
+        }
+        Some(node)
+    }
+
+    /// The split at `path`: its axis, its ratio and the rectangle it divides
+    /// (in the unit square). `None` when `path` leads to a leaf or nowhere.
+    pub fn split_at(&self, path: &[bool]) -> Option<(Axis, f64, Rect)> {
+        let mut node = self;
+        let mut rect = Rect::UNIT;
+        for &second in path {
+            let Node::Split { axis, ratio, a, b } = node else {
+                return None;
+            };
+            let (ra, rb) = rect.split(*axis, *ratio);
+            (node, rect) = if second { (b, rb) } else { (a, ra) };
+        }
+        match node {
+            Node::Split { axis, ratio, .. } => Some((*axis, *ratio, rect)),
+            Node::Leaf { .. } => None,
+        }
+    }
+
+    /// Sets the ratio of the split at `path`, clamped to [`MIN_RATIO`],
+    /// [`MAX_RATIO`]: its divider moves, and whatever is nested on either
+    /// side keeps its proportions. Returns whether it changed.
+    pub fn set_ratio_at(&mut self, path: &[bool], ratio: f64) -> Result<bool, ModelError> {
+        if !ratio.is_finite() {
+            return Err(ModelError::InvalidValue(format!(
+                "split ratio {ratio} is not finite"
+            )));
+        }
+        match self.node_at_mut(path) {
+            Some(Node::Split { ratio: r, .. }) => {
+                let new = ratio.clamp(MIN_RATIO, MAX_RATIO);
+                let changed = *r != new;
+                *r = new;
+                Ok(changed)
+            }
+            _ => Err(no_split(path)),
+        }
+    }
+
+    /// The ratio that evens out the split at `path`: every tile in a row
+    /// along its axis gets the same share, as if the row had been split
+    /// evenly (`a | (b | c)` gives `a` a third).
+    pub fn even_ratio_at(&self, path: &[bool]) -> Option<f64> {
+        match self.node_at(path)? {
+            Node::Split { axis, a, b, .. } => {
+                let (na, nb) = (a.count_along(*axis), b.count_along(*axis));
+                Some(na as f64 / (na + nb) as f64)
+            }
+            Node::Leaf { .. } => None,
+        }
+    }
+
+    /// How many tiles sit in a row along `axis` here: splits along it add up,
+    /// splits across it take their longer side.
+    fn count_along(&self, axis: Axis) -> usize {
+        match self {
+            Node::Leaf { .. } => 1,
+            Node::Split {
+                axis: own, a, b, ..
+            } if *own == axis => a.count_along(axis) + b.count_along(axis),
+            Node::Split { a, b, .. } => a.count_along(axis).max(b.count_along(axis)),
         }
     }
 

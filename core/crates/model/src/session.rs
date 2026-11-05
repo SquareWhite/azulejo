@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::ModelError;
 use crate::dynamic::{self, InsertAt, LayoutKind, LayoutParams, Placement, TabLayout};
 use crate::ids::{TabId, TileId, WindowId, WorkspaceId};
-use crate::layout::{Direction, Node, Rect};
+use crate::layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect};
 use crate::tile::{HerdrRef, Tile};
 
 /// How many recently focused tiles a tab remembers for tie-breaking.
@@ -1094,6 +1094,96 @@ impl Session {
                 }
                 tab.sync();
                 Ok(())
+            }
+        }
+    }
+
+    /// Moves the divider of the split at `path` in a tab's tree (as
+    /// [`Node::node_at`] reads it) so its `a` side gets `ratio` of the split,
+    /// or evens it out with `None`: a divider drag. Returns whether anything
+    /// changed.
+    ///
+    /// A manual tab sets that split's ratio (5–95 %); what's nested on
+    /// either side keeps its proportions. A Tile or Three Column tab's tree
+    /// is derived, so the divider becomes a parameter change instead (see
+    /// `dynamic::move_boundary`): the master ratio, Three Column's ratio, or
+    /// the weights of the two tiles either side of it, so tiles away from
+    /// the divider keep their size. Monocle has no dividers.
+    pub fn set_split_ratio(
+        &mut self,
+        tab: TabId,
+        path: &[bool],
+        ratio: Option<f64>,
+    ) -> Result<bool, ModelError> {
+        if let Some(r) = ratio
+            && !r.is_finite()
+        {
+            return Err(ModelError::InvalidValue(format!(
+                "split ratio {r} is not finite"
+            )));
+        }
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        let Some((axis, old, rect)) = t.root.split_at(path) else {
+            return Err(ModelError::InvalidValue(format!(
+                "no split at {}",
+                crate::layout::path_text(path)
+            )));
+        };
+        match t.layout.kind {
+            LayoutKind::Manual => {
+                let ratio = match ratio {
+                    Some(r) => r,
+                    None => t.root.even_ratio_at(path).expect("a split"),
+                };
+                t.root.set_ratio_at(path, ratio)
+            }
+            LayoutKind::Monocle => Err(ModelError::InvalidValue(
+                "a Monocle tab has no dividers".into(),
+            )),
+            LayoutKind::Tile | LayoutKind::ThreeColumn => {
+                let (start, extent) = match axis {
+                    Axis::Horizontal => (rect.x, rect.width),
+                    Axis::Vertical => (rect.y, rect.height),
+                };
+                let from = start + extent * old;
+                let to = ratio.map(|r| start + extent * r.clamp(MIN_RATIO, MAX_RATIO));
+                let Some(Node::Split { a, b, .. }) = t.root.node_at(path) else {
+                    unreachable!("split_at found a split");
+                };
+                // The tiles either side of the divider: those whose far
+                // (near) edge along the axis is the divider.
+                let rects = t.root.rects();
+                let edge = |tile: &TileId, far: bool| {
+                    let r = rects.iter().find(|(id, _)| id == tile).expect("leaf").1;
+                    match (axis, far) {
+                        (Axis::Horizontal, true) => r.right(),
+                        (Axis::Horizontal, false) => r.x,
+                        (Axis::Vertical, true) => r.bottom(),
+                        (Axis::Vertical, false) => r.y,
+                    }
+                };
+                const ON: f64 = 1e-6;
+                let a_side: Vec<TileId> = a
+                    .tiles()
+                    .into_iter()
+                    .filter(|x| (edge(x, true) - from).abs() < ON)
+                    .collect();
+                let b_side: Vec<TileId> = b
+                    .tiles()
+                    .into_iter()
+                    .filter(|x| (edge(x, false) - from).abs() < ON)
+                    .collect();
+                let before = t.layout.params;
+                let weights = t.layout.weights.clone();
+                if !dynamic::move_boundary(&mut t.layout, axis, &a_side, &b_side, from, to) {
+                    return Err(ModelError::InvalidValue(format!(
+                        "the divider at {} isn't one the layout can move",
+                        crate::layout::path_text(path)
+                    )));
+                }
+                t.sync();
+                Ok(t.layout.params != before || t.layout.weights != weights)
             }
         }
     }

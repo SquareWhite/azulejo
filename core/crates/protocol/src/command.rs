@@ -244,6 +244,15 @@ pub enum Command {
     /// Moves a tile `step` places along its dynamic tab's order, wrapping.
     #[serde(rename = "layout.move_order")]
     LayoutMoveOrder(LayoutMoveOrder),
+    /// Moves the divider of one split in a tab's tree, as dragging it does:
+    /// its `a` side gets `ratio` of the split, or leave `ratio` out to even
+    /// it out. A manual tab sets that split's ratio (what's nested keeps its
+    /// proportions). A Tile or Three Column tab turns it into its
+    /// parameters: the master ratio, Three Column's ratio (the centre stays
+    /// centred, so both side columns follow), or the sizes of the two tiles
+    /// either side of the divider. Monocle has no dividers.
+    #[serde(rename = "layout.set_ratio")]
+    LayoutSetRatio(LayoutSetRatio),
 
     // ----- terminals (F12, F20) -----
     /// Records the herdr pane a terminal tile views. Sent by the herdr adapter.
@@ -367,6 +376,7 @@ pub const METHODS: &[&str] = &[
     "layout.masters",
     "layout.master_ratio",
     "layout.move_order",
+    "layout.set_ratio",
     "terminal.bind",
     "terminal.respawn",
     "terminal.send_text",
@@ -723,6 +733,24 @@ pub struct LayoutMoveOrder {
     /// Places to move; negative moves towards the front. Defaults to 1.
     #[serde(default = "one")]
     pub step: i32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutSetRatio {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// The split, as steps from the root of the tab's tree (`root` in
+    /// `session.get` and `layout.changed`): `a` for a split's first child,
+    /// `b` for its second. `""` (the default) is the root; `"ba"` is the
+    /// first child of the root's second child.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub path: String,
+    /// The share of the split given to its `a` side, clamped to what the
+    /// layout allows (5–95 % per split; Tile's master area 20–80 %). Leave
+    /// it out to even the split out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

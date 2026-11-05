@@ -39,6 +39,8 @@ enum Op {
     MoveOrder(usize, i32),
     RotateTurn(usize, bool),
     RotatePart(usize),
+    /// A divider drag: the tab, which split, the ratio (none: even out).
+    SetRatio(usize, usize, Option<f64>),
 }
 
 fn kind() -> impl Strategy<Value = LayoutKind> {
@@ -90,6 +92,8 @@ fn op() -> impl Strategy<Value = Op> {
         2 => (0usize..64, -3i32..4).prop_map(|(t, s)| Op::MoveOrder(t, s)),
         3 => (0usize..64, any::<bool>()).prop_map(|(t, r)| Op::RotateTurn(t, r)),
         1 => (0usize..64).prop_map(Op::RotatePart),
+        3 => (0usize..64, 0usize..64, prop::option::of(-0.3f64..1.3))
+            .prop_map(|(t, p, r)| Op::SetRatio(t, p, r)),
     ]
 }
 
@@ -275,6 +279,28 @@ fn apply(s: &mut Session, op: &Op) -> Result<(), azulejo_model::ModelError> {
         Op::RotatePart(i) => {
             if let Some(id) = nth(&tabs, i) {
                 s.rotate_part(id)?;
+            }
+        }
+        Op::SetRatio(i, pick, ratio) => {
+            if let Some(id) = nth(&tabs, i) {
+                // Every split's path, then one of them (none in a lone tile).
+                fn paths(n: &azulejo_model::Node, at: &mut Vec<bool>, out: &mut Vec<Vec<bool>>) {
+                    if let azulejo_model::Node::Split { a, b, .. } = n {
+                        out.push(at.clone());
+                        at.push(false);
+                        paths(a, at, out);
+                        at.pop();
+                        at.push(true);
+                        paths(b, at, out);
+                        at.pop();
+                    }
+                }
+                let mut all = Vec::new();
+                paths(&s.tab(id)?.root, &mut Vec::new(), &mut all);
+                let path = nth(&all.iter().collect::<Vec<_>>(), pick)
+                    .cloned()
+                    .unwrap_or_default();
+                s.set_split_ratio(id, &path, ratio)?;
             }
         }
     }

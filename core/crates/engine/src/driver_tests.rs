@@ -2231,3 +2231,73 @@ fn a_close_retiles_a_dynamic_tab_in_herdr_but_never_a_manual_one() {
         core.shutdown();
     }
 }
+
+/// A divider drag sends `layout.set_ratio` on every frame. herdr gets one
+/// push once the tab has been still for the quiet period, never one per
+/// frame, and it only sets ratios (no restructure), in manual and Tile tabs.
+#[test]
+fn a_divider_drag_pushes_once_after_it_settles() {
+    for kind in [
+        azulejo_model::LayoutKind::Manual,
+        azulejo_model::LayoutKind::Tile,
+    ] {
+        let fake = Fake::default();
+        let core = Core::start_with_herdr(opts(None), fake.clone());
+        core.set_layout_prefs(azulejo_model::LayoutPrefs {
+            default: kind,
+            ..azulejo_model::LayoutPrefs::default()
+        });
+        core.set_mirror_layout(true);
+        wait_until(&core, |s| all_bound(s) && terminals(s).len() == 1);
+        for n in 2..=3 {
+            split(&core);
+            wait_until(&core, |s| all_bound(s) && terminals(s).len() == n);
+        }
+        let home = |s: &Session| terminals(s)[0].1.clone().unwrap().tab_id;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let s = core.session().unwrap();
+            if fake
+                .state()
+                .trees
+                .get(&home(&s))
+                .is_some_and(|t| t.panes().len() == 3)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "{kind:?}: never mirrored");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        let pushed = fake.state().pushes.len();
+
+        // 40 frames at 120 Hz, the divider going from 0.5 to 0.7.
+        for i in 1..=40 {
+            core.execute(Command::LayoutSetRatio(azulejo_protocol::LayoutSetRatio {
+                tab: None,
+                path: String::new(),
+                ratio: Some(0.5 + 0.2 * f64::from(i) / 40.0),
+            }))
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        assert_eq!(
+            fake.state().pushes.len(),
+            pushed,
+            "{kind:?}: pushed mid-drag"
+        );
+        std::thread::sleep(Duration::from_millis(600));
+        let st = fake.state();
+        let after = &st.pushes[pushed..];
+        assert_eq!(after.len(), 1, "{kind:?}: one push after the drag");
+        assert!(!after[0].restructure, "{kind:?}: ratios only");
+        let s = core.session().unwrap();
+        let tree = &st.trees[&home(&s)];
+        let herdr::LayoutNode::Split { ratio, .. } = tree else {
+            panic!("{kind:?}: {tree:?}");
+        };
+        assert!((ratio - 0.7).abs() < 1e-3, "{kind:?}: herdr has {ratio}");
+        drop(st);
+        core.shutdown();
+    }
+}

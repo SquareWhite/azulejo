@@ -1096,3 +1096,69 @@ fn a_sidebar_saved_before_the_rail_comes_back_collapsed() {
     };
     assert_eq!(windows[0].sidebar, SidebarState::Hidden);
 }
+
+#[test]
+fn set_ratio_drags_a_divider_in_manual_and_dynamic_tabs() {
+    // Manual: a | (b / c); the root's divider and the nested one.
+    let mut engine = Engine::new();
+    split(&mut engine, Direction::Right);
+    split(&mut engine, Direction::Down);
+    let set = |path: &str, ratio: Option<f64>| {
+        Command::LayoutSetRatio(LayoutSetRatio {
+            tab: None,
+            path: path.into(),
+            ratio,
+        })
+    };
+    let events = run(&mut engine, set("", Some(0.3)));
+    assert!(names(&events).contains(&"layout.changed".to_string()));
+    run(&mut engine, set("b", Some(0.25)));
+    assert_eq!(tab_of(&engine).root.ratios(), vec![0.3, 0.25]);
+    // Evened out: a | (b / c) is two in a row, so the root goes to a half.
+    run(&mut engine, set("", None));
+    assert_eq!(tab_of(&engine).root.ratios(), vec![0.5, 0.25]);
+    // A bad path is the caller's mistake and changes nothing.
+    let before = tab_of(&engine).root.clone();
+    let err = engine.execute(set("ab", Some(0.4))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+    let err = engine.execute(set("x", Some(0.4))).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+    assert_eq!(tab_of(&engine).root, before);
+
+    // Tile: the master edge is the master ratio; a stack edge only resizes
+    // the two tiles beside it.
+    let mut engine = tile_engine();
+    for _ in 0..3 {
+        run(
+            &mut engine,
+            Command::LayoutSplitAuto(LayoutSplitAuto::default()),
+        );
+    }
+    run(&mut engine, set("", Some(0.65)));
+    assert!((tab_of(&engine).layout.params.tile.ratio - 0.65).abs() < 1e-9);
+    let last = *tab_of(&engine).layout.order.last().unwrap();
+    let height = |e: &Engine, t| {
+        tab_of(e)
+            .root
+            .rects()
+            .into_iter()
+            .find(|(id, _)| *id == t)
+            .unwrap()
+            .1
+            .height
+    };
+    let before = height(&engine, last);
+    run(&mut engine, set("b", Some(0.5)));
+    assert_eq!(tab_of(&engine).layout.kind, LayoutKind::Tile);
+    assert!((height(&engine, last) - before).abs() < 1e-9);
+
+    // Monocle has no dividers.
+    run(
+        &mut engine,
+        Command::LayoutSet(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::Monocle,
+        }),
+    );
+    assert!(engine.execute(set("", Some(0.4))).is_err());
+}

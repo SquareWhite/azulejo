@@ -1168,6 +1168,23 @@
           "type": "object"
         },
         {
+          "description": "Moves the divider of one split in a tab's tree, as dragging it does:\nits `a` side gets `ratio` of the split, or leave `ratio` out to even\nit out. A manual tab sets that split's ratio (what's nested keeps its\nproportions). A Tile or Three Column tab turns it into its\nparameters: the master ratio, Three Column's ratio (the centre stays\ncentred, so both side columns follow), or the sizes of the two tiles\neither side of the divider. Monocle has no dividers.",
+          "properties": {
+            "method": {
+              "const": "layout.set_ratio",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LayoutSetRatio"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Records the herdr pane a terminal tile views. Sent by the herdr adapter.",
           "properties": {
             "method": {
@@ -3294,6 +3311,34 @@
       "required": [
         "kind"
       ],
+      "type": "object"
+    },
+    "LayoutSetRatio": {
+      "properties": {
+        "path": {
+          "description": "The split, as steps from the root of the tab's tree (`root` in\n`session.get` and `layout.changed`): `a` for a split's first child,\n`b` for its second. `\"\"` (the default) is the root; `\"ba\"` is the\nfirst child of the root's second child.",
+          "type": "string"
+        },
+        "ratio": {
+          "description": "The share of the split given to its `a` side, clamped to what the\nlayout allows (5–95 % per split; Tile's master area 20–80 %). Leave\nit out to even the split out.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tab": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TabId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Defaults to the focused tab."
+        }
+      },
       "type": "object"
     },
     "LayoutSplit": {
@@ -6106,6 +6151,7 @@
     "layout.masters",
     "layout.master_ratio",
     "layout.move_order",
+    "layout.set_ratio",
     "terminal.bind",
     "terminal.respawn",
     "terminal.send_text",
