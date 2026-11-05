@@ -21,6 +21,14 @@ External keyboard remappers can intercept shortcuts before Azulejo receives them
 
 In particular, a global window-movement rule can intercept `alt+shift+hjkl`, and terminal-only remaps can break `cmd+l` in browser tiles. Adjust your own rules or override the app's shortcuts under `[keys.macos]` ([keybindings](keybindings.md)).
 
+### Terminal font and colours
+
+Azulejo's terminals read Ghostty's config, including `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty`. Explicit font and colour settings there apply to terminals. Ghostty colours take precedence over Azulejo's theme by default; set `[appearance] terminal_colors = "theme"` to let the theme colour terminals too ([themes](themes.md#terminal-colours)).
+
+### Dock icon
+
+`[appearance] app_icon` picks the Dock icon while Azulejo runs: `"light"` (default), `"dark"` or `"auto"` (follows macOS's appearance). See [themes](themes.md#app-icon).
+
 ## Updating
 
 After the first install, update with one command from the repo:
@@ -42,8 +50,8 @@ just dogfood --to <hash>  # reinstall a kept build by commit
 
 Azulejo connects to your **default herdr session**, the one plain `herdr` uses ([ADR 0008](adr/0008-use-the-users-herdr-session.md)).
 
-- **Adoption.** Every herdr workspace shows up as an Azulejo workspace, every herdr tab as a tab with the same splits, every pane as a terminal tile. Azulejo only reads herdr here; it moves, closes and re-lays-out nothing.
-- **New tiles.** A terminal tile you create gets its own herdr tab, so you'll see new tabs appear in herdr too.
+- **Adoption.** Every herdr workspace shows up as an Azulejo workspace, every herdr tab as a tab with the same splits, every pane as a terminal tile. Adoption only reads herdr; it moves, closes and re-lays-out nothing.
+- **Layout mirror.** After that, one Azulejo tab is one herdr tab and each terminal tile a pane in it ([ADR 0012](adr/0012-mirror-layout-into-herdr.md)): splits, resizes and swaps you make in Azulejo show up in the herdr TUI, and the other way round. Older sessions with a herdr tab per tile get merged, processes and all. `[herdr] mirror_layout = false` brings back a tab per tile.
 - **Closing a tile detaches.** The pane keeps running in herdr. Killing a pane is a separate, explicit action. A closed adopted tile stays closed on relaunch.
 - **Pane size.** While a tile shows a pane, Azulejo sets that pane's size. If the herdr TUI (or your phone) shows the same pane, it'll look cropped or padded there until you close the tile.
 - **Read-only tiles.** If another client already holds a pane, the tile shows it read-only with a **Take over** button. Azulejo never grabs it back by itself.
@@ -53,7 +61,9 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
 
 - Your herdr chords carry over: `alt+hjkl` focus, `alt+shift+hjkl` swap, `ctrl+alt+shift+hjkl` resize, `ctrl+cmd+t` tall split, `alt+enter` promote, `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom, `alt+w` close tile, `cmd+t` / `cmd+1..8` workspaces, `cmd+shift+t` / `ctrl+1..8` tabs. Full list and overrides: [keybindings](keybindings.md).
 - `cmd+k` opens quick open: one menu for every action (with its chord) and every workspace, tab and tile (by name, cwd, URL, path or agent), fuzzy search, recent first. Start with `>` for commands only or `@` for places only. Commands that need input (rename, open URL, preview a file, open or save a layout) ask for it inline. `cmd+shift+p` and `cmd+p` are unbound now; [docs/keybindings.md](keybindings.md#quick-open-k) shows how to bring them back. In terminals `cmd+k` no longer clears (Ghostty's default): use `ctrl+l`.
-- Agents show in their tile's corner (`claude · working`). Blocked is red, finished-but-unseen green; the sidebar, tab bar and Dock badge count them. Focusing the tile marks it seen. Turn the Dock badge off with `defaults write dev.azulejo.Azulejo AzulejoDockBadge -bool false`.
+- Agent state shows in the sidebar, the tab strip, ⌘K and the Dock badge. Tile headers stay quiet: a blocked agent's tile gets a yellow icon and border, and a finished one a green checkmark until you've looked at it ([themes](themes.md#agent-state-in-tile-headers); `[appearance] tile_agent_badge = true` brings back the full badge). Turn the Dock badge off with `defaults write dev.azulejo.Azulejo AzulejoDockBadge -bool false`.
+- `shift+enter` reaches Claude Code and fish 4 as a real shift+enter (a newline); `cmd+l` types `ctrl+l` in terminals, though Karabiner gets to it first (above). Both in [keybindings](keybindings.md#terminal-keys).
+- The mouse: drag the gutter between tiles to resize them (double-click evens the split out), drag tabs in the top bar or workspaces in the sidebar to reorder them, and drop files, images or text onto a terminal to paste their paths or contents.
 - Browser and preview tiles also come from `azj`:
 
   ```sh
@@ -77,10 +87,9 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
 
 Add an entry to [dogfood-log.md](dogfood-log.md) (the template's at the top), or just tell the manager agent in chat. Attach a crash report or log lines if you have them. Severity 1 means lost work or a session you couldn't get back; G1 passes after a week with none open.
 
-## Known gaps (coming in M2)
+## Known gaps
 
-- No find in terminal (`cmd+f`) yet, though the chord is reserved.
-- Bismuth-style dynamic layouts (2.12), several herdr machines in the sidebar (2.13), the git branch per workspace (2.14) and tile headers with Preview | Source (2.15) are in progress.
+- Several herdr machines (2.13) are tested against a stand-in only, not real SSH hosts, and remote workspaces show no git branch yet.
 - No IME composition in terminal tiles yet; copy/paste, mouse selection and Claude Code's full key path are untested by hand.
 - OSC 52 clipboard and terminal notifications don't pass through herdr ([ADR 0005](adr/0005-scrollback-and-passthrough.md)).
 - Ad-hoc signed only: notarisation waits for a Developer ID ([release](release.md)).
