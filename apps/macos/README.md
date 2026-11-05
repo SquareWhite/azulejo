@@ -110,6 +110,20 @@ keyboard back, and refreshes don't take it while the tree has it
 checks both views with fixture repositories (`sidebar mode|select|focus|files
 …` in scripts; `sidebar.*` state keys).
 
+Collapsed, the sidebar is a rail (`SidebarRail.swift`): each machine group's
+letter and dot, then its workspaces' ⌘ numbers and status icons, centred
+between equal insets, and `»`. `apps/macos/automation/rail.sh LABEL` captures
+it in all four themes into `docs/testing/rail/LABEL/`.
+
+Workspace rows reorder by drag, in the full list and the rail
+(`SidebarDrag.swift`): the row lifts, its group's rows slide aside round an
+accent slot, and the drop runs `workspace.move` (ADR 0013: Azulejo's order,
+not herdr's). Esc or a drop away from the card cancels. It's all in-window,
+no drag session or pasteboard. Scripts drive it with `sidebar drag N | to N |
+out | drop | click N`, which hand mouse events to the row itself (never the
+window or the real pointer); state `drag.*`. `apps/macos/automation/e2e/reorder.sh`
+covers it.
+
 ## Right-click menus
 
 Workspace rows (Agents view), the top tabs and tile header strips have

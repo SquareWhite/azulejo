@@ -1,0 +1,59 @@
+# Rail captures (rail.sh): the collapsed sidebar in all four built-in themes,
+# five workspaces with agents working and blocked, the second one selected.
+# Uses only commands every build has, so it can capture a build from before
+# a rail change too.
+
+log rail captures
+seen-visible off
+anim enabled false
+window-size 1000 560
+until tiles 1 8000
+core {"method":"workspace.rename","params":{"name":"azulejo"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"sample-service"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"sample-project"}}
+action new_workspace
+until workspaces 4 5000
+core {"method":"workspace.rename","params":{"name":"sample-dashboard"}}
+action new_workspace
+until workspaces 5 5000
+core {"method":"workspace.rename","params":{"name":"config"}}
+
+action switch_workspace 1
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
+action switch_workspace 3
+wait 1000
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state blocked
+until sidebar.statuses working|idle|blocked|idle|idle 5000
+action switch_workspace 2
+expect workspace 2
+
+action toggle_sidebar
+until sidebar rail 3000
+wait 600
+
+theme set atom-one-dark
+wait 600
+capture atom-one-dark-rail 0
+wait 900
+theme set atom-one-light
+wait 600
+capture atom-one-light-rail 0
+wait 900
+theme set macos-dark
+wait 600
+capture macos-dark-rail 0
+wait 900
+theme set macos-light
+wait 600
+capture macos-light-rail 0
+wait 900
+wait 1500

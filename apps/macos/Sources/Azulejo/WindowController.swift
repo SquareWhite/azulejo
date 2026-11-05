@@ -125,7 +125,14 @@ final class WindowController: NSObject, NSWindowDelegate {
         }
         rail.onSelect = sidebar.onSelect
         rail.onMenu = sidebar.onMenu
-        rail.onTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
+        // A dropped drag (full sidebar or rail): the core moves the
+        // workspace, and the rows are rebuilt in the new order at once, so
+        // the dragged copy lands on its new row.
+        sidebar.onMove = { [weak app] id, index in
+            app?.send(["method": "workspace.move", "params": ["workspace": id, "index": index]])
+            app?.refresh()
+        }
+        rail.onMove = sidebar.onMove
         rail.onExpand = { [weak app, windowID] in
             app?.send(["method": "window.set_sidebar", "params": ["window": windowID, "visible": true]])
         }

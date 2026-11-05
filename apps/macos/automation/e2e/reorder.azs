@@ -1,0 +1,153 @@
+# Reordering workspaces by dragging their rows (reorder.sh), in the full
+# sidebar and in the rail. The drag runs through each row's own mouse
+# handlers with in-app events (`sidebar drag …`), never the real pointer;
+# Esc goes through the key router like a keypress. Motion stays on, so the
+# lift, the rows sliding aside and the landing all run.
+
+log reorder
+seen-visible off
+window-size 1100 640
+until tiles 1 8000
+core {"method":"workspace.rename","params":{"name":"alpha"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"bravo"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"charlie"}}
+action new_workspace
+until workspaces 4 5000
+core {"method":"workspace.rename","params":{"name":"delta"}}
+action switch_workspace 2
+expect workspace.active bravo
+expect workspace.names alpha|bravo|charlie|delta
+expect drag.active no
+wait 800
+
+# ---- Full sidebar: alpha down to the third place.
+sidebar drag 1
+expect drag.active yes
+expect drag.slot 1
+expect drag.rows [alpha]|bravo|charlie|delta
+expect drag.indicator shown
+sidebar drag to 3
+wait 400
+expect drag.slot 3
+# bravo and charlie slid up; alpha's slot opened under them.
+expect drag.rows bravo|charlie|[alpha]|delta
+shot 01-sidebar-dragging
+capture 01-sidebar-dragging-window 0
+wait 300
+sidebar drag drop
+until workspace.names bravo|charlie|alpha|delta 2000
+expect drag.active no
+expect drag.last moved 1→3
+# Focus didn't move: bravo stays active.
+expect workspace.active bravo
+wait 400
+shot 02-sidebar-dropped
+
+# ⌘ numbers follow the new order; ⌘9 is the last one.
+key cmd+3
+until workspace.active alpha 2000
+key cmd+1
+until workspace.active bravo 2000
+key cmd+9
+until workspace.active delta 2000
+
+# Esc cancels: rows slide back, nothing moves, and the button coming up
+# afterwards isn't a click.
+action switch_workspace 2
+until workspace.active charlie 2000
+sidebar drag 4
+sidebar drag to 1
+wait 300
+expect drag.rows [delta]|bravo|charlie|alpha
+key esc
+expect drag.active no
+expect drag.last cancelled
+wait 400
+sidebar drag drop
+wait 200
+expect workspace.names bravo|charlie|alpha|delta
+expect workspace.active charlie
+
+# Out of the card's reach: the slot closes; letting go there cancels too.
+sidebar drag 2
+sidebar drag to 4
+wait 300
+expect drag.rows bravo|alpha|delta|[charlie]
+sidebar drag out
+wait 300
+expect drag.slot out
+expect drag.indicator hidden
+expect drag.rows bravo|alpha|delta
+shot 03-sidebar-outside
+sidebar drag drop
+expect drag.active no
+expect drag.last cancelled
+wait 400
+expect workspace.names bravo|charlie|alpha|delta
+
+# A press that doesn't travel is still a click.
+sidebar drag click 4
+until workspace.active delta 2000
+
+# Refreshes wait while a row is held: an agent's state changes mid-drag,
+# and the drop still lands where it was aimed.
+sidebar drag 4
+sidebar drag to 2
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state working
+wait 600
+expect drag.active yes
+expect drag.rows bravo|[delta]|charlie|alpha
+sidebar drag drop
+until workspace.names bravo|delta|charlie|alpha 2000
+expect drag.last moved 4→2
+until sidebar.statuses idle|working|idle|idle 3000
+
+# ---- The rail: same rows, numbers instead of names.
+action toggle_sidebar
+until sidebar rail 3000
+wait 600
+expect rail.centred yes
+expect rail.insets 4/4|4/4|4/4|4/4
+sidebar drag 4
+expect drag.rows 1|2|3|[4]
+sidebar drag to 1
+wait 400
+expect drag.rows [4]|1|2|3
+shot 04-rail-dragging
+capture 04-rail-dragging-window 0
+wait 300
+sidebar drag drop
+until workspace.names alpha|bravo|delta|charlie 2000
+expect drag.last moved 4→1
+wait 400
+expect rail.rows 1:idle|2:idle|3:working*|4:idle
+expect rail.centred yes
+shot 05-rail-dropped
+capture 05-rail-dropped-window 0
+# The hover fill sits where the selected one does.
+sidebar rail hover 4
+wait 200
+capture 06-rail-hover-window 0
+wait 300
+sidebar rail hover 0
+key cmd+1
+until workspace.active alpha 2000
+# Esc in the rail too.
+sidebar drag 1
+sidebar drag to 3
+wait 300
+key esc
+expect drag.last cancelled
+sidebar drag drop
+wait 400
+expect workspace.names alpha|bravo|delta|charlie
+expect workspace.active alpha
+
+# Back to the full sidebar for the relaunch.
+action toggle_sidebar
+until sidebar visible 3000
+wait 800

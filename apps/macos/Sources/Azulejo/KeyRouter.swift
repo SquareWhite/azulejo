@@ -62,6 +62,13 @@ final class KeyRouter {
         guard let app else { return false }
         // Sheets and panels (rename, alerts) get their keys untouched.
         if let window = event.window, !app.owns(window) { return false }
+        // Esc while a workspace row is being dragged cancels the drag, and
+        // nothing else sees it.
+        if event.keyCode == 53, let drag = WorkspaceDrag.current {
+            drag.cancel()
+            lastOutcome = "drag-cancelled"
+            return true
+        }
         guard let controller = app.controller(for: event.window) else { return false }
         guard let chord = Self.chord(for: event) else {
             lastOutcome = "unnamed"

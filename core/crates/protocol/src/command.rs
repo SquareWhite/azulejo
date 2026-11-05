@@ -65,6 +65,9 @@ pub enum Command {
     /// core follows the focused terminal's working directory again (F26).
     #[serde(rename = "workspace.set_repo")]
     WorkspaceSetRepo(WorkspaceSetRepo),
+    /// Moves a workspace to another place in its window's list: the sidebar
+    /// order, which ⌘1…⌘8 and ⌘9 (the last) follow. Saved with the session.
+    /// It's Azulejo's own order: herdr's workspace order stays as it is.
     #[serde(rename = "workspace.move")]
     WorkspaceMove(WorkspaceMove),
     /// Records the herdr workspace backing a workspace. Sent by the herdr adapter.
@@ -506,7 +509,8 @@ pub struct WorkspaceSetRepo {
 pub struct WorkspaceMove {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceId>,
-    /// New position within its window; past the end means last.
+    /// New position within its window, from 0, counted once the workspace
+    /// has left its old place; past the end means last.
     pub index: usize,
 }
 

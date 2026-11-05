@@ -619,7 +619,9 @@ enum Design {
         static let bannerBorder: CGFloat = 0.5
         static let browserBanner: CGFloat = 0.95
         static let paletteShadow: CGFloat = 0.35
-        static let railAttention: CGFloat = 0.16
+        static let dragShadow: CGFloat = 0.3
+        static let dropSlot: CGFloat = 0.12
+        static let dropSlotBorder: CGFloat = 0.75
     }
 
     /// Spacing and fixed sizes, in points.
@@ -670,8 +672,10 @@ enum Design {
         static let railPadding: CGFloat = 4
         static let railGroupHeight: CGFloat = 22
         static let railRowHeight: CGFloat = 24
-        static let railSectionGap: CGFloat = 12
+        static let railContentGap: CGFloat = 3
         static let railExpandHeight: CGFloat = 30
+        static let dragThreshold: CGFloat = 4
+        static let dropMargin: CGFloat = 24
         static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
         static let findFieldMin: CGFloat = 60
@@ -831,5 +835,6 @@ enum Design {
         static let revealMax: TimeInterval = 0.25
         static let paletteOpen: TimeInterval = 0.16
         static let paletteClose: TimeInterval = 0.11
+        static let drag: TimeInterval = 0.15
     }
 }

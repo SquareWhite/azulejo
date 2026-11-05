@@ -132,7 +132,7 @@ for tag, theme in themes:
         failures.append(f"{theme}: the find bar's frame wasn't logged")
     print(f"{theme}:")
     # The rail: its card, the selected workspace's fill and a blocked
-    # agent's tint, somewhere down the column.
+    # workspace's icon, somewhere down the column.
     rail_shot = out / f"{tag}-{theme}-rail-app.png"
     if rail_shot.exists():
         rail = Image.open(rail_shot).convert("RGB")
@@ -148,9 +148,9 @@ for tag, theme in themes:
         else:
             sel_rgb, sel_a = colour(theme, "selected")
             sel = over(sel_rgb, sel_a, card)
-        blk_rgb, _ = colour(theme, "statusBlocked")
-        tint = over(blk_rgb, round(255 * tokens["alpha"]["railAttention"]), card)
-        for name, want in [("rail selected row", sel), ("rail blocked tint", tint)]:
+        blk_rgb, blk_a = colour(theme, "statusBlocked")
+        blocked = over(blk_rgb, blk_a, card)
+        for name, want in [("rail selected row", sel), ("rail blocked icon", blocked)]:
             hit = any(near(c, want, 3) for c in colours)
             print(f"  {name:<18} #{bytes(want).hex()} {'found' if hit else 'MISSING'}")
             if not hit:
