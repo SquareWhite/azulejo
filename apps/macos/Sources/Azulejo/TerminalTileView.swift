@@ -65,6 +65,8 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     private var ownAttachEnded: (terminal: String, at: Date)?
     private var ghostRetries: [Date] = []
     private let overlay = TerminalOverlay()
+    /// Shown while a drag the terminal would take hovers over the tile.
+    private var dropHighlight: DropHighlightView?
     /// ⌘F: made on first use, then kept with its query.
     private var finder: TerminalFinder?
     private let runDir: URL
@@ -119,6 +121,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         TerminalSurfaceView.log = log
         guard TerminalRuntime.start(log: log) != nil else { return }
         TileViews.register(.terminal) { tile in TerminalTileView(tile) }
+        DispatchQueue.global(qos: .utility).async { TerminalDrop.sweep() }
         installDebugHook()
     }
 
@@ -136,6 +139,9 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         overlay.onButton = { [weak self] action in self?.overlayAction(action) }
         addSubview(overlay)
+        // The tile, not the surface, so a drop lands while the surface
+        // restarts too (and is refused then); only terminal tiles register.
+        registerForDraggedTypes(TerminalDrop.types)
         Self.live.add(self)
         // Tiles restored at launch time from process start; later ones from now.
         attachClock = Date().timeIntervalSince(Self.processStart) < 20
@@ -779,7 +785,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
             }
             MainActor.assumeIsolated {
                 for window in NSApp.windows {
-                    if let tile = window.contentView?.findTerminal(words[1]) {
+                    if let tile = window.contentView?.terminalTile(words[1]) {
                         tile.debugPress(words[0])
                     }
                 }
@@ -811,11 +817,73 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     }
 }
 
-private extension NSView {
-    func findTerminal(_ id: String) -> TerminalTileView? {
-        if let tile = self as? TerminalTileView, tile.tileID == id { return tile }
-        for sub in subviews { if let found = sub.findTerminal(id) { return found } }
-        return nil
+// MARK: - Drops (TerminalDrop)
+
+extension TerminalTileView {
+    /// The surface a drop types into: a live, writable one. Waiting, ended
+    /// and read-only (observing) tiles take no drops.
+    private var dropSurface: TerminalSurfaceView? {
+        guard let surface, !surface.readOnly, phase == .attached else { return nil }
+        return surface
+    }
+
+    private func dropOperation(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard dropSurface != nil, TerminalDrop.accepts(sender.draggingPasteboard) else {
+            showDropHighlight(false)
+            return []
+        }
+        showDropHighlight(true)
+        return .copy
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { dropOperation(sender) }
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { dropOperation(sender) }
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { showDropHighlight(false) }
+    override func draggingEnded(_ sender: any NSDraggingInfo) { showDropHighlight(false) }
+    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { dropSurface != nil }
+
+    /// Types the drop into the terminal as a paste, and focuses the tile
+    /// if it wasn't (the window stays where it is: no activation).
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        showDropHighlight(false)
+        guard dropSurface != nil else { return false }
+        switch TerminalDrop.plan(sender.draggingPasteboard) {
+        case .nothing:
+            return false
+        case .paste(let text):
+            focusForDrop()
+            typeDropped(text)
+        case .receive(let promises):
+            focusForDrop()
+            TerminalDrop.receive(promises) { [weak self] text in
+                if let text { self?.typeDropped(text) }
+            }
+        }
+        return true
+    }
+
+    private func focusForDrop() {
+        if !focused { clickFocus() }
+    }
+
+    private func typeDropped(_ text: String) {
+        guard let surface = dropSurface else { return }
+        surface.pasteText(text)
+        DropAutomation.noteDropped(text)
+        Self.log("terminal \(Short.id(tileID)): drop of \(text.utf8.count) bytes")
+    }
+
+    var showsDropHighlight: Bool { dropHighlight != nil }
+
+    private func showDropHighlight(_ on: Bool) {
+        if on, dropHighlight == nil {
+            let view = DropHighlightView(frame: bounds)
+            addSubview(view, positioned: .above, relativeTo: nil)
+            dropHighlight = view
+        } else if !on, let view = dropHighlight {
+            view.removeFromSuperview()
+            dropHighlight = nil
+        }
     }
 }
 
