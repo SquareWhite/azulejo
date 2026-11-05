@@ -16,7 +16,7 @@ import AppKit
 /// the focused workspace's repository (else its cwd). Return opens a file
 /// beside the focused tile; Esc hands the keyboard back to the tiles.
 @MainActor
-final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
+final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     enum Mode: String { case agents, files }
 
     static var width: CGFloat { Design.Space.sidebarWidth }
@@ -27,6 +27,8 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     var onMenu: ((String) -> NSMenu?)?
     /// Esc in the Files view: give the keyboard back to the focused tile.
     var onReturnFocus: (() -> Void)?
+    /// A dropped drag: move the workspace to an index in the window.
+    var onMove: ((String, Int) -> Void)?
 
     private(set) var mode: Mode
     private let segments = SidebarSegments()
@@ -40,6 +42,8 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     private var shown: [String] = []
     private var window_: WindowModel?
     private var machines: [MachineModel] = []
+    /// A refresh held back while a drag runs.
+    private var pending: (window: WindowModel, machines: [MachineModel])?
 
     // The Files view's panel and what it shows.
     private var panelID: String?
@@ -164,6 +168,11 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     }
 
     func apply(_ window: WindowModel, machines: [MachineModel] = []) {
+        if WorkspaceDrag.current?.hosted(by: self) == true {
+            pending = (window, machines)
+            return
+        }
+        pending = nil
         window_ = window
         self.machines = machines
         if mode == .files { syncPanel() }
@@ -335,6 +344,20 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
 extension SidebarView {
     var rows: [WorkspaceRow] { stack.arrangedSubviews.compactMap { $0 as? WorkspaceRow } }
 
+    // MARK: Dragging (WorkspaceDragHost)
+
+    var dragRows: [WorkspaceDragRow] { mode == .agents ? rows : [] }
+    var dragOrder: [String] { (pending?.window ?? window_)?.workspaces.map(\.id) ?? [] }
+    var dropArea: NSRect {
+        convert(bounds, to: nil).insetBy(dx: -Design.Space.dropMargin, dy: -Design.Space.dropMargin)
+    }
+
+    func dragMove(_ workspace: String, to index: Int) { onMove?(workspace, index) }
+
+    func dragEnded() {
+        if let pending { apply(pending.window, machines: pending.machines) }
+    }
+
     /// Automation: each workspace row's attention marker (" ● 2"), in order.
     var markers: [String] { rows.map(\.markerText) }
 
@@ -472,10 +495,14 @@ private final class Dot: NSView, ThemeAware {
     }
 }
 
-/// A workspace: status icon, name, and its branch on the right.
+/// A workspace: status icon, name, and its branch on the right. A click
+/// focuses it; a drag reorders it within its group (`WorkspaceDrag`).
 @MainActor
-final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware {
+final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDragRow {
     let status: Design.Status
+    let workspaceID: String
+    let groupID: String
+    let dragName: String
     /// Right-click: Rename, New Tab, Close and the folder's items.
     var menuProvider: (() -> NSMenu?)?
     /// Automation: the attention marker (" ● 2"), or "".
@@ -484,6 +511,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware {
     let detailText: String
     private let handler: () -> Void
     private let selected: Bool
+    private var pressing = RowPress()
     private var hovering = false {
         didSet { Theme.reapply(self) }
     }
@@ -493,6 +521,9 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware {
         self.status = status
         self.selected = selected
         self.handler = handler
+        workspaceID = ws.id
+        groupID = ws.machineID
+        dragName = ws.name
         markerText = marker?.string ?? ""
         let branch = SidebarView.branch(ws.git)
         detailText = branch ?? ""
@@ -554,9 +585,10 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware {
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) {}
+    override func mouseDown(with event: NSEvent) { pressing.down(event) }
+    override func mouseDragged(with event: NSEvent) { pressing.dragged(event, row: self) }
     override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { handler() }
+        if pressing.up(event, in: self) { handler() }
     }
     override func accessibilityPerformPress() -> Bool { handler(); return true }
     override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
@@ -784,10 +816,14 @@ private final class SidebarFooter: NSView {
 /// `sidebar files <verb> [arg]` (the files tile's verbs on the Files view).
 /// State: `sidebar.mode`, `sidebar.statuses`, `sidebar.footer`, and the
 /// Files view's `tile.*` keys as `sidebar.files.*`.
-/// The rail: `sidebar rail select N|agent N|expand`; state `rail.shown`,
-/// `rail.rows`, `rail.groups`, `rail.agents`, `rail.tips`,
-/// `rail.agent.tips`, `rail.group.tips`, `rail.fits`, `rail.spinning`,
-/// `rail.keyboard`.
+/// The rail: `sidebar rail select N|hover N|expand`; state `rail.shown`,
+/// `rail.rows`, `rail.groups`, `rail.tips`, `rail.group.tips`, `rail.fits`,
+/// `rail.spinning`, `rail.keyboard`, `rail.offsets` (how far each row's
+/// content sits off its middle) and `rail.insets` (each row's left/right
+/// inset in the rail), `rail.centred` (both within a point). Also
+/// `workspace.active`: the active workspace's name.
+/// Dragging rows to reorder, in whichever of the two shows:
+/// `sidebar drag N|to N|out|drop` and the `drag.*` keys (`DragAutomation`).
 @MainActor
 enum SidebarAutomation {
     static func run(_ arg: String, controller: WindowController?) -> String? {
@@ -810,7 +846,7 @@ enum SidebarAutomation {
             return panel.automate(bits.first ?? "", bits.count > 1 ? bits[1] : "")
         case "rail":
             // `sidebar rail select N` (the Nth workspace row), `sidebar rail
-            // agent N` (the Nth agent row), `sidebar rail expand` (»).
+            // expand` (»).
             guard let rail = controller?.railView, !rail.isHiddenOrHasHiddenAncestor else { return "the rail isn't shown" }
             let bits = rest.split(separator: " ").map(String.init)
             let n = bits.count > 1 ? Int(bits[1]) : nil
@@ -818,18 +854,29 @@ enum SidebarAutomation {
             case "select":
                 guard let n, rail.workspaceRows.indices.contains(n - 1) else { return "no rail row \(rest)" }
                 rail.workspaceRows[n - 1].press()
-            case "agent":
-                guard let n, rail.agentRows.indices.contains(n - 1) else { return "no rail agent \(rest)" }
-                rail.agentRows[n - 1].press()
             case "expand":
                 (rail.expandButton as? NSButton)?.performClick(nil)
+            case "hover":
+                // `sidebar rail hover N` (or 0 for none): the hover fill, for captures.
+                for (i, row) in rail.workspaceRows.enumerated() { row.hover(i == (n ?? 0) - 1) }
             default:
-                return "sidebar rail takes select N, agent N or expand"
+                return "sidebar rail takes select N, hover N or expand"
             }
+        case "drag":
+            return DragAutomation.run(rest.split(separator: " ").map(String.init), host: dragHost(controller))
         default:
             return "unknown sidebar verb \(parts.first ?? "")"
         }
         return nil
+    }
+
+    /// The rows a drag works on: the rail when it shows, else the full
+    /// sidebar's Agents list.
+    private static func dragHost(_ controller: WindowController?) -> (NSView & WorkspaceDragHost)? {
+        guard let controller else { return nil }
+        if !controller.railView.isHiddenOrHasHiddenAncestor { return controller.railView }
+        let sidebar = controller.sidebarView
+        return sidebar.isHiddenOrHasHiddenAncestor || sidebar.mode != .agents ? nil : sidebar
     }
 
     static func state(_ controller: WindowController) -> [String: String] {
@@ -839,9 +886,9 @@ enum SidebarAutomation {
             "sidebar.statuses": sidebar.statuses.joined(separator: "|"),
             "sidebar.footer": sidebar.footerCounts,
         ]
-        // The rail: rows, groups, agents, tooltips (lines joined by " ¦ ",
-        // rows by " ‖ "), whether it all fits, spinning working rings and
-        // whether the keyboard is in it (never).
+        // The rail: rows, groups, tooltips (lines joined by " ¦ ", rows by
+        // " ‖ "), whether it all fits, spinning working rings, whether the
+        // keyboard is in it (never), and how centred its rows are.
         let rail = controller.railView
         let tips = { (views: [NSView]) in
             views.map { ($0.toolTip ?? "").replacingOccurrences(of: "\n", with: " ¦ ") }.joined(separator: " ‖ ")
@@ -849,12 +896,15 @@ enum SidebarAutomation {
         s["rail.shown"] = rail.isHiddenOrHasHiddenAncestor ? "no" : "yes"
         s["rail.rows"] = rail.rowSummary
         s["rail.groups"] = rail.groupSummary
-        s["rail.agents"] = rail.agentSummary.isEmpty ? "-" : rail.agentSummary
         s["rail.tips"] = tips(rail.workspaceRows)
-        s["rail.agent.tips"] = tips(rail.agentRows)
         s["rail.group.tips"] = tips(rail.groups)
         s["rail.fits"] = rail.fits ? "yes" : "no"
-        s["rail.spinning"] = "\((rail.workspaceRows as [RailRow] + rail.agentRows).filter { $0.isSpinning }.count)"
+        s["rail.spinning"] = "\(rail.workspaceRows.filter(\.isSpinning).count)"
+        s["rail.offsets"] = rail.contentOffsets
+        s["rail.insets"] = rail.rowInsets
+        s["rail.centred"] = rail.centred ? "yes" : "no"
+        s["workspace.active"] = controller.model?.workspace?.name ?? "-"
+        s.merge(DragAutomation.state(host: dragHost(controller))) { $1 }
         let responder = controller.window.firstResponder as? NSView
         s["rail.keyboard"] = responder.map { $0.isDescendant(of: rail) } == true ? "yes" : "no"
         if let panel = sidebar.filesPanel {

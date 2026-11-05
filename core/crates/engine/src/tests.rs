@@ -271,6 +271,105 @@ fn workspaces_and_tabs_report_structure_changes() {
     );
 }
 
+/// `workspace.list` as (name, number) pairs, in the order it lists them.
+fn listed(engine: &mut Engine) -> Vec<(String, usize)> {
+    let Reply::Workspaces { workspaces } = engine
+        .execute(Command::WorkspaceList(WorkspaceList::default()))
+        .unwrap()
+        .reply
+    else {
+        panic!()
+    };
+    workspaces
+        .into_iter()
+        .map(|w| (w.workspace.name, w.number))
+        .collect()
+}
+
+#[test]
+fn workspace_move_reorders_the_window_and_the_numbers_follow() {
+    let mut engine = Engine::new();
+    engine
+        .execute(Command::WorkspaceRename(WorkspaceRename {
+            workspace: None,
+            name: "a".into(),
+        }))
+        .unwrap();
+    let mut ids = vec![engine.session().focus().workspace.unwrap()];
+    for name in ["b", "c", "d"] {
+        engine
+            .execute(Command::WorkspaceCreate(WorkspaceCreate {
+                name: Some(name.into()),
+                ..Default::default()
+            }))
+            .unwrap();
+        ids.push(engine.session().focus().workspace.unwrap());
+    }
+    let numbered = |names: &[&str]| -> Vec<(String, usize)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_string(), i + 1))
+            .collect()
+    };
+    assert_eq!(listed(&mut engine), numbered(&["a", "b", "c", "d"]));
+
+    // Down: "a" to the third place (index 2, counted once it has left).
+    let moved = engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: Some(ids[0]),
+            index: 2,
+        }))
+        .unwrap();
+    assert_eq!(moved.reply, Reply::Ok);
+    assert_eq!(names(&moved.events), ["workspace.reordered"]);
+    let Event::WorkspacesReordered { order, .. } = &moved.events[0] else {
+        panic!()
+    };
+    assert_eq!(order, &[ids[1], ids[2], ids[0], ids[3]]);
+    assert_eq!(listed(&mut engine), numbered(&["b", "c", "a", "d"]));
+
+    // Up: "d" first. Focus stays where it was (on "d", created last).
+    let focused = engine.session().focus().workspace;
+    engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: Some(ids[3]),
+            index: 0,
+        }))
+        .unwrap();
+    assert_eq!(listed(&mut engine), numbered(&["d", "b", "c", "a"]));
+    assert_eq!(engine.session().focus().workspace, focused);
+
+    // Past the end means last; the focused workspace when none is named.
+    engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: None,
+            index: 99,
+        }))
+        .unwrap();
+    assert_eq!(listed(&mut engine), numbered(&["b", "c", "a", "d"]));
+
+    // Its own place: nothing changes, nothing is reported.
+    let same = engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: Some(ids[1]),
+            index: 0,
+        }))
+        .unwrap();
+    assert!(same.events.is_empty(), "{:?}", names(&same.events));
+
+    // An unknown workspace is an error and changes nothing.
+    let err = engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: Some(WorkspaceId::new()),
+            index: 0,
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert_eq!(listed(&mut engine), numbered(&["b", "c", "a", "d"]));
+    assert_eq!(engine.session().check_invariants(), Ok(()));
+}
+
 #[test]
 fn tile_list_and_get_report_location_and_focus() {
     let mut engine = Engine::new();
