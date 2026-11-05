@@ -1,10 +1,45 @@
 # App icon
 
-**Chosen: X, pinwheel, white on cobalt (Nov 4, 2026).** the maintainer's pick: four tiles linked by one woven spiral says "tiles that complete each other" in a single mark, and white on cobalt stays bold from the Dock down to 16 px.
+**Chosen: Y, the prompt key, light and dark (Nov 5, 2026).** the maintainer's own design: a cream glaze tile with a pale blue-grey key in the middle holding a cobalt `>_`, and an edge pattern that tiles. It replaces X, the pinwheel (Nov 4), which stays in `draw.swift` with every other candidate.
 
-![X, pinwheel, white on cobalt, at 1024 (shown at 256), 128, 64, 32 and 16 px beside Terminal and Notes](chosen.png)
+![Y in light, dark and clear at every size, the 2 × 2 wall, and on light and dark desktops](prompt.png)
 
 [`chosen.png`](chosen.png) shows the shipping icon at 1024 (shown at 256), 128, 64, 32 and 16 px, then 32 and 16 blown up 4×, next to Terminal and Notes, on light and dark. Under that the three sit in a row at each size, as in the Dock. The rest of this page is how we got here.
+
+## Prompt key (Y)
+
+[`prompt-mockup.png`](prompt-mockup.png) is the maintainer's mockup. `draw.swift` redraws it procedurally (`Icon.key`), to measurements taken off the mockup's pixels: its tile is 219.5 px across, so a mockup pixel is 0.009 of the tile's half-width (the units below).
+
+- **Glaze**: `#FEFDFB` at the top to `#EAE3D3` at the foot, under the usual sheen and rim, turned down.
+- **Corners**: a quarter ring centred on each corner, from 0.32 to 0.47 out, in `#899DC7` (cobalt at 50 % on the glaze, made opaque). Inside it the glaze is a shade whiter, and a solid quarter dot of 0.16 sits in the very corner. The squircle cuts that dot away on the icon; it only shows when tiles are laid square.
+- **Edges**: a solid half dot of radius 0.10 at each edge midpoint.
+- **No glare on the pattern.** The mockup lightens its top-left ring and top dot. In a wall that left every full ring with one pale quarter (the maintainer, Nov 5: "tiles weirdly because of top left circle"), so the pattern's colours are opaque and the same in every corner and on every edge, whatever the glaze gradient under them. The glass's sheen still lightens the top of the icon itself.
+- **Key**: a continuous-corner rounded square 1.03 across, corner 0.14, `#D9DDE9` to `#C9CDD6` with a soft shadow and a light rim along its top.
+- **Prompt**: one weight, 0.146, about the ring's. The chevron runs from (−0.31, ±0.237) to an apex at (−0.064, 0), with round ends and a nearly sharp point, as in the mockup. The bar runs from 0.064 to 0.337, level with the chevron's foot.
+
+Four tiles side by side make whole rings round whole dots at the corners and whole dots on the edges ([`prompt.png`](prompt.png), the wall). [`prompt-vs-mockup.png`](prompt-vs-mockup.png) puts the mockup, Y at the same scale, and the two at 50 % over each other, for the big icon, the 2 × 2 wall and the row of three looks. The big icon lines up within a mockup pixel everywhere except the corners (below).
+
+**Looks.** Light ships as `AppIcon.icns`. Dark is a graphite glaze (`#30343E` to `#121419`) with a dark key and the prompt and pattern in a muted periwinkle (`#849BCF`, the prompt a touch lighter); it ships as `AppIconDark.icns` (see "Dark mode without Xcode"). Clear is grey glass at 82 % with white glyphs; it's in the sheets for review but doesn't ship, since only an Icon Composer icon can be clear.
+
+**Small sizes.** From 64 px up it's the full design. At 32 px the half dots go (they'd be 1.3 px), as in the mockup's own Dock row, and the key loses its rim. At 16 px a to-scale prompt ran into a blob, so the key is set in whole pixels (8 × 8) and the prompt is one pixel wide: a 45° staircase for `>` and three pixels for `_`.
+
+**Where it differs from the mockup:**
+
+- **The corner.** The mockup uses Apple's older template (radius 185.4 on the 824 px body). macOS 26 masks every app icon with a rounder corner, which we fitted to what IconServices drew for our bundle: a continuous corner of radius 214 (`tahoeRadius`; 166 pixels off at 1024). Y uses 214 so the bundle icon and the Dock image the app hands over at run time (below) have the same outline.
+- **The half dots at 32 and 16 px** go, as above. The mockup's 72 px Dock row has none either; we keep them from 64 px up.
+- **Clear** is close, not exact: the mockup's glass is darker at the foot.
+- **The top-left glare** is left out on purpose (above), so the top-left ring and top dot are a little darker than in the mockup.
+
+## Dark mode without Xcode
+
+macOS 26 draws dark, clear and tinted app icons from an `Assets.car`, which only Xcode's `actool` can compile from an Icon Composer `.icon`. The Command Line Tools don't have it. What we checked:
+
+- **A dark icon inside the `.icns`.** The format has an undocumented dark slot: system folder and Trash icons in `CoreTypes.bundle` carry one (type `0xFDD92FA8`, a nested list of icon images). We built a test app with our light icon plus a red one in that slot and asked IconServices to draw it in the dark appearance (the private `ISImageDescriptor.appearance = 1`, which does give Notes its dark icon). It drew the light icon. macOS doesn't read that slot for apps.
+- **Info.plist keys.** `CFBundleIcons` and `CFBundleIconName` name icons in the asset catalog, so they need `Assets.car` too.
+
+So the bundle's `AppIcon.icns` is the light look: Finder, Launchpad, Spotlight and the Dock before launch show it. While the app runs, `DockIcon.swift` watches `NSApp.effectiveAppearance` (key-value observed, so it follows System Settings live) and sets `NSApp.applicationIconImage` to `AppIconDark.icns` in dark mode, or back to nil, the bundle's own icon, in light. Both `.icns` files are drawn on the same canvas with macOS 26's corner, so the Dock shows the same size and outline either way: the dark image's opaque area matches IconServices' render of the bundle icon to within 761 edge pixels of 637,606, same bounding box. The window theme (`[theme]`) sets windows' appearance, not the app's, so it doesn't move the Dock icon. One catch: macOS 26 has its own "icon and widget style" setting, separate from dark mode. With it on Default, other apps keep light icons in dark mode, while Azulejo goes dark.
+
+`apps/macos/automation/dock-icon.azs` switches `NSApp.appearance` (never the system's), checks the swap both ways and saves the images: `AZJ_DEV_NAME=icn apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs`.
 
 ![All eight candidates](options.png)
 
@@ -184,7 +219,7 @@ X itself is the safe one: exactly what the maintainer picked, made crisp.
 
 Without Xcode there's no `actool`, so the icon ships as a flat `AppIcon.icns`. The glass is drawn into it, following Apple's macOS icon template:
 
-- **Shape and grid.** A 1024 px canvas, with an 824 × 824 rounded square centred in it (100 px margin). The corners are Apple's continuous curve (radius 185.4, the same Béziers UIKit uses), not a plain rounded rect. Everything inside is fully opaque.
+- **Shape and grid.** A 1024 px canvas, with an 824 × 824 rounded square centred in it (100 px margin). The corners are Apple's continuous curve (radius 185.4, the same Béziers UIKit uses), not a plain rounded rect; Y uses macOS 26's own 214. Everything inside is fully opaque.
 - **Shadow.** The template's drop shadow: black at 50 %, blur 28, 12 px down. It's halved at 32 px and below, where it would only smudge.
 - **Glaze.** A warm white gradient. The blue is multiplied into it over a faint blurred copy of itself, so the cobalt seems to sit in the glaze, not on it.
 - **Glass.** A sheen over the top half, a soft specular bloom under the top edge, and a rim light that's brightest top-left and catches again bottom-right. A faint hairline inside the edge keeps a white tile's shape on a white background.
@@ -195,21 +230,21 @@ Without Xcode there's no `actool`, so the icon ships as a flat `AppIcon.icns`. T
 
 ## Variants
 
-- [`appearance-dark.png`](appearance-dark.png): a night glaze with the blue lifted, for the dark icon style.
-- [`appearance-tinted.png`](appearance-tinted.png): a monochrome source of the kind macOS colours for the tinted style.
+- [`appearance-dark.png`](appearance-dark.png): the chosen icon's dark look, as `AppIconDark.icns` ships it.
+- [`appearance-clear.png`](appearance-clear.png): its clear look, for review only.
 
-An `.icns` holds one appearance, so neither ships yet. macOS 26 derives its own dark and tinted versions of a flat icon.
+For the marks and candidates (A–X), `draw.swift` still makes a dark variant from a night glaze with the blue lifted, and a monochrome tinted source (`Icon.image(_:px:)` with `.dark` and `.clear`).
 
 ## What Xcode would add
 
-Icon Composer (with Xcode 26) saves a layered `.icon` document. `actool` compiles it into `Contents/Resources/Assets.car` under the name in `CFBundleIconName` (already `AppIcon`). Layered, the system draws the glass live: specular highlights that follow the light, refraction, translucency, and our own default, dark, clear and tinted appearances instead of derived ones. There's no supported way to write `Assets.car` without `actool`, and the Command Line Tools don't include it. The way in later:
+Icon Composer (with Xcode 26) saves a layered `.icon` document. `actool` compiles it into `Contents/Resources/Assets.car` under the name in `CFBundleIconName` (already `AppIcon`). Layered, the system draws the glass live: specular highlights that follow the light, refraction, translucency, and our own default, dark, clear and tinted appearances instead of derived ones, in Finder, Launchpad and Spotlight as well as the Dock, and before the app launches. It would also follow the system's icon style setting rather than dark mode, and `DockIcon.swift` could go. There's no supported way to write `Assets.car` without `actool`, and the Command Line Tools don't include it. The way in later:
 
-1. Export the motif from `draw.swift` as layers: the glaze background as a gradient, the cobalt motif as a foreground layer without the baked sheen, rim or shadow. Build `AppIcon.icon` in Icon Composer and set the dark and tinted colours from the variants above.
-2. In `bundle.sh` and `scripts/release/build-mac.sh`, when `xcrun --find actool` succeeds, compile it into `Contents/Resources` (along the lines of `xcrun actool AppIcon.icon --compile <Resources> --app-icon AppIcon --platform macosx --minimum-deployment-target 14.0 --output-partial-info-plist …`; check the flags against the Xcode you have). Keep `AppIcon.icns` as the fallback for macOS 14 and 15 and for machines without Xcode.
+1. Assemble `AppIcon.icon` in Icon Composer from Y's layers in [`scripts/icon/composer/`](../../../scripts/icon/composer/README.md) (`just icon` writes them as SVG from `draw.swift`; the README there has the order and each look's colours).
+2. In `bundle.sh` and `scripts/release/build-mac.sh`, when `xcrun --find actool` succeeds, compile it into `Contents/Resources` (along the lines of `xcrun actool AppIcon.icon --compile <Resources> --app-icon AppIcon --platform macosx --minimum-deployment-target 14.0 --output-partial-info-plist …`; check the flags against the Xcode you have). Keep `AppIcon.icns` as the fallback for macOS 14 and 15 and for machines without Xcode, and keep `DockIcon.swift` only where there's no `Assets.car`.
 
 ## Files and commands
 
-- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png, `--woven DIR` just woven.png and woven-hero.png, `--pinwheel DIR` just pinwheel.png, and `--chosen DIR` just chosen.png.
-- `just icon` (`scripts/icon/build.sh`): renders the iconset (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png, the woven sheets, pinwheel.png and chosen.png included) and `scripts/icon/AppIcon.sha256`.
-- `just lint` runs `scripts/icon/build.sh --check`. It fails when `draw.swift` or the `.icns` changed without a `just icon`. It compares hashes and doesn't re-render, so a different macOS version's antialiasing can't trip it.
-- `apps/macos/bundle.sh` (`just mac`) and `scripts/release/build-mac.sh` (`just release-mac`, `just dogfood`) copy the `.icns` into `Contents/Resources`. `Info.plist` sets `CFBundleIconFile` and `CFBundleIconName` to `AppIcon`.
+- `scripts/icon/draw.swift`: the source. Pure CoreGraphics, plus CoreImage's software renderer for the blur, so output is byte-identical from run to run on the same macOS. `swift scripts/icon/draw.swift --minimal DIR` writes just minimal.png, `--woven DIR` just woven.png and woven-hero.png, `--pinwheel DIR` just pinwheel.png, `--key DIR` just prompt.png and prompt-vs-mockup.png (reading DIR/prompt-mockup.png), `--composer DIR` Y's layers as SVG, and `--chosen DIR` just chosen.png.
+- `just icon` (`scripts/icon/build.sh`): renders the light and dark iconsets (16–512 at @1x and @2x) and packs `apps/macos/Resources/AppIcon.icns` and `AppIconDark.icns` with `/usr/bin/iconutil`. It also writes these PNGs (minimal.png, the woven sheets, pinwheel.png, prompt.png and chosen.png included), the SVGs in `scripts/icon/composer/` and `scripts/icon/AppIcon.sha256`.
+- `just lint` runs `scripts/icon/build.sh --check`. It fails when `draw.swift` or either `.icns` changed without a `just icon`. It compares hashes and doesn't re-render, so a different macOS version's antialiasing can't trip it.
+- `apps/macos/bundle.sh` (`just mac`) and `scripts/release/build-mac.sh` (`just release-mac`, `just dogfood`) copy both `.icns` files into `Contents/Resources`. `Info.plist` sets `CFBundleIconFile` and `CFBundleIconName` to `AppIcon`.

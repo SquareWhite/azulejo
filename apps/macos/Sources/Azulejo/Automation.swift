@@ -60,6 +60,9 @@ import AppKit
 ///     capture name [ms]      after ms, ask the harness to `screencapture` the
 ///                            window → <out>/name.png (Metal and in-flight
 ///                            motion included, unlike `shot`)
+///     appearance light|dark|system   set NSApp.appearance (the system's
+///                            setting is untouched); `expect dockicon dark`
+///     dock-icon name         the Dock's icon image at 1024 → <out>/name.png
 ///     quit                   finish (implied at the end)
 ///
 /// Writes `<out>/automation.log` (every step with the layout after it) and
@@ -194,6 +197,18 @@ final class Automation {
                 failures.append("line \(step): window-size \(arg): needs a width and a height")
             }
             delay = 0.3
+        case "appearance":
+            // `appearance light|dark|system`: NSApp.appearance, so the app
+            // sees dark mode without touching the system's setting.
+            switch arg {
+            case "light": NSApp.appearance = NSAppearance(named: .aqua)
+            case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+            case "system": NSApp.appearance = nil
+            default: failures.append("line \(step): appearance takes light, dark or system")
+            }
+            record("appearance \(arg)")
+            delay = 0.3
+        case "dock-icon": dockIcon(arg); delay = 0
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
@@ -292,6 +307,27 @@ final class Automation {
             shadow.set()
             image.draw(in: NSRect(origin: origin, size: image.size))
             NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    /// `dock-icon name`: the image the Dock has now, at 1024 px, →
+    /// <out>/name.png.
+    private func dockIcon(_ name: String) {
+        let image = NSApp.applicationIconImage ?? NSImage()
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 1024, pixelsHigh: 1024, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = NSSize(width: 1024, height: 1024)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024))
+        NSGraphicsContext.restoreGraphicsState()
+        let url = out.appendingPathComponent("\(name).png")
+        do {
+            try rep.representation(using: .png, properties: [:])?.write(to: url)
+            record("dock-icon \(name) (\(DockIcon.showingDark ? "dark" : "light")) → \(url.lastPathComponent)")
+        } catch {
+            failures.append("line \(step): dock-icon \(name): \(error)")
         }
     }
 
@@ -549,6 +585,7 @@ final class Automation {
             "workspaces": "\(window.workspaces.count)",
             "workspace": "\((window.workspaces.firstIndex { $0.id == window.activeWorkspace } ?? -1) + 1)",
             "sidebar": controller.sidebarState == .full ? "visible" : controller.sidebarState.rawValue,
+            "dockicon": DockIcon.showingDark ? "dark" : "light",
         ]
         if let ws = window.workspace {
             s["tabs"] = "\(ws.tabs.count)"
