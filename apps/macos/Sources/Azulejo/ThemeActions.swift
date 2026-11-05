@@ -28,6 +28,8 @@ extension AppController {
         Theme.load(json)
         // Not a colour, but `[appearance]` too: the agent badge in headers.
         AttentionStyle.tileBadge = json["tile_agent_badge"] as? Bool ?? false
+        // And the Dock icon: light, dark, or following the system.
+        DockIcon.mode = (json["app_icon"] as? String).flatMap(DockIcon.Mode.init(rawValue:)) ?? .light
     }
 
     /// Saves `id` (or "auto") as the theme. Shows the problem when the

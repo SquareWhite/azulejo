@@ -68,8 +68,10 @@ import AppKit
 ///                            window → <out>/name.png (Metal and in-flight
 ///                            motion included, unlike `shot`)
 ///     appearance light|dark|system   set NSApp.appearance (the system's
-///                            setting is untouched); `expect dockicon dark`
-///     dock-icon name         the Dock's icon image at 1024 → <out>/name.png
+///                            setting is untouched)
+///     dock-icon name         the Dock's icon image at 1024 → <out>/name.png;
+///                            `expect dockicon dark` checks which one it is
+///                            (`theme system dark` drives `app_icon = "auto"`)
 ///     quit                   finish (implied at the end)
 ///
 /// Writes `<out>/automation.log` (every step with the layout after it) and

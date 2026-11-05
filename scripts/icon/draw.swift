@@ -9,7 +9,8 @@
 //
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
 //   swift scripts/icon/draw.swift --iconset-dark DIR  # the same, dark look
-//   swift scripts/icon/draw.swift --key DIR       # prompt.png and prompt-vs-mockup.png (reads DIR/prompt-mockup.png)
+//   swift scripts/icon/draw.swift --key DIR       # prompt.png, prompt-vs-mockup.png (reads DIR/prompt-mockup.png), dock-check.png
+//   swift scripts/icon/draw.swift --dock DIR      # dock-check.png only (reads DIR/dock-neighbours.png)
 //   swift scripts/icon/draw.swift --composer DIR  # Y's layers as SVG, for Icon Composer
 //   swift scripts/icon/draw.swift --docs DIR      # everything below, plus candidates, variants, sheet.png, options.png
 //   swift scripts/icon/draw.swift --minimal DIR   # minimal.png only
@@ -66,6 +67,25 @@ struct Palette {
   /// The dark hairline inside the edge; nil is 0.10 on a multiplied glaze
   /// and 0.18 otherwise.
   var hairline: CGFloat? = nil
+  /// macOS 26's Liquid Glass bevel, in place of the rim light: nil for the
+  /// older candidates.
+  var bevel: Bevel? = nil
+  /// Drop shadow blur and offset, in 1024 px units (Apple's template: 28, 12).
+  var shadowBlur: CGFloat = 28
+  var shadowDrop: CGFloat = 12
+}
+
+/// The bright edge every macOS 26 icon has: light catching the glass's
+/// rounded edge, all the way round. Measured off Zed, Obsidian, Terminal,
+/// Notes and TextEdit as IconServices draws them (docs/design/icon/README.md,
+/// "Dock check"): at the very edge it's white at about 55 % on a dark icon
+/// (brightest at the top, weakest at the foot) and fully white on a light
+/// one, fading linearly to nothing 18 px in (on the 824 px body).
+struct Bevel {
+  var top: CGFloat  // white's alpha at the edge, top, sides and foot
+  var side: CGFloat
+  var bottom: CGFloat
+  var depth: CGFloat = 18  // how far in it fades out, 1024 px units (Y: 15, a little crisper)
 }
 
 let tinGlaze = Palette(
@@ -1857,7 +1877,7 @@ enum KeyGeometry {
 /// one even ring, not one with a pale quarter. (The mockup's glare on its
 /// top-left ring and top dot broke that, so the pattern takes no glare.)
 struct KeyLook {
-  var tile: Palette  // glaze gradient, shadow, sheen, rim, shade
+  var tile: Palette  // glaze gradient, shadow, sheen, rim or bevel, shade
   var pocket: CGColor?  // glaze inside each corner ring, a shade lighter
   var ring: CGColor  // cobalt at 50 % over the glaze's middle, made opaque
   var dot: CGColor
@@ -1866,11 +1886,55 @@ struct KeyLook {
   var keyShadow: CGFloat
   var keyRim: CGColor  // hairline catching the light along the key's top
   var glyph: CGColor
+  /// The key as glass: a soft glow inside its top half, and a darker lip
+  /// along its foot. 0 and nil: a flat key (the first cut).
+  var keyGlow: CGFloat = 0
+  var keyLip: CGColor? = nil
+  /// The prompt lit from within: lighter at the top, with a halo round it.
+  var glyphTop: CGColor? = nil
+  var glyphHalo: CGColor? = nil
 }
 
-func keyLook(_ look: Look) -> KeyLook {
-  switch look {
-  case .light:
+/// Y's versions: the first cut (Nov 5, 2026), and the one restyled to sit
+/// among macOS 26's own icons in the Dock (the maintainer's Dock screenshot, Nov 5:
+/// "match better with the icons around").
+enum KeyVersion: CaseIterable {
+  case first, tahoe
+}
+
+func keyLook(_ look: Look, _ version: KeyVersion = .tahoe) -> KeyLook {
+  switch (look, version) {
+  case (.light, .tahoe):
+    // Notes and TextEdit: a white glass edge all round, a soft shadow, a
+    // clean body. The cream stays, a touch cleaner at the foot.
+    KeyLook(
+      tile: Palette(
+        groundTop: rgb(0xFFFEFB), groundBottom: rgb(0xEEE8DA),
+        ink: rgb(0x1C46A8), line: rgb(0x1C46A8), wash: rgb(0xD3D7E1), grout: rgb(0xD8D2C4),
+        multiply: false, sheen: 0.3, shadow: 0.22, rim: 0, shade: 0.1, hairline: 0,
+        bevel: Bevel(top: 1, side: 0.95, bottom: 0.8, depth: 15), shadowBlur: 22, shadowDrop: 6),
+      pocket: rgb(0xFBF9F4), ring: rgb(0x8EA1CB), dot: rgb(0x1C46A8),
+      keyTop: rgb(0xE2E6F0), keyBottom: rgb(0xC6CBD7), keyShadow: 0.2,
+      keyRim: rgb(0xFFFFFF, 0.95), glyph: rgb(0x1C46A8),
+      keyGlow: 0.35, keyLip: rgb(0x8C93A6, 0.28))
+  case (.dark, .tahoe):
+    // Zed, Obsidian and Terminal: a near-black body, the glass's bright edge,
+    // and one luminous thing in the middle.
+    KeyLook(
+      tile: Palette(
+        groundTop: rgb(0x2C2E35), groundBottom: rgb(0x0F1013),
+        ink: rgb(0x7F9EEA), line: rgb(0x7F9EEA), wash: rgb(0x343A49), grout: rgb(0x0C0D11),
+        multiply: false, sheen: 0.22, shadow: 0.3, rim: 0, shade: 0.3, hairline: 0,
+        bevel: Bevel(top: 0.62, side: 0.46, bottom: 0.34, depth: 15), shadowBlur: 22, shadowDrop: 6),
+      pocket: rgb(0x16171B), ring: rgb(0x2C3859), dot: rgb(0x5272C4),
+      keyTop: rgb(0x3B404D), keyBottom: rgb(0x1E2128), keyShadow: 0.6,
+      keyRim: rgb(0xFFFFFF, 0.5), glyph: rgb(0x94B2FF),
+      keyGlow: 0.10, keyLip: rgb(0x000000, 0.35),
+      glyphTop: rgb(0xD2DEFF), glyphHalo: rgb(0x4F7BFF, 0.55))
+  case (.clear, .tahoe):
+    // The first cut's glass, with the bevel and shadow the others got.
+    withGlass(keyLook(.clear, .first), Bevel(top: 0.7, side: 0.5, bottom: 0.4, depth: 15), shadow: 0.3)
+  case (.light, .first):
     KeyLook(
       tile: Palette(
         groundTop: rgb(0xFEFDFB), groundBottom: rgb(0xEAE3D3),
@@ -1879,7 +1943,7 @@ func keyLook(_ look: Look) -> KeyLook {
       pocket: rgb(0xFAF8F3), ring: rgb(0x899DC7), dot: rgb(0x1F4AA8),
       keyTop: rgb(0xD9DDE9), keyBottom: rgb(0xC9CDD6), keyShadow: 0.14,
       keyRim: rgb(0xFFFFFF, 0.55), glyph: rgb(0x1F4AA8))
-  case .dark:
+  case (.dark, .first):
     KeyLook(
       tile: Palette(
         groundTop: rgb(0x30343E), groundBottom: rgb(0x121419),
@@ -1888,7 +1952,7 @@ func keyLook(_ look: Look) -> KeyLook {
       pocket: rgb(0x1C1E25), ring: rgb(0x525F7D), dot: rgb(0x849BCF),
       keyTop: rgb(0x3C4152), keyBottom: rgb(0x2A2F3D), keyShadow: 0.35,
       keyRim: rgb(0xFFFFFF, 0.1), glyph: rgb(0x8AA1D4))
-  case .clear:
+  case (.clear, .first):
     KeyLook(
       tile: Palette(
         groundTop: rgb(0x8C8F98, 0.82), groundBottom: rgb(0x4C505B, 0.82),
@@ -1898,6 +1962,19 @@ func keyLook(_ look: Look) -> KeyLook {
       keyTop: rgb(0xFFFFFF, 0.2), keyBottom: rgb(0xFFFFFF, 0.1), keyShadow: 0.2,
       keyRim: rgb(0xFFFFFF, 0.3), glyph: rgb(0xFFFFFF))
   }
+}
+
+/// `k` with macOS 26's bevel in place of the rim light and hairline, and
+/// Apple's lighter shadow.
+func withGlass(_ k: KeyLook, _ bevel: Bevel, shadow: CGFloat) -> KeyLook {
+  var k = k
+  k.tile.rim = 0
+  k.tile.hairline = 0
+  k.tile.bevel = bevel
+  k.tile.shadow = shadow
+  k.tile.shadowBlur = 22
+  k.tile.shadowDrop = 6
+  return k
 }
 
 /// Y's prompt, `>_`, as one fillable outline, in tile units. Below 32 px it
@@ -1995,10 +2072,32 @@ func drawKey(_ g: CGContext, _ k: KeyLook, px: Int) {
   g.drawLinearGradient(
     CGGradient(colorsSpace: cs, colors: [k.keyTop, k.keyBottom] as CFArray, locations: [0, 1])!,
     start: CGPoint(x: 0, y: K.keyHalf), end: CGPoint(x: 0, y: -K.keyHalf), options: [])
+  if k.keyGlow > 0 {
+    // Glass: light pooling inside the key's top half.
+    g.saveGState()
+    g.translateBy(x: 0, y: K.keyHalf * 0.75)
+    g.scaleBy(x: 1, y: 0.55)
+    g.drawRadialGradient(
+      CGGradient(colorsSpace: cs, colors: [rgb(0xFFFFFF, k.keyGlow), rgb(0xFFFFFF, 0)] as CFArray, locations: [0, 1])!,
+      startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: K.keyHalf * 1.1, options: [])
+    g.restoreGState()
+  }
+  if let lip = k.keyLip, px > 32 {
+    // A darker lip along the foot, where the glass turns away from the light.
+    g.saveGState()
+    g.addPath(key)
+    g.setLineWidth(max(0.05, 3 / unit))
+    g.replacePathWithStrokedPath()
+    g.clip()
+    g.drawLinearGradient(
+      CGGradient(colorsSpace: cs, colors: [rgb(0, 0), lip] as CFArray, locations: [0, 1])!,
+      start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: -K.keyHalf), options: [])
+    g.restoreGState()
+  }
   if px > 32 {
     // Light catching the key's top edge, fading down its sides.
     g.addPath(key)
-    g.setLineWidth(max(0.016, 2 / unit))
+    g.setLineWidth(max(0.016, 2 / unit) * (k.keyLip == nil ? 1 : 1.6))
     g.replacePathWithStrokedPath()
     g.clip()
     g.drawLinearGradient(
@@ -2006,12 +2105,33 @@ func drawKey(_ g: CGContext, _ k: KeyLook, px: Int) {
       start: CGPoint(x: 0, y: K.keyHalf), end: CGPoint(x: 0, y: 0), options: [])
   }
   g.restoreGState()
-  g.fill(keyPrompt(px: px), k.glyph)
+  drawGlyph(g, k, keyPrompt(px: px), px: px)
+}
+
+/// The prompt: flat, or lit from within (a halo round it, lighter at the top).
+func drawGlyph(_ g: CGContext, _ k: KeyLook, _ path: CGPath, px: Int) {
+  let unit = 412 * CGFloat(px) / 1024
+  if let halo = k.glyphHalo, px > 32 {
+    g.saveGState()
+    g.setShadow(offset: .zero, blur: 0.12 * unit, color: halo)
+    g.fill(path, k.glyph)
+    g.restoreGState()
+  }
+  guard let top = k.glyphTop, px > 16 else { return g.fill(path, k.glyph) }
+  g.saveGState()
+  g.addPath(path)
+  g.clip()
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  g.drawLinearGradient(
+    CGGradient(colorsSpace: cs, colors: [top, k.glyph] as CFArray, locations: [0, 1])!,
+    start: CGPoint(x: 0, y: KeyGeometry.armY + KeyGeometry.stroke / 2),
+    end: CGPoint(x: 0, y: -KeyGeometry.armY - KeyGeometry.stroke / 2), options: [])
+  g.restoreGState()
 }
 
 /// Y at `px` × `px`: the tile with macOS 26's corner, the glass over it.
-func renderKey(_ look: Look, px: Int) -> CGImage {
-  let k = keyLook(look)
+func renderKey(_ look: Look, px: Int, _ version: KeyVersion = .tahoe) -> CGImage {
+  let k = keyLook(look, version)
   return renderTile(k.tile, px: px, bleeds: false, radius: tahoeRadius) { g in
     drawKeyPattern(g, k, px: px)
     drawKey(g, k, px: px)
@@ -2113,7 +2233,7 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, radius: CGFloat = 185.4, mo
   g.saveGState()
   let shadowScale: CGFloat = px <= 32 ? 0.5 : 1
   g.setShadow(
-    offset: CGSize(width: 0, height: -12 * s), blur: 28 * s,
+    offset: CGSize(width: 0, height: -p.shadowDrop * s), blur: p.shadowBlur * s,
     color: rgb(0x000000, p.shadow * shadowScale))
   g.fill(shape, p.groundBottom)
   g.restoreGState()
@@ -2172,6 +2292,7 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, radius: CGFloat = 185.4, mo
       locations: [0, 0.4, 0.6, 1])!,
     start: CGPoint(x: 160, y: 900), end: CGPoint(x: 870, y: 120), options: [])
   g.restoreGState()
+  if let bevel = p.bevel { drawBevel(g, shape, bevel, px: px) }
 
   // A hairline just inside the edge so a white tile holds its shape on a
   // white background.
@@ -2185,6 +2306,45 @@ func renderTile(_ p: Palette, px: Int, bleeds: Bool, radius: CGFloat = 185.4, mo
   g.restoreGState()
 
   return g.makeImage()!
+}
+
+/// The Liquid Glass bevel (`Bevel`) inside `shape`, in 1024 px units: white
+/// bands stacked from the deepest in, each one's alpha picked so the sum
+/// falls off linearly from the edge, then shaded top to foot.
+func drawBevel(_ g: CGContext, _ shape: CGPath, _ b: Bevel, px: Int) {
+  let s = CGFloat(px) / 1024
+  // At least a pixel wide, so it still draws the edge at 32 and 16 px; a
+  // band thinner than its depth would say gets fainter instead.
+  let depthPx = max(b.depth * s, 1)
+  let fade = min(b.depth * s, 1) * (px <= 16 ? 0.7 : 1)
+  let n = max(Int(depthPx.rounded(.up)) * 2, 2)
+  g.saveGState()
+  g.addPath(shape)
+  g.clip()
+  g.beginTransparencyLayer(auxiliaryInfo: nil)
+  var before: CGFloat = 0  // the alpha the deeper bands add up to
+  for i in 1...n {
+    let want = CGFloat(i) / CGFloat(n)  // 1 at the edge
+    let a = 1 - (1 - want) / (1 - before)
+    before = want
+    let depth = depthPx * (1 - CGFloat(i - 1) / CGFloat(n)) / s
+    g.addPath(shape)
+    g.setLineWidth(2 * depth)
+    g.setStrokeColor(rgb(0xFFFFFF, min(a, 1)))
+    g.strokePath()
+  }
+  // Shade it: brightest along the top, a little less down the sides, least
+  // along the foot.
+  g.setBlendMode(.destinationIn)
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  g.drawLinearGradient(
+    CGGradient(
+      colorsSpace: cs,
+      colors: [rgb(0, b.top * fade), rgb(0, b.side * fade), rgb(0, b.side * fade), rgb(0, b.bottom * fade)] as CFArray,
+      locations: [0, 0.25, 0.75, 1])!,
+    start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
+  g.endTransparencyLayer()
+  g.restoreGState()
 }
 
 // MARK: - Output
@@ -2771,6 +2931,123 @@ func keyWall(_ g: CGContext, _ look: Look, at origin: CGPoint, tile: Int, grout:
   }
 }
 
+/// dock-check.png: Y between real neighbours on a dark and a light Dock, the
+/// way the maintainer's Dock screenshot (dock-neighbours.png, at the top) shows it.
+/// Each row is one of our icons in the middle of Terminal, Zed | Y |
+/// Obsidian, Notes and Safari (whichever are installed; read through
+/// IconServices, as the Dock gets them), at 64 and 128 px, then Zed, Y and
+/// Obsidian at 64 px blown up 2× to judge the pixels. The first cut's rows
+/// sit under the current ones.
+func writeDockCheck(_ dir: URL) {
+  let neighbours: (left: [String], right: [String]) = (
+    ["/System/Applications/Utilities/Terminal.app", "/Applications/Zed.app"],
+    ["/Applications/Obsidian.app", "/System/Applications/Notes.app", "/System/Cryptexes/App/System/Applications/Safari.app"]
+  )
+  let gap: CGFloat = 28
+  let sizes = [64, 128]
+  func pitch(_ d: Int) -> CGFloat { CGFloat(d) + CGFloat(d) / 6 }
+  let count = neighbours.left.count + 1 + neighbours.right.count
+  let zoomed = 3  // Zed, Y, Obsidian
+  let stripW = sizes.reduce(CGFloat(0)) { $0 + CGFloat(count) * pitch($1) + pitch($1) / 2 + gap } + CGFloat(zoomed) * pitch(64) * 2 + pitch(64)
+  let width = Int(gap + stripW + gap)
+  let shelfH = (pitch(128) * 1.25).rounded(.up)  // the 128 px shelf; the 2× zoom is as tall
+  let rowH: CGFloat = 40 + shelfH + gap
+  struct Row { let name: String; let look: Look; let version: KeyVersion }
+  let bands: [(String, CGColor, CGColor, CGColor, CGColor, NSColor, [Row])] = [
+    ("Dark Dock (system in dark mode)", rgb(0x1B1D24), rgb(0x2B2E3A), rgb(0x4C4E57, 0.92), rgb(0x3A3C44, 0.92), NSColor(white: 0.9, alpha: 1), [
+      Row(name: "Now · dark look: app_icon = \"dark\", or \"auto\" in dark mode", look: .dark, version: .tahoe),
+      Row(name: "Now · light look: the default (app_icon = \"light\")", look: .light, version: .tahoe),
+      Row(name: "Before · the first cut's dark look (the maintainer's screenshot)", look: .dark, version: .first),
+      Row(name: "Before · the first cut's light look", look: .light, version: .first),
+    ]),
+    ("Light Dock (system in light mode)", rgb(0xB9C6DC), rgb(0xE6E3EE), rgb(0xF6F6F8, 0.78), rgb(0xE9EAEE, 0.78), NSColor(white: 0.12, alpha: 1), [
+      Row(name: "Now · light look: the default", look: .light, version: .tahoe),
+      Row(name: "Now · dark look: app_icon = \"dark\"", look: .dark, version: .tahoe),
+      Row(name: "Before · the first cut's light look", look: .light, version: .first),
+    ]),
+  ]
+  let shot = cgImage(dir.appendingPathComponent("dock-neighbours.png"))
+  let shotZoom: CGFloat = 2
+  let shotH = shot.map { CGFloat($0.height) * shotZoom + 60 + gap } ?? 0
+  let height = Int(shotH + bands.reduce(CGFloat(0)) { $0 + 70 + CGFloat($1.6.count) * rowH })
+  let g = CGContext(
+    data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+  var top = CGFloat(height)
+  if let shot {
+    g.setFillColor(rgb(0x1E1F23))
+    g.fill(CGRect(x: 0, y: top - shotH, width: CGFloat(width), height: shotH))
+    label(g, "the maintainer's Dock, Nov 5 (the first cut's dark look between Zed and Obsidian), at 2×", at: CGPoint(x: gap, y: top - 44), size: 18, color: NSColor(white: 0.88, alpha: 1), bold: true)
+    g.interpolationQuality = .high
+    g.draw(shot, in: CGRect(x: gap, y: top - shotH + gap, width: CGFloat(shot.width) * shotZoom, height: CGFloat(shot.height) * shotZoom))
+    top -= shotH
+  }
+  for (title, low, high, shelfTop, shelfFoot, ink, rows) in bands {
+    let bandH = 70 + CGFloat(rows.count) * rowH
+    let rect = CGRect(x: 0, y: top - bandH, width: CGFloat(width), height: bandH)
+    g.saveGState()
+    g.clip(to: rect)
+    g.drawLinearGradient(
+      CGGradient(colorsSpace: cs, colors: [high, low] as CFArray, locations: [0, 1])!,
+      start: CGPoint(x: 0, y: rect.maxY), end: CGPoint(x: CGFloat(width), y: rect.minY), options: [])
+    g.restoreGState()
+    label(g, "\(title): Terminal, Zed, Y, Obsidian, Notes, Safari at 64 and 128 px, then Zed, Y and Obsidian at 64 px, 2×", at: CGPoint(x: gap, y: top - 46), size: 20, color: ink, bold: true)
+    var rowTop = top - 70
+    for row in rows {
+      label(g, row.name, at: CGPoint(x: gap, y: rowTop - 26), size: 17, color: ink, bold: false)
+      let base = rowTop - 40 - shelfH
+      var x = gap
+      func icons(_ d: Int) -> [CGImage?] {
+        neighbours.left.map { systemIcon($0, px: d) } + [renderKey(row.look, px: d, row.version)]
+          + neighbours.right.map { systemIcon($0, px: d) }
+      }
+      func shelf(_ r: CGRect) {
+        g.saveGState()
+        g.addPath(CGPath(roundedRect: r, cornerWidth: r.height * 0.32, cornerHeight: r.height * 0.32, transform: nil))
+        g.clip()
+        g.drawLinearGradient(
+          CGGradient(colorsSpace: cs, colors: [shelfTop, shelfFoot] as CFArray, locations: [0, 1])!,
+          start: CGPoint(x: 0, y: r.maxY), end: CGPoint(x: 0, y: r.minY), options: [])
+        g.restoreGState()
+      }
+      g.interpolationQuality = .high
+      for d in sizes {
+        let p = pitch(d)
+        let r = CGRect(x: x, y: base, width: CGFloat(count) * p + p / 2, height: p + p / 4)
+        shelf(r)
+        var ix = x + p / 4 + (p - CGFloat(d)) / 2
+        for icon in icons(d) {
+          if let icon { g.draw(icon, in: CGRect(x: ix, y: base + p / 8 + (p - CGFloat(d)) / 2, width: CGFloat(d), height: CGFloat(d))) }
+          ix += p
+        }
+        x = r.maxX + gap
+      }
+      // Zed, Y and Obsidian at 64 px, rasterised at 64 on the shelf, then 2×.
+      let d = 64
+      let p = pitch(d)
+      let w = Int(CGFloat(zoomed) * p + p / 2), h = Int(p + p / 4)
+      let strip = CGContext(
+        data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+        space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+      strip.drawLinearGradient(
+        CGGradient(colorsSpace: cs, colors: [shelfTop, shelfFoot] as CFArray, locations: [0, 1])!,
+        start: CGPoint(x: 0, y: h), end: .zero, options: [])
+      let all = icons(d)
+      var ix = p / 4 + (p - CGFloat(d)) / 2
+      for icon in all[(neighbours.left.count - 1)...(neighbours.left.count + 1)] {
+        if let icon { strip.draw(icon, in: CGRect(x: ix.rounded(), y: (p / 8 + (p - CGFloat(d)) / 2).rounded(), width: CGFloat(d), height: CGFloat(d))) }
+        ix += p
+      }
+      g.interpolationQuality = .none
+      g.draw(strip.makeImage()!, in: CGRect(x: x, y: base, width: CGFloat(w * 2), height: CGFloat(h * 2)))
+      rowTop -= rowH
+    }
+    top -= bandH
+  }
+  writePNG(g.makeImage()!, dir.appendingPathComponent("dock-check.png"))
+}
+
 /// prompt.png: Y's three looks at every size on light and dark, the 2 × 2
 /// wall, then each look on a light and a dark desktop with Terminal and
 /// Notes either side.
@@ -3046,6 +3323,7 @@ func writeDocs(_ dir: URL) {
   writePinwheel(dir)
   writeKeySheet(dir.appendingPathComponent("prompt.png"))
   writeKeyVsMockup(dir)
+  writeDockCheck(dir)
 }
 
 // MARK: - Main
@@ -3080,6 +3358,10 @@ while !args.isEmpty {
     try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     writeKeySheet(url.appendingPathComponent("prompt.png"))
     writeKeyVsMockup(url)
+    writeDockCheck(url)
+  case "--dock":
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    writeDockCheck(url)
   default: fatalError("unknown option \(flag)")
   }
 }

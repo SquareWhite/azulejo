@@ -17,16 +17,18 @@ In Icon Composer (it ships with Xcode 26):
 
 1. New document. Background: a linear gradient, top to bottom, the colours below.
 2. Add the layers bottom to top: rings, dots, key, prompt. Put rings and dots in one group, the key and the prompt in another, so the key casts its own shadow onto the pattern.
-3. Leave out the effects the `.icns` bakes in: the sheen, the rim light, the key's gradient and shadow. Liquid Glass draws its own light.
+3. Leave out the effects the `.icns` bakes in: the sheen, the glass edge, the key's gradient, glow and shadow, and the prompt's halo. Liquid Glass draws its own light.
 4. Set the dark appearance's colours on each layer from the table. Clear and tinted come from the system; check them in Icon Composer's preview.
 5. Save as `apps/macos/AppIcon.icon`.
 
 | Layer | Light | Dark |
 | --- | --- | --- |
-| Background | `#FEFDFB` → `#EAE3D3` | `#30343E` → `#121419` |
-| Rings | `#899DC7` | `#525F7D` |
-| Dots | `#1F4AA8` | `#849BCF` |
-| Key | `#D9DDE9` → `#C9CDD6` | `#3C4152` → `#2A2F3D` |
-| Prompt | `#1F4AA8` | `#8AA1D4` |
+| Background | `#FFFEFB` → `#EEE8DA` | `#2C2E35` → `#0F1013` |
+| Rings | `#8EA1CB` | `#2C3859` |
+| Dots | `#1C46A8` | `#5272C4` |
+| Key | `#E2E6F0` → `#C6CBD7` | `#3B404D` → `#1E2128` |
+| Prompt | `#1C46A8` | `#94B2FF`, `#D2DEFF` at the top |
+
+The `.icns` also bakes in macOS 26's bright glass edge (`Bevel` in `draw.swift`); Icon Composer draws that itself, so leave it out too.
 
 Then compile it into the bundle with `actool` (docs/design/icon/README.md, "What Xcode would add"). Once `Assets.car` ships, macOS draws the dark, clear and tinted looks itself in Finder, Launchpad, Spotlight and the Dock, and `DockIcon.swift`'s run-time swap can go.
