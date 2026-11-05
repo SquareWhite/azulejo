@@ -1,0 +1,89 @@
+# Top bar captures (topbar.sh): the toolbar row in all four built-in themes,
+# with the sidebar full, collapsed to its rail and hidden. Three tabs, the
+# second one selected. Uses only commands every build has, so it can capture
+# a build from before a top bar change too.
+
+log top bar captures
+seen-visible off
+anim enabled false
+window-size 1200 640
+until tiles 1 8000
+action new_tab
+until tabs 2 5000
+action new_tab
+until tabs 3 5000
+action switch_tab 2
+until tab 2 3000
+wait 1200
+
+theme set atom-one-dark
+wait 600
+capture atom-one-dark-full 0
+wait 900
+action toggle_sidebar
+until sidebar rail 3000
+wait 500
+capture atom-one-dark-rail 0
+wait 900
+action toggle_sidebar
+until sidebar visible 3000
+
+theme set atom-one-light
+wait 600
+capture atom-one-light-full 0
+wait 900
+action toggle_sidebar
+until sidebar rail 3000
+wait 500
+capture atom-one-light-rail 0
+wait 900
+action toggle_sidebar
+until sidebar visible 3000
+
+theme set macos-dark
+wait 600
+capture macos-dark-full 0
+wait 900
+action toggle_sidebar
+until sidebar rail 3000
+wait 500
+capture macos-dark-rail 0
+wait 900
+action toggle_sidebar
+until sidebar visible 3000
+
+theme set macos-light
+wait 600
+capture macos-light-full 0
+wait 900
+action toggle_sidebar
+until sidebar rail 3000
+wait 500
+capture macos-light-rail 0
+wait 900
+action toggle_sidebar
+until sidebar visible 3000
+
+log hidden: toggle_sidebar hides the sidebar instead of collapsing it
+sh printf '\n[sidebar]\ncollapsed = "hidden"\n' >> {config}
+wait 1500
+action toggle_sidebar
+until sidebar hidden 3000
+wait 500
+capture macos-light-hidden 0
+wait 900
+theme set macos-dark
+wait 600
+capture macos-dark-hidden 0
+wait 900
+theme set atom-one-light
+wait 600
+capture atom-one-light-hidden 0
+wait 900
+theme set atom-one-dark
+wait 600
+capture atom-one-dark-hidden 0
+wait 900
+action toggle_sidebar
+until sidebar visible 3000
+quit
