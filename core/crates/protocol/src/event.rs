@@ -91,8 +91,9 @@ pub enum Event {
     #[serde(rename = "tile.closed")]
     TileClosed { tab: TabId, tile: Tile, kill: bool },
     /// A terminal tile's agent started or stopped needing a look: it became
-    /// blocked or finished, or someone focused the tile (F11). Also visible as
-    /// `tile.agent.attention` on `tile.updated`.
+    /// blocked or finished, went back to work, or the user read its result
+    /// (`tile.seen`) (F11). Also visible as `tile.agent.attention` on
+    /// `tile.updated`.
     #[serde(rename = "tile.attention_changed")]
     TileAttentionChanged {
         tab: TabId,

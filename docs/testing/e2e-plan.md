@@ -93,7 +93,7 @@ Each journey runs on a fresh dev profile, driven in-process and through `azj`. E
 ### B5. Agent supervision (F11, F16)
 - Four terminal tiles. Use `herdr pane report-agent` on the dev session to set one blocked, one working and one idle.
 - Blocked shows within 1 s on the tile badge, tab, sidebar row, footer count and Dock badge. Working shows the partial-ring icon rotating; with Reduce Motion (simulated by turning motion off, the same switch; not the system pref) it's static.
-- `tile.seen` clears attention.
+- Reading: a finished agent's done mark (sidebar row, rail, tab, footer, markers) stays while focus is elsewhere or only passes through, and clears 0.75 s after its tile is focused in the front window, including when the user is already looking as it finishes. Looking never clears blocked.
 - Subscription churn (open and close tiles while statuses change) loses no status.
 
 ### B6. Live preview and plan review

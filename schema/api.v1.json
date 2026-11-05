@@ -4,7 +4,7 @@
       "description": "The agent running in a terminal tile, from herdr's agent status (F11,\nF16). Absent when herdr knows of no agent there.",
       "properties": {
         "attention": {
-          "description": "The agent became blocked or finished and nobody has looked since:\nfocusing the tile, or `tile.seen`, clears it.",
+          "description": "The agent became blocked or finished and needs a look. A finish\nstays lit until the user reads it (`tile.seen`); blocked stays lit\nuntil the agent's state changes. herdr's `done` status can outlive a\nread, so this, not `status`, is the \"unseen\" flag.",
           "type": "boolean"
         },
         "name": {
@@ -594,7 +594,7 @@
           "type": "object"
         },
         {
-          "description": "Focuses a tile; counts as looking at it, so its agent's attention\nclears (F11).",
+          "description": "Focuses a tile. Focus alone doesn't count as reading its agent's\nresult: that's `tile.seen` (F11).",
           "properties": {
             "method": {
               "const": "tile.focus",
@@ -611,7 +611,7 @@
           "type": "object"
         },
         {
-          "description": "Clears a tile's agent attention without moving focus: shells send it\nwhen a focused tile's attention lights up while the user is looking.",
+          "description": "The user has read the tile's agent's result: clears a finished\nagent's attention (the done mark) without moving focus. A blocked\nagent keeps its attention until its state changes. The macOS shell\nsends it once the tile has been focused, on screen, in the key window\nfor 0.75 s.",
           "properties": {
             "method": {
               "const": "tile.seen",
@@ -2122,7 +2122,7 @@
           "type": "object"
         },
         {
-          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, or someone focused the tile (F11). Also visible as\n`tile.agent.attention` on `tile.updated`.",
+          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, went back to work, or the user read its result\n(`tile.seen`) (F11). Also visible as `tile.agent.attention` on\n`tile.updated`.",
           "properties": {
             "data": {
               "properties": {

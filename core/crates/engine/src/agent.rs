@@ -3,8 +3,17 @@
 //! herdr reports a status per pane: through a per-pane subscription
 //! (`pane.agent_status_changed`) and in every survey. A tile's
 //! [`AgentInfo::attention`] lights up when its agent becomes blocked or
-//! finishes, and stays lit until someone looks: focusing the tile, or
-//! `tile.seen` from a shell that knows the tile is on screen.
+//! finishes. A finished agent's stays lit until the user reads the result:
+//! `tile.seen`, which the shell sends once the tile has been focused in the
+//! key window for a moment. A blocked agent's stays lit until its state
+//! changes: looking doesn't answer it.
+//!
+//! herdr has a "seen" notion of its own (`done` is a finish nobody has
+//! focused in herdr yet, `idle` one somebody has), but only herdr's focus
+//! commands set it, and Azulejo leaves herdr's focus alone (ADR 0012). So
+//! `done` outlives a read here, and a finish in herdr's focused pane arrives
+//! as `idle`. [`update`] treats both as finishes, and `attention` is the only
+//! "unseen" flag views should trust (herdr-notes.md, question 11).
 
 use azulejo_herdr as herdr;
 use azulejo_model::{AgentInfo, AgentStatus, Session, Tile, TileContent, TileId};
@@ -32,9 +41,11 @@ pub fn from_herdr(status: herdr::AgentStatus) -> AgentStatus {
 /// Applies a reported status to a terminal tile. Returns whether anything
 /// changed. `name` is kept from before when herdr doesn't repeat it.
 ///
-/// Attention: becoming blocked or done turns it on. Going back to work turns
-/// it off (someone answered, maybe from a phone). Done → idle keeps it: the
-/// result is still unseen.
+/// Attention: becoming blocked or finishing turns it on. Finishing means
+/// done, or idle straight from working or blocked (herdr reports a finish in
+/// its own focused pane as idle). Going back to work turns it off (someone
+/// answered, maybe from a phone). Done → idle keeps it: the result is still
+/// unseen here.
 pub fn update(tile: &mut Tile, name: Option<String>, status: AgentStatus, at_ms: u64) -> bool {
     if !matches!(tile.content, TileContent::Terminal { .. }) {
         return false;
@@ -61,7 +72,11 @@ pub fn update(tile: &mut Tile, name: Option<String>, status: AgentStatus, at_ms:
                 since_ms: at_ms,
                 attention: status.wants_attention()
                     || (status == AgentStatus::Idle
-                        && prev.is_some_and(|p| p.attention && p.status == AgentStatus::Done)),
+                        && prev.is_some_and(|p| match p.status {
+                            AgentStatus::Working | AgentStatus::Blocked => true,
+                            AgentStatus::Done => p.attention,
+                            AgentStatus::Idle | AgentStatus::Unknown => false,
+                        })),
             },
         })
     };
@@ -109,10 +124,12 @@ pub fn refresh(
     changed
 }
 
-/// Clears a tile's attention. Returns whether it was on.
-pub fn clear_attention(session: &mut Session, tile: TileId) -> bool {
+/// The user read the tile's agent's result: clears a finished agent's
+/// attention. A blocked agent keeps it until its state changes. Returns
+/// whether anything cleared.
+pub fn mark_seen(session: &mut Session, tile: TileId) -> bool {
     match session.tile_mut(tile).ok().and_then(|t| t.agent.as_mut()) {
-        Some(a) if a.attention => {
+        Some(a) if a.attention && a.status != AgentStatus::Blocked => {
             a.attention = false;
             true
         }
@@ -160,23 +177,68 @@ mod tests {
         assert!(t.needs_attention());
     }
 
-    #[test]
-    fn seen_stays_seen_until_the_next_transition() {
+    fn session() -> (Session, TileId) {
         let mut s = Session::new();
         let (_, ws) = s.create_window("w", None);
         s.create_tab(ws, terminal(), None).unwrap();
         let id = s.focused_tile().unwrap();
-        set(s.tile_mut(id).unwrap(), AgentStatus::Blocked, 1);
-        assert!(clear_attention(&mut s, id));
-        assert!(!clear_attention(&mut s, id));
-        // Still blocked: the same report doesn't relight it.
-        assert!(!set(s.tile_mut(id).unwrap(), AgentStatus::Blocked, 2));
+        (s, id)
+    }
+
+    #[test]
+    fn seen_stays_seen_until_the_next_transition() {
+        let (mut s, id) = session();
+        set(s.tile_mut(id).unwrap(), AgentStatus::Working, 1);
+        set(s.tile_mut(id).unwrap(), AgentStatus::Done, 2);
+        assert!(mark_seen(&mut s, id));
+        assert!(!mark_seen(&mut s, id));
+        // Still done (herdr's own "seen" never flips): the same report, from
+        // the stream or a survey, doesn't relight it.
+        assert!(!set(s.tile_mut(id).unwrap(), AgentStatus::Done, 3));
         assert!(!s.tile(id).unwrap().needs_attention());
         // Idle after seen-done stays dark.
-        set(s.tile_mut(id).unwrap(), AgentStatus::Done, 3);
-        clear_attention(&mut s, id);
         set(s.tile_mut(id).unwrap(), AgentStatus::Idle, 4);
         assert!(!s.tile(id).unwrap().needs_attention());
+        // A new run that finishes lights it again.
+        set(s.tile_mut(id).unwrap(), AgentStatus::Working, 5);
+        set(s.tile_mut(id).unwrap(), AgentStatus::Done, 6);
+        assert!(s.tile(id).unwrap().needs_attention());
+    }
+
+    #[test]
+    fn looking_does_not_answer_a_blocked_agent() {
+        let (mut s, id) = session();
+        set(s.tile_mut(id).unwrap(), AgentStatus::Blocked, 1);
+        assert!(!mark_seen(&mut s, id));
+        assert!(s.tile(id).unwrap().needs_attention());
+        // Answered: back to work, then finished, and that can be read.
+        set(s.tile_mut(id).unwrap(), AgentStatus::Working, 2);
+        assert!(!s.tile(id).unwrap().needs_attention());
+        set(s.tile_mut(id).unwrap(), AgentStatus::Done, 3);
+        assert!(mark_seen(&mut s, id));
+        assert!(!s.tile(id).unwrap().needs_attention());
+    }
+
+    #[test]
+    fn a_finish_in_herdrs_focused_pane_still_asks_for_a_look() {
+        // herdr marks its focused pane's finish seen and reports idle, not
+        // done; nobody here has read it.
+        let mut t = terminal();
+        set(&mut t, AgentStatus::Working, 1);
+        set(&mut t, AgentStatus::Idle, 2);
+        assert!(t.needs_attention());
+        let mut t = terminal();
+        set(&mut t, AgentStatus::Blocked, 1);
+        set(&mut t, AgentStatus::Idle, 2);
+        assert!(t.needs_attention());
+        // An agent that turns up idle (a fresh session) hasn't finished
+        // anything.
+        let mut t = terminal();
+        set(&mut t, AgentStatus::Idle, 1);
+        assert!(!t.needs_attention());
+        set(&mut t, AgentStatus::Unknown, 2);
+        set(&mut t, AgentStatus::Idle, 3);
+        assert!(!t.needs_attention());
     }
 
     #[test]

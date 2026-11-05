@@ -1,7 +1,9 @@
 # B5: agent supervision. Four terminals; herdr reports one blocked, one
 # working, one idle. Every indicator must follow within 1 s. Tile headers
 # carry no badge, only the blocked icon on blocked tiles. Then
-# subscription churn, tile.seen, and the working ring with motion on and off.
+# subscription churn, reading (blocked stays; a done mark clears once its
+# tile has been in front for the dwell), and the working ring with motion on
+# and off.
 log B5 agents
 delivery direct
 seen-visible off
@@ -48,28 +50,88 @@ key alt+w
 until tiles 4 3000
 until agents blocked!,working,blocked!,none 2000
 expect dock 2
-# --- tile.seen clears attention without moving focus ---
+# --- looking doesn't answer a blocked agent (F11) ---
+# The window counts as in front from here (automation runs it behind).
+seen-visible on
 expect focus 4
 key alt+k
 expect focus 3
-wait 300
-# Focusing a tile counts as looking at it.
-expect agents blocked!,working,blocked,none
-# Blocked again while focused, window not on screen: attention stays lit…
+wait 1200
+expect agents blocked!,working,blocked!,none
+key alt+h
+expect focus 1
+wait 1200
+expect agents blocked!,working,blocked!,none
+expect header.agents blocked,none,blocked,none
+expect sidebar.statuses blocked
+# Answered (back to work): the mark goes with the state change.
 sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
 until agents blocked!,working,working,none 2000
-sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state blocked
-until agents blocked!,working,blocked!,none 2000
-wait 300
-expect agents blocked!,working,blocked!,none
-# …until the window counts as visible and the shell sends tile.seen.
-seen-visible on
-until agents blocked!,working,blocked,none 3000
-key alt+h
-until agents blocked,working,blocked,none 3000
+# --- a finished agent's done mark clears once it's read (F11) ---
+# Quiet the other agents (herdr keeps them as unknown) so the workspace
+# shows the finish.
+sh {herdr} --session {session} pane release-agent {pane:1} --source e2e --agent claude
+sh {herdr} --session {session} pane release-agent {pane:3} --source e2e --agent codex
+until agents unknown,working,unknown,none 3000
+# Tile 2 finishes while tile 1 has focus: done everywhere, and it stays.
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state idle
+until tab.statuses done 1000
+until sidebar.statuses done 1000
+wait 1200
+expect focus 1
+expect tab.statuses done
+expect sidebar.statuses done
+expect sidebar.footer working=0,blocked=0,idle=0,done=1
+expect tab.markers ●1
+expect sidebar.markers ●1
+shot 02-done-unread
+# Reading it: focus tile 2 (through tile 3), hold for the dwell.
+key alt+l
+key alt+k
+expect focus 2
+wait 250
+expect tab.statuses done
+until tab.statuses idle 2000
+expect sidebar.statuses idle
+expect sidebar.footer working=0,blocked=0,idle=1,done=0
+expect tab.markers -
+expect sidebar.markers -
+# A new run that finishes while the user is already looking: the mark
+# shows, then clears after the dwell.
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state working
+until tab.statuses working 1000
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state idle
+until tab.statuses done 1000
+wait 200
+expect tab.statuses done
+until tab.statuses idle 2000
+# Passing through doesn't count as reading.
+key alt+j
+expect focus 3
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state working
+until tab.statuses working 1000
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state idle
+until tab.statuses done 1000
+key alt+k
+expect focus 2
+wait 150
+key alt+j
+expect focus 3
+wait 1200
+expect tab.statuses done
+# The collapsed rail shows it too, and drops it once read.
+action toggle_sidebar
+until sidebar rail 3000
+wait 600
+expect rail.agents L:idle|L:done|L:idle
+expect rail.rows 1:done*
+key alt+k
+expect focus 2
+until rail.agents L:idle|L:idle|L:idle 2000
+expect rail.rows 1:idle*
+action toggle_sidebar
+until sidebar visible 3000
 seen-visible off
-# Seen, still blocked: the header icon stays.
-expect header.agents blocked,none,blocked,none
 # --- working ring: turns while motion is on ---
 sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
 sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
@@ -91,4 +153,4 @@ wait 310
 capture ring-off-b 0
 wait 300
 anim enabled default
-shot 02-end
+shot 03-end

@@ -62,7 +62,7 @@ With Ghostty's colours, a Ghostty `theme = light:…,dark:…` follows Azulejo's
 
 ## Agent state in tile headers
 
-Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. Terminal tile headers stay quiet by default: no "● claude · working" badge, so the title gets the whole strip. A blocked agent still marks its own tile, so you can find it at a glance in a busy tab: the blocked icon (yellow `exclamationmark.circle.fill`, no text, the agent's name in its tooltip) at the right end of the header strip, as long as the agent stays blocked. A blocked tile you haven't looked at yet also gets the yellow attention border.
+Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. Terminal tile headers stay quiet by default: no "● claude · working" badge, so the title gets the whole strip. A blocked agent still marks its own tile, so you can find it at a glance in a busy tab: the blocked icon (yellow `exclamationmark.circle.fill`, no text, the agent's name in its tooltip) at the right end of the header strip, as long as the agent stays blocked. A blocked tile also gets the yellow attention border until the agent moves on: looking doesn't answer it. A finished agent shows the green checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`.
 
 ```toml
 [appearance]

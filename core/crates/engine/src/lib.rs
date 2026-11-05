@@ -147,7 +147,6 @@ impl Engine {
         let before = self.session.clone();
         let kill = matches!(&command, Command::TileClose(p) if p.kill);
         let force_layout = matches!(command, Command::LayoutGet);
-        let refocus = matches!(command, Command::TileFocus(_));
         let reply = match self.apply(command) {
             Ok(reply) => reply,
             Err(e) => {
@@ -155,12 +154,8 @@ impl Engine {
                 return Err(e);
             }
         };
-        // Looking at a tile counts as seeing its agent (F11).
-        if let Some(tile) = self.session.focused_tile()
-            && (refocus || before.focused_tile() != Some(tile))
-        {
-            agent::clear_attention(&mut self.session, tile);
-        }
+        // Focus alone doesn't count as reading an agent's result: the shell
+        // knows whether the tile is on screen and sends `tile.seen` (F11).
         meta::refresh_headers(&mut self.session);
         let mut events = diff(&before, &self.session, kill);
         self.remember_detached(&events);
@@ -383,7 +378,7 @@ impl Engine {
                 Reply::Ok
             }
             Command::TileSeen(p) => {
-                agent::clear_attention(s, s.target(p.tile)?);
+                agent::mark_seen(s, s.target(p.tile)?);
                 Reply::Ok
             }
             Command::TileRename(p) => {
