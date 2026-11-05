@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The mockup's scene (PLAN D.9), built with fixture data on its own dev
-# instance (AZJ_DEV_NAME=mock), then captured next to docs/design/mockup-v1.png.
+# instance (AZJ_DEV_NAME=mock), with captures kept under .dev/.
 # Local workspaces are small fixture repos; "build-server" and "dev-server" are
 # throwaway local herdr sessions reached through the ssh stand-in
 # (scripts/ssh-standin.sh) — nothing connects to a real machine. The browser

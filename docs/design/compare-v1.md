@@ -2,9 +2,7 @@
 
 Nov 3, 2026. The mockup's scene built with fixture data by `apps/macos/automation/mockup.sh` and captured at 1440×900 pt (dark appearance). The capture is the app's own render of its layer tree (`01-scene-app.png`), with the title bar's traffic lights drawn in; `screencapture` needs an unlocked screen. Recaptured on Nov 3, 2026 after the fixes to items 5 and 6, and on Nov 4, 2026 after the e2e polish fixes (items 2 and 12).
 
-| Mockup (`mockup-v1.png`) | Azulejo (`capture-v1.png`) |
-| --- | --- |
-| `mockup-v1.png` (local capture) | `capture-v1.png` (local capture) |
+Screen captures are kept locally, not published: they can expose usernames, project names and terminal content. Recreate the scene with `apps/macos/automation/mockup.sh`; captures land under `.dev/<name>.out/mockup/`.
 
 **How the scene is built:** seven local workspaces are small fixture git repositories on the mockup's branches. "build-server" and "dev-server" are throwaway local herdr sessions reached through the ssh stand-in; dev-server then loses its link. The browser tile shows a static fixture page served from a temp folder, the preview tile a fixture ADR, and the "zsh" tile a stand-in `just dogfood` that only prints. Agent states come from `herdr pane report-agent`. No real machine or herdr session is touched. To re-run: `apps/macos/automation/mockup.sh`.
 

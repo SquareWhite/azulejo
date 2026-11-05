@@ -1,5 +1,3 @@
 .deps/
 vte/target/
 out/*
-!out/*.png
-!out/vtdump.txt

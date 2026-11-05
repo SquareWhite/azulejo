@@ -492,7 +492,10 @@ mod header_tests {
     #[test]
     fn tilde_only_at_folder_boundaries() {
         assert_eq!(tilde("/Users/example", HOME), "~");
-        assert_eq!(tilde("/Users/example-other/x", HOME), "/Users/example-other/x");
+        assert_eq!(
+            tilde("/Users/example-other/x", HOME),
+            "/Users/example-other/x"
+        );
         assert_eq!(tilde("/tmp", None), "/tmp");
     }
 }

@@ -338,17 +338,13 @@ These stay with the system or AppKit, on purpose:
 
 The [reference](#reference) above is generated from the keymap and is the source of truth; this part says why the defaults are what they are.
 
-### What the herdr config does today
+### Relationship to herdr
 
-herdr runs inside kitty, so its bindings were shaped by three outside constraints. Only the third goes away in Azulejo:
+The defaults use a direct-modifier layer: `alt` for panes, `cmd` for workspaces and tabs. Native macOS apps receive `cmd` chords directly; unlike terminal programs, Azulejo needs no terminal-emulator forwarding.
 
-1. kitty eats any chord it maps, so every herdr chord is commented out in `kitty.conf`.
-2. Hammerspoon owns several `alt` chords globally (see [Hammerspoon](#hammerspoon)).
-3. macOS never delivers `cmd` chords to a terminal program, so kitty re-encodes the `cmd` ones and forwards them to herdr. **Azulejo is a native app, so it gets `cmd` chords directly and needs no forwarding.**
+The table compares this direct-modifier layout with herdr's prefix-based defaults. External keyboard remappers may intercept chords first; see [Hammerspoon](#hammerspoon).
 
-The config already uses a direct-modifier layer: `alt` for panes, `cmd` for workspaces and tabs. The prefix (`ctrl+b`, herdr's default) is left for herdr-only actions.
-
-| herdr action | the maintainer's binding | herdr default | Customised |
+| herdr action | Direct-modifier binding | herdr default | Customised |
 | --- | --- | --- | --- |
 | prefix | `ctrl+b` | `ctrl+b` | no |
 | focus pane left/down/up/right | `alt+h/j/k/l` | `prefix+h/j/k/l` | **yes** |
@@ -369,7 +365,7 @@ The config already uses a direct-modifier layer: `alt` for panes, `cmd` for work
 | switch workspace 1–9 | `cmd+1..9` | unbound | **yes** |
 | last workspace (`last.py space`) | `alt+0` (kitty forwards `cmd+9` here) | n/a (script) | **yes** |
 | switch tab 1–9 | `prefix+1..9` | `prefix+1..9` | no |
-| last tab (`last.py tab`) | `alt+9` (now shadowed: Hammerspoon binds `alt+9` since its app list grew to nine) | n/a (script) | **yes** |
+| last tab (`last.py tab`) | `alt+9` | n/a (script) | **yes** |
 | next / previous tab | `ctrl+tab` / `ctrl+shift+tab` | `prefix+n` / `prefix+p` | **yes** |
 | close tab | `cmd+w` | `prefix+shift+x` | **yes** |
 | toggle sidebar | `cmd+a` | `prefix+b` | **yes** |
@@ -381,7 +377,7 @@ The config already uses a direct-modifier layer: `alt` for panes, `cmd` for work
 | edit scrollback in `$EDITOR` | `prefix+e` | same | no |
 | help | `prefix+?` | same | no |
 
-One more thing from the config: `tall.py` encodes a placement rule, kitty's `tall` layout. There's one master on the left and an evenly divided stack on the right, and new panes always append to the bottom of the stack. That's how the maintainer actually tiles day to day, so the four tall actions are P0 and ship in M1 (step 1.1b); see [Decisions](#decisions).
+The master-stack placement rule has one master on the left and an evenly divided stack on the right, with new panes appended to the bottom. The four tall actions are P0 and ship in M1 (step 1.1b); see [Decisions](#decisions).
 
 ### Rule of thumb
 

@@ -4,7 +4,7 @@
 # same [keys.*] and [prefix] shape, and a user entry replaces the default for
 # that action only ("" unbinds it).
 #
-# Derived from the maintainer's herdr bindings (~/.config/herdr/config.toml):
+# Direct-modifier layout, compatible with herdr:
 #   alt       = tiles      (focus, swap, resize, zoom, close, layout rules)
 #   cmd       = workspaces, tabs, app
 #   ctrl+cmd  = new tiles  (splits)

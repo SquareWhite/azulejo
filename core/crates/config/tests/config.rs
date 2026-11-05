@@ -303,7 +303,7 @@ fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
     assert!(
         config
             .herdr
-            .prefs("0123456789abcdef0123456789abcdef", "build")
+            .prefs("0123456789abcdef0123456789abcdef", "build-server")
             .hidden
     );
     assert_eq!(
@@ -312,7 +312,10 @@ fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
     );
 
     // Connection details belong in herdr: a target here is flagged.
-    let config = user("[herdr.machine.\"dev-server\"]\ntarget = \"me@dev-server\"\n", MAC);
+    let config = user(
+        "[herdr.machine.\"dev-server\"]\ntarget = \"me@dev-server\"\n",
+        MAC,
+    );
     let d = &config.diagnostics[0];
     assert!(d.message.contains("herdr machine add"), "{d:?}");
     let config = user("[herdr]\nmachines = \"yes\"\n", MAC);

@@ -26,3 +26,11 @@ just linux          # GTK4 shell (Linux only)
 | `schema/` | Generated JSON Schema for the socket API |
 
 The Linux shell is a workspace member but not a default member, so `cargo build` works on macOS without GTK.
+
+## Repository privacy
+
+Use fictional usernames, `example.invalid` addresses, sample project names and throwaway machines in fixtures and examples. Resolve home directories and checkout paths at runtime instead of embedding a developer's paths.
+
+Keep app and desktop captures, terminal dumps, logs, crash reports, local configuration and signing credentials out of Git. Capture directories and common credential files are ignored; generated icon artwork remains tracked. Review issue attachments separately: ignored files can still contain private data.
+
+Published history was sanitized to remove personal and workstation details. Do not merge an old clone's history back into this repository; start from a fresh clone or replay only reviewed changes.

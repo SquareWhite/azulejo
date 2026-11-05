@@ -227,13 +227,13 @@ The machine is busy, so record the load average next to each number.
 ## 6. Report
 
 Write `docs/testing/e2e-report-2026-11-03.md`:
-- the commit tested, the machine and the date
+- the commit tested, platform, build mode and date; omit personal device identifiers and exact hardware details
 - a summary table: case ID, PASS / FAIL / FLAKY / BLOCKED / SKIPPED, evidence path and one line of notes
 - every failure with exact repro steps, expected vs actual, logs and a capture
 - every visual finding with its severity and a capture, cropped to the region where that helps
 - the performance numbers against the baseline
 
-Put the screenshots worth keeping under `docs/testing/e2e-v1/` (PNG, kept small). Raw output stays in `.dev/e2e*.out/`.
+Keep screenshots, terminal dumps and raw output locally under `.dev/e2e*.out/`. Historical `docs/testing/e2e-v*/` capture paths are local-only and ignored. Publish the written findings, not captured screen content.
 
 Commit the plan, the report and any new `apps/macos/automation/e2e/` scripts on your branch. **Don't change product code.** If a test script itself is wrong, fix it and say so.
 
