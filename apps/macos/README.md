@@ -95,6 +95,23 @@ comparing with `docs/design/mockup-v1.png`. `apps/macos/automation/topbar.sh
 LABEL` captures the toolbar row in all four themes with the sidebar full, as
 a rail and hidden, into `docs/testing/topbar/LABEL/`.
 
+Tabs reorder by dragging, as in Safari: past a 4 pt threshold the pressed
+tab lifts (filled, with a shadow) and follows the pointer along the strip
+while the others slide aside; letting go sends the core's `tab.move`, so the
+order shows in the API and the CLI and is saved. A shorter press is a
+click, which selects on mouse up as before. Escape (caught by `KeyRouter`
+first), or letting go more than 18 pt above or below the strip, puts it
+back. Dragging doesn't select a tab, and the active tab stays active
+wherever it goes; ctrl+number follows the new order. The slides follow
+`[animation]` and Reduce Motion; an overflowing strip scrolls when the tab
+nears a faded edge, and there's no drag when only the selected tab fits.
+The herdr mirror sees nothing: tab order is in no mirror target (herdr's
+CLI has no tab order to set), so a reorder sends no push.
+`apps/macos/automation/e2e/tabdrag.sh` drives drags with mouse events made in
+the app and handed to the tabs (`tabdrag …` in scripts), and checks the
+mirror's log (`AZJ_DEBUG_MIRROR=1`) stays quiet. Not yet: dragging a tab
+onto a workspace in the sidebar, or out into its own window.
+
 ## Sidebar (M2.5 D.3)
 
 `Sidebar.swift` is what sits in that card below its top band: an Agents |

@@ -39,6 +39,9 @@ import AppKit
 ///                            (`expect order t2,t1,t3` checks the order)
 ///     picker KIND            pick a layout in the top bar's picker, as a
 ///                            click does (`picker.kind`, `picker.tips`)
+///     tabdrag press N|move DX DY|over N|away|release|click N   drag a top
+///                            tab with mouse events handed to it directly
+///                            (see `TabDragAutomation`)
 ///     menu workspace N|rail N|tab N|tile [invoke TITLE]   build a right-click menu, log
 ///                            its items, run one (see `MenuAutomation`);
 ///                            `menu answer TEXT` answers the next prompt,
@@ -175,6 +178,11 @@ final class Automation {
                 failures.append("line \(step): picker \(arg): \(problem)")
             }
             record("picker \(arg)")
+        case "tabdrag":
+            if let problem = TabDragAutomation.run(arg, app: app) {
+                failures.append("line \(step): tabdrag \(arg): \(problem)")
+            }
+            record("tabdrag \(arg)")
         case "sidebar":
             if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
@@ -605,6 +613,7 @@ final class Automation {
         s.merge(MenuAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(controller.chromeState()) { $1 }
         s.merge(LayoutPickerAutomation.state(controller)) { $1 }
+        s.merge(TabDragAutomation.state(app: app, controller: controller)) { $1 }
         return s
     }
 
