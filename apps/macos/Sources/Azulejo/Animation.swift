@@ -327,6 +327,9 @@ protocol MotionAware: AnyObject {
     /// each display frame before the tile's frame steps; the content may
     /// take that size early.
     func liveResizeAhead(to size: CGSize, at time: CFTimeInterval, last: Bool)
+    /// Reflow without a lead (a divider drag): called each display frame,
+    /// so a resize the throttle held back lands once the tile rests.
+    func liveResizeTick()
     /// About to move. `freeze`: cover live content with a snapshot of the last
     /// frame (the tile changes size, or is closing). Returns whether it froze.
     /// `fill`: the snapshot follows the tile's bounds (scale style); otherwise
@@ -359,6 +362,7 @@ extension MotionAware {
     func liveResizeDidEnd() {}
     var resizesLive: Bool { false }
     func liveResizeAhead(to size: CGSize, at time: CFTimeInterval, last: Bool) {}
+    func liveResizeTick() {}
     var headerInset: CGFloat { 0 }
     var contentLeft: CGFloat { 0 }
 }

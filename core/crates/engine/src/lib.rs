@@ -562,6 +562,11 @@ impl Engine {
                 s.move_in_order(s.target(p.tile)?, p.step)?;
                 Reply::Ok
             }
+            Command::LayoutSetRatio(p) => {
+                let path = azulejo_model::parse_path(&p.path)?;
+                s.set_split_ratio(p.tab.or(focus.tab).ok_or_else(nothing)?, &path, p.ratio)?;
+                Reply::Ok
+            }
             Command::LayoutEqualize(p) => {
                 s.equalize(p.tab.or(focus.tab).ok_or_else(nothing)?)?;
                 Reply::Ok

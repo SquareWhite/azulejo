@@ -39,6 +39,8 @@ import AppKit
 ///     trace on|off           key and action lines also log the layout:
 ///                            kind, parameters, order, focus, weights, rects
 ///                            (`expect order t2,t1,t3` checks the order)
+///     divider …              drag, double-click and probe the gutters between
+///                            tiles with in-app mouse events (`DividerAutomation`)
 ///     picker KIND            pick a layout in the top bar's picker, as a
 ///                            click does (`picker.kind`, `picker.tips`)
 ///     tabdrag press N|move DX DY|over N|away|release|click N   drag a top
@@ -194,6 +196,13 @@ final class Automation {
                 failures.append("line \(step): tabdrag \(arg): \(problem)")
             }
             record("tabdrag \(arg)")
+        case "divider":
+            var lines: [String] = []
+            let (problem, wait) = DividerAutomation.run(arg, app: app, out: out) { lines.append($0) }
+            if let problem { failures.append("line \(step): divider \(arg): \(problem)") }
+            record("divider \(arg)\(problem.map { " FAILED: \($0)" } ?? "")")
+            for line in lines { record("      · \(line)") }
+            delay = wait
         case "sidebar":
             if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
@@ -664,6 +673,7 @@ final class Automation {
         s.merge(controller.chromeState()) { $1 }
         s.merge(LayoutPickerAutomation.state(controller)) { $1 }
         s.merge(TabDragAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(DividerAutomation.state(controller)) { $1 }
         return s
     }
 
