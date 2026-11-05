@@ -45,6 +45,8 @@ expect drag.last moved 1→3
 # Focus didn't move: bravo stays active.
 expect workspace.active bravo
 wait 400
+# The copy landed on alpha's new row.
+expect drag.landed yes
 shot 02-sidebar-dropped
 
 # ⌘ numbers follow the new order; ⌘9 is the last one.
@@ -124,6 +126,7 @@ sidebar drag drop
 until workspace.names alpha|bravo|delta|charlie 2000
 expect drag.last moved 4→1
 wait 400
+expect drag.landed yes
 expect rail.rows 1:idle|2:idle|3:working*|4:idle
 expect rail.centred yes
 shot 05-rail-dropped

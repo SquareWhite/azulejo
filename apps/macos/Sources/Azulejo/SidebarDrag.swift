@@ -49,6 +49,8 @@ final class WorkspaceDrag {
     private(set) static var current: WorkspaceDrag?
     /// Automation: how the last drag ended ("moved 1→3", "cancelled", "none").
     private(set) static var lastOutcome = "none"
+    /// Automation: where the last dropped copy landed (window points).
+    private(set) static var lastLanding: (workspace: String, frame: NSRect)?
 
     let workspaceID: String
     private weak var host: WorkspaceDragHost?
@@ -64,6 +66,9 @@ final class WorkspaceDrag {
     private let startPointer: NSPoint
     private let lift: DragLiftView
     private let slotView = DropSlotView()
+    /// The row's own opacity (a row of a machine that isn't connected is
+    /// dimmed), given back when it shows again.
+    private let rowAlpha: CGFloat
     /// Where it would land: an index into `rows` once it has left its place.
     private(set) var slot: Int
     private(set) var pointer: NSPoint
@@ -84,6 +89,7 @@ final class WorkspaceDrag {
         startFrame = row.convert(row.bounds, to: nil)
         startPointer = pointer
         self.pointer = pointer
+        rowAlpha = row.alphaValue
         lift = DragLiftView(snapshotOf: row)
     }
 
@@ -166,7 +172,7 @@ final class WorkspaceDrag {
         // Before or after a neighbour, by ID: the window's order is the one
         // the host has now, not the one the drag started from.
         let others = rows.indices.filter { $0 != origin }.map { rows[$0].workspaceID }
-        var order = host.dragOrder.filter { $0 != workspaceID }
+        let order = host.dragOrder.filter { $0 != workspaceID }
         let index: Int
         if slot < others.count, let before = order.firstIndex(of: others[slot]) {
             index = before
@@ -175,7 +181,6 @@ final class WorkspaceDrag {
         } else {
             return settleBack()
         }
-        order.insert(workspaceID, at: index)
         host.dragMove(workspaceID, to: index)
         // The host rebuilt its rows: land on the new one. If it didn't (the
         // move failed), go back.
@@ -185,10 +190,15 @@ final class WorkspaceDrag {
         else { return settleBack() }
         Self.lastOutcome = "moved \(origin + 1)→\(slot + 1)"
         slotView.removeFromSuperview()
+        // New rows get their frames on the next layout pass: now, so the
+        // copy lands where its row is.
+        (host as? NSView)?.layoutSubtreeIfNeeded()
+        let alpha = landed.alphaValue
         landed.alphaValue = 0
         let target = landed.convert(landed.bounds, to: nil)
+        Self.lastLanding = (workspaceID, target)
         land(at: target) { [weak landed, weak host] in
-            landed?.alphaValue = 1
+            landed?.alphaValue = alpha
             host?.dragEnded()
         }
     }
@@ -215,7 +225,7 @@ final class WorkspaceDrag {
         arrange(animated: Self.animates)
         land(at: startFrame) { [weak self] in
             guard let self else { return }
-            self.row.alphaValue = 1
+            self.row.alphaValue = self.rowAlpha
             self.slotView.removeFromSuperview()
             self.host?.dragEnded()
         }
@@ -470,7 +480,8 @@ struct RowPress {
 /// State: `drag.active`, `drag.slot` (1-based in the group, `out` past
 /// the card), `drag.rows` (the group as it shows, the dragged row in
 /// brackets at its slot), `drag.indicator` (`shown` or `hidden`),
-/// `drag.last` (`moved 1→3`, `cancelled`, `none`).
+/// `drag.last` (`moved 1→3`, `cancelled`, `none`), `drag.landed` (the last
+/// drop's copy landed where its row now is).
 @MainActor
 enum DragAutomation {
     private static weak var pressed: NSView?
@@ -551,6 +562,13 @@ enum DragAutomation {
 
     static func state(host: (NSView & WorkspaceDragHost)?) -> [String: String] {
         var s = ["drag.last": WorkspaceDrag.lastOutcome]
+        // The last drop's copy landed on its row's place (`yes`), or not.
+        if let landing = WorkspaceDrag.lastLanding, let host,
+           let row = host.dragRows.first(where: { $0.workspaceID == landing.workspace }) {
+            let now = row.convert(row.bounds, to: nil)
+            let off = max(abs(now.minX - landing.frame.minX), abs(now.minY - landing.frame.minY))
+            s["drag.landed"] = off < 0.5 && landing.frame.width > 0 ? "yes" : "no (\(landing.frame) vs \(now))"
+        }
         guard let drag = WorkspaceDrag.current, let host else {
             s["drag.active"] = "no"
             return s
