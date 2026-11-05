@@ -78,7 +78,7 @@ sidebar select 1
 action switch_tab 1
 sidebar mode agents
 wait 2500
-expect chrome.lights 29,31
+expect chrome.lights 29,26
 capture 01-scene 0
 wait 1500
 shot 01-scene-shot

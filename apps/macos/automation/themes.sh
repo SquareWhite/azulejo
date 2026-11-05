@@ -94,7 +94,7 @@ failures = []
 SIDEBAR = (60, 600, 140, 180)      # the card below the machine groups
 TABSTRIP = (507, 22, 14, 18)       # the strip's pill, between "release" and "+"
 GUTTER = (600, 15, 400, 30)        # the window colour, between the tabs and the search field
-HEADER = (260, 62, 160, 22)        # the focused claude tile's strip, left of its title
+HEADER = (260, 54, 160, 22)        # the focused claude tile's strip, left of its title
 TERMINAL = (640, 700, 200, 140)    # the claude terminal, below its last line
 PREVIEW = (890, 815, 230, 60)      # the preview page, below its text
 

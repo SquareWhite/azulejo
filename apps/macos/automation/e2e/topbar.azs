@@ -1,0 +1,137 @@
+# Top bar: the layout picker left of the ⌘K field follows the tab's layout
+# whatever changes it (keys, the menu path, the core) and switches it the way
+# the keys do (motion included); the top tabs' right-click menu acts on its
+# tab without switching to it. topbar.sh checks the motion stats.
+log top bar: layout picker and tab menu
+delivery direct
+anim style crop
+until terminal.phase attached 10000
+action split_right
+until tiles 2 5000
+action split_right
+until tiles 3 5000
+wait 1200
+
+# --- the picker reflects the layout ---
+expect kind tile
+expect picker.kind tile
+expect chrome.hit.picker LayoutSegment
+expect chrome.fits yes
+expect picker.tips Manual layout (⌥⇧T)|Master (Tile) layout (⌥T)|Three Column layout|Monocle layout (⌥Z)
+key alt+bracketright
+until kind monocle 3000
+expect picker.kind monocle
+wait 600
+key alt+bracketleft
+until kind tile 3000
+expect picker.kind tile
+wait 600
+action toggle_layout_manual
+until kind manual 3000
+expect picker.kind manual
+wait 600
+core {"method": "layout.set", "params": {"kind": "three_column"}}
+until picker.kind three_column 3000
+expect kind three_column
+wait 600
+
+# --- picking switches, as the keys do (motion counted) ---
+anim reset
+picker tile
+until kind tile 3000
+expect picker.kind tile
+wait 600
+picker monocle
+until kind monocle 3000
+wait 600
+picker three_column
+until kind three_column 3000
+wait 600
+picker manual
+until kind manual 3000
+expect picker.kind manual
+wait 600
+anim stats picker-stats
+# Picking the active kind does nothing (a toggle would go back).
+picker manual
+wait 400
+expect kind manual
+capture picker-manual 0
+wait 600
+picker tile
+until kind tile 3000
+wait 600
+
+# --- the tab menu ---
+menu answer one
+action rename_tab
+until tab.names one 3000
+action new_tab
+until tabs 2 5000
+menu answer two
+action rename_tab
+action new_tab
+until tabs 3 5000
+menu answer three
+action rename_tab
+until tab.names one|two|three 3000
+action switch_tab 1
+until tab 1 3000
+wait 800
+menu tab 2
+expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t] (on); Three Column; Monocle [alt+z]}|-|New Tab [cmd+shift+t]|-|Move Left|Move Right|-|Close Tab [cmd+shift+w]|Close Other Tabs
+menu shot tab-menu
+wait 300
+# Layout ▸ Monocle on the background tab: it changes, the selected one doesn't.
+menu tab 2 invoke Layout/Monocle
+wait 400
+expect tab 1
+expect kind tile
+expect picker.kind tile
+menu tab 2
+expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t]; Three Column; Monocle [alt+z] (on)}|-|New Tab [cmd+shift+t]|-|Move Left|Move Right|-|Close Tab [cmd+shift+w]|Close Other Tabs
+# The edges: the first tab can't go left, the last can't go right.
+menu tab 1
+expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t] (on); Three Column; Monocle [alt+z]}|-|New Tab [cmd+shift+t]|-|Move Left (off)|Move Right|-|Close Tab [cmd+shift+w]|Close Other Tabs
+menu tab 3
+expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t] (on); Three Column; Monocle [alt+z]}|-|New Tab [cmd+shift+t]|-|Move Left|Move Right (off)|-|Close Tab [cmd+shift+w]|Close Other Tabs
+# Rename a background tab.
+menu answer deux
+menu tab 2 invoke Rename…
+until tab.names one|deux|three 3000
+expect tab 1
+# Move: a background tab left, then the selected one right (it stays selected).
+menu tab 3 invoke Move Left
+until tab.names one|three|deux 3000
+expect tab 1
+menu tab 1 invoke Move Right
+until tab.names three|one|deux 3000
+expect tab 2
+# Switching to the moved Monocle tab shows Monocle in the picker.
+action switch_tab 3
+until tab 3 3000
+expect kind monocle
+expect picker.kind monocle
+action switch_tab 2
+until tab 2 3000
+expect picker.kind tile
+# New Tab from the menu; Close Tab on a background tab.
+menu tab 1 invoke New Tab
+until tabs 4 5000
+wait 800
+action switch_tab 2
+until tab 2 3000
+menu tab 1 invoke Close Tab
+until tabs 3 3000
+until tab.names one|deux|terminal 3000
+expect tab 1
+expect kind tile
+# Close Other Tabs leaves the right-clicked one, selected.
+menu tab 2 invoke Close Other Tabs
+until tabs 1 3000
+until tab.names deux 3000
+expect kind monocle
+expect picker.kind monocle
+menu tab 1
+expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t]; Three Column; Monocle [alt+z] (on)}|-|New Tab [cmd+shift+t]|-|Move Left (off)|Move Right (off)|-|Close Tab [cmd+shift+w]|Close Other Tabs (off)
+quit

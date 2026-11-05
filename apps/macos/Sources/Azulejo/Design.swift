@@ -632,11 +632,11 @@ enum Design {
         static let cardPadding: CGFloat = 10
         static let headerHeight: CGFloat = 28
         static let headerTitleX: CGFloat = 29
-        static let toolbarHeight: CGFloat = 60
+        static let toolbarHeight: CGFloat = 52
         static let windowInset: CGFloat = 8
-        static let titlebarZone: CGFloat = 40
+        static let titlebarZone: CGFloat = 36
         static let titlebarLightsX: CGFloat = 22
-        static let titlebarLightsY: CGFloat = 24
+        static let titlebarLightsY: CGFloat = 19
         static let titlebarToggleInset: CGFloat = 29
         static let toolbarGap: CGFloat = 14
         static let tabStripHeight: CGFloat = 36
@@ -653,6 +653,9 @@ enum Design {
         static let searchMinWidth: CGFloat = 170
         static let searchHeight: CGFloat = 30
         static let searchBadgeHeight: CGFloat = 16
+        static let layoutPickerSegmentWidth: CGFloat = 28
+        static let layoutPickerPadding: CGFloat = 3
+        static let layoutPickerGap: CGFloat = 8
         static let rowHeight: CGFloat = 22
         static let sidebarWidth: CGFloat = 230
         static let sidebarPadding: CGFloat = 8
@@ -685,6 +688,7 @@ enum Design {
         static let tabAdd: CGFloat = 13
         static let tabStatus: CGFloat = 12
         static let searchIcon: CGFloat = 12
+        static let layoutPicker: CGFloat = 12
         static let sidebarToggle: CGFloat = 14
         static let sidebarRow: CGFloat = 12
         static let sidebarAdd: CGFloat = 11
@@ -812,6 +816,10 @@ enum Design {
         static let command = "command"
         static let workspace = "square.stack.3d.up"
         static let tab = "rectangle.topthird.inset.filled"
+        static let layoutManual = "inset.filled.topleft.topright.bottomhalf.rectangle"
+        static let layoutTile = "inset.filled.leadinghalf.toptrailing.bottomtrailing.rectangle"
+        static let layoutThreeColumn = "inset.filled.leftthird.middlethird.rightthird.rectangle"
+        static let layoutMonocle = "rectangle.inset.filled"
     }
 
     /// Reference durations in seconds; the [animation] config owns the live values.
