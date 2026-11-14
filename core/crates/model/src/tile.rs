@@ -17,11 +17,14 @@ pub enum TileKind {
 
 /// The herdr pane a terminal tile views. Both IDs are kept: herdr changes a
 /// pane's ID when it moves to another workspace, while the terminal ID is what
-/// `herdr terminal attach` takes.
+/// `herdr terminal attach` takes. The tab ID matters because closing a herdr
+/// tab reports only the tab, and herdr keeps pane and tab IDs (but not the
+/// process) across a server restart.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct HerdrRef {
     pub pane_id: String,
     pub terminal_id: String,
+    pub tab_id: String,
 }
 
 /// A tile's content and its kind-specific state.
@@ -38,6 +41,10 @@ pub enum TileContent {
         /// Set once the herdr adapter has created or adopted a pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         herdr: Option<HerdrRef>,
+        /// The herdr pane is gone (closed elsewhere, or lost with its server).
+        /// The shell offers Respawn or Close; binding a new pane clears it.
+        #[serde(default, skip_serializing_if = "is_false")]
+        ended: bool,
     },
     Browser {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -69,8 +76,13 @@ impl TileContent {
             cwd: None,
             command: None,
             herdr: None,
+            ended: false,
         }
     }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// One tile.

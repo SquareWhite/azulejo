@@ -4,6 +4,9 @@
 //! command handler can forget to report a change.
 
 mod diff;
+mod driver;
+pub mod link;
+pub mod persist;
 
 use azulejo_model::{ModelError, Session, Tile, TileContent, TileId};
 use azulejo_protocol::{
@@ -11,6 +14,8 @@ use azulejo_protocol::{
 };
 
 pub use diff::diff;
+pub use driver::{Core, CoreOptions, LogFn};
+pub use link::{Effect, HerdrPort, Internal};
 
 /// The result of a successful command.
 #[derive(Debug, Clone, PartialEq)]
@@ -267,7 +272,10 @@ impl Engine {
             Command::TerminalBind(p) => {
                 let tile = s.tile_mut(p.tile)?;
                 match &mut tile.content {
-                    TileContent::Terminal { herdr, .. } => *herdr = Some(p.herdr),
+                    TileContent::Terminal { herdr, ended, .. } => {
+                        *herdr = Some(p.herdr);
+                        *ended = false;
+                    }
                     _ => {
                         return Err(Error::new(
                             ErrorCode::InvalidState,

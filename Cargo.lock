@@ -14,6 +14,10 @@ version = "0.0.1"
 dependencies = [
  "azulejo-engine",
  "azulejo-protocol",
+ "libc",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -21,7 +25,19 @@ name = "azulejo-cli"
 version = "0.0.1"
 dependencies = [
  "azulejo-api",
+ "azulejo-engine",
  "azulejo-protocol",
+ "serde_json",
+]
+
+[[package]]
+name = "azulejo-config"
+version = "0.0.1"
+dependencies = [
+ "azulejo-protocol",
+ "proptest",
+ "tempfile",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]
@@ -31,6 +47,9 @@ dependencies = [
  "azulejo-herdr",
  "azulejo-model",
  "azulejo-protocol",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
