@@ -46,6 +46,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             FilesTileView.route(json)
             TerminalTileView.route(json)
             if json.contains("\"config.reloaded\""), let core = self?.core { Motion.load(core.animation()) }
+            self?.routeConfigReload(json)
             self?.scheduleRefresh()
         }
         installWakeObservers()
@@ -161,6 +162,26 @@ final class AppController: NSObject, NSApplicationDelegate {
                     controller.show(activate: !env.background)
                 }
             }
+        }
+    }
+
+    /// `config.reloaded` (F25b): problems go in every window's banner; a clean
+    /// reload clears it with a short note.
+    private func routeConfigReload(_ json: String) {
+        guard json.contains("\"config.reloaded\""),
+              let data = json.data(using: .utf8),
+              let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              event["event"] as? String == "config.reloaded",
+              let payload = event["data"] as? [String: Any]
+        else { return }
+        log("config.reloaded applied=\(payload["applied"] ?? "?")")
+        if payload["applied"] as? Bool == true {
+            // New bindings: rebuild the menus' key equivalents.
+            NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
+        }
+        for controller in controllers.values {
+            if controller.banner.apply(reload: payload) { controller.flash("Config reloaded") }
+            controller.layoutChrome()
         }
     }
 
@@ -297,7 +318,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "goto": controller.flash("Go to lands with the palette (2.2)")
         case "find": controller.flash("Find lands with the terminal tile (1.7)")
         case "edit_scrollback": controller.flash("Edit scrollback isn't wired yet")
-        case "reload_config": controller.flash("Live config reload lands in step 2.3")
+        case "reload_config":
+            // The core reads the file and sends `config.reloaded` (banner).
+            let reply = core.reloadConfig()
+            if reply["path"] == nil { controller.flash("no config file (defaults only)") }
         default:
             controller.flash("\(name) isn't wired yet")
         }

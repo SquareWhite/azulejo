@@ -484,6 +484,25 @@ pub unsafe extern "C" fn azj_core_info(core: *const AzjCore) -> *mut c_char {
     CString::new(json).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
+/// Reads the config file again now (the `reload_config` action), as if it
+/// had been saved. The `config.reloaded` event also goes to the callback.
+/// Returns that payload as JSON, `{"applied":false,"diagnostics":[]}` with no
+/// `path` when there's no config file, or NULL on a bad handle.
+///
+/// # Safety
+/// `core` must come from `azj_core_new*` and not be freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_core_reload_config(core: *const AzjCore) -> *mut c_char {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
+        return std::ptr::null_mut();
+    };
+    let value = match app.reload_config() {
+        Some(event) => serde_json::to_value(event).unwrap_or(Value::Null),
+        None => serde_json::json!({ "applied": false, "diagnostics": [] }),
+    };
+    out(value)
+}
+
 /// Frees a string returned by this library.
 ///
 /// # Safety

@@ -10,6 +10,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     private let sidebar = SidebarView()
     private let tabBar = TabBarView()
     private let hud = HUDView()
+    let banner = BannerView()
     private let content = ChromeLayoutView()
     private weak var app: AppController?
     private(set) var model: WindowModel?
@@ -41,7 +42,8 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.tabBar = tabBar
         content.tiles = tiles
         content.hud = hud
-        [sidebar, tabBar, tiles, hud].forEach(content.addSubview)
+        content.banner = banner
+        [sidebar, tabBar, tiles, banner, hud].forEach(content.addSubview)
         window.contentView = content
         window.delegate = self
 
@@ -88,6 +90,12 @@ final class WindowController: NSObject, NSWindowDelegate {
             // other apps' windows.
             window.orderBack(nil)
         }
+    }
+
+    /// Re-lays out the chrome (the banner changed size).
+    func layoutChrome() {
+        content.needsLayout = true
+        content.layoutSubtreeIfNeeded()
     }
 
     // MARK: HUD
@@ -138,6 +146,7 @@ final class ChromeLayoutView: NSView {
     weak var tabBar: NSView?
     weak var tiles: NSView?
     weak var hud: NSView?
+    weak var banner: BannerView?
 
     override func layout() {
         super.layout()
@@ -151,6 +160,11 @@ final class ChromeLayoutView: NSView {
             x: rest.minX, y: rest.maxY - TabBarView.height, width: rest.width, height: TabBarView.height)
         rest.size.height -= TabBarView.height
         tiles?.frame = rest
+        if let banner, !banner.isHidden {
+            let width = min(rest.width - 24, 760)
+            let height = banner.preferredHeight(width: width)
+            banner.frame = NSRect(x: rest.midX - width / 2, y: rest.maxY - height - 10, width: width, height: height)
+        }
         if let hud {
             let size = hud.fittingSize
             hud.frame = NSRect(
