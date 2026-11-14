@@ -92,6 +92,22 @@ impl TempHerdr {
         out.join("\n")
     }
 
+    /// Ends a pane's shell, as a crash or `exit` would: herdr drops the pane
+    /// and reports `pane_exited`. Kills the shell rather than typing `exit`,
+    /// which a still-starting shell may swallow.
+    fn exit_shell(&self, pane: &str) {
+        let out = self.cli(&["pane", "process-info", "--pane", pane]);
+        let pid = serde_json::from_str::<serde_json::Value>(&out)
+            .ok()
+            .and_then(|v| v["result"]["process_info"]["shell_pid"].as_i64())
+            .unwrap_or_else(|| panic!("process-info: {out}"));
+        let status = std::process::Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success(), "kill {pid}");
+    }
+
     fn kill(&self, pane: &str) {
         self.rt
             .block_on(
@@ -211,12 +227,12 @@ fn terminals_get_panes_survive_restart_and_follow_herdr() {
     assert_eq!(core.session().unwrap(), before);
     assert_eq!(herdr.panes().len(), 2, "no extra panes on restore");
 
-    // 3. A pane closed elsewhere marks its tile ended.
+    // 3. A pane closed elsewhere takes its tile with it (F15).
     let events = core.subscribe();
     herdr.kill(&refs[0].pane_id);
     wait_for_event(&events, |e| {
-        matches!(e, Event::TileUpdated { tile, .. }
-            if matches!(&tile.content, TileContent::Terminal { ended: true, .. }))
+        matches!(e, Event::TileClosed { tile, kill: false, .. }
+            if matches!(&tile.content, TileContent::Terminal { herdr: Some(h), .. } if *h == refs[0]))
     });
 
     // 4. Closing a tile with `kill` kills its pane; the other is gone already.
@@ -224,6 +240,7 @@ fn terminals_get_panes_survive_restart_and_follow_herdr() {
         .into_iter()
         .find(|(_, _, ended)| !ended)
         .unwrap();
+    assert_eq!(live.1.as_ref(), Some(&refs[1]));
     core.execute(Command::TileClose(TileClose {
         tile: Some(live.0),
         kill: true,
@@ -344,12 +361,19 @@ fn terminal_io_round_trips_through_a_real_pane() {
     assert_eq!(state.offset_from_bottom, 0);
     assert!(state.viewport_rows > 0, "{state:?}");
 
-    // A pane killed behind the core's back: the tile ends and I/O says so.
-    let pane = match &core.session().unwrap().tile(tile).unwrap().content {
-        TileContent::Terminal { herdr: Some(r), .. } => r.pane_id.clone(),
-        other => panic!("{other:?}"),
-    };
-    h.kill(&pane);
+    // The shell exits: herdr drops the pane, the tile ends and I/O says so.
+    assert_eq!(
+        reply(Command::TerminalSendText(TerminalSendText {
+            tile: Some(tile),
+            text: "exit".into(),
+        })),
+        Ok(Reply::Ok)
+    );
+    reply(Command::TerminalSendKeys(TerminalSendKeys {
+        tile: Some(tile),
+        keys: vec!["enter".into()],
+    }))
+    .unwrap();
     wait_until(&core, Duration::from_secs(10), |s| {
         matches!(
             s.tile(tile).map(|t| &t.content),
@@ -464,7 +488,7 @@ fn respawn_rebinds_an_ended_tile_in_place() {
 
     // 1. One pane ends; its workspace lives on. Respawn binds a new pane.
     let (second, old) = (tiles[1].0, tiles[1].1.clone().unwrap());
-    herdr.kill(&old.pane_id);
+    herdr.exit_shell(&old.pane_id);
     wait_until(&core, Duration::from_secs(5), |s| ended(s, second));
     core.execute(Command::TerminalRespawn(TileTarget { tile: Some(second) }))
         .unwrap();
@@ -485,8 +509,8 @@ fn respawn_rebinds_an_ended_tile_in_place() {
 
     // 2. Every pane ends, so herdr drops the workspace. Respawn makes a new one.
     let first_old = tiles[0].1.clone().unwrap();
-    herdr.kill(&first_old.pane_id);
-    herdr.kill(&new.pane_id);
+    herdr.exit_shell(&first_old.pane_id);
+    herdr.exit_shell(&new.pane_id);
     wait_until(&core, Duration::from_secs(5), |s| {
         ended(s, tiles[0].0) && ended(s, second)
     });
@@ -504,5 +528,115 @@ fn respawn_rebinds_an_ended_tile_in_place() {
             .iter()
             .any(|p| p.terminal_id.as_str() == r.terminal_id)
     );
+    core.shutdown();
+}
+
+/// Waits for the first event `want` accepts; returns when it arrived.
+fn time_event(events: &Receiver<Event>, want: impl Fn(&Event) -> bool) -> Instant {
+    wait_for_event(events, want);
+    Instant::now()
+}
+
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second() {
+    use azulejo_protocol::AgentState;
+    let h = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
+    let session = wait_until(&core, Duration::from_secs(10), all_bound);
+    let tile = session.focused_tile().unwrap();
+    let pane = match &session.tile(tile).unwrap().content {
+        TileContent::Terminal { herdr: Some(r), .. } => r.pane_id.clone(),
+        other => panic!("{other:?}"),
+    };
+    let events = core.subscribe();
+    let report = |state: &str| {
+        h.cli(&[
+            "pane",
+            "report-agent",
+            &pane,
+            "--source",
+            "azj-test",
+            "--agent",
+            "claude",
+            "--state",
+            state,
+        ]);
+    };
+
+    // The agent subscription opens once the tile is bound; wait for it.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        report("working");
+        let got = (0..20).any(|_| {
+            matches!(
+                events.recv_timeout(Duration::from_millis(50)),
+                Ok(Event::AgentStateChanged(c)) if c.state == AgentState::Working
+            )
+        });
+        if got {
+            break;
+        }
+        assert!(Instant::now() < deadline, "no agent status from herdr");
+    }
+
+    // Blocked: lights the tile's attention (it's focused, so `tile.seen`
+    // is the shell's job; the core lights it regardless).
+    let t0 = Instant::now();
+    report("blocked");
+    let blocked = time_event(
+        &events,
+        |e| matches!(e, Event::AgentStateChanged(c) if c.tile == tile && c.state == AgentState::Blocked),
+    );
+    let attention = time_event(
+        &events,
+        |e| matches!(e, Event::TileAttentionChanged { tile: t, attention: true, .. } if *t == tile),
+    );
+    let blocked_ms = (blocked - t0).as_millis();
+    eprintln!(
+        "LATENCY blocked: {blocked_ms} ms to agent.state_changed, {} ms to attention (incl. herdr CLI)",
+        (attention - t0).as_millis()
+    );
+    assert!(blocked_ms < 1000, "{blocked_ms} ms");
+    let a = core
+        .session()
+        .unwrap()
+        .tile(tile)
+        .unwrap()
+        .agent
+        .clone()
+        .unwrap();
+    assert!(a.attention);
+
+    // A pane split off in herdr becomes a tile beside its sibling (F15).
+    let t0 = Instant::now();
+    let out = h.cli(&["pane", "split", &pane, "--direction", "right", "--no-focus"]);
+    let new_pane = serde_json::from_str::<serde_json::Value>(&out)
+        .ok()
+        .and_then(|v| v["result"]["pane"]["pane_id"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| panic!("split output: {out}"));
+    let created = time_event(&events, |e| {
+        matches!(e, Event::TileCreated { tile, .. }
+            if matches!(&tile.content, TileContent::Terminal { herdr: Some(r), .. } if r.pane_id == new_pane))
+    });
+    let split_ms = (created - t0).as_millis();
+    eprintln!("LATENCY external split: {split_ms} ms to tile.created (incl. herdr CLI)");
+    assert!(split_ms < 1000, "{split_ms} ms");
+    let s = core.session().unwrap();
+    let tab = s.tab(s.focus().tab.unwrap()).unwrap();
+    assert_eq!(tab.tiles.len(), 2);
+    assert_eq!(s.focused_tile(), Some(tile), "focus stays put");
+
+    // Closed there: the tile goes.
+    let t0 = Instant::now();
+    h.cli(&["pane", "close", &new_pane]);
+    let closed = time_event(&events, |e| {
+        matches!(e, Event::TileClosed { tile, .. }
+            if matches!(&tile.content, TileContent::Terminal { herdr: Some(r), .. } if r.pane_id == new_pane))
+    });
+    let close_ms = (closed - t0).as_millis();
+    eprintln!("LATENCY external close: {close_ms} ms to tile.closed (incl. herdr CLI)");
+    assert!(close_ms < 1000, "{close_ms} ms");
     core.shutdown();
 }

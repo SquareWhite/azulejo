@@ -35,6 +35,10 @@ struct FakeState {
     existing: herdr::Survey,
     /// Every herdr call, by name, in order.
     calls: Vec<&'static str>,
+    /// Pane sets the core subscribed to for agent status, in order, and the
+    /// latest subscription's sender.
+    agent_subs: Vec<Vec<String>>,
+    agent_tx: Option<tmpsc::Sender<herdr::StreamItem>>,
 }
 
 #[derive(Clone, Default)]
@@ -48,6 +52,20 @@ impl Fake {
     fn send(&self, item: herdr::StreamItem) {
         let tx = self.state().events.clone().expect("subscribed");
         tx.blocking_send(item).unwrap();
+    }
+
+    /// Sends on the latest agent-status subscription.
+    fn send_agent(&self, pane: &str, status: herdr::AgentStatus) {
+        let tx = self.state().agent_tx.clone().expect("agent subscription");
+        tx.blocking_send(herdr::StreamItem::Event(
+            herdr::HerdrEvent::AgentStatusChanged {
+                pane_id: herdr::PaneId(pane.into()),
+                workspace_id: herdr::WorkspaceId("w1".into()),
+                agent: Some("claude".into()),
+                status,
+            },
+        ))
+        .unwrap();
     }
 
     /// A herdr that already runs `existing`.
@@ -213,6 +231,15 @@ impl HerdrPort for Fake {
     fn events(&self) -> tmpsc::Receiver<herdr::StreamItem> {
         let (tx, rx) = tmpsc::channel(16);
         self.state().events = Some(tx);
+        rx
+    }
+
+    fn agent_events(&self, panes: Vec<String>) -> tmpsc::Receiver<herdr::StreamItem> {
+        let (tx, rx) = tmpsc::channel(16);
+        tx.try_send(herdr::StreamItem::Connected).unwrap();
+        let mut s = self.state();
+        s.agent_subs.push(panes);
+        s.agent_tx = Some(tx);
         rx
     }
 
@@ -450,13 +477,14 @@ fn restore_reresolves_every_bound_tile() {
 }
 
 #[test]
-fn herdr_events_end_or_rebind_tiles() {
+fn herdr_events_end_close_or_rebind_tiles() {
     let fake = Fake::default();
     let core = Core::start_with_herdr(opts(None), fake.clone());
-    for _ in 0..3 {
+    for _ in 0..4 {
         split(&core);
     }
-    let session = wait_until(&core, |s| terminals(s).len() == 4 && all_bound(s));
+    let session = wait_until(&core, |s| terminals(s).len() == 5 && all_bound(s));
+    let tiles: Vec<TileId> = terminals(&session).into_iter().map(|t| t.0).collect();
     let refs: Vec<HerdrRef> = terminals(&session)
         .into_iter()
         .map(|(_, h, _)| h.unwrap())
@@ -464,12 +492,18 @@ fn herdr_events_end_or_rebind_tiles() {
     let events = core.subscribe();
 
     use herdr::HerdrEvent as E;
-    fake.send(herdr::StreamItem::Event(E::PaneClosed {
+    // The process exited: the tile stays, ended.
+    fake.send(herdr::StreamItem::Event(E::PaneExited {
         pane_id: herdr::PaneId(refs[0].pane_id.clone()),
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
+    // Closed in herdr: tab and pane. The tiles go.
     fake.send(herdr::StreamItem::Event(E::TabClosed {
         tab_id: herdr::TabId(refs[1].tab_id.clone()),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+    fake.send(herdr::StreamItem::Event(E::PaneClosed {
+        pane_id: herdr::PaneId(refs[3].pane_id.clone()),
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
     let moved = herdr::TerminalRef {
@@ -491,21 +525,70 @@ fn herdr_events_end_or_rebind_tiles() {
     }));
 
     let after = wait_until(&core, |s| {
-        let t = terminals(s);
-        t[0].2 && t[1].2 && t[2].1.as_ref().unwrap().pane_id == "w2:p1"
+        terminals(s).len() == 3
+            && s.tile(tiles[2])
+                .is_ok_and(|t| matches!(&t.content, TileContent::Terminal { herdr: Some(h), .. } if h.pane_id == "w2:p1"))
     });
     let t = terminals(&after);
-    assert!(!t[3].2);
-    assert_eq!(t[3].1.as_ref(), Some(&refs[3]));
-    // Each change reached listeners as `tile.updated`.
-    let updates = events
-        .try_iter()
-        .filter(|e| matches!(e, Event::TileUpdated { .. }))
-        .count();
-    assert_eq!(updates, 3);
-
-    // The ended pane was never killed by us.
+    assert_eq!(
+        t.iter().map(|t| t.0).collect::<Vec<_>>(),
+        [tiles[0], tiles[2], tiles[4]]
+    );
+    assert!(t[0].2, "exited: ended");
+    assert!(!t[2].2);
+    assert_eq!(t[2].1.as_ref(), Some(&refs[4]));
+    let seen: Vec<Event> = events.try_iter().collect();
+    let count = |f: &dyn Fn(&Event) -> bool| seen.iter().filter(|e| f(e)).count();
+    assert_eq!(count(&|e| matches!(e, Event::TileUpdated { .. })), 2);
+    assert_eq!(
+        count(&|e| matches!(e, Event::TileClosed { kill: false, .. })),
+        2
+    );
+    // Closed elsewhere isn't "closed here": nothing to keep out of adoption.
+    assert!(after.detached_herdr.is_empty());
+    // We never killed anything.
     assert!(fake.state().killed.is_empty());
+}
+
+#[test]
+fn a_closed_herdr_workspace_takes_its_tiles_and_binding() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    split(&core);
+    wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
+    // A second workspace with a browser and a terminal, so the first can go.
+    let created = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                window: None,
+                name: Some("other".into()),
+                cwd: None,
+            },
+        ))
+        .unwrap();
+    let Reply::Created(created) = created.reply else {
+        panic!("{created:?}")
+    };
+    core.execute(Command::TabCreate(azulejo_protocol::TabCreate {
+        workspace: created.workspace,
+        ..Default::default()
+    }))
+    .unwrap();
+    let s = wait_until(&core, |s| {
+        s.windows[0].workspaces.len() == 2 && all_bound(s) && terminals(s).len() == 3
+    });
+    let (first, second) = (&s.windows[0].workspaces[0], &s.windows[0].workspaces[1]);
+    let herdr_ws = first.herdr_workspace.clone().unwrap();
+    assert_ne!(second.herdr_workspace.as_deref(), Some(herdr_ws.as_str()));
+
+    fake.send(herdr::StreamItem::Event(
+        herdr::HerdrEvent::WorkspaceClosed {
+            workspace_id: herdr::WorkspaceId(herdr_ws.clone()),
+        },
+    ));
+    let after = wait_until(&core, |s| s.windows[0].workspaces.len() == 1);
+    assert_eq!(after.windows[0].workspaces[0].id, second.id);
+    assert_eq!(terminals(&after).len(), 1);
 }
 
 #[test]
@@ -771,7 +854,7 @@ fn terminal_io_errors() {
     fake.state().down = false;
 
     // Ended pane.
-    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
         pane_id: herdr::PaneId(pane),
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
@@ -926,7 +1009,7 @@ fn respawn_gives_an_ended_tile_a_fresh_pane_in_place() {
 
     // Its pane ends outside Azulejo.
     fake.state().panes.retain(|p| p.pane_id.0 != old.pane_id);
-    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
         pane_id: herdr::PaneId(old.pane_id.clone()),
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
@@ -1010,4 +1093,122 @@ fn herdr_link_changes_reach_listeners() {
         }
     }
     assert_eq!(seen, vec![false, true]);
+}
+
+fn agent_of(s: &Session, tile: TileId) -> Option<azulejo_model::AgentInfo> {
+    s.tile(tile).ok().and_then(|t| t.agent.clone())
+}
+
+#[test]
+fn agent_status_follows_bound_panes_and_lights_attention() {
+    use azulejo_model::AgentStatus;
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let first = wait_until(&core, all_bound).focused_tile().unwrap();
+    let second = split(&core);
+    let s = wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
+    let panes: Vec<String> = terminals(&s)
+        .into_iter()
+        .map(|(_, h, _)| h.unwrap().pane_id)
+        .collect();
+    // The subscription follows the bound panes.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut want = panes.clone();
+        want.sort();
+        if fake.state().agent_subs.last() == Some(&want) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{:?}", fake.state().agent_subs);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let events = core.subscribe();
+
+    // `second` is focused (split focuses the new tile); `first` isn't.
+    fake.send_agent(&panes[0], herdr::AgentStatus::Blocked);
+    let s = wait_until(&core, |s| agent_of(s, first).is_some_and(|a| a.attention));
+    let a = agent_of(&s, first).unwrap();
+    assert_eq!(
+        (a.status, a.name.as_deref()),
+        (AgentStatus::Blocked, Some("claude"))
+    );
+    let ws = &s.windows[0].workspaces[0];
+    let info = match core
+        .execute(Command::WorkspaceList(Default::default()))
+        .unwrap()
+        .reply
+    {
+        Reply::Workspaces { workspaces } => workspaces[0].workspace.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!((info.id, info.blocked, info.attention), (ws.id, 1, 1));
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut seen = Vec::new();
+    while !seen
+        .iter()
+        .any(|e| matches!(e, Event::TileAttentionChanged { .. }))
+    {
+        let left = deadline.saturating_duration_since(Instant::now());
+        seen.push(events.recv_timeout(left).expect("attention event"));
+    }
+    assert!(seen.iter().any(|e| matches!(e,
+        Event::AgentStateChanged(c) if c.tile == first
+            && c.state == azulejo_protocol::AgentState::Blocked
+            && c.agent.as_deref() == Some("claude"))));
+    assert!(seen.iter().any(|e| matches!(e,
+        Event::WorkspaceUpdated { workspace, .. } if workspace.blocked == 1)));
+
+    // Looking at it clears the attention; it's still blocked.
+    core.execute(Command::TileFocus(azulejo_protocol::TileTarget {
+        tile: Some(first),
+    }))
+    .unwrap();
+    let a = agent_of(&core.session().unwrap(), first).unwrap();
+    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, false));
+
+    // The focused tile lights up too; `tile.seen` clears it in place.
+    fake.send_agent(&panes[0], herdr::AgentStatus::Working);
+    fake.send_agent(&panes[0], herdr::AgentStatus::Done);
+    wait_until(&core, |s| agent_of(s, first).is_some_and(|a| a.attention));
+    core.execute(Command::TileSeen(azulejo_protocol::TileTarget {
+        tile: None,
+    }))
+    .unwrap();
+    assert!(!agent_of(&core.session().unwrap(), first).unwrap().attention);
+    assert_eq!(core.session().unwrap().focused_tile(), Some(first));
+    let _ = second;
+}
+
+#[test]
+fn panes_split_off_elsewhere_become_tiles_and_closing_there_removes_them() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let s = wait_until(&core, all_bound);
+    let focus = s.focus();
+    let bound = terminals(&s)[0].1.clone().unwrap();
+    // Split in herdr's own UI: a new pane in the tile's herdr tab.
+    let pane = herdr::TerminalRef {
+        workspace_id: herdr::WorkspaceId("w1".into()),
+        tab_id: herdr::TabId(bound.tab_id.clone()),
+        pane_id: herdr::PaneId("w1:p99".into()),
+        terminal_id: herdr::TerminalId("term_99".into()),
+    };
+    fake.state().panes.push(pane.clone());
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneCreated(
+        pane_info(&pane),
+    )));
+    let s = wait_until(&core, |s| terminals(s).len() == 2);
+    let tab = s.tab(focus.tab.unwrap()).unwrap();
+    assert_eq!(tab.tiles.len(), 2, "same tab as its sibling");
+    assert_eq!(s.focus(), focus, "focus stays put");
+    assert!(fake.mutations().iter().all(|c| *c != "create_terminal"));
+
+    // Closed there again: the tile goes.
+    fake.state().panes.retain(|p| p.pane_id.0 != "w1:p99");
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+        pane_id: herdr::PaneId("w1:p99".into()),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+    wait_until(&core, |s| terminals(s).len() == 1);
 }

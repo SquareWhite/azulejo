@@ -15,11 +15,11 @@ use std::future::Future;
 use std::sync::Arc;
 
 use azulejo_herdr as herdr;
-use azulejo_model::{HerdrRef, Session, Tile, TileContent, TileId, WorkspaceId};
+use azulejo_model::{AgentStatus, HerdrRef, Session, Tile, TileContent, TileId, WorkspaceId};
 use azulejo_protocol::{Command, Event, TerminalBind, WorkspaceBind};
 use tokio::sync::mpsc;
 
-use crate::{Engine, adopt, diff};
+use crate::{Engine, adopt, agent, diff};
 
 /// What the engine needs from herdr. [`herdr::Client`] implements it; tests
 /// use a fake.
@@ -47,6 +47,15 @@ pub trait HerdrPort: Send + Sync + 'static {
 
     /// herdr's lifecycle events. Called once, inside the runtime.
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem>;
+
+    /// Agent status changes for `panes` (herdr wants one subscription per
+    /// pane). Called inside the runtime whenever the set of bound panes
+    /// changes; dropping the receiver ends the subscription. A port without
+    /// agent status returns a closed channel.
+    fn agent_events(&self, panes: Vec<String>) -> mpsc::Receiver<herdr::StreamItem> {
+        let _ = panes;
+        mpsc::channel(1).1
+    }
 
     // ----- terminal I/O (F20) -----
 
@@ -157,17 +166,34 @@ impl HerdrPort for herdr::Client {
     }
 
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem> {
-        let mut stream = herdr::Client::subscribe(self, herdr::Subscription::lifecycle());
-        let (tx, rx) = mpsc::channel(256);
-        tokio::spawn(async move {
-            while let Some(item) = stream.recv().await {
-                if tx.send(item).await.is_err() {
-                    break;
-                }
-            }
-        });
-        rx
+        forward(herdr::Client::subscribe(
+            self,
+            herdr::Subscription::lifecycle(),
+        ))
     }
+
+    fn agent_events(&self, panes: Vec<String>) -> mpsc::Receiver<herdr::StreamItem> {
+        forward(herdr::Client::subscribe(
+            self,
+            panes
+                .into_iter()
+                .map(|p| herdr::Subscription::AgentStatus(herdr::PaneId(p)))
+                .collect(),
+        ))
+    }
+}
+
+/// Pumps an event stream into a channel; the stream closes with the channel.
+fn forward(mut stream: herdr::EventStream) -> mpsc::Receiver<herdr::StreamItem> {
+    let (tx, rx) = mpsc::channel(256);
+    tokio::spawn(async move {
+        while let Some(item) = stream.recv().await {
+            if tx.send(item).await.is_err() {
+                break;
+            }
+        }
+    });
+    rx
 }
 
 /// herdr work the engine asks for.
@@ -213,6 +239,23 @@ pub enum Internal {
     MarkEnded {
         tile: TileId,
     },
+    /// The tile's pane was closed outside Azulejo (herdr TUI, phone, CLI):
+    /// the tile goes too (F15).
+    ClosedElsewhere {
+        tile: TileId,
+    },
+    /// A herdr workspace closed: its tiles go and the binding is dropped, so
+    /// a later workspace reusing the ID isn't mistaken for it.
+    HerdrWorkspaceClosed {
+        herdr: String,
+    },
+    /// herdr reported the agent in a pane (F16).
+    AgentStatus {
+        pane_id: String,
+        agent: Option<String>,
+        status: AgentStatus,
+        at_ms: u64,
+    },
     /// What herdr runs; adopt what's new.
     Surveyed(Box<herdr::Survey>),
     /// The survey failed (logged); nothing to adopt this time.
@@ -251,10 +294,47 @@ impl Engine {
                 }
                 diff(&before, &self.session, false)
             }
+            Internal::ClosedElsewhere { tile } => {
+                let before = self.session.clone();
+                if self.session.close_tile(tile).is_err() {
+                    return Vec::new();
+                }
+                diff(&before, &self.session, false)
+            }
+            Internal::HerdrWorkspaceClosed { herdr } => {
+                let before = self.session.clone();
+                close_herdr_workspace(&mut self.session, &herdr);
+                debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                diff(&before, &self.session, false)
+            }
+            Internal::AgentStatus {
+                pane_id,
+                agent,
+                status,
+                at_ms,
+            } => {
+                let before = self.session.clone();
+                let tiles: Vec<TileId> = bound_tiles(&self.session)
+                    .filter(|(_, _, h)| h.pane_id == pane_id)
+                    .map(|(_, id, _)| id)
+                    .collect();
+                let mut changed = false;
+                for id in tiles {
+                    if let Ok(tile) = self.session.tile_mut(id) {
+                        changed |= agent::update(tile, agent.clone(), status, at_ms);
+                    }
+                }
+                if !changed {
+                    return Vec::new();
+                }
+                diff(&before, &self.session, false)
+            }
             Internal::Surveyed(survey) => {
                 let before = self.session.clone();
                 let placeholder = self.placeholder.take();
-                if !adopt::adopt(&mut self.session, &survey, placeholder) {
+                let mut changed = adopt::adopt(&mut self.session, &survey, placeholder);
+                changed |= agent::refresh(&mut self.session, &survey, agent::now_ms());
+                if !changed {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
@@ -371,25 +451,17 @@ pub struct Reaction {
     pub survey: bool,
 }
 
-/// Matches herdr events to bound tiles. New herdr workspaces and tabs (from
-/// the user's herdr TUI, a phone, the CLI) ask for a survey, which adopts
-/// them; panes split off inside a tab already shown here aren't adopted yet:
-/// that's PLAN step 2.7.
+/// Matches herdr events to tiles (ADR 0009):
+/// - `pane_exited`: the process ended; the tile stays, ended, respawnable.
+/// - `pane_closed`, `tab_closed`, `workspace_closed`: someone closed it in
+///   herdr; the tile goes too (F15).
+/// - New workspaces, tabs and panes nobody here knows ask for a survey, which
+///   adopts them (ADR 0008; split-off panes land beside their sibling).
+/// - Agent status updates the tile's agent (F16).
 pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
     use herdr::HerdrEvent as E;
     let mut reaction = Reaction::default();
-    let bound = || {
-        session
-            .tiles()
-            .filter_map(|(path, tile)| match &tile.content {
-                TileContent::Terminal {
-                    herdr: Some(h),
-                    ended: false,
-                    ..
-                } => Some((path, tile.id, h)),
-                _ => None,
-            })
-    };
+    let bound = || bound_tiles(session);
     let end_where = |reaction: &mut Reaction, pred: &dyn Fn(&HerdrRef) -> bool| {
         for (_, tile, h) in bound() {
             if pred(h) {
@@ -397,8 +469,17 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
             }
         }
     };
+    let close_where = |reaction: &mut Reaction, pred: &dyn Fn(&HerdrRef) -> bool| {
+        for (_, tile, h) in bound() {
+            if pred(h) {
+                reaction.internals.push(Internal::ClosedElsewhere { tile });
+            }
+        }
+    };
     match item {
-        herdr::StreamItem::Resync => {
+        // Events before the stream came up are lost (herdr doesn't replay),
+        // so check everything then too, not only after a reconnect.
+        herdr::StreamItem::Connected | herdr::StreamItem::Resync => {
             reaction.effects = restore_effects(session)
                 .into_iter()
                 .filter(|e| matches!(e, Effect::Reresolve { .. }))
@@ -407,22 +488,44 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
         }
         herdr::StreamItem::Event(event) => match event {
             E::WorkspaceCreated(_) | E::TabCreated(_) => reaction.survey = true,
-            E::PaneClosed { pane_id, .. } | E::PaneExited { pane_id, .. } => {
+            // A pane split off elsewhere (F15); ours are bound already, or
+            // will be before the survey runs (the worker goes in order).
+            E::PaneCreated(pane) => {
+                reaction.survey |= !bound().any(|(_, _, h)| {
+                    h.terminal_id == pane.terminal_id.as_str()
+                        || (h.pane_id == pane.pane_id.as_str() && h.tab_id == pane.tab_id.as_str())
+                });
+            }
+            // The process ended (`exit`, a crash): herdr drops the pane and
+            // says `pane_exited` only. The tile stays, ended and respawnable.
+            E::PaneExited { pane_id, .. } => {
                 end_where(&mut reaction, &|h| h.pane_id == pane_id.as_str());
+            }
+            // Someone closed the pane, tab or workspace in herdr (its TUI, a
+            // phone, the CLI, an agent): the tile goes with it.
+            E::PaneClosed { pane_id, .. } => {
+                close_where(&mut reaction, &|h| h.pane_id == pane_id.as_str());
             }
             // Closing a tab reports only the tab, not its panes.
             E::TabClosed { tab_id, .. } => {
-                end_where(&mut reaction, &|h| h.tab_id == tab_id.as_str());
+                close_where(&mut reaction, &|h| h.tab_id == tab_id.as_str());
             }
             E::WorkspaceClosed { workspace_id } => {
-                for (path, tile, _) in bound() {
-                    let (_, workspace, _) = session.ids_at(path);
-                    if herdr_workspace(session, workspace).as_deref() == Some(workspace_id.as_str())
-                    {
-                        reaction.internals.push(Internal::MarkEnded { tile });
-                    }
-                }
+                reaction.internals.push(Internal::HerdrWorkspaceClosed {
+                    herdr: workspace_id.0.clone(),
+                });
             }
+            E::AgentStatusChanged {
+                pane_id,
+                agent,
+                status,
+                ..
+            } => reaction.internals.push(Internal::AgentStatus {
+                pane_id: pane_id.0.clone(),
+                agent: agent.clone(),
+                status: agent::from_herdr(*status),
+                at_ms: agent::now_ms(),
+            }),
             E::PaneMoved {
                 previous_pane_id,
                 pane,
@@ -444,6 +547,67 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
         _ => {}
     }
     reaction
+}
+
+/// Terminal tiles bound to a live pane: path, tile and pane.
+fn bound_tiles(
+    session: &Session,
+) -> impl Iterator<Item = (azulejo_model::TilePath, TileId, &HerdrRef)> {
+    session
+        .tiles()
+        .filter_map(|(path, tile)| match &tile.content {
+            TileContent::Terminal {
+                herdr: Some(h),
+                ended: false,
+                ..
+            } => Some((path, tile.id, h)),
+            _ => None,
+        })
+}
+
+/// The panes whose agent status the core follows: every bound pane, sorted.
+pub fn agent_panes(session: &Session) -> Vec<String> {
+    let mut panes: Vec<String> = bound_tiles(session)
+        .map(|(_, _, h)| h.pane_id.clone())
+        .collect();
+    panes.sort_unstable();
+    panes.dedup();
+    panes
+}
+
+/// A herdr workspace closed: drops the tiles still bound there and the
+/// binding. An Azulejo workspace left without tabs closes too, unless it's its
+/// window's last; herdr deletes a workspace with its last tab, so mirroring
+/// that keeps the two in step.
+fn close_herdr_workspace(session: &mut Session, herdr: &str) {
+    let bound: Vec<WorkspaceId> = session
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .filter(|w| w.herdr_workspace.as_deref() == Some(herdr))
+        .map(|w| w.id)
+        .collect();
+    for id in bound {
+        let tiles: Vec<TileId> = bound_tiles(session)
+            .filter(|(path, _, _)| session.ids_at(*path).1 == id)
+            .map(|(_, tile, _)| tile)
+            .collect();
+        for tile in tiles {
+            let _ = session.close_tile(tile);
+        }
+        let mut emptied = false;
+        let mut siblings = 0;
+        for window in &mut session.windows {
+            if let Some(ws) = window.workspaces.iter_mut().find(|w| w.id == id) {
+                ws.herdr_workspace = None;
+                emptied = ws.tabs.is_empty();
+                siblings = window.workspaces.len() - 1;
+            }
+        }
+        if emptied && siblings > 0 {
+            let _ = session.close_workspace(id);
+        }
+    }
 }
 
 fn to_ref(t: &herdr::TerminalRef) -> HerdrRef {

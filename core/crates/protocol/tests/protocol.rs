@@ -82,6 +82,7 @@ fn sample_commands() -> Vec<Command> {
             kill: true,
         }),
         Command::TileFocus(TileTarget { tile: Some(tile) }),
+        Command::TileSeen(TileTarget { tile: None }),
         Command::LayoutGet,
         Command::LayoutSplit(LayoutSplit {
             tile: None,
@@ -228,6 +229,8 @@ fn sample_events() -> Vec<Event> {
         name: "main".into(),
         cwd: None,
         herdr_workspace: Some("w1".into()),
+        blocked: 1,
+        attention: 2,
     };
     vec![
         Event::WindowCreated { window },
@@ -300,6 +303,11 @@ fn sample_events() -> Vec<Event> {
         Event::HerdrStatus {
             connected: false,
             message: Some("connection refused".into()),
+        },
+        Event::TileAttentionChanged {
+            tab,
+            tile: tile.id,
+            attention: true,
         },
         Event::AgentStateChanged(AgentStateChange {
             tile: tile.id,
@@ -410,6 +418,8 @@ fn replies_round_trip() {
                     name: "web".into(),
                     cwd: None,
                     herdr_workspace: Some("w2".into()),
+                    blocked: 0,
+                    attention: 0,
                 },
             }],
         },

@@ -6,8 +6,8 @@
 
 use std::collections::HashMap;
 
-use azulejo_model::{Session, Tab, TabId, Tile, TileId, WindowId, WorkspaceId};
-use azulejo_protocol::{Event, LayoutState, TabInfo, WorkspaceInfo};
+use azulejo_model::{AgentStatus, Session, Tab, TabId, Tile, TileId, WindowId, WorkspaceId};
+use azulejo_protocol::{AgentState, AgentStateChange, Event, LayoutState, TabInfo, WorkspaceInfo};
 
 struct Index<'a> {
     windows: Vec<(WindowId, &'a azulejo_model::Window)>,
@@ -43,11 +43,55 @@ impl<'a> Index<'a> {
 }
 
 pub(crate) fn workspace_info(ws: &azulejo_model::Workspace) -> WorkspaceInfo {
+    let agents = || {
+        ws.tabs
+            .iter()
+            .flat_map(|t| &t.tiles)
+            .filter_map(|t| t.agent.as_ref())
+    };
     WorkspaceInfo {
         id: ws.id,
         name: ws.name.clone(),
         cwd: ws.cwd.clone(),
         herdr_workspace: ws.herdr_workspace.clone(),
+        blocked: agents()
+            .filter(|a| a.status == AgentStatus::Blocked)
+            .count() as u32,
+        attention: agents().filter(|a| a.attention).count() as u32,
+    }
+}
+
+fn agent_state(status: AgentStatus) -> AgentState {
+    match status {
+        AgentStatus::Idle => AgentState::Idle,
+        AgentStatus::Working => AgentState::Working,
+        AgentStatus::Blocked => AgentState::Blocked,
+        AgentStatus::Done => AgentState::Done,
+        AgentStatus::Unknown => AgentState::Unknown,
+    }
+}
+
+/// `agent.state_changed` and `tile.attention_changed` for one tile.
+fn agent_events(tab: TabId, old: Option<&Tile>, new: &Tile, events: &mut Vec<Event>) {
+    let before = old.and_then(|t| t.agent.as_ref());
+    let after = new.agent.as_ref();
+    let status = |a: Option<&azulejo_model::AgentInfo>| a.map(|a| a.status);
+    let name = |a: Option<&azulejo_model::AgentInfo>| a.and_then(|a| a.name.clone());
+    if status(before) != status(after) || name(before) != name(after) {
+        events.push(Event::AgentStateChanged(AgentStateChange {
+            tile: new.id,
+            state: agent_state(status(after).unwrap_or_default()),
+            previous: old.map(|_| agent_state(status(before).unwrap_or_default())),
+            agent: name(after),
+        }));
+    }
+    let lit = |a: Option<&azulejo_model::AgentInfo>| a.is_some_and(|a| a.attention);
+    if lit(before) != lit(after) {
+        events.push(Event::TileAttentionChanged {
+            tab,
+            tile: new.id,
+            attention: lit(after),
+        });
     }
 }
 
@@ -149,6 +193,15 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
                 tab: *tab,
                 tile: (*tile).clone(),
             });
+        }
+    }
+    // Agent state, after the tiles that carry it (F11, F16). New tiles only
+    // report an agent that is there already, e.g. an adopted blocked one.
+    for (id, tab, tile) in &a.tiles {
+        match b_tiles.get(id) {
+            Some(old) => agent_events(*tab, Some(old), tile, &mut events),
+            None if tile.agent.is_some() => agent_events(*tab, None, tile, &mut events),
+            None => {}
         }
     }
 

@@ -4,6 +4,7 @@
 //! command handler can forget to report a change.
 
 pub mod adopt;
+pub mod agent;
 mod diff;
 mod driver;
 pub mod layout_file;
@@ -77,6 +78,7 @@ impl Engine {
         let before = self.session.clone();
         let kill = matches!(&command, Command::TileClose(p) if p.kill);
         let force_layout = matches!(command, Command::LayoutGet);
+        let refocus = matches!(command, Command::TileFocus(_));
         let reply = match self.apply(command) {
             Ok(reply) => reply,
             Err(e) => {
@@ -84,6 +86,12 @@ impl Engine {
                 return Err(e);
             }
         };
+        // Looking at a tile counts as seeing its agent (F11).
+        if let Some(tile) = self.session.focused_tile()
+            && (refocus || before.focused_tile() != Some(tile))
+        {
+            agent::clear_attention(&mut self.session, tile);
+        }
         let mut events = diff(&before, &self.session, kill);
         self.remember_detached(&events);
         if force_layout && let Reply::Layout(state) = &reply {
@@ -294,6 +302,10 @@ impl Engine {
                 s.focus_tile(s.target(p.tile)?)?;
                 Reply::Ok
             }
+            Command::TileSeen(p) => {
+                agent::clear_attention(s, s.target(p.tile)?);
+                Reply::Ok
+            }
             Command::TileRename(p) => {
                 let id = s.target(p.tile)?;
                 s.tile_mut(id)?.title = p.title.filter(|t| !t.is_empty());
@@ -410,6 +422,13 @@ impl Engine {
                 let tile = s.tile_mut(p.tile)?;
                 match &mut tile.content {
                     TileContent::Terminal { herdr, ended, .. } => {
+                        // Another process: whatever agent ran before is gone.
+                        if herdr
+                            .as_ref()
+                            .is_some_and(|h| h.terminal_id != p.herdr.terminal_id)
+                        {
+                            tile.agent = None;
+                        }
                         *herdr = Some(p.herdr);
                         *ended = false;
                     }
@@ -434,6 +453,7 @@ impl Engine {
                     }
                     other => return Err(wrong_kind(id, other, "terminal")),
                 }
+                s.tile_mut(id)?.agent = None;
                 Reply::Ok
             }
             Command::LayoutApply(p) => layout_file::apply(s, focus, p)?,

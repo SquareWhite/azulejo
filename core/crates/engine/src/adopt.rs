@@ -7,8 +7,9 @@
 //!
 //! A herdr tab is adopted whole, and only when none of its panes is known: a
 //! pane counts as known when a tile is bound to it or a tile showing it was
-//! closed here (`Session::detached_herdr`). Panes split off later inside an
-//! adopted tab aren't picked up yet; that's PLAN step 2.7.
+//! closed here (`Session::detached_herdr`). Panes split off later inside a
+//! tab shown here (the herdr TUI, a phone, an agent) join that tab beside
+//! their herdr sibling (F15, ADR 0009).
 
 use std::collections::HashMap;
 
@@ -99,6 +100,7 @@ pub fn adopt(
         }
     }
     changed |= adopted_any;
+    changed |= adopt_split_panes(session, survey, &is_known);
 
     if adopted_any
         && let Some(ph) = placeholder
@@ -221,24 +223,7 @@ pub fn build_tab(
     panes: &[&herdr::PaneInfo],
     layout: Option<&herdr::TabLayout>,
 ) -> Tab {
-    let tiles: Vec<Tile> = panes
-        .iter()
-        .map(|p| Tile {
-            id: TileId::new(),
-            title: p.label.clone().filter(|l| !l.trim().is_empty()),
-            content: TileContent::Terminal {
-                cwd: p.cwd.clone(),
-                command: None,
-                env: Default::default(),
-                herdr: Some(HerdrRef {
-                    pane_id: p.pane_id.0.clone(),
-                    terminal_id: p.terminal_id.0.clone(),
-                    tab_id: p.tab_id.0.clone(),
-                }),
-                ended: false,
-            },
-        })
-        .collect();
+    let tiles: Vec<Tile> = panes.iter().map(|p| pane_tile(p)).collect();
     let by_pane: HashMap<&str, TileId> = panes
         .iter()
         .zip(&tiles)
@@ -273,6 +258,139 @@ pub fn build_tab(
         focused,
         zoomed,
     }
+}
+
+/// A terminal tile bound to an existing herdr pane. Its agent state comes
+/// from the survey afterwards (`agent::refresh`).
+fn pane_tile(p: &herdr::PaneInfo) -> Tile {
+    let mut content = TileContent::terminal();
+    if let TileContent::Terminal { cwd, herdr, .. } = &mut content {
+        *cwd = p.cwd.clone();
+        *herdr = Some(HerdrRef {
+            pane_id: p.pane_id.0.clone(),
+            terminal_id: p.terminal_id.0.clone(),
+            tab_id: p.tab_id.0.clone(),
+        });
+    }
+    Tile {
+        title: p.label.clone().filter(|l| !l.trim().is_empty()),
+        ..Tile::new(content)
+    }
+}
+
+/// Panes split off elsewhere inside herdr tabs already shown here (F15).
+/// Each lands next to the tile of its sibling in herdr's split tree, on the
+/// same side and with the same ratio; without a usable sibling it goes to the
+/// end of the tab's stack (`layout.split_auto`). Focus doesn't move.
+///
+/// Returns whether anything was added.
+fn adopt_split_panes(
+    session: &mut Session,
+    survey: &herdr::Survey,
+    is_known: &dyn Fn(&herdr::PaneInfo) -> bool,
+) -> bool {
+    let mut added = false;
+    for tab in &survey.tabs {
+        let panes: Vec<&herdr::PaneInfo> = survey
+            .panes
+            .iter()
+            .filter(|p| p.tab_id == tab.tab_id)
+            .collect();
+        let mut pending: Vec<&herdr::PaneInfo> =
+            panes.iter().copied().filter(|p| !is_known(p)).collect();
+        // Only tabs with a pane bound here; wholly new tabs are `adopt`'s.
+        if pending.is_empty() || pending.len() == panes.len() {
+            continue;
+        }
+        let layout = survey.layouts.iter().find(|l| l.tab_id == tab.tab_id);
+        // Place what has a bound sibling; each placed pane can anchor the next.
+        loop {
+            let before = pending.len();
+            pending.retain(|p| {
+                let Some((anchor, direction, ratio)) =
+                    layout.and_then(|l| beside(session, &l.root, p.pane_id.as_str()))
+                else {
+                    return true;
+                };
+                let placed = session
+                    .insert_tile_beside(anchor, direction, pane_tile(p), ratio)
+                    .is_ok();
+                added |= placed;
+                !placed
+            });
+            if pending.len() == before {
+                break;
+            }
+        }
+        // The rest: the stack of the tab showing this herdr tab's panes.
+        let Some(target) = panes
+            .iter()
+            .find_map(|p| tile_for_pane(session, p.pane_id.as_str()))
+            .and_then(|tile| session.locate(tile).ok())
+            .map(|path| session.ids_at(path).2)
+        else {
+            continue;
+        };
+        for p in pending {
+            added |= session.insert_tile_auto(target, pane_tile(p)).is_ok();
+        }
+    }
+    added
+}
+
+/// The bound, live tile showing `pane`.
+fn tile_for_pane(session: &Session, pane: &str) -> Option<TileId> {
+    session.tiles().find_map(|(_, t)| match &t.content {
+        TileContent::Terminal {
+            herdr: Some(h),
+            ended: false,
+            ..
+        } if h.pane_id == pane => Some(t.id),
+        _ => None,
+    })
+}
+
+/// Where herdr put `pane`: the tile of a bound pane in its sibling subtree,
+/// the side `pane` is on, and the split's ratio.
+fn beside(
+    session: &Session,
+    root: &herdr::LayoutNode,
+    pane: &str,
+) -> Option<(TileId, azulejo_model::Direction, f64)> {
+    use azulejo_model::Direction;
+    let herdr::LayoutNode::Split {
+        direction,
+        ratio,
+        first,
+        second,
+    } = root
+    else {
+        return None;
+    };
+    let holds = |n: &herdr::LayoutNode| n.panes().iter().any(|p| p.as_str() == pane);
+    let is_leaf = |n: &herdr::LayoutNode| matches!(n, herdr::LayoutNode::Pane { pane_id: Some(p) } if p.as_str() == pane);
+    let (sibling, forward) = if is_leaf(second) {
+        (first, true)
+    } else if is_leaf(first) {
+        (second, false)
+    } else if holds(first) {
+        return beside(session, first, pane);
+    } else if holds(second) {
+        return beside(session, second, pane);
+    } else {
+        return None;
+    };
+    let anchor = sibling
+        .panes()
+        .iter()
+        .find_map(|p| tile_for_pane(session, p.as_str()))?;
+    let direction = match (direction, forward) {
+        (herdr::SplitDirection::Right, true) => Direction::Right,
+        (herdr::SplitDirection::Right, false) => Direction::Left,
+        (herdr::SplitDirection::Down, true) => Direction::Down,
+        (herdr::SplitDirection::Down, false) => Direction::Up,
+    };
+    Some((anchor, direction, *ratio))
 }
 
 fn convert(node: &herdr::LayoutNode, by_pane: &HashMap<&str, TileId>) -> Option<Node> {

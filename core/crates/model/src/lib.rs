@@ -15,4 +15,4 @@ pub use layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect, Tall};
 pub use session::{
     ClosedTile, ClosedWorkspace, Focus, Frame, Session, Tab, TilePath, Window, Workspace,
 };
-pub use tile::{HerdrRef, Tile, TileContent, TileKind};
+pub use tile::{AgentInfo, AgentStatus, HerdrRef, Tile, TileContent, TileKind};

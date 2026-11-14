@@ -580,6 +580,46 @@ impl Session {
         Ok(())
     }
 
+    /// Adds `tile` beside `target` on the `direction` side without moving
+    /// focus or zoom: for tiles that appear on their own, like a pane split
+    /// off in herdr (F15). `ratio` is the new split's first child's share.
+    pub fn insert_tile_beside(
+        &mut self,
+        target: TileId,
+        direction: Direction,
+        tile: Tile,
+        ratio: f64,
+    ) -> Result<(), ModelError> {
+        let p = self.locate(target)?;
+        if self.locate(tile.id).is_ok() {
+            return Err(ModelError::InvalidValue(format!(
+                "tile {} already exists",
+                tile.id
+            )));
+        }
+        let tab = self.tab_at_mut(p);
+        tab.root
+            .split_with_ratio(target, direction, tile.id, ratio)?;
+        tab.tiles.push(tile);
+        Ok(())
+    }
+
+    /// Adds `tile` to the end of the tab's stack (as [`Session::split_auto`])
+    /// without moving focus or zoom.
+    pub fn insert_tile_auto(&mut self, tab: TabId, tile: Tile) -> Result<(), ModelError> {
+        let p = self.tab_index(tab)?;
+        if self.locate(tile.id).is_ok() {
+            return Err(ModelError::InvalidValue(format!(
+                "tile {} already exists",
+                tile.id
+            )));
+        }
+        let tab = self.tab_at_mut(p);
+        tab.root.split_auto(tile.id)?;
+        tab.tiles.push(tile);
+        Ok(())
+    }
+
     /// Removes a tile. Focus moves to its sibling; an emptied tab closes.
     pub fn close_tile(&mut self, id: TileId) -> Result<ClosedTile, ModelError> {
         let p = self.locate(id)?;

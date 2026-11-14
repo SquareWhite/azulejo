@@ -222,6 +222,23 @@ impl Node {
         direction: Direction,
         new_tile: TileId,
     ) -> Result<(), ModelError> {
+        self.split_with_ratio(target, direction, new_tile, 0.5)
+    }
+
+    /// [`Node::split`] with the new split's `ratio` (its first child's share),
+    /// clamped to the allowed range.
+    pub fn split_with_ratio(
+        &mut self,
+        target: TileId,
+        direction: Direction,
+        new_tile: TileId,
+        ratio: f64,
+    ) -> Result<(), ModelError> {
+        let ratio = if ratio.is_finite() {
+            ratio.clamp(MIN_RATIO, MAX_RATIO)
+        } else {
+            0.5
+        };
         let leaf = self
             .find_leaf_mut(target)
             .ok_or(ModelError::TileNotFound(target))?;
@@ -232,7 +249,7 @@ impl Node {
         };
         *leaf = Node::Split {
             axis: direction.axis(),
-            ratio: 0.5,
+            ratio,
             a: Box::new(a),
             b: Box::new(b),
         };

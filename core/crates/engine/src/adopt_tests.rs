@@ -233,20 +233,90 @@ fn closed_tiles_stay_closed_until_herdr_drops_the_pane() {
     assert_eq!(engine.session().windows[0].workspaces[0].tabs.len(), 1);
 }
 
+fn extra_pane(id: &str, tab: &str) -> herdr::PaneInfo {
+    serde_json::from_value(json!({
+        "pane_id": id,
+        "terminal_id": format!("term_{}", id.replace(':', "_")),
+        "workspace_id": "w1",
+        "tab_id": tab,
+    }))
+    .unwrap()
+}
+
 #[test]
-fn tabs_with_a_known_pane_are_left_alone() {
+fn a_pane_split_off_in_herdr_lands_beside_its_sibling() {
     let mut engine = Engine::new();
     survey(&mut engine, &fixture());
-    // A pane split off inside an adopted tab: not adopted (PLAN 2.7).
+    let focus = engine.session().focus();
+
+    // In herdr, p3 was split to the left at 0.4: (p5 | p3) where p3 was.
     let mut more = fixture();
-    more.panes.push(
-        serde_json::from_value(json!({
-            "pane_id": "w1:p5", "terminal_id": "term_w1_p5", "workspace_id": "w1", "tab_id": "w1:t2"
-        }))
-        .unwrap(),
+    more.panes.push(extra_pane("w1:p5", "w1:t1"));
+    more.layouts[0] = serde_json::from_value(json!({
+        "workspace_id": "w1", "tab_id": "w1:t1", "zoomed": false,
+        "focused_pane_id": "w1:p5",
+        "root": {
+            "type": "split", "direction": "right", "ratio": 0.5,
+            "first": { "type": "pane", "pane_id": "w1:p1" },
+            "second": {
+                "type": "split", "direction": "down", "ratio": 0.3,
+                "first": { "type": "pane", "pane_id": "w1:p2" },
+                "second": {
+                    "type": "split", "direction": "right", "ratio": 0.4,
+                    "first": { "type": "pane", "pane_id": "w1:p5" },
+                    "second": { "type": "pane", "pane_id": "w1:p3" }
+                }
+            }
+        }
+    }))
+    .unwrap();
+    let events = survey(&mut engine, &more);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::TileCreated { .. })),
+        "{events:?}"
     );
+    let s = engine.session();
+    assert_eq!(s.check_invariants(), Ok(()));
+    assert_eq!(
+        shape(s, &s.windows[0].workspaces[0].tabs[0].root),
+        "(w1:p1 | 0.50 (w1:p2 / 0.30 (w1:p5 | 0.40 w1:p3)))"
+    );
+    assert_eq!(s.focus(), focus, "focus stays put");
+    // Seen again: nothing new.
     assert!(survey(&mut engine, &more).is_empty());
-    assert_eq!(engine.session().tiles().count(), 6);
+}
+
+#[test]
+fn split_panes_without_a_tree_go_to_the_stack_unless_closed_here() {
+    let mut engine = Engine::new();
+    survey(&mut engine, &fixture());
+    // w1:t2 ("logs") had one pane; herdr gave no layout for it.
+    let mut more = fixture();
+    more.panes.push(extra_pane("w1:p5", "w1:t2"));
+    more.panes.push(extra_pane("w1:p6", "w1:t2"));
+    survey(&mut engine, &more);
+    let s = engine.session();
+    assert_eq!(s.check_invariants(), Ok(()));
+    let logs = &s.windows[0].workspaces[0].tabs[1];
+    assert_eq!(shape(s, &logs.root), "(w1:p4 | 0.50 (w1:p5 / 0.50 w1:p6))");
+
+    // Closed here: stays out, even though herdr still runs it.
+    let p6 = logs
+        .tiles
+        .iter()
+        .find(|t| pane_of(s, t.id) == "w1:p6")
+        .unwrap()
+        .id;
+    engine
+        .execute(Command::TileClose(TileClose {
+            tile: Some(p6),
+            kill: false,
+        }))
+        .unwrap();
+    assert!(survey(&mut engine, &more).is_empty());
+    assert_eq!(engine.session().tiles().count(), 7);
 }
 
 #[test]

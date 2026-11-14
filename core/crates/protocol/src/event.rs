@@ -74,6 +74,15 @@ pub enum Event {
     /// rather than detach from it.
     #[serde(rename = "tile.closed")]
     TileClosed { tab: TabId, tile: Tile, kill: bool },
+    /// A terminal tile's agent started or stopped needing a look: it became
+    /// blocked or finished, or someone focused the tile (F11). Also visible as
+    /// `tile.agent.attention` on `tile.updated`.
+    #[serde(rename = "tile.attention_changed")]
+    TileAttentionChanged {
+        tab: TabId,
+        tile: TileId,
+        attention: bool,
+    },
 
     /// A tab's tree, focused tile or zoom changed.
     #[serde(rename = "layout.changed")]
@@ -200,6 +209,16 @@ pub struct WorkspaceInfo {
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub herdr_workspace: Option<String>,
+    /// Terminal tiles whose agent is blocked, for the sidebar (F16).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub blocked: u32,
+    /// Terminal tiles whose agent needs a look (F11).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub attention: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// A tab without its tiles.
