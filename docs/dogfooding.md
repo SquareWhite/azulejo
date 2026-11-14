@@ -13,7 +13,13 @@ One week of real use on macOS with the frozen build `v0.1.0-dogfood.1`, before M
    ```
 
 4. In Azulejo's app menu, choose **Install Command-Line Tool…** It asks first, then links `azj` into `~/.local/bin` (or `/usr/local/bin`). Open a new terminal and try `azj help`.
-5. Hammerspoon: add `dev.azulejo.Azulejo` to `SWAP_CHORD_OWNERS` in `~/.hammerspoon/init.lua`, or `alt+shift+hjkl` moves the whole window instead of swapping tiles ([keybindings](keybindings.md)).
+5. Check the keyboard tools below.
+
+### Keyboard tools
+
+External keyboard remappers can intercept shortcuts before Azulejo receives them. If you use Hammerspoon or Karabiner, scope conflicting rules to exclude Azulejo's bundle ID, `dev.azulejo.Azulejo`.
+
+In particular, a global window-movement rule can intercept `alt+shift+hjkl`, and terminal-only remaps can break `cmd+l` in browser tiles. Adjust your own rules or override the app's shortcuts under `[keys.macos]` ([keybindings](keybindings.md)).
 
 ## Updating
 
@@ -46,14 +52,16 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
 ## Everyday use
 
 - Your herdr chords carry over: `alt+hjkl` focus, `alt+shift+hjkl` swap, `ctrl+alt+shift+hjkl` resize, `ctrl+cmd+t` tall split, `alt+enter` promote, `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom, `alt+w` close tile, `cmd+t` / `cmd+1..8` workspaces, `cmd+shift+t` / `ctrl+1..8` tabs. Full list and overrides: [keybindings](keybindings.md).
-- Browser and preview tiles come from `azj` for now (the palette isn't built yet):
+- `cmd+shift+p` opens the command palette: every action with its chord, fuzzy search, recent first. Commands that need input (rename, open URL, preview a file, open or save a layout) ask for it inline. `cmd+p` jumps to any workspace, tab or tile by name, cwd, URL, path or agent.
+- Agents show in their tile's corner (`claude · working`). Blocked is red, finished-but-unseen green; the sidebar, tab bar and Dock badge count them. Focusing the tile marks it seen. Turn the Dock badge off with `defaults write dev.azulejo.Azulejo AzulejoDockBadge -bool false`.
+- Browser and preview tiles also come from `azj`:
 
   ```sh
   azj tile split --right --kind browser --url http://localhost:3000
   azj tile split --down --kind preview --path plan.md
   ```
 
-- Overrides go in `~/.config/azulejo/config.toml` under `[keys]`. Changes need a relaunch (hot reload is M2).
+- Overrides go in `~/.config/azulejo/config.toml` under `[keys]`. Saving the file applies it; problems show in a banner over the tiles (the previous config stays until the file is fixed). `reload_config` in the palette reads it again by hand.
 
 ## Where things live
 
@@ -72,11 +80,10 @@ Add an entry to [dogfood-log.md](dogfood-log.md) (the template's at the top), or
 ## Known gaps (coming in M2)
 
 - No animations: layout changes snap.
-- No command palette, picker (`cmd+p`) or find (`cmd+f`) yet, though the chords are reserved.
+- No find in terminal (`cmd+f`) yet, though the chord is reserved.
 - No file browser tile.
-- No attention badges or agent-state dots (blocked / working / done).
 - Panes created later inside a tab Azulejo already shows (from the herdr TUI, phone or CLI) don't appear until 2.7.
-- No config hot reload, no layout files, no event stream, no Python client, no browser automation API.
+- No layout files, no event stream, no Python client, no browser automation API.
 - No IME composition in terminal tiles yet; copy/paste, mouse selection and Claude Code's full key path are untested by hand.
 - OSC 52 clipboard and terminal notifications don't pass through herdr ([ADR 0005](adr/0005-scrollback-and-passthrough.md)).
 - Ad-hoc signed only: notarisation waits for a Developer ID ([release](release.md)).

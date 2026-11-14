@@ -1,0 +1,76 @@
+# Agent state and attention (F11, F16): badges on tiles, sidebar and tab-bar
+# markers, the Dock badge and `tile.seen`. Agent states are simulated with
+# `herdr pane report-agent` on the dev instance's own herdr session.
+#   apps/macos/automation/chrome.sh
+
+log attention
+seen-visible off
+key ctrl+cmd+t                # split_auto: two terminals, focus on the new one
+until tiles 2
+expect focus 2
+# Both panes need their herdr binding before we can report on them.
+wait 1500
+expect agents none,none
+expect badges none
+expect dock none
+
+# herdr's agent subscription opens once a tile is bound: keep reporting
+# "working" until it shows.
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
+until agents working,none 5000
+expect sidebar.markers ●
+expect tab.markers ●
+expect dock none
+shot 20-working
+
+# Blocked on a tile that isn't focused: red badge, border, counts, Dock badge.
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state blocked
+until agents blocked!,none 3000
+expect sidebar.markers ●1
+expect tab.markers ●1
+expect dock 1
+shot 21-blocked
+
+# Focusing it clears attention; it's still blocked (Dock badge stays).
+key alt+h
+expect focus 1
+until agents blocked,none 3000
+expect dock 1
+expect sidebar.markers ●1
+
+# Back to work: no attention, no Dock badge.
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
+until agents working,none 3000
+expect dock none
+
+# Finished while unfocused. A reported working → idle stays plain idle (no
+# attention): `report-agent` can't say "done"; herdr's own detection does.
+key alt+l
+expect focus 2
+sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state idle
+until agents idle,none 3000
+expect sidebar.markers -
+shot 22-idle
+
+# Blocked on the focused tile while the window isn't on screen: attention
+# stays lit until it's seen.
+sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --agent codex --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --agent codex --state working
+until focused.agent working 5000
+sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --agent codex --state blocked
+until focused.agent blocked! 3000
+wait 300
+expect focused.agent blocked!
+# Once the window counts as visible, the shell sends tile.seen.
+seen-visible on
+until focused.agent blocked 3000
+seen-visible off
+
+# The picker shows the agents too (dot) and finds tiles by agent name.
+key cmd+p
+palette type codex
+expect palette.top codex
+key escape
