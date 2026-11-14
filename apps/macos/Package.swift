@@ -4,6 +4,9 @@
 import PackageDescription
 
 let ghosttyLib = "../../vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64"
+// Where libazulejo_ffi.a lives: the debug build by default; the release
+// script (scripts/release/build-mac.sh) points it at target/release.
+let coreLib = Context.environment["AZJ_CORE_LIB_DIR"] ?? "../../target/debug"
 
 let package = Package(
     name: "Azulejo",
@@ -16,7 +19,7 @@ let package = Package(
             dependencies: ["AzulejoCore", "GhosttyKit"],
             path: "Sources/Azulejo",
             linkerSettings: [
-                .unsafeFlags(["-L../../target/debug", "-L\(ghosttyLib)"]),
+                .unsafeFlags(["-L\(coreLib)", "-L\(ghosttyLib)"]),
                 .linkedFramework("AppKit"),
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalKit"),

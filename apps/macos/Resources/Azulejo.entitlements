@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the release build (docs/release.md).
+  Deliberately empty:
+  - WKWebView's JavaScript JIT runs in WebKit's own WebContent XPC process,
+    which carries its own entitlements, so the app needs no allow-jit.
+  - libghostty compiles Metal shaders through the system Metal compiler
+    service (runtime-Metal patch), which needs no entitlement either.
+  - Everything is statically linked: no disable-library-validation.
+  - The app is not sandboxed: it spawns herdr, reads arbitrary files for
+    previews and serves a Unix socket in $TMPDIR.
+  Add com.apple.security.device.camera / audio-input (plus usage strings)
+  only if browser tiles ever need getUserMedia.
+-->
+<plist version="1.0">
+<dict/>
+</plist>
