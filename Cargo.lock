@@ -63,6 +63,7 @@ dependencies = [
  "azulejo-config",
  "azulejo-engine",
  "azulejo-herdr",
+ "azulejo-protocol",
  "serde_json",
  "thiserror",
  "tokio",
