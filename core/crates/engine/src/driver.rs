@@ -60,6 +60,7 @@ enum Msg {
     /// An event from outside the engine (a config reload) for every listener.
     Broadcast(Event),
     SetCommands(CommandsFn),
+    SetOnExit(azulejo_model::OnExit),
     Shutdown(mpsc::Sender<()>),
 }
 
@@ -140,6 +141,12 @@ impl Core {
     /// answers `unavailable`.
     pub fn set_commands(&self, commands: CommandsFn) {
         let _ = self.tx.send(Msg::SetCommands(commands));
+    }
+
+    /// What terminal tiles do when their process exits, unless a tile says
+    /// otherwise (`[terminal] on_exit`). Close until this is called.
+    pub fn set_on_exit(&self, on_exit: azulejo_model::OnExit) {
+        let _ = self.tx.send(Msg::SetOnExit(on_exit));
     }
 
     /// Saves pending state and stops the core.
@@ -285,6 +292,7 @@ fn run<P: HerdrPort>(
 
     let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
     let mut commands: Option<CommandsFn> = None;
+    let mut on_exit = azulejo_model::OnExit::default();
     let publish = |engine: &Engine,
                    events: &[Event],
                    herdr: &Option<Herdr<P>>,
@@ -468,7 +476,7 @@ fn run<P: HerdrPort>(
                 if let Some(event) = status {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
-                let reaction = link::reconcile(&item, engine.session());
+                let reaction = link::reconcile(&item, engine.session(), on_exit);
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
                     publish(&engine, &events, &herdr, &mut listeners, &mut previews);
@@ -490,6 +498,7 @@ fn run<P: HerdrPort>(
             Msg::Subscribe(listener) => listeners.push(listener),
             Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
             Msg::SetCommands(list) => commands = Some(list),
+            Msg::SetOnExit(policy) => on_exit = policy,
             Msg::Shutdown(done) => {
                 if let Some(saver) = &saver {
                     saver.flush();

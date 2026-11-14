@@ -320,11 +320,21 @@ final class TerminalTileView: NSView, TileView {
             phase = .ended
             render()
         case "terminal_gone":
-            // herdr doesn't have it right now, but the core hasn't said the
-            // pane ended: herdr may be restarting (it respawns panes under new
-            // terminals, and the core rebinds). Keep trying; the core's
-            // `ended` or a rebind settles it.
-            retry(attempt: { if case .retrying(let n) = phase { n + 1 } else { 1 } }())
+            // Usually the shell exited and the core is about to close this
+            // tile (`[terminal] on_exit = "close"`), so hold the overlay back
+            // briefly rather than flash it. Otherwise herdr may be restarting
+            // (it respawns panes under new terminals, and the core rebinds):
+            // keep trying; the core's `ended` or a rebind settles it.
+            if case .retrying(let n) = phase {
+                retry(attempt: n + 1)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, !self.closed, self.surface == nil,
+                          self.model.ended != true, self.model.herdr?.terminalId == herdr.terminalId
+                    else { return }
+                    self.retry(attempt: 1)
+                }
+            }
         case "detached":
             // An observer ended cleanly (terminal.closed): try for the pane again.
             startAttach(takeover: false)

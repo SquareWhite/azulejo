@@ -2456,6 +2456,21 @@
         }
       ]
     },
+    "OnExit": {
+      "description": "What happens to a terminal tile when the process in its pane exits\n(`exit`, ctrl+d, a finished command). Config `[terminal] on_exit`; a tile\ncan override it (layout files' `on_exit`).",
+      "oneOf": [
+        {
+          "const": "close",
+          "description": "The tile closes, like any terminal window whose shell exits.",
+          "type": "string"
+        },
+        {
+          "const": "keep",
+          "description": "The tile stays, ended, offering Respawn or Close.",
+          "type": "string"
+        }
+      ]
+    },
     "PreviewContent": {
       "description": "A rendered preview, from `preview.updated` or `preview.get`.",
       "properties": {
@@ -3344,7 +3359,7 @@
               ]
             },
             "ended": {
-              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "description": "The herdr pane is gone (its process exited with `on_exit = \"keep\"`,\nor it was lost with its server). The shell offers Respawn or Close;\nbinding a new pane clears it.",
               "type": "boolean"
             },
             "env": {
@@ -3368,6 +3383,17 @@
             "kind": {
               "const": "terminal",
               "type": "string"
+            },
+            "on_exit": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OnExit"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Overrides `[terminal] on_exit` for this tile."
             }
           },
           "required": [
@@ -3507,7 +3533,7 @@
               ]
             },
             "ended": {
-              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "description": "The herdr pane is gone (its process exited with `on_exit = \"keep\"`,\nor it was lost with its server). The shell offers Respawn or Close;\nbinding a new pane clears it.",
               "type": "boolean"
             },
             "env": {
@@ -3531,6 +3557,17 @@
             "kind": {
               "const": "terminal",
               "type": "string"
+            },
+            "on_exit": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OnExit"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Overrides `[terminal] on_exit` for this tile."
             }
           },
           "required": [
@@ -3628,7 +3665,7 @@
               ]
             },
             "ended": {
-              "description": "The herdr pane is gone (closed elsewhere, or lost with its server).\nThe shell offers Respawn or Close; binding a new pane clears it.",
+              "description": "The herdr pane is gone (its process exited with `on_exit = \"keep\"`,\nor it was lost with its server). The shell offers Respawn or Close;\nbinding a new pane clears it.",
               "type": "boolean"
             },
             "env": {
@@ -3652,6 +3689,17 @@
             "kind": {
               "const": "terminal",
               "type": "string"
+            },
+            "on_exit": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OnExit"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Overrides `[terminal] on_exit` for this tile."
             }
           },
           "required": [

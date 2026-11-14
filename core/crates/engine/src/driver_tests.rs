@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use azulejo_herdr as herdr;
-use azulejo_model::{HerdrRef, Session, TileContent, TileId};
+use azulejo_model::{HerdrRef, OnExit, Session, TileContent, TileId};
 use azulejo_protocol::{Command, Direction, Event, LayoutSplit, TileClose};
 use serde_json::json;
 use tokio::sync::mpsc as tmpsc;
@@ -480,6 +480,8 @@ fn restore_reresolves_every_bound_tile() {
 fn herdr_events_end_close_or_rebind_tiles() {
     let fake = Fake::default();
     let core = Core::start_with_herdr(opts(None), fake.clone());
+    // Exits leave tiles ended here; closing on exit has its own test.
+    core.set_on_exit(OnExit::Keep);
     for _ in 0..4 {
         split(&core);
     }
@@ -603,8 +605,76 @@ fn resync_reresolves_and_marks_lost_panes() {
         .panes
         .retain(|p| p.terminal_id.0 != gone.terminal_id);
     fake.send(herdr::StreamItem::Resync);
+    // A pane lost without a `pane_exited` is ended, never closed, even with
+    // the default `on_exit = "close"`: we can't tell what happened to it.
     let after = wait_until(&core, |s| terminals(s)[1].2);
     assert!(!terminals(&after)[0].2);
+}
+
+fn exited(fake: &Fake, pane_id: &str) {
+    fake.state().panes.retain(|p| p.pane_id.0 != pane_id);
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
+        pane_id: herdr::PaneId(pane_id.into()),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+}
+
+#[test]
+fn a_shell_that_exits_closes_its_tile_by_default() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    split(&core);
+    split(&core);
+    let session = wait_until(&core, |s| terminals(s).len() == 3 && all_bound(s));
+    let t = terminals(&session);
+    let events = core.subscribe();
+
+    // ctrl+d in the middle tile: it goes, like any terminal window.
+    exited(&fake, &t[1].1.as_ref().unwrap().pane_id);
+    let after = wait_until(&core, |s| terminals(s).len() == 2);
+    assert_eq!(
+        terminals(&after).iter().map(|t| t.0).collect::<Vec<_>>(),
+        [t[0].0, t[2].0]
+    );
+    assert!(terminals(&after).iter().all(|t| !t.2), "nothing ended");
+    assert!(after.check_invariants().is_ok());
+    let seen: Vec<Event> = events.try_iter().collect();
+    assert!(
+        seen.iter()
+            .any(|e| matches!(e, Event::TileClosed { tile, kill: false, .. } if tile.id == t[1].0)),
+        "{seen:?}"
+    );
+    // The pane is gone already: nothing to kill, nothing to keep out of adoption.
+    assert!(fake.state().killed.is_empty());
+    assert!(after.detached_herdr.is_empty());
+
+    // The last tile of a tab takes the tab with it.
+    let tab = after.focus().tab.unwrap();
+    exited(&fake, &t[0].1.as_ref().unwrap().pane_id);
+    exited(&fake, &t[2].1.as_ref().unwrap().pane_id);
+    let empty = wait_until(&core, |s| terminals(s).is_empty());
+    assert!(empty.tab(tab).is_err(), "tab closed with its last tile");
+    assert!(empty.check_invariants().is_ok());
+}
+
+#[test]
+fn on_exit_keep_leaves_the_tile_ended_and_can_change_live() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    split(&core);
+    let session = wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
+    let t = terminals(&session);
+
+    core.set_on_exit(OnExit::Keep);
+    exited(&fake, &t[0].1.as_ref().unwrap().pane_id);
+    let after = wait_until(&core, |s| terminals(s)[0].2);
+    assert_eq!(terminals(&after).len(), 2, "kept, ended");
+
+    // A config reload switches back; the next exit closes.
+    core.set_on_exit(OnExit::Close);
+    exited(&fake, &t[1].1.as_ref().unwrap().pane_id);
+    let after = wait_until(&core, |s| terminals(s).len() == 1);
+    assert_eq!(terminals(&after)[0].0, t[0].0);
 }
 
 #[test]
@@ -806,6 +876,8 @@ fn terminal_io_errors() {
 
     let fake = Fake::default();
     let core = Core::start_with_herdr(opts(None), fake.clone());
+    // An exited pane leaves the tile ended, for the "ended" error below.
+    core.set_on_exit(OnExit::Keep);
     let (tile, pane) = focused_pane(&core);
 
     // Not a terminal.
@@ -990,6 +1062,8 @@ fn new_herdr_tabs_are_adopted_and_detached_ones_stay_out() {
 fn respawn_gives_an_ended_tile_a_fresh_pane_in_place() {
     let fake = Fake::default();
     let core = Core::start_with_herdr(opts(None), fake.clone());
+    // Respawn is for tiles kept after their shell exits.
+    core.set_on_exit(OnExit::Keep);
     let second = split(&core);
     let session = wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
     let tree_before = session
@@ -1211,4 +1285,55 @@ fn panes_split_off_elsewhere_become_tiles_and_closing_there_removes_them() {
         workspace_id: herdr::WorkspaceId("w1".into()),
     }));
     wait_until(&core, |s| terminals(s).len() == 1);
+}
+
+#[test]
+fn a_tiles_own_on_exit_beats_the_config() {
+    let bound = |pane: &str, on_exit: Option<OnExit>| {
+        azulejo_model::Tile::new(TileContent::Terminal {
+            cwd: None,
+            command: None,
+            env: Default::default(),
+            herdr: Some(HerdrRef {
+                pane_id: pane.into(),
+                terminal_id: format!("term_{pane}"),
+                tab_id: "w1:t1".into(),
+            }),
+            ended: false,
+            on_exit,
+        })
+    };
+    let mut session = Session::new();
+    let (_, workspace) = session.create_window("main", None);
+    let plain = bound("w1:p1", None);
+    let kept = bound("w1:p2", Some(OnExit::Keep));
+    let closed = bound("w1:p3", Some(OnExit::Close));
+    let (plain_id, kept_id, closed_id) = (plain.id, kept.id, closed.id);
+    session.create_tab(workspace, plain, None).unwrap();
+    session.split(plain_id, Direction::Right, kept).unwrap();
+    session.split(kept_id, Direction::Down, closed).unwrap();
+
+    let exit = |pane: &str, default| {
+        crate::link::reconcile(
+            &herdr::StreamItem::Event(herdr::HerdrEvent::PaneExited {
+                pane_id: herdr::PaneId(pane.into()),
+                workspace_id: herdr::WorkspaceId("w1".into()),
+            }),
+            &session,
+            default,
+        )
+        .internals
+    };
+    use crate::link::Internal::{ClosedElsewhere, MarkEnded};
+    assert_eq!(
+        exit("w1:p1", OnExit::Close),
+        [ClosedElsewhere { tile: plain_id }]
+    );
+    assert_eq!(exit("w1:p1", OnExit::Keep), [MarkEnded { tile: plain_id }]);
+    assert_eq!(exit("w1:p2", OnExit::Close), [MarkEnded { tile: kept_id }]);
+    assert_eq!(
+        exit("w1:p3", OnExit::Keep),
+        [ClosedElsewhere { tile: closed_id }]
+    );
+    assert!(exit("w9:p9", OnExit::Close).is_empty());
 }

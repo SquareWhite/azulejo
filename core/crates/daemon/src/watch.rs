@@ -123,9 +123,20 @@ fn run(
             continue;
         };
         match core.upgrade() {
-            Some(core) => core.broadcast(Event::ConfigReloaded(event)),
+            Some(core) => {
+                push_settings(&core, shared);
+                core.broadcast(Event::ConfigReloaded(event));
+            }
             None => return,
         }
+    }
+}
+
+/// Hands the core the settings it acts on itself (today `[terminal] on_exit`),
+/// from the config currently in force.
+pub fn push_settings(core: &Core, shared: &SharedConfig) {
+    if let Ok(config) = shared.read() {
+        core.set_on_exit(config.terminal.on_exit);
     }
 }
 

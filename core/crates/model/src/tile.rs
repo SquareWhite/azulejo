@@ -17,6 +17,19 @@ pub enum TileKind {
     Files,
 }
 
+/// What happens to a terminal tile when the process in its pane exits
+/// (`exit`, ctrl+d, a finished command). Config `[terminal] on_exit`; a tile
+/// can override it (layout files' `on_exit`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum OnExit {
+    /// The tile closes, like any terminal window whose shell exits.
+    #[default]
+    Close,
+    /// The tile stays, ended, offering Respawn or Close.
+    Keep,
+}
+
 /// The herdr pane a terminal tile views. Both IDs are kept: herdr changes a
 /// pane's ID when it moves to another workspace, while the terminal ID is what
 /// `herdr terminal attach` takes. The tab ID matters because closing a herdr
@@ -49,10 +62,14 @@ pub enum TileContent {
         /// Set once the herdr adapter has created or adopted a pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         herdr: Option<HerdrRef>,
-        /// The herdr pane is gone (closed elsewhere, or lost with its server).
-        /// The shell offers Respawn or Close; binding a new pane clears it.
+        /// The herdr pane is gone (its process exited with `on_exit = "keep"`,
+        /// or it was lost with its server). The shell offers Respawn or Close;
+        /// binding a new pane clears it.
         #[serde(default, skip_serializing_if = "is_false")]
         ended: bool,
+        /// Overrides `[terminal] on_exit` for this tile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_exit: Option<OnExit>,
     },
     Browser {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,6 +108,7 @@ impl TileContent {
             env: BTreeMap::new(),
             herdr: None,
             ended: false,
+            on_exit: None,
         }
     }
 }

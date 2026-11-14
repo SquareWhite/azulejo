@@ -86,6 +86,7 @@ Sizes are relative: `[60, 40]`, `[3, 2]` and `[0.6, 0.4]` mean the same. Every t
 | `command` | terminal | Typed into the shell once it starts. A string is sent as a shell line (`"npm run dev"`, pipes and all); an array is an argv, quoted for the shell. |
 | `cwd` | terminal | Working directory, relative to the file. Defaults to the file's `cwd`, else the file's folder. |
 | `env` | terminal | Extra environment, e.g. `env = { RUST_LOG = "debug" }`. `AZULEJO_*` names are reserved. |
+| `on_exit` | terminal | `"close"` or `"keep"`: what happens when the tile's shell exits. Overrides `[terminal] on_exit` in the config (default `"close"`). |
 | `url` | browser | The page to load. |
 | `path` | preview | The file to show, relative to the layout file. |
 | `root` | files | The folder to browse, relative to the layout file. |
@@ -94,7 +95,9 @@ Paths may start with `~/`.
 
 ### How commands run
 
-herdr can't start a pane with something other than the user's shell, so Azulejo types `command` into the new pane's shell, followed by Enter. The shell stays when the command exits, so a dev server that crashes leaves a prompt to restart it from. Write commands your shell understands: fish users can't use `$((…))`, for example. Respawning an ended tile runs its command again.
+herdr can't start a pane with something other than the user's shell, so Azulejo types `command` into the new pane's shell, followed by Enter. The shell stays when the command exits, so a dev server that crashes leaves a prompt to restart it from. Write commands your shell understands: fish users can't use `$((…))`, for example.
+
+When the shell itself exits (ctrl+d, `exit`, or a command written as `npm run dev; exit`), the tile closes, like any terminal window. Set `on_exit = "keep"` on a tile to keep it instead, ended, with a Respawn button; respawning runs its command again.
 
 ## Modes
 
