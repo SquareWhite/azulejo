@@ -42,6 +42,8 @@ pub enum Reply {
     Scroll(ScrollState),
     /// A preview tile's content, from `preview.get`.
     Preview(PreviewContent),
+    /// A folder of a files tile, from `files.list` or `files.expand`.
+    Files(crate::files::FilesListing),
     /// Lines that matched `terminal.search`.
     Matches {
         matches: Vec<SearchMatch>,

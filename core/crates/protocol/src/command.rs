@@ -119,6 +119,35 @@ pub enum Command {
     #[serde(rename = "preview.get")]
     PreviewGet(TileTarget),
 
+    // ----- file browser tiles (F10) -----
+    /// Lists one folder of a files tile (its root when `dir` is absent);
+    /// replies `files`. Doesn't watch it: see `files.expand`.
+    #[serde(rename = "files.list")]
+    FilesList(crate::files::FilesDir),
+    /// Lists a folder and watches it from now on: changes arrive as
+    /// `files.changed`. Shells send it when the user opens a folder.
+    #[serde(rename = "files.expand")]
+    FilesExpand(crate::files::FilesDir),
+    /// Stops watching a folder and the folders open below it.
+    #[serde(rename = "files.collapse")]
+    FilesCollapse(crate::files::FilesDir),
+    /// Points a files tile at another folder.
+    #[serde(rename = "files.set_root")]
+    FilesSetRoot(crate::files::FilesSetRoot),
+    /// Opens the folders down to `path` and asks shells to select it
+    /// (`files.revealed`).
+    #[serde(rename = "files.reveal")]
+    FilesReveal(crate::files::FilesReveal),
+    /// Shows or hides hidden and gitignored entries; toggles when `show` is
+    /// absent. Shells list their open folders again on `files.changed`.
+    #[serde(rename = "files.toggle_hidden")]
+    FilesToggleHidden(crate::files::FilesToggleHidden),
+    /// Opens a path from a files tile in a preview tile (the tab's first one,
+    /// or a new one to the right) or in a new terminal below it; replies
+    /// `created` with the tile.
+    #[serde(rename = "files.open")]
+    FilesOpen(crate::files::FilesOpen),
+
     // ----- layout (F2) -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
     #[serde(rename = "layout.get")]
@@ -237,6 +266,13 @@ pub const METHODS: &[&str] = &[
     "browser.state",
     "preview.open",
     "preview.get",
+    "files.list",
+    "files.expand",
+    "files.collapse",
+    "files.set_root",
+    "files.reveal",
+    "files.toggle_hidden",
+    "files.open",
     "layout.get",
     "layout.split",
     "layout.focus",

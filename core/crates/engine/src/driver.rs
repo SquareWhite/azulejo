@@ -16,6 +16,7 @@ use azulejo_herdr::StreamItem;
 use azulejo_protocol::{Command, Error, ErrorCode, Event, Reply, Session};
 use tokio::sync::mpsc as tmpsc;
 
+use crate::files::{self as file_tiles, Files, Handled};
 use crate::link::{self, Effect, HerdrPort, Internal};
 use crate::persist::{self, Loaded, Saver};
 use crate::preview::{self, Previews};
@@ -56,6 +57,8 @@ enum Msg {
         PathBuf,
         Box<azulejo_preview::Rendered>,
     ),
+    /// File tile work finished off this thread.
+    Files(file_tiles::Delivery),
     Subscribe(mpsc::Sender<Event>),
     /// An event from outside the engine (a config reload) for every listener.
     Broadcast(Event),
@@ -230,6 +233,18 @@ fn run<P: HerdrPort>(
     };
     previews.sync(engine.session());
 
+    // Files tiles: list folders off this thread, watch the open ones.
+    let mut files = {
+        let out = self_tx.clone();
+        Files::new(
+            Arc::new(move |delivery| {
+                let _ = out.send(Msg::Files(delivery));
+            }),
+            opts.log.clone(),
+        )
+    };
+    files.sync(engine.session());
+
     // herdr: a worker for effects and a forwarder for herdr's events.
     let mut herdr = port.map(|port| {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -297,11 +312,13 @@ fn run<P: HerdrPort>(
                    events: &[Event],
                    herdr: &Option<Herdr<P>>,
                    listeners: &mut Vec<mpsc::Sender<Event>>,
-                   previews: &mut Previews| {
+                   previews: &mut Previews,
+                   files: &mut Files| {
         if events.is_empty() {
             return;
         }
         previews.sync(engine.session());
+        files.sync(engine.session());
         if let Some(saver) = &saver {
             saver.schedule(engine.session().clone());
         }
@@ -383,6 +400,35 @@ fn run<P: HerdrPort>(
                     },
                 }
             }
+            Msg::Command(command, reply) if file_tiles::is_runtime(&command) => {
+                match files.handle(&engine, command) {
+                    Handled::Done(result) => {
+                        let result = *result;
+                        if let Ok(outcome) = &result {
+                            for event in &outcome.events {
+                                listeners.retain(|l| l.send(event.clone()).is_ok());
+                            }
+                        }
+                        let _ = reply.send(result);
+                    }
+                    Handled::Later(job) => {
+                        let spawned = std::thread::Builder::new()
+                            .name("azulejo-files-list".into())
+                            .spawn({
+                                let reply = reply.clone();
+                                move || {
+                                    let _ = reply.send(job());
+                                }
+                            });
+                        if spawned.is_err() {
+                            let _ = reply.send(Err(Error::new(
+                                ErrorCode::Internal,
+                                "couldn't start a thread to list the folder",
+                            )));
+                        }
+                    }
+                }
+            }
             Msg::Command(Command::CommandsList, reply) => {
                 let result = match &commands {
                     Some(list) => Ok(Outcome {
@@ -407,6 +453,7 @@ fn run<P: HerdrPort>(
                         &herdr,
                         &mut listeners,
                         &mut previews,
+                        &mut files,
                     );
                     Ok(outcome)
                 });
@@ -442,6 +489,7 @@ fn run<P: HerdrPort>(
                         &herdr,
                         &mut listeners,
                         &mut previews,
+                        &mut files,
                     );
                 }
                 let _ = reply.send(result);
@@ -456,7 +504,14 @@ fn run<P: HerdrPort>(
                     h.creating.borrow_mut().remove(tile);
                 }
                 let events = engine.apply_internal(internal);
-                publish(&engine, &events, &herdr, &mut listeners, &mut previews);
+                publish(
+                    &engine,
+                    &events,
+                    &herdr,
+                    &mut listeners,
+                    &mut previews,
+                    &mut files,
+                );
                 if surveyed && let Some(h) = &mut herdr {
                     h.survey_done(&engine);
                 }
@@ -479,7 +534,14 @@ fn run<P: HerdrPort>(
                 let reaction = link::reconcile(&item, engine.session(), on_exit);
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
-                    publish(&engine, &events, &herdr, &mut listeners, &mut previews);
+                    publish(
+                        &engine,
+                        &events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                        &mut files,
+                    );
                 }
                 if let Some(h) = &mut herdr {
                     for effect in reaction.effects {
@@ -492,6 +554,11 @@ fn run<P: HerdrPort>(
             }
             Msg::Preview(tile, path, rendered) => {
                 if let Some(event) = previews.accept(tile, &path, *rendered) {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
+            }
+            Msg::Files(delivery) => {
+                for event in files.accept(delivery) {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
             }
@@ -509,6 +576,7 @@ fn run<P: HerdrPort>(
         }
     }
     drop(previews);
+    drop(files);
     // Stop herdr work before the saver goes; panes keep running in herdr.
     if let Some(h) = herdr.take() {
         h.runtime.shutdown_background();

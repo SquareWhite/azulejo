@@ -12,6 +12,7 @@ azulejo-model.workspace = true
 azulejo-protocol.workspace = true
 azulejo-herdr.workspace = true
 azulejo-preview.workspace = true
+azulejo-files.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml = { version = "1", default-features = false, features = ["std", "parse", "display", "serde"] }

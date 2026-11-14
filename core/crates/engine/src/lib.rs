@@ -7,6 +7,7 @@ pub mod adopt;
 pub mod agent;
 mod diff;
 mod driver;
+mod files;
 pub mod layout_file;
 pub mod link;
 pub mod persist;
@@ -348,6 +349,34 @@ impl Engine {
                 ));
             }
 
+            Command::FilesSetRoot(p) => {
+                let id = s.target(p.tile)?;
+                let path = files::expand_home(&p.root);
+                if !path.is_dir() {
+                    return Err(Error::new(
+                        ErrorCode::InvalidParams,
+                        format!("{} isn't a folder", path.display()),
+                    ));
+                }
+                match &mut s.tile_mut(id)?.content {
+                    TileContent::Files { root } => *root = Some(path.display().to_string()),
+                    other => return Err(wrong_kind(id, other, "files")),
+                }
+                Reply::Ok
+            }
+            Command::FilesOpen(p) => Reply::Created(files_open(s, p)?),
+            // Listing and watching touch the disk; `Core` answers these.
+            Command::FilesList(_)
+            | Command::FilesExpand(_)
+            | Command::FilesCollapse(_)
+            | Command::FilesReveal(_)
+            | Command::FilesToggleHidden(_) => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "file tiles need a running core",
+                ));
+            }
+
             Command::LayoutGet => {
                 let tile = focus.tile.ok_or_else(nothing)?;
                 Reply::Layout(layout_state(s, tile)?)
@@ -498,6 +527,16 @@ impl Engine {
         }
     }
 
+    /// A files tile (the focused tile when `tile` is absent) and the folder
+    /// it shows: its root, or the home folder.
+    pub fn files_root(&self, tile: Option<TileId>) -> Result<(TileId, std::path::PathBuf), Error> {
+        let id = self.session.target(tile)?;
+        match &self.session.tile(id)?.content {
+            TileContent::Files { root } => Ok((id, files::configured_root(root.as_deref()))),
+            other => Err(wrong_kind(id, other, "files")),
+        }
+    }
+
     /// The herdr pane behind a terminal tile (the focused tile when `tile` is
     /// absent), for terminal I/O.
     pub fn terminal_pane(&self, tile: Option<TileId>) -> Result<HerdrRef, Error> {
@@ -513,6 +552,69 @@ impl Engine {
             )),
             TileContent::Terminal { herdr: Some(h), .. } => Ok(h.clone()),
             other => Err(wrong_kind(id, other, "terminal")),
+        }
+    }
+}
+
+/// `files.open`: shows a path from a files tile in the tab's first preview
+/// tile (or a new one to its right, keeping focus in the files tile), or in a
+/// new terminal below it.
+fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created, Error> {
+    use azulejo_model::Direction;
+    use azulejo_protocol::FilesOpenTarget;
+    let id = s.target(p.tile)?;
+    let root = match &s.tile(id)?.content {
+        TileContent::Files { root } => files::configured_root(root.as_deref()),
+        other => return Err(wrong_kind(id, other, "files")),
+    };
+    let path = files::expand_home(&p.path);
+    let path = if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    };
+    let created = |tile| Created {
+        tile: Some(tile),
+        ..Created::default()
+    };
+    match p.target {
+        FilesOpenTarget::Preview => {
+            let (_, _, tab) = s.ids_at(s.locate(id)?);
+            let existing = s.tab(tab)?.root.tiles().into_iter().find(|t| {
+                matches!(
+                    s.tile(*t).map(|t| &t.content),
+                    Ok(TileContent::Preview { .. })
+                )
+            });
+            let shown = Some(path.display().to_string());
+            if let Some(preview) = existing {
+                if let TileContent::Preview { path } = &mut s.tile_mut(preview)?.content {
+                    *path = shown;
+                }
+                return Ok(created(preview));
+            }
+            let tile = Tile::new(TileContent::Preview { path: shown });
+            let new = tile.id;
+            s.split(id, Direction::Right, tile)?;
+            s.focus_tile(id)?;
+            Ok(created(new))
+        }
+        FilesOpenTarget::Terminal => {
+            let folder = if path.is_dir() {
+                path
+            } else {
+                path.parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or(root)
+            };
+            let mut content = TileContent::terminal();
+            if let TileContent::Terminal { cwd, .. } = &mut content {
+                *cwd = Some(folder.display().to_string());
+            }
+            let tile = Tile::new(content);
+            let new = tile.id;
+            s.split(id, Direction::Down, tile)?;
+            Ok(created(new))
         }
     }
 }
