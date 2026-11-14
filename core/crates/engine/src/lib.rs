@@ -14,7 +14,9 @@ pub mod persist;
 mod preview;
 pub mod terminal;
 
-use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId, WorkspaceId};
+use azulejo_model::{
+    HerdrRef, LayoutPrefs, ModelError, Session, TabId, Tile, TileContent, TileId, WorkspaceId,
+};
 use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
     TileInfo, WindowSummary, WorkspaceSummary,
@@ -37,6 +39,9 @@ pub struct Engine {
     /// The empty workspace a fresh session starts with, until the first herdr
     /// survey: dropped then if adoption brought in the user's workspaces.
     placeholder: Option<WorkspaceId>,
+    /// A fresh session's first tab, made before the layout preferences
+    /// arrive: it takes the configured default kind when they do.
+    fresh_tab: Option<TabId>,
 }
 
 /// How many closed-here herdr panes `Session::detached_herdr` remembers.
@@ -53,12 +58,13 @@ impl Engine {
     pub fn new() -> Self {
         let mut session = Session::new();
         let (_, workspace) = session.create_window("main", None);
-        session
+        let tab = session
             .create_tab(workspace, Tile::new(TileContent::terminal()), None)
             .expect("new workspace exists");
         Self {
             session,
             placeholder: Some(workspace),
+            fresh_tab: Some(tab),
         }
     }
 
@@ -67,7 +73,25 @@ impl Engine {
         Self {
             session,
             placeholder: None,
+            fresh_tab: None,
         }
+    }
+
+    /// Applies the `[layout]` preferences (ADR 0010) and returns the events
+    /// for any change. A fresh session's untouched first tab switches to the
+    /// default kind, so a first launch starts the way new tabs will.
+    pub fn set_layout_prefs(&mut self, prefs: LayoutPrefs) -> Vec<Event> {
+        let before = self.session.clone();
+        self.session.prefs = prefs;
+        if let Some(tab) = self.fresh_tab.take()
+            && let Ok(t) = self.session.tab(tab)
+            && t.tiles.len() == 1
+            && t.layout.is_plain_manual()
+        {
+            let kind = self.session.prefs.default;
+            let _ = self.session.set_layout(tab, kind);
+        }
+        diff(&before, &self.session, false)
     }
 
     pub fn session(&self) -> &Session {
@@ -439,7 +463,36 @@ impl Engine {
                 Reply::Ok
             }
             Command::LayoutRotate(p) => {
-                s.rotate(p.tab.or(focus.tab).ok_or_else(nothing)?)?;
+                let tab = p.tab.or(focus.tab).ok_or_else(nothing)?;
+                match (p.part, p.reverse) {
+                    (true, _) => s.rotate_part(tab)?,
+                    (false, Some(reverse)) => s.rotate_turn(tab, reverse)?,
+                    (false, None) => s.rotate(tab)?,
+                };
+                Reply::Ok
+            }
+            Command::LayoutSet(p) => {
+                s.set_layout(p.tab.or(focus.tab).ok_or_else(nothing)?, p.kind)?;
+                Reply::Ok
+            }
+            Command::LayoutToggle(p) => {
+                s.toggle_layout(p.tab.or(focus.tab).ok_or_else(nothing)?, p.kind)?;
+                Reply::Ok
+            }
+            Command::LayoutCycle(p) => {
+                s.cycle_layout(p.tab.or(focus.tab).ok_or_else(nothing)?, p.step)?;
+                Reply::Ok
+            }
+            Command::LayoutMasters(p) => {
+                s.change_masters(p.tab.or(focus.tab).ok_or_else(nothing)?, p.delta)?;
+                Reply::Ok
+            }
+            Command::LayoutMasterRatio(p) => {
+                s.change_master_ratio(p.tab.or(focus.tab).ok_or_else(nothing)?, p.delta)?;
+                Reply::Ok
+            }
+            Command::LayoutMoveOrder(p) => {
+                s.move_in_order(s.target(p.tile)?, p.step)?;
                 Reply::Ok
             }
             Command::LayoutEqualize(p) => {
@@ -651,14 +704,7 @@ fn layout_state(s: &Session, tile: TileId) -> Result<LayoutState, Error> {
     let path = s.locate(tile)?;
     let (window, workspace, tab_id) = s.ids_at(path);
     let tab = s.tab(tab_id)?;
-    Ok(LayoutState {
-        window,
-        workspace,
-        tab: tab_id,
-        tree: tab.root.clone(),
-        focused: tab.focused,
-        zoomed: tab.zoomed,
-    })
+    Ok(LayoutState::of(window, workspace, tab))
 }
 
 #[cfg(test)]

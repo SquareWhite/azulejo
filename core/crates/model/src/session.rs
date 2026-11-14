@@ -10,9 +10,38 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ModelError;
+use crate::dynamic::{self, InsertAt, LayoutKind, LayoutParams, Placement, TabLayout};
 use crate::ids::{TabId, TileId, WindowId, WorkspaceId};
-use crate::layout::{Direction, Node};
+use crate::layout::{Direction, Node, Rect};
 use crate::tile::{HerdrRef, Tile};
+
+/// How many recently focused tiles a tab remembers for tie-breaking.
+const RECENT_MAX: usize = 32;
+
+/// Session-wide layout preferences from config. Not saved: the core sets
+/// them at startup and on config reload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayoutPrefs {
+    /// What new tabs start as.
+    pub default: LayoutKind,
+    /// Where new tiles go in dynamic tabs.
+    pub insert: InsertAt,
+    /// What `layout.cycle` walks through.
+    pub cycle: Vec<LayoutKind>,
+    /// Parameters new dynamic tabs start with.
+    pub params: LayoutParams,
+}
+
+impl Default for LayoutPrefs {
+    fn default() -> Self {
+        Self {
+            default: LayoutKind::Manual,
+            insert: InsertAt::End,
+            cycle: LayoutKind::DYNAMIC.to_vec(),
+            params: LayoutParams::default(),
+        }
+    }
+}
 
 /// A tab: one layout tree. A tab always holds at least one tile; closing its
 /// last tile closes the tab.
@@ -28,22 +57,172 @@ pub struct Tab {
     /// A zoomed tile fills the tab until unzoomed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoomed: Option<TileId>,
+    /// How the tiles are arranged (ADR 0010). Old state files have none and
+    /// load as manual. For dynamic kinds `root` is derived from it.
+    #[serde(default, skip_serializing_if = "TabLayout::is_plain_manual")]
+    pub layout: TabLayout,
+    /// Recently focused tiles, most recent first: directional focus breaks
+    /// ties with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent: Vec<TileId>,
 }
 
 impl Tab {
-    fn new(tile: Tile, name: Option<String>) -> Self {
+    fn new(tile: Tile, name: Option<String>, prefs: &LayoutPrefs) -> Self {
+        let mut layout = TabLayout {
+            kind: prefs.default,
+            params: prefs.params,
+            ..TabLayout::default()
+        };
+        layout.params.clamp();
+        if layout.kind.is_dynamic() {
+            layout.order = vec![tile.id];
+        }
         Self {
             id: TabId::new(),
             name,
             root: Node::leaf(tile.id),
             focused: tile.id,
+            recent: vec![tile.id],
             tiles: vec![tile],
             zoomed: None,
+            layout,
+        }
+    }
+
+    /// A manual tab built from parts, e.g. one adopted from herdr.
+    pub fn manual(
+        id: TabId,
+        name: Option<String>,
+        root: Node,
+        tiles: Vec<Tile>,
+        focused: TileId,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            root,
+            tiles,
+            focused,
+            zoomed: None,
+            layout: TabLayout::default(),
+            recent: vec![focused],
         }
     }
 
     pub fn tile(&self, id: TileId) -> Option<&Tile> {
         self.tiles.iter().find(|t| t.id == id)
+    }
+
+    pub fn kind(&self) -> LayoutKind {
+        self.layout.kind
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        self.layout.kind.is_dynamic()
+    }
+
+    /// Where every tile goes, in the unit square. Manual tabs place each leaf
+    /// of the tree; dynamic ones run their layout rule.
+    pub fn placements(&self) -> Vec<Placement> {
+        if self.is_dynamic() {
+            self.layout.arrange(self.focused)
+        } else {
+            self.root
+                .rects()
+                .into_iter()
+                .map(|(tile, rect)| Placement {
+                    tile,
+                    rect,
+                    z: 0,
+                    visible: true,
+                })
+                .collect()
+        }
+    }
+
+    /// Recomputes the derived tree of a dynamic tab.
+    pub fn sync(&mut self) {
+        if self.is_dynamic() {
+            self.root = self.layout.frozen_tree();
+        }
+    }
+
+    /// Focuses `id` and remembers it as the most recent.
+    pub fn set_focused(&mut self, id: TileId) {
+        self.focused = id;
+        self.recent.retain(|t| *t != id);
+        self.recent.insert(0, id);
+        self.recent.truncate(RECENT_MAX);
+    }
+
+    /// The tile `direction` of `from`: geometric over the placements, ties to
+    /// the most recently focused. Monocle walks the order instead (right and
+    /// down go forward), as Bismuth does.
+    pub fn neighbour(&self, from: TileId, direction: Direction) -> Option<TileId> {
+        match self.layout.kind {
+            LayoutKind::Manual => self.root.neighbour_recent(from, direction, &self.recent),
+            LayoutKind::Monocle => {
+                let order = &self.layout.order;
+                let n = order.len();
+                if n < 2 {
+                    return None;
+                }
+                let i = order.iter().position(|t| *t == from)?;
+                let j = if direction.is_forward() {
+                    (i + 1) % n
+                } else {
+                    (i + n - 1) % n
+                };
+                Some(order[j])
+            }
+            _ => {
+                let rects: Vec<(TileId, Rect)> = self
+                    .placements()
+                    .into_iter()
+                    .map(|p| (p.tile, p.rect))
+                    .collect();
+                dynamic::neighbour_among(&rects, from, direction, &self.recent)
+            }
+        }
+    }
+
+    /// Puts a new tile into a dynamic tab's order. `anchor` is the tile an
+    /// `after_focused` insert goes after.
+    fn insert_dynamic(&mut self, tile: TileId, anchor: TileId, at: InsertAt) {
+        let order = &mut self.layout.order;
+        match at {
+            InsertAt::End => order.push(tile),
+            InsertAt::Master => order.insert(0, tile),
+            InsertAt::AfterFocused => {
+                let i = order
+                    .iter()
+                    .position(|t| *t == anchor)
+                    .map_or(order.len(), |i| i + 1);
+                order.insert(i, tile);
+            }
+        }
+    }
+
+    /// Swaps two tiles' places: in the order for dynamic tabs (weights travel
+    /// with the tiles), in the tree for manual ones.
+    fn swap(&mut self, a: TileId, b: TileId) -> Result<(), ModelError> {
+        if self.is_dynamic() {
+            let order = &mut self.layout.order;
+            let i = order
+                .iter()
+                .position(|t| *t == a)
+                .ok_or(ModelError::TileNotFound(a))?;
+            let j = order
+                .iter()
+                .position(|t| *t == b)
+                .ok_or(ModelError::TileNotFound(b))?;
+            order.swap(i, j);
+            self.sync();
+            Ok(())
+        } else {
+            self.root.swap(a, b)
+        }
     }
 }
 
@@ -99,6 +278,10 @@ pub struct Session {
     /// once herdr no longer has the pane.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub detached_herdr: Vec<HerdrRef>,
+    /// Layout preferences from config; not saved.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub prefs: LayoutPrefs,
 }
 
 /// Where the user's focus is. Inner fields are `None` when that level is empty.
@@ -483,7 +666,7 @@ impl Session {
                 tile.id
             )));
         }
-        let tab = Tab::new(tile, name);
+        let tab = Tab::new(tile, name, &self.prefs);
         let id = tab.id;
         let ws = &mut self.windows[wi].workspaces[si];
         ws.tabs.push(tab);
@@ -571,11 +754,18 @@ impl Session {
                 tile.id
             )));
         }
+        let insert = self.prefs.insert;
         let tab = self.tab_at_mut(p);
-        tab.root.split(target, direction, tile.id)?;
-        tab.focused = tile.id;
-        tab.zoomed = None;
+        let id = tile.id;
+        if tab.is_dynamic() {
+            tab.insert_dynamic(id, target, insert);
+        } else {
+            tab.root.split(target, direction, id)?;
+        }
         tab.tiles.push(tile);
+        tab.sync();
+        tab.set_focused(id);
+        tab.zoomed = None;
         self.activate(p);
         Ok(())
     }
@@ -597,10 +787,16 @@ impl Session {
                 tile.id
             )));
         }
+        let insert = self.prefs.insert;
         let tab = self.tab_at_mut(p);
-        tab.root
-            .split_with_ratio(target, direction, tile.id, ratio)?;
+        if tab.is_dynamic() {
+            tab.insert_dynamic(tile.id, target, insert);
+        } else {
+            tab.root
+                .split_with_ratio(target, direction, tile.id, ratio)?;
+        }
         tab.tiles.push(tile);
+        tab.sync();
         Ok(())
     }
 
@@ -614,9 +810,16 @@ impl Session {
                 tile.id
             )));
         }
+        let insert = self.prefs.insert;
         let tab = self.tab_at_mut(p);
-        tab.root.split_auto(tile.id)?;
+        if tab.is_dynamic() {
+            let anchor = tab.focused;
+            tab.insert_dynamic(tile.id, anchor, insert);
+        } else {
+            tab.root.split_auto(tile.id)?;
+        }
         tab.tiles.push(tile);
+        tab.sync();
         Ok(())
     }
 
@@ -636,13 +839,29 @@ impl Session {
         }
         let tab = self.tab_at_mut(p);
         let index = tab.tiles.iter().position(|t| t.id == id).expect("located");
-        let next = tab.root.remove(id).expect("tile is in a multi-tile tree");
+        let next = if tab.is_dynamic() {
+            // The tile now in that position takes focus, else the one before.
+            let order = &mut tab.layout.order;
+            let i = order.iter().position(|t| *t == id).expect("ordered");
+            order.remove(i);
+            tab.layout.weights.remove(&id);
+            let order = &tab.layout.order;
+            order
+                .get(i)
+                .or_else(|| i.checked_sub(1).and_then(|j| order.get(j)))
+                .copied()
+                .expect("tiles remain")
+        } else {
+            tab.root.remove(id).expect("tile is in a multi-tile tree")
+        };
+        tab.recent.retain(|t| *t != id);
         if tab.focused == id {
-            tab.focused = next;
+            tab.set_focused(next);
         }
         if tab.zoomed == Some(id) {
             tab.zoomed = None;
         }
+        tab.sync();
         Ok(ClosedTile {
             tile: tab.tiles.remove(index),
             window,
@@ -659,7 +878,7 @@ impl Session {
         if tab.zoomed.is_some_and(|z| z != id) {
             tab.zoomed = None;
         }
-        tab.focused = id;
+        tab.set_focused(id);
         self.activate(p);
         Ok(())
     }
@@ -671,14 +890,13 @@ impl Session {
         direction: Direction,
     ) -> Result<TileId, ModelError> {
         let p = self.locate(from)?;
-        let next =
-            self.tab_at(p)
-                .root
-                .neighbour(from, direction)
-                .ok_or(ModelError::NoNeighbour {
-                    tile: from,
-                    direction,
-                })?;
+        let next = self
+            .tab_at(p)
+            .neighbour(from, direction)
+            .ok_or(ModelError::NoNeighbour {
+                tile: from,
+                direction,
+            })?;
         self.focus_tile(next)?;
         Ok(next)
     }
@@ -692,7 +910,6 @@ impl Session {
         let p = self.locate(tile)?;
         let other = self
             .tab_at(p)
-            .root
             .neighbour(tile, direction)
             .ok_or(ModelError::NoNeighbour { tile, direction })?;
         self.swap_tiles(tile, other)?;
@@ -707,7 +924,7 @@ impl Session {
             return Err(ModelError::DifferentTabs { a, b });
         }
         let tab = self.tab_at_mut(pa);
-        tab.root.swap(a, b)?;
+        tab.swap(a, b)?;
         tab.zoomed = None;
         Ok(())
     }
@@ -716,7 +933,18 @@ impl Session {
     pub fn move_tile(&mut self, tile: TileId, direction: Direction) -> Result<bool, ModelError> {
         let p = self.locate(tile)?;
         let tab = self.tab_at_mut(p);
-        let moved = tab.root.move_tile(tile, direction)?;
+        let moved = if tab.is_dynamic() {
+            // As in Bismuth: a move is a swap with the neighbour that way.
+            match tab.neighbour(tile, direction) {
+                Some(other) => {
+                    tab.swap(tile, other)?;
+                    true
+                }
+                None => false,
+            }
+        } else {
+            tab.root.move_tile(tile, direction)?
+        };
         if moved {
             tab.zoomed = None;
         }
@@ -731,7 +959,27 @@ impl Session {
         amount: f64,
     ) -> Result<(), ModelError> {
         let p = self.locate(tile)?;
-        self.tab_at_mut(p).root.resize(tile, direction, amount)
+        let tab = self.tab_at_mut(p);
+        match tab.layout.kind {
+            LayoutKind::Manual => tab.root.resize(tile, direction, amount),
+            // Every tile fills the tab: nothing to resize.
+            LayoutKind::Monocle => Ok(()),
+            _ => {
+                if !amount.is_finite() {
+                    return Err(ModelError::InvalidValue(format!(
+                        "resize amount {amount} is not finite"
+                    )));
+                }
+                // The edge that way, else the opposite one moved the same way.
+                let moved = dynamic::adjust(&mut tab.layout, tile, direction, amount)
+                    || dynamic::adjust(&mut tab.layout, tile, direction.opposite(), -amount);
+                if !moved {
+                    return Err(ModelError::NoEdge { tile, direction });
+                }
+                tab.sync();
+                Ok(())
+            }
+        }
     }
 
     /// Zooms or unzooms a tile (`None` toggles) and focuses it. Returns whether
@@ -741,7 +989,7 @@ impl Session {
         let tab = self.tab_at_mut(p);
         let on = zoomed.unwrap_or(tab.zoomed != Some(tile));
         tab.zoomed = on.then_some(tile);
-        tab.focused = tile;
+        tab.set_focused(tile);
         self.activate(p);
         Ok(on)
     }
@@ -757,11 +1005,19 @@ impl Session {
                 tile.id
             )));
         }
+        let insert = self.prefs.insert;
         let tab = self.tab_at_mut(p);
-        tab.root.split_auto(tile.id)?;
-        tab.focused = tile.id;
-        tab.zoomed = None;
+        let id = tile.id;
+        if tab.is_dynamic() {
+            let anchor = tab.focused;
+            tab.insert_dynamic(id, anchor, insert);
+        } else {
+            tab.root.split_auto(id)?;
+        }
         tab.tiles.push(tile);
+        tab.sync();
+        tab.set_focused(id);
+        tab.zoomed = None;
         self.activate(p);
         Ok(())
     }
@@ -771,7 +1027,19 @@ impl Session {
     pub fn promote(&mut self, tile: TileId) -> Result<bool, ModelError> {
         let p = self.locate(tile)?;
         let tab = self.tab_at_mut(p);
-        let changed = tab.root.promote(tile)?;
+        let changed = if tab.is_dynamic() {
+            // To the front of the order (Bismuth's push to master).
+            let order = &mut tab.layout.order;
+            let i = order.iter().position(|t| *t == tile).expect("ordered");
+            if i > 0 {
+                let t = order.remove(i);
+                order.insert(0, t);
+            }
+            tab.sync();
+            i > 0
+        } else {
+            tab.root.promote(tile)?
+        };
         if changed {
             tab.zoomed = None;
         }
@@ -779,15 +1047,213 @@ impl Session {
     }
 
     /// Turns the tab's tall layout on its side. Focus and zoom are kept.
+    /// Turns the tab on its side: master left ↔ master on top (and right ↔
+    /// bottom in a Tile tab). Other dynamic kinds have nothing to rotate.
     pub fn rotate(&mut self, tab: TabId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
-        Ok(self.tab_at_mut(p).root.rotate())
+        let tab = self.tab_at_mut(p);
+        Ok(match tab.layout.kind {
+            LayoutKind::Manual => tab.root.rotate(),
+            LayoutKind::Tile => {
+                let o = &mut tab.layout.params.tile.orientation;
+                *o = o.flipped();
+                tab.sync();
+                true
+            }
+            _ => false,
+        })
     }
 
-    /// Evens out the tab's stack.
+    /// A quarter turn of a Tile tab: master left → top → right → bottom, or
+    /// back with `reverse`. Manual tabs toggle as [`Session::rotate`].
+    pub fn rotate_turn(&mut self, tab: TabId, reverse: bool) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        Ok(match t.layout.kind {
+            LayoutKind::Manual => t.root.rotate(),
+            LayoutKind::Tile => {
+                let o = &mut t.layout.params.tile.orientation;
+                *o = o.turned(reverse);
+                t.sync();
+                true
+            }
+            _ => false,
+        })
+    }
+
+    /// Toggles a Tile tab's masters between stacked and side by side
+    /// ("rotate part").
+    pub fn rotate_part(&mut self, tab: TabId) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        if t.layout.kind != LayoutKind::Tile {
+            return Ok(false);
+        }
+        let side = &mut t.layout.params.tile.rotate_part;
+        *side = !*side;
+        t.sync();
+        Ok(true)
+    }
+
+    /// Evens out the tab's stack; in a dynamic tab, resets every weight.
     pub fn equalize(&mut self, tab: TabId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
-        Ok(self.tab_at_mut(p).root.equalize())
+        let tab = self.tab_at_mut(p);
+        if tab.is_dynamic() {
+            let changed = !tab.layout.weights.is_empty();
+            tab.layout.weights.clear();
+            tab.sync();
+            Ok(changed)
+        } else {
+            Ok(tab.root.equalize())
+        }
+    }
+
+    // ----- dynamic layouts (ADR 0010) -----
+
+    /// Switches a tab's layout kind. Manual → dynamic takes the tree's tall
+    /// reading as the order (and, for a canonical tall tree going to Tile,
+    /// its ratio and stack sizes, so nothing jumps) and remembers the tree;
+    /// dynamic → manual restores that tree if it still holds the same tiles,
+    /// else keeps the frozen arrangement. Returns false when already there.
+    pub fn set_layout(&mut self, tab: TabId, kind: LayoutKind) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        let old = t.layout.kind;
+        if old == kind {
+            return Ok(false);
+        }
+        match (old.is_dynamic(), kind.is_dynamic()) {
+            (false, true) => {
+                let (order, fit) = dynamic::from_tree(&t.root);
+                t.layout.weights.clear();
+                if kind == LayoutKind::Tile
+                    && let Some((params, weights)) = fit
+                {
+                    t.layout.params.tile = params;
+                    t.layout.weights = weights;
+                }
+                t.layout.order = order;
+                t.layout.manual = Some(t.root.clone());
+            }
+            (true, false) => {
+                // `root` already holds the frozen arrangement.
+                let tiles: HashSet<TileId> = t.tiles.iter().map(|x| x.id).collect();
+                if let Some(saved) = t.layout.manual.take()
+                    && saved.leaf_count() == tiles.len()
+                    && saved.tiles().into_iter().collect::<HashSet<_>>() == tiles
+                {
+                    t.root = saved;
+                }
+                t.layout.order.clear();
+                t.layout.weights.clear();
+            }
+            _ => {}
+        }
+        t.layout.previous = Some(old);
+        t.layout.kind = kind;
+        t.sync();
+        Ok(true)
+    }
+
+    /// Switches to `kind`, or back to the previous kind if `kind` is already
+    /// active (Bismuth's toggle).
+    pub fn toggle_layout(&mut self, tab: TabId, kind: LayoutKind) -> Result<bool, ModelError> {
+        let layout = &self.tab(tab)?.layout;
+        let target = if layout.kind == kind {
+            layout
+                .previous
+                .filter(|p| *p != kind)
+                .unwrap_or(if kind == LayoutKind::Tile {
+                    LayoutKind::Manual
+                } else {
+                    LayoutKind::Tile
+                })
+        } else {
+            kind
+        };
+        self.set_layout(tab, target)
+    }
+
+    /// Steps through the configured cycle of kinds. From a kind not in the
+    /// cycle, forward goes to the first and back to the last.
+    pub fn cycle_layout(&mut self, tab: TabId, step: i32) -> Result<bool, ModelError> {
+        let current = self.tab(tab)?.layout.kind;
+        let cycle = self.prefs.cycle.clone();
+        if cycle.is_empty() || step == 0 {
+            return Ok(false);
+        }
+        let n = cycle.len() as i64;
+        let next = match cycle.iter().position(|k| *k == current) {
+            Some(i) => (i as i64 + i64::from(step)).rem_euclid(n),
+            None if step > 0 => 0,
+            None => n - 1,
+        };
+        self.set_layout(tab, cycle[next as usize])
+    }
+
+    /// Adds `delta` masters to a Tile or Three Column tab (clamped). Other
+    /// kinds have no masters.
+    pub fn change_masters(&mut self, tab: TabId, delta: i32) -> Result<bool, ModelError> {
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        let (masters, min) = match t.layout.kind {
+            LayoutKind::Tile => (&mut t.layout.params.tile.masters, 0),
+            LayoutKind::ThreeColumn => (&mut t.layout.params.three_column.masters, 1),
+            _ => return Ok(false),
+        };
+        let max = i32::from(dynamic::TILE_MASTERS_MAX);
+        let new = (i32::from(*masters).saturating_add(delta)).clamp(min, max) as u8;
+        let changed = new != *masters;
+        *masters = new;
+        t.sync();
+        Ok(changed)
+    }
+
+    /// Grows (positive `delta`) or shrinks a Tile or Three Column tab's
+    /// master area, clamped to the kind's range.
+    pub fn change_master_ratio(&mut self, tab: TabId, delta: f64) -> Result<bool, ModelError> {
+        if !delta.is_finite() {
+            return Err(ModelError::InvalidValue(format!(
+                "ratio change {delta} is not finite"
+            )));
+        }
+        let p = self.tab_index(tab)?;
+        let t = self.tab_at_mut(p);
+        let before = t.layout.params;
+        match t.layout.kind {
+            LayoutKind::Tile => t.layout.params.tile.ratio += delta,
+            LayoutKind::ThreeColumn => t.layout.params.three_column.ratio += delta,
+            _ => return Ok(false),
+        }
+        t.layout.params.clamp();
+        t.sync();
+        Ok(t.layout.params != before)
+    }
+
+    /// Moves a tile `step` places along its dynamic tab's order, one swap
+    /// with the neighbour at a time, wrapping at the ends. Manual tabs have
+    /// no order.
+    pub fn move_in_order(&mut self, tile: TileId, step: i32) -> Result<bool, ModelError> {
+        let p = self.locate(tile)?;
+        let t = self.tab_at_mut(p);
+        if !t.is_dynamic() || t.layout.order.len() < 2 || step == 0 {
+            return Ok(false);
+        }
+        let n = t.layout.order.len();
+        for _ in 0..step.unsigned_abs().min(n as u32) {
+            let order = &mut t.layout.order;
+            let i = order.iter().position(|x| *x == tile).expect("ordered");
+            let j = if step > 0 {
+                (i + 1) % n
+            } else {
+                (i + n - 1) % n
+            };
+            order.swap(i, j);
+        }
+        t.zoomed = None;
+        t.sync();
+        Ok(true)
     }
 
     // ----- invariants -----
@@ -874,6 +1340,32 @@ fn check_tab(tab: &Tab, seen: &mut HashSet<TileId>) -> Result<(), String> {
     for ratio in tab.root.ratios() {
         if !(ratio > 0.0 && ratio < 1.0) {
             return Err(format!("tab {} has ratio {ratio} outside (0, 1)", tab.id));
+        }
+    }
+    tab.layout
+        .check(&leaf_set)
+        .map_err(|e| format!("tab {}: {e}", tab.id))?;
+    if tab.is_dynamic() {
+        let want = tab.layout.frozen_tree().rects();
+        let got = tab.root.rects();
+        let same = want.len() == got.len()
+            && want.iter().all(|(t, w)| {
+                got.iter().any(|(u, g)| {
+                    u == t
+                        && (w.x - g.x).abs() < 1e-6
+                        && (w.y - g.y).abs() < 1e-6
+                        && (w.width - g.width).abs() < 1e-6
+                        && (w.height - g.height).abs() < 1e-6
+                })
+            });
+        if !same {
+            return Err(format!("tab {}'s tree doesn't match its layout", tab.id));
+        }
+    }
+    let mut recent = HashSet::new();
+    for t in &tab.recent {
+        if !leaf_set.contains(t) || !recent.insert(*t) {
+            return Err(format!("tab {} remembers a stray recent tile {t}", tab.id));
         }
     }
     Ok(())

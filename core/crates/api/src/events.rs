@@ -562,14 +562,16 @@ mod tests {
             workspace: ws,
             tab: azulejo_protocol::TabInfo {
                 id: tab,
-                name: None
+                name: None,
+                kind: azulejo_protocol::LayoutKind::Manual,
             },
         }));
         assert!(!scope.admit_event(&Event::TabCreated {
             workspace: other_ws,
             tab: azulejo_protocol::TabInfo {
                 id: TabId::new(),
-                name: None
+                name: None,
+                kind: azulejo_protocol::LayoutKind::Manual,
             },
         }));
         assert!(
@@ -580,6 +582,10 @@ mod tests {
                 tree: Node::Leaf { id: tile },
                 focused: tile,
                 zoomed: None,
+                kind: azulejo_protocol::LayoutKind::Manual,
+                params: Default::default(),
+                order: Vec::new(),
+                rects: Vec::new(),
             }))
         );
         assert!(

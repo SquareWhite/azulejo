@@ -71,6 +71,13 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
         false,
     ),
     (
+        "layout.set",
+        "Set layout (tile, monocle, three_column, manual)…",
+        "layout",
+        Some("kind"),
+        false,
+    ),
+    (
         "terminal.respawn",
         "Respawn ended terminal",
         "terminal",
@@ -242,6 +249,23 @@ fn title(action: Action) -> String {
         PromoteTile => "Promote tile to master".into(),
         RotateLayout => "Rotate layout".into(),
         EqualizeLayout => "Equalize stack".into(),
+        CycleLayoutNext => "Next layout".into(),
+        CycleLayoutPrevious => "Previous layout".into(),
+        ToggleLayout(kind) => match kind {
+            azulejo_protocol::LayoutKind::Tile => "Toggle Tile layout".into(),
+            azulejo_protocol::LayoutKind::Monocle => "Toggle Monocle layout".into(),
+            azulejo_protocol::LayoutKind::ThreeColumn => "Toggle Three Column layout".into(),
+            azulejo_protocol::LayoutKind::Manual => "Toggle manual layout (freeze)".into(),
+        },
+        IncreaseMasters => "More masters".into(),
+        DecreaseMasters => "Fewer masters".into(),
+        GrowMasterArea => "Grow master area".into(),
+        ShrinkMasterArea => "Shrink master area".into(),
+        MovePositionNext => "Move tile to next position".into(),
+        MovePositionPrevious => "Move tile to previous position".into(),
+        RotatePart => "Rotate master area".into(),
+        RotateClockwise => "Rotate layout clockwise".into(),
+        RotateAnticlockwise => "Rotate layout anticlockwise".into(),
         NewWorkspace => "New workspace".into(),
         SwitchWorkspace(i) => format!("Switch to workspace {i}"),
         LastWorkspace => "Last workspace".into(),
@@ -275,7 +299,10 @@ fn category(action: Action) -> &'static str {
     match action {
         FocusTile(_) | SwapTile(_) | MoveTile(_) | ResizeTile(_) | ResizeMode | ZoomTile
         | CloseTile | KillTile | CycleTileNext | CycleTilePrevious | RenameTile => "tile",
-        Split(_) | SplitAuto | PromoteTile | RotateLayout | EqualizeLayout => "layout",
+        Split(_) | SplitAuto | PromoteTile | RotateLayout | EqualizeLayout | CycleLayoutNext
+        | CycleLayoutPrevious | ToggleLayout(_) | IncreaseMasters | DecreaseMasters
+        | GrowMasterArea | ShrinkMasterArea | MovePositionNext | MovePositionPrevious
+        | RotatePart | RotateClockwise | RotateAnticlockwise => "layout",
         NewWorkspace | SwitchWorkspace(_) | LastWorkspace | NextWorkspace | PreviousWorkspace
         | CloseWorkspace | RenameWorkspace => "workspace",
         NewTab | SwitchTab(_) | LastTab | NextTab | PreviousTab | CloseTab | RenameTab => "tab",
@@ -301,6 +328,8 @@ fn needs_tile(action: Action) -> bool {
             | RenameTile
             | Split(_)
             | PromoteTile
+            | MovePositionNext
+            | MovePositionPrevious
             | Find
             | EditScrollback
     )

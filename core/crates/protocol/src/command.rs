@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use azulejo_model::{
-    Direction, Frame, HerdrRef, TabId, TileContent, TileId, WindowId, WorkspaceId,
+    Direction, Frame, HerdrRef, LayoutKind, TabId, TileContent, TileId, WindowId, WorkspaceId,
 };
 
 use crate::error::{Error, ErrorCode};
@@ -171,20 +171,47 @@ pub enum Command {
     #[serde(rename = "layout.zoom")]
     LayoutZoom(LayoutZoom),
 
-    // ----- tall layout: master left, even stack right (F3) -----
+    // ----- master-stack and dynamic layouts (F3, ADR 0010) -----
     /// Opens a tile at the end of the tab's stack, whichever tile has focus; a
-    /// lone tile becomes master | stack. Evens out the stack afterwards.
+    /// lone tile becomes master | stack. In a manual tab the stack is evened
+    /// out afterwards; in a dynamic tab the tile goes where `[layout] insert`
+    /// says.
     #[serde(rename = "layout.split_auto")]
     LayoutSplitAuto(LayoutSplitAuto),
-    /// Swaps a tile with its tab's master; focus stays on the tile.
+    /// Swaps a tile with its tab's master (manual tab) or moves it to the
+    /// front of the order (dynamic tab); focus stays on the tile.
     #[serde(rename = "layout.promote")]
     LayoutPromote(TileTarget),
     /// Toggles master on the left ↔ master on top, keeping the stack's order.
+    /// In a Tile tab, `reverse` makes it a quarter turn (absent: toggle;
+    /// `false`: clockwise; `true`: anticlockwise) and `part` instead turns
+    /// only the master area ("rotate part").
     #[serde(rename = "layout.rotate")]
-    LayoutRotate(TabTarget),
+    LayoutRotate(LayoutRotate),
     /// Gives every tile in the tab's stack the same size.
     #[serde(rename = "layout.equalize")]
     LayoutEqualize(TabTarget),
+    /// Switches a tab to a layout kind: `manual` or a dynamic one.
+    #[serde(rename = "layout.set")]
+    LayoutSet(LayoutSetKind),
+    /// Switches a tab to `kind`, or back to its previous kind if `kind` is
+    /// already active.
+    #[serde(rename = "layout.toggle")]
+    LayoutToggle(LayoutSetKind),
+    /// Steps through the configured cycle of layout kinds.
+    #[serde(rename = "layout.cycle")]
+    LayoutCycle(LayoutCycle),
+    /// Adds (or with a negative `delta` removes) masters in a Tile or Three
+    /// Column tab.
+    #[serde(rename = "layout.masters")]
+    LayoutMasters(LayoutMasters),
+    /// Grows (positive `delta`) or shrinks the master area of a Tile or Three
+    /// Column tab.
+    #[serde(rename = "layout.master_ratio")]
+    LayoutMasterRatio(LayoutMasterRatio),
+    /// Moves a tile `step` places along its dynamic tab's order, wrapping.
+    #[serde(rename = "layout.move_order")]
+    LayoutMoveOrder(LayoutMoveOrder),
 
     // ----- terminals (F12, F20) -----
     /// Records the herdr pane a terminal tile views. Sent by the herdr adapter.
@@ -284,6 +311,12 @@ pub const METHODS: &[&str] = &[
     "layout.promote",
     "layout.rotate",
     "layout.equalize",
+    "layout.set",
+    "layout.toggle",
+    "layout.cycle",
+    "layout.masters",
+    "layout.master_ratio",
+    "layout.move_order",
     "terminal.bind",
     "terminal.respawn",
     "terminal.send_text",
@@ -540,6 +573,80 @@ pub struct LayoutSplitAuto {
     /// The new tile; defaults to a terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<TileContent>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutRotate {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// Tile tabs: a quarter turn, anticlockwise when `true`. Absent toggles
+    /// master left ↔ top.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverse: Option<bool>,
+    /// Tile tabs: turn only the master area, so several masters sit side by
+    /// side instead of stacked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub part: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutSetKind {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    pub kind: LayoutKind,
+}
+
+fn one() -> i32 {
+    1
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutCycle {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// Positions to move through the cycle; negative goes back. Defaults to 1.
+    #[serde(default = "one")]
+    pub step: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutMasters {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// How many masters to add; negative removes. Defaults to 1.
+    #[serde(default = "one")]
+    pub delta: i32,
+}
+
+/// Default step for `layout.master_ratio`, as in Bismuth.
+pub const DEFAULT_MASTER_RATIO_STEP: f64 = 0.05;
+
+fn default_master_ratio_step() -> f64 {
+    DEFAULT_MASTER_RATIO_STEP
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutMasterRatio {
+    /// Defaults to the focused tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabId>,
+    /// Change in the master area's share; negative shrinks. Defaults to 0.05.
+    #[serde(default = "default_master_ratio_step")]
+    pub delta: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutMoveOrder {
+    /// Defaults to the focused tile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// Places to move; negative moves towards the front. Defaults to 1.
+    #[serde(default = "one")]
+    pub step: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

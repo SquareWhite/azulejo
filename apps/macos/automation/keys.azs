@@ -6,6 +6,11 @@
 log start
 expect windows 1
 expect tiles 1
+# New tabs start dynamic (ADR 0010; layouts.azs covers that). This walkthrough
+# checks the hand-made split tree, so switch the tab to manual first.
+expect kind tile
+core {"method": "layout.set", "params": {"kind": "manual"}}
+expect kind manual
 shot 00-start
 
 # --- tall layout (split_auto, promote, rotate, equalize) ---
@@ -27,7 +32,7 @@ key alt+o                     # and back
 expect axis h
 
 # --- focus by direction ---
-key alt+l                     # master → stack: the stack tile nearest the master's centre
+key alt+l                     # master → stack: ties go to the most recently focused stack tile
 expect focus 3
 key alt+j
 expect focus 4
@@ -53,8 +58,8 @@ shot 03-equalized
 # --- swap and move ---
 key alt+h
 expect focus 1
-key alt+shift+l               # swap master with its right neighbour (focus follows the tile)
-expect focus 3
+key alt+shift+l               # swap master with its right neighbour (focus follows the tile):
+expect focus 2                # the stack tiles tie, so the most recently focused wins (ADR 0010)
 key alt+shift+h               # and back
 expect focus 1
 action move_tile_right        # no default chord: menu/palette path

@@ -504,7 +504,7 @@ fn tall_commands_append_promote_rotate_and_equalize() {
     assert_eq!(engine.session().focused_tile(), Some(stack[2]));
 
     engine
-        .execute(Command::LayoutRotate(TabTarget::default()))
+        .execute(Command::LayoutRotate(LayoutRotate::default()))
         .unwrap();
     assert!(!engine.session().tab(tab).unwrap().root.tall().vertical);
 
@@ -540,4 +540,250 @@ fn moving_focus_onto_a_tile_clears_its_agent_attention() {
     assert!(!engine.session().tile(first).unwrap().needs_attention());
     assert!(events.iter().any(|e| matches!(e,
         Event::TileAttentionChanged { tile, attention: false, .. } if *tile == first)));
+}
+
+// ----- dynamic layouts (ADR 0010) -----
+
+/// An engine whose first tab is a dynamic Tile tab, as the app starts.
+fn tile_engine() -> Engine {
+    let mut engine = Engine::new();
+    let events = engine.set_layout_prefs(azulejo_model::LayoutPrefs {
+        default: LayoutKind::Tile,
+        ..azulejo_model::LayoutPrefs::default()
+    });
+    assert!(names(&events).contains(&"layout.changed".to_string()));
+    assert!(names(&events).contains(&"tab.updated".to_string()));
+    engine
+}
+
+fn tab_of(engine: &Engine) -> &azulejo_model::Tab {
+    let id = engine.session().focus().tab.unwrap();
+    engine.session().tab(id).unwrap()
+}
+
+fn layout_event(events: &[Event]) -> &LayoutState {
+    events
+        .iter()
+        .find_map(|e| match e {
+            Event::LayoutChanged(s) => Some(s),
+            _ => None,
+        })
+        .expect("layout.changed")
+}
+
+fn run(engine: &mut Engine, command: Command) -> Vec<Event> {
+    engine.execute(command).unwrap().events
+}
+
+#[test]
+fn the_first_tab_takes_the_configured_default_once() {
+    let mut engine = tile_engine();
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Tile);
+    // Later prefs don't touch existing tabs.
+    engine.set_layout_prefs(azulejo_model::LayoutPrefs::default());
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Tile);
+    // But new tabs follow them.
+    run(&mut engine, Command::TabCreate(TabCreate::default()));
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Manual);
+}
+
+#[test]
+fn dynamic_split_ignores_direction_and_reports_rects() {
+    let mut engine = tile_engine();
+    let a = engine.session().focused_tile().unwrap();
+    let events = split(&mut engine, Direction::Left).events;
+    let state = layout_event(&events);
+    assert_eq!(state.kind, LayoutKind::Tile);
+    assert_eq!(state.order.len(), 2);
+    assert_eq!(state.order[0], a, "appended, not put on the left");
+    assert_eq!(state.rects.len(), 2);
+    let master = state.rects.iter().find(|p| p.tile == a).unwrap();
+    assert_eq!(master.rect.x, 0.0);
+    assert!((master.rect.width - 0.5).abs() < 1e-9);
+    split(&mut engine, Direction::Up);
+    assert_eq!(tab_of(&engine).layout.order.len(), 3);
+    engine.session().check_invariants().unwrap();
+}
+
+#[test]
+fn every_layout_command_maps_in_a_dynamic_tab() {
+    let mut engine = tile_engine();
+    let tab = engine.session().focus().tab.unwrap();
+    for _ in 0..3 {
+        run(
+            &mut engine,
+            Command::LayoutSplitAuto(LayoutSplitAuto::default()),
+        );
+    }
+    let order = tab_of(&engine).layout.order.clone();
+    assert_eq!(order.len(), 4);
+    let (m, s1, s2, s3) = (order[0], order[1], order[2], order[3]);
+
+    // Swap and move reorder.
+    run(
+        &mut engine,
+        Command::LayoutSwap(LayoutSwap {
+            tile: Some(s1),
+            direction: Some(Direction::Down),
+            with: None,
+        }),
+    );
+    assert_eq!(tab_of(&engine).layout.order, vec![m, s2, s1, s3]);
+    run(
+        &mut engine,
+        Command::LayoutMove(LayoutMove {
+            tile: Some(s1),
+            direction: Direction::Up,
+        }),
+    );
+    assert_eq!(tab_of(&engine).layout.order, vec![m, s1, s2, s3]);
+
+    // Resize: the master's right edge → ratio; a stack edge → weights.
+    run(
+        &mut engine,
+        Command::LayoutResize(LayoutResize {
+            tile: Some(m),
+            direction: Direction::Right,
+            amount: 0.1,
+        }),
+    );
+    assert!((tab_of(&engine).layout.params.tile.ratio - 0.6).abs() < 1e-9);
+    run(
+        &mut engine,
+        Command::LayoutResize(LayoutResize {
+            tile: Some(s1),
+            direction: Direction::Down,
+            amount: 0.1,
+        }),
+    );
+    assert!(!tab_of(&engine).layout.weights.is_empty());
+    // Equalize resets the weights only.
+    run(&mut engine, Command::LayoutEqualize(TabTarget::default()));
+    assert!(tab_of(&engine).layout.weights.is_empty());
+    assert!((tab_of(&engine).layout.params.tile.ratio - 0.6).abs() < 1e-9);
+
+    // Promote: to the front.
+    run(
+        &mut engine,
+        Command::LayoutPromote(TileTarget { tile: Some(s3) }),
+    );
+    assert_eq!(tab_of(&engine).layout.order[0], s3);
+
+    // Move in order, wrapping.
+    run(
+        &mut engine,
+        Command::LayoutMoveOrder(LayoutMoveOrder {
+            tile: Some(s3),
+            step: -1,
+        }),
+    );
+    assert_eq!(*tab_of(&engine).layout.order.last().unwrap(), s3);
+
+    // Masters and ratio.
+    run(
+        &mut engine,
+        Command::LayoutMasters(LayoutMasters {
+            tab: None,
+            delta: 1,
+        }),
+    );
+    assert_eq!(tab_of(&engine).layout.params.tile.masters, 2);
+    run(
+        &mut engine,
+        Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: -0.3,
+        }),
+    );
+    assert!((tab_of(&engine).layout.params.tile.ratio - 0.3).abs() < 1e-9);
+
+    // Rotate: toggle, quarter turns, part.
+    use azulejo_model::Orientation;
+    run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    assert_eq!(
+        tab_of(&engine).layout.params.tile.orientation,
+        Orientation::Top
+    );
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            reverse: Some(false),
+            ..LayoutRotate::default()
+        }),
+    );
+    assert_eq!(
+        tab_of(&engine).layout.params.tile.orientation,
+        Orientation::Right
+    );
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            part: true,
+            ..LayoutRotate::default()
+        }),
+    );
+    assert!(tab_of(&engine).layout.params.tile.rotate_part);
+
+    // Kinds: set, toggle back, cycle.
+    let events = run(
+        &mut engine,
+        Command::LayoutSet(LayoutSetKind {
+            tab: Some(tab),
+            kind: LayoutKind::ThreeColumn,
+        }),
+    );
+    assert!(names(&events).contains(&"tab.updated".to_string()));
+    assert_eq!(layout_event(&events).kind, LayoutKind::ThreeColumn);
+    run(
+        &mut engine,
+        Command::LayoutToggle(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::ThreeColumn,
+        }),
+    );
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Tile);
+    run(
+        &mut engine,
+        Command::LayoutCycle(LayoutCycle { tab: None, step: 1 }),
+    );
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Monocle);
+
+    // Monocle: focus only restacks, nothing resizes.
+    let before = tab_of(&engine).placements();
+    let events = run(
+        &mut engine,
+        Command::LayoutFocus(LayoutFocus {
+            direction: Direction::Right,
+        }),
+    );
+    let state = layout_event(&events);
+    for (a, b) in before.iter().zip(&state.rects) {
+        assert_eq!(a.rect, b.rect);
+    }
+    assert_eq!(state.rects.iter().filter(|p| p.visible).count(), 1);
+
+    // Freeze to manual and back.
+    run(
+        &mut engine,
+        Command::LayoutSet(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::Manual,
+        }),
+    );
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Manual);
+    assert!(tab_of(&engine).layout.order.is_empty());
+    engine.session().check_invariants().unwrap();
+}
+
+#[test]
+fn layout_get_reports_manual_tabs_with_tree_rects() {
+    let mut engine = Engine::new();
+    split(&mut engine, Direction::Right);
+    let Reply::Layout(state) = engine.execute(Command::LayoutGet).unwrap().reply else {
+        panic!()
+    };
+    assert_eq!(state.kind, LayoutKind::Manual);
+    assert!(state.order.is_empty());
+    assert_eq!(state.rects.len(), 2);
+    assert!(state.rects.iter().all(|p| p.visible));
 }

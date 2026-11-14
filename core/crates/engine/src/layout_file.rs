@@ -7,7 +7,7 @@
 //!
 //! ```toml
 //! name = "shop"
-//! layout = "tall"                      # master left, even stack right
+//! layout = "tile"                      # master left, even stack right
 //!
 //! [[tile]]
 //! command = "nvim ."
@@ -24,8 +24,8 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use azulejo_model::{
-    Axis, MAX_RATIO, MIN_RATIO, Node, OnExit, Session, Tab, TabId, Tile, TileContent, TileId,
-    WorkspaceId,
+    Axis, LayoutKind, LayoutParams, MAX_RATIO, MIN_RATIO, Node, OnExit, Orientation, Session, Tab,
+    TabId, TabLayout, Tile, TileContent, TileId, TileParams, WorkspaceId,
 };
 use azulejo_protocol::{
     ApplyMode, Created, Error, ErrorCode, Focus, LayoutApply, LayoutExport, Reply,
@@ -54,7 +54,11 @@ struct FileSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     layout: Option<Arrangement>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    masters: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    orientation: Option<Orientation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sizes: Option<Vec<f64>>,
     #[serde(default, rename = "tile", skip_serializing_if = "Vec::is_empty")]
@@ -71,7 +75,9 @@ impl FileSpec {
         TabSpec {
             name: None,
             layout: self.layout.take(),
+            masters: self.masters.take(),
             ratio: self.ratio.take(),
+            orientation: self.orientation.take(),
             sizes: self.sizes.take(),
             tiles: std::mem::take(&mut self.tiles),
             root: self.root.take(),
@@ -80,7 +86,9 @@ impl FileSpec {
 
     fn put_single(&mut self, tab: TabSpec) {
         self.layout = tab.layout;
+        self.masters = tab.masters;
         self.ratio = tab.ratio;
+        self.orientation = tab.orientation;
         self.sizes = tab.sizes;
         self.tiles = tab.tiles;
         self.root = tab.root;
@@ -92,12 +100,20 @@ impl FileSpec {
 struct TabSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
-    /// How `tile` entries are arranged; `tall` by default.
+    /// How `tile` entries are arranged; `tile` by default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     layout: Option<Arrangement>,
-    /// `tall`: the master's share, 0.05 to 0.95.
+    /// `tile` / `three_column`: how many tiles share the master area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    masters: Option<u8>,
+    /// `tile`: the master area's share, 0.2 to 0.8; `three_column`: the
+    /// centre column's, 0.2 to 0.75.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ratio: Option<f64>,
+    /// `tile`: which side the masters sit on (`left`, `top`, `right`,
+    /// `bottom`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    orientation: Option<Orientation>,
     /// `columns`/`rows`: relative sizes, one per tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sizes: Option<Vec<f64>>,
@@ -112,7 +128,9 @@ impl TabSpec {
     fn is_empty(&self) -> bool {
         self.name.is_none()
             && self.layout.is_none()
+            && self.masters.is_none()
             && self.ratio.is_none()
+            && self.orientation.is_none()
             && self.sizes.is_none()
             && self.tiles.is_empty()
             && self.root.is_none()
@@ -120,14 +138,33 @@ impl TabSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 enum Arrangement {
-    /// Master left, the rest stacked evenly on the right.
+    /// Dynamic master-stack (ADR 0010): masters on one side, the stack on the
+    /// other.
+    Tile,
+    /// The same as `tile` with one master; kept for older files.
     Tall,
-    /// Side by side.
+    /// Dynamic: every tile full size, the focused one shown.
+    Monocle,
+    /// Dynamic: masters centred, stacks either side.
+    ThreeColumn,
+    /// Manual: side by side.
     Columns,
-    /// Stacked.
+    /// Manual: stacked.
     Rows,
+}
+
+impl Arrangement {
+    /// The dynamic kind this makes, or `None` for a manual arrangement.
+    fn kind(self) -> Option<LayoutKind> {
+        match self {
+            Arrangement::Tile | Arrangement::Tall => Some(LayoutKind::Tile),
+            Arrangement::Monocle => Some(LayoutKind::Monocle),
+            Arrangement::ThreeColumn => Some(LayoutKind::ThreeColumn),
+            Arrangement::Columns | Arrangement::Rows => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -263,13 +300,21 @@ struct Ctx<'a> {
 fn build_tab(spec: TabSpec, ctx: &Ctx<'_>) -> Result<Tab, String> {
     let mut tiles = Vec::new();
     let mut focus = Vec::new();
+    let mut layout: Option<TabLayout> = None;
     let root = match (spec.root, spec.tiles.is_empty()) {
         (Some(_), false) => return Err("give either `root` or `tile` entries, not both".into()),
         (None, true) => return Err("no tiles".into()),
         (Some(root), true) => {
-            if spec.layout.is_some() || spec.ratio.is_some() || spec.sizes.is_some() {
+            if spec.layout.is_some()
+                || spec.masters.is_some()
+                || spec.ratio.is_some()
+                || spec.orientation.is_some()
+                || spec.sizes.is_some()
+            {
                 return Err(
-                    "`layout`, `ratio` and `sizes` go with `tile` entries, not `root`".into(),
+                    "`layout`, `masters`, `ratio`, `orientation` and `sizes` go with `tile` \
+                     entries, not `root`"
+                        .into(),
                 );
             }
             build_node(root, ctx, &mut tiles, &mut focus, "root")?
@@ -284,12 +329,33 @@ fn build_tab(spec: TabSpec, ctx: &Ctx<'_>) -> Result<Tab, String> {
                 leaves.push(build_node(t, ctx, &mut tiles, &mut focus, &at)?);
             }
             let ids: Vec<TileId> = leaves.iter().map(Node::first_tile).collect();
-            arrange(
-                spec.layout.unwrap_or(Arrangement::Tall),
-                &ids,
-                spec.ratio,
-                spec.sizes,
-            )?
+            let how = spec.layout.unwrap_or(Arrangement::Tile);
+            if let Some(kind) = how.kind() {
+                if spec.sizes.is_some() {
+                    return Err(format!(
+                        "`sizes` is for `columns` and `rows`, not `{}`",
+                        kind.name()
+                    ));
+                }
+                layout = Some(dynamic_layout(
+                    kind,
+                    how == Arrangement::Tall,
+                    ids.clone(),
+                    spec.masters,
+                    spec.ratio,
+                    spec.orientation,
+                )?);
+                Node::leaf(ids[0])
+            } else {
+                if spec.masters.is_some() || spec.orientation.is_some() {
+                    return Err(
+                        "`masters` and `orientation` are for dynamic layouts (`tile`, \
+                         `three_column`)"
+                            .into(),
+                    );
+                }
+                arrange(how, &ids, spec.ratio, spec.sizes)?
+            }
         }
     };
     if tiles.len() > MAX_TILES {
@@ -303,14 +369,88 @@ fn build_tab(spec: TabSpec, ctx: &Ctx<'_>) -> Result<Tab, String> {
         [one] => *one,
         _ => return Err("more than one tile has `focus = true`".into()),
     };
-    Ok(Tab {
-        id: TabId::new(),
-        name: spec.name.filter(|n| !n.trim().is_empty()),
+    let mut tab = Tab::manual(
+        TabId::new(),
+        spec.name.filter(|n| !n.trim().is_empty()),
         root,
         tiles,
         focused,
-        zoomed: None,
+    );
+    if let Some(layout) = layout {
+        tab.layout = layout;
+        tab.sync();
+    }
+    Ok(tab)
+}
+
+/// A dynamic tab's layout from a file's keys. `tall` means `tile` with one
+/// master.
+fn dynamic_layout(
+    kind: LayoutKind,
+    tall: bool,
+    order: Vec<TileId>,
+    masters: Option<u8>,
+    ratio: Option<f64>,
+    orientation: Option<Orientation>,
+) -> Result<TabLayout, String> {
+    let mut params = LayoutParams::default();
+    match kind {
+        LayoutKind::Tile => {
+            if tall && masters.is_some_and(|m| m != 1) {
+                return Err("`tall` has one master; use `layout = \"tile\"` for more".into());
+            }
+            let p: &mut TileParams = &mut params.tile;
+            if let Some(m) = masters {
+                if m > 10 {
+                    return Err(format!("`masters` must be 0 to 10, not {m}"));
+                }
+                p.masters = m;
+            }
+            if let Some(r) = ratio {
+                p.ratio = in_range(r, 0.2, 0.8, "`ratio`")?;
+            }
+            if let Some(o) = orientation {
+                p.orientation = o;
+            }
+        }
+        LayoutKind::ThreeColumn => {
+            if orientation.is_some() {
+                return Err("`orientation` is for `tile`".into());
+            }
+            let p = &mut params.three_column;
+            if let Some(m) = masters {
+                if !(1..=10).contains(&m) {
+                    return Err(format!("`masters` must be 1 to 10, not {m}"));
+                }
+                p.masters = m;
+            }
+            if let Some(r) = ratio {
+                p.ratio = in_range(r, 0.2, 0.75, "`ratio`")?;
+            }
+        }
+        _ => {
+            if masters.is_some() || ratio.is_some() || orientation.is_some() {
+                return Err(format!(
+                    "`{}` takes no `masters`, `ratio` or `orientation`",
+                    kind.name()
+                ));
+            }
+        }
+    }
+    Ok(TabLayout {
+        kind,
+        order,
+        params,
+        ..TabLayout::default()
     })
+}
+
+fn in_range(x: f64, min: f64, max: f64, what: &str) -> Result<f64, String> {
+    if x.is_finite() && (min..=max).contains(&x) {
+        Ok(x)
+    } else {
+        Err(format!("{what} must be between {min} and {max}, not {x}"))
+    }
 }
 
 fn arrange(
@@ -320,32 +460,12 @@ fn arrange(
     sizes: Option<Vec<f64>>,
 ) -> Result<Node, String> {
     match how {
-        Arrangement::Tall => {
-            if sizes.is_some() {
-                return Err("`sizes` is for `columns` and `rows`; tall stacks are even".into());
-            }
-            let Some((master, stack)) = ids.split_first() else {
-                return Err("no tiles".into());
-            };
-            if stack.is_empty() {
-                return Ok(Node::leaf(*master));
-            }
-            let ratio = check_ratio(ratio.unwrap_or(0.5), "`ratio`")?;
-            let even = vec![1.0; stack.len()];
-            Ok(Node::Split {
-                axis: Axis::Horizontal,
-                ratio,
-                a: Box::new(Node::leaf(*master)),
-                b: Box::new(chain(
-                    stack.iter().map(|id| Node::leaf(*id)).collect(),
-                    &even,
-                    Axis::Vertical,
-                )?),
-            })
+        Arrangement::Tile | Arrangement::Tall | Arrangement::Monocle | Arrangement::ThreeColumn => {
+            unreachable!("dynamic arrangements build a TabLayout")
         }
         Arrangement::Columns | Arrangement::Rows => {
             if ratio.is_some() {
-                return Err("`ratio` is for `tall`; use `sizes`".into());
+                return Err("`ratio` is for `tile` and `three_column`; use `sizes`".into());
             }
             let axis = if how == Arrangement::Columns {
                 Axis::Horizontal
@@ -522,16 +642,6 @@ fn chain(mut nodes: Vec<Node>, sizes: &[f64], axis: Axis) -> Result<Node, String
         };
     }
     Ok(node)
-}
-
-fn check_ratio(ratio: f64, what: &str) -> Result<f64, String> {
-    if ratio.is_finite() && (MIN_RATIO..=MAX_RATIO).contains(&ratio) {
-        Ok(ratio)
-    } else {
-        Err(format!(
-            "{what} must be between {MIN_RATIO} and {MAX_RATIO}, not {ratio}"
-        ))
-    }
 }
 
 /// `value` made absolute against `base` (and `~` expanded); `None` when absent
@@ -794,8 +904,37 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
         name: tab.name.clone(),
         ..TabSpec::default()
     };
-    if let Some((ratio, master, stack)) = as_tall(&tab.root) {
-        out.layout = Some(Arrangement::Tall);
+    // A dynamic tab: its kind, parameters that differ from the defaults, and
+    // the tiles in order. Stack weights aren't part of the format.
+    if tab.is_dynamic() {
+        let d = LayoutParams::default();
+        let p = tab.layout.params;
+        out.tiles = tab.layout.order.iter().copied().map(tile).collect();
+        match tab.layout.kind {
+            LayoutKind::Tile => {
+                out.layout = Some(Arrangement::Tile);
+                out.masters = (p.tile.masters != d.tile.masters).then_some(p.tile.masters);
+                out.ratio =
+                    ((p.tile.ratio - d.tile.ratio).abs() > 1e-9).then_some(round(p.tile.ratio));
+                out.orientation =
+                    (p.tile.orientation != d.tile.orientation).then_some(p.tile.orientation);
+            }
+            LayoutKind::ThreeColumn => {
+                out.layout = Some(Arrangement::ThreeColumn);
+                let c = p.three_column;
+                out.masters = (c.masters != d.three_column.masters).then_some(c.masters);
+                out.ratio =
+                    ((c.ratio - d.three_column.ratio).abs() > 1e-9).then_some(round(c.ratio));
+            }
+            _ => out.layout = Some(Arrangement::Monocle),
+        }
+        return out;
+    }
+    if let Some((ratio, master, stack)) = as_tall(&tab.root)
+        && (0.2..=0.8).contains(&ratio)
+    {
+        // A manual tall tree reads back as `tile`, which rebuilds it exactly.
+        out.layout = Some(Arrangement::Tile);
         out.ratio = ((ratio - 0.5).abs() > 1e-9).then_some(round(ratio));
         out.tiles = std::iter::once(master).chain(stack).map(tile).collect();
         return out;

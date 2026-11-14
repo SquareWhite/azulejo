@@ -68,7 +68,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         sidebar.apply(model)
         tabBar.apply(model.workspace)
         tiles.apply(model)
-        attention.apply(model.workspace?.tab, frames: tiles.tileFrames())
+        attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames())
         let ws = model.workspace
         window.title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
     }
@@ -173,7 +173,7 @@ final class ChromeLayoutView: NSView {
         tiles?.frame = rest
         if let attention, let container = tiles as? TileContainerView {
             attention.frame = rest
-            attention.relayout(frames: container.tileFrames())
+            attention.relayout(frames: container.visibleTileFrames())
         }
         if let banner, !banner.isHidden {
             let width = min(rest.width - 24, 760)

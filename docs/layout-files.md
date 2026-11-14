@@ -17,7 +17,7 @@ The example in [examples/azulejo.toml](examples/azulejo.toml) is the PRD's "scri
 ```toml
 name = "shop"        # workspace name (new_workspace mode); defaults to the folder's name
 cwd = "app"          # terminals' default working directory, relative to the file
-layout = "tall"      # how the `tile` entries are arranged
+layout = "tile"      # how the `tile` entries are arranged
 
 [[tile]]
 command = "nvim ."
@@ -37,7 +37,7 @@ The top-level `layout`, `tile` and `root` keys describe one tab. For several, us
 ```toml
 [[tab]]
 name = "dev"
-layout = "tall"
+layout = "tile"
 tile = [{ command = "nvim ." }, { command = "npm run dev" }]
 
 [[tab]]
@@ -55,9 +55,14 @@ A file uses either top-level tab keys or `[[tab]]` sections, not both.
 
 | `layout` | Result | Options |
 | --- | --- | --- |
-| `tall` (default) | The first tile is master on the left; the others stack evenly on the right. Same shape as the tall actions (`split_auto`, `promote`, `rotate`). | `ratio`: the master's share, 0.05–0.95, default 0.5 |
-| `columns` | Side by side | `sizes`: one relative size per tile, default even |
-| `rows` | Stacked | `sizes` |
+| `tile` (default) | Dynamic (ADR 0010): masters on one side, the others stacked evenly on the other. New tiles join the stack. | `masters`: 0–10, default 1; `ratio`: the master area's share, 0.2–0.8, default 0.5; `orientation`: `left` (default), `top`, `right` or `bottom` |
+| `tall` | The same as `tile` with one master; kept for older files | `ratio` |
+| `monocle` | Dynamic: every tile full size, the focused one shown | none |
+| `three_column` | Dynamic: masters in the centre, the rest split between a left and a right stack | `masters`: 1–10, default 1; `ratio`: the centre column's share, 0.2–0.75, default 0.6 |
+| `columns` | Manual: side by side | `sizes`: one relative size per tile, default even |
+| `rows` | Manual: stacked | `sizes` |
+
+Tile order is the order of the `[[tile]]` entries, masters first. A dynamic tab can be switched to another kind, or frozen into a manual split tree, at any time (`alt+\`, `alt+shift+t`). Export writes a dynamic tab as its kind, the parameters that differ from the defaults, and its tiles in order; per-tile stack sizes aren't part of the format.
 
 For anything else, give an explicit tree as `root`. A split has `split` (`horizontal` puts children side by side, `vertical` stacks them), `children` (two or more) and optional `sizes`; anything else is a tile:
 

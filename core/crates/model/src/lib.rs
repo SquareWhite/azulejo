@@ -3,16 +3,22 @@
 //! Pure data and operations, no I/O. The engine drives it; the protocol crate
 //! reuses its types on the wire.
 
+mod dynamic;
 mod error;
 mod ids;
 mod layout;
 mod session;
 mod tile;
 
+pub use dynamic::{
+    InsertAt, LayoutKind, LayoutParams, Orientation, Placement, TabLayout, ThreeColumnParams,
+    TileParams, arrange, freeze, neighbour_among,
+};
 pub use error::ModelError;
 pub use ids::{ParseIdError, TabId, TileId, WindowId, WorkspaceId};
 pub use layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect, Tall};
 pub use session::{
-    ClosedTile, ClosedWorkspace, Focus, Frame, Session, Tab, TilePath, Window, Workspace,
+    ClosedTile, ClosedWorkspace, Focus, Frame, LayoutPrefs, Session, Tab, TilePath, Window,
+    Workspace,
 };
 pub use tile::{AgentInfo, AgentStatus, HerdrRef, OnExit, Tile, TileContent, TileKind};

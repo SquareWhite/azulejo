@@ -66,6 +66,11 @@ mac-automation: mac
     apps/macos/dev.sh --reset
     out=.dev/out/keys; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/keys"; fi; apps/macos/dev.sh --automation apps/macos/automation/keys.azs --out "$out"
 
+# Keyboard walkthrough of the dynamic layouts (ADR 0010) on the dev profile, in-process
+mac-layouts: mac
+    apps/macos/dev.sh --reset
+    out=.dev/out/layouts; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/layouts"; fi; apps/macos/dev.sh --automation apps/macos/automation/layouts.azs --out "$out"
+
 # Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 lint-linux:
     cargo clippy -p azulejo-linux --all-targets -- -D warnings

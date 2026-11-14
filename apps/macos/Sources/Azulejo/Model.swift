@@ -53,16 +53,26 @@ struct WorkspaceModel: Decodable, Equatable {
 struct TabModel: Decodable, Equatable {
     var id: String
     var name: String?
+    /// The split tree: the source of truth in a manual tab, derived from the
+    /// layout rule in a dynamic one, where it reproduces the core's rects
+    /// exactly (ADR 0010).
     var root: LayoutNode
     var tiles: [TileModel]
     var focused: String
     var zoomed: String?
+    /// Absent in old state and in plain manual tabs.
+    var layout: TabLayoutModel?
 
     func tile(_ id: String) -> TileModel? { tiles.first { $0.id == id } }
 
-    /// Tiles in reading order (depth-first, left/top first): the order tile
-    /// cycling follows.
-    var order: [String] { root.leaves }
+    var kind: LayoutKind { layout?.kind ?? .manual }
+
+    /// Tiles in cycling order: a dynamic tab's order (masters first), else
+    /// the tree's reading order (depth-first, left/top first).
+    var order: [String] {
+        if let order = layout?.order, !order.isEmpty, kind != .manual { return order }
+        return root.leaves
+    }
 
     /// What the tab bar shows: its name, else the focused tile's title, else
     /// the focused tile's kind.
@@ -72,6 +82,61 @@ struct TabModel: Decodable, Equatable {
         if let title = tile?.title, !title.isEmpty { return title }
         if let page = tile?.pageTitle, !page.isEmpty { return page }
         return tile?.kind.rawValue ?? "tab"
+    }
+}
+
+/// How a tab arranges its tiles (ADR 0010).
+enum LayoutKind: String, Decodable {
+    case manual, tile, monocle
+    case threeColumn = "three_column"
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = LayoutKind(rawValue: raw) ?? .manual
+    }
+
+    /// A small hint for the tab bar; manual tabs show none.
+    var glyph: String? {
+        switch self {
+        case .manual: nil
+        case .tile: "▤"
+        case .monocle: "▣"
+        case .threeColumn: "▥"
+        }
+    }
+}
+
+struct TabLayoutModel: Decodable, Equatable {
+    var kind: LayoutKind
+    var order: [String]?
+    var params: LayoutParamsModel?
+}
+
+/// A dynamic tab's parameters, for automation and later the tab bar.
+struct LayoutParamsModel: Decodable, Equatable {
+    struct Tile: Decodable, Equatable {
+        var masters: Int
+        var ratio: Double
+        var orientation: String?
+        var rotatePart: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case masters, ratio, orientation
+            case rotatePart = "rotate_part"
+        }
+    }
+
+    struct ThreeColumn: Decodable, Equatable {
+        var masters: Int
+        var ratio: Double
+    }
+
+    var tile: Tile
+    var threeColumn: ThreeColumn
+
+    enum CodingKeys: String, CodingKey {
+        case tile
+        case threeColumn = "three_column"
     }
 }
 

@@ -1,0 +1,99 @@
+# Dynamic layouts (ADR 0010) from the keyboard: Tile, master count and
+# ratio, rotate part, Monocle (focus restacks, no PTY resize), Three Column,
+# and freezing to manual and back. Runs in-process on the dev profile (no OS
+# input):
+#   AZJ_DEV_NAME=dyn just mac-layouts
+# Fresh dev state: one window, one workspace, one tab, one terminal tile.
+
+log start
+expect tiles 1
+expect kind tile
+
+# --- Tile: new tiles append to the stack ---
+key ctrl+cmd+t                # split_auto
+key ctrl+cmd+t
+key ctrl+cmd+t
+expect tiles 4
+expect axis h                 # master | stack
+expect focus 4                # the new tile, at the end of the order
+expect masters 1
+key ctrl+cmd+v                # a plain split ignores its direction here: appended too
+expect tiles 5
+expect focus 5
+key alt+w                     # close it again
+expect tiles 4
+wait 600                      # let the terminals attach and settle
+shot 00-tile-four
+
+# --- masters and ratio ---
+key alt+equal                 # two masters, stacked on the left
+expect masters 2
+shot 01-two-masters
+key alt+shift+o               # rotate part: masters side by side
+expect part yes
+shot 02-rotate-part
+key alt+shift+o
+expect part no
+key alt+minus
+expect masters 1
+key alt+shift+equal           # grow the master area
+expect ratio 0.55
+key ctrl+alt+shift+h          # resize the master's left: no edge, its right edge moves left
+expect ratio 0.50
+
+# --- focus, swap, promote and rotate keep working ---
+key alt+h
+expect focus 1
+key alt+l
+key alt+shift+h               # swap with the master
+expect focus 1
+key alt+shift+l               # and back
+key alt+enter                 # promote: to the front of the order
+expect focus 1
+key alt+o                     # master on top
+expect orientation top
+expect axis v
+key alt+o
+expect orientation left
+key alt+shift+bracketright    # move one place along the order
+expect focus 2
+
+# --- Monocle: one tile shown, focus restacks without resizing ---
+key alt+backslash             # tile → monocle
+expect kind monocle
+expect visible 1
+wait 400
+remember resizes
+key alt+l                     # next in the order
+expect visible 1
+key alt+l
+key alt+h
+wait 400
+unchanged resizes
+shot 03-monocle
+
+# --- Three Column ---
+key alt+backslash             # monocle → three_column
+expect kind three_column
+expect visible 4
+expect ratio 0.60
+shot 04-three-column
+key alt+shift+backslash       # back to monocle
+expect kind monocle
+key alt+shift+backslash       # and to tile
+expect kind tile
+
+# --- freeze to manual and back ---
+key alt+shift+t               # tile → manual: the same rects, as a split tree
+expect kind manual
+expect visible 4
+key ctrl+cmd+v                # a manual split cuts the focused tile in two
+expect tiles 5
+key alt+w
+key alt+shift+t               # back to tile (the previous kind)
+expect kind tile
+key alt+z                     # toggle monocle on…
+expect kind monocle
+key alt+z                     # …and back to the previous kind
+expect kind tile
+shot 05-back-to-tile

@@ -3,7 +3,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use azulejo_model::{Focus, Frame, Node, TabId, Tile, TileId, WindowId, WorkspaceId};
+use azulejo_model::{
+    Focus, Frame, LayoutKind, LayoutParams, Node, Placement, Tab, TabId, Tile, TileId, WindowId,
+    WorkspaceId,
+};
 
 /// Something that changed in the core.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -202,6 +205,11 @@ pub struct PreviewContent {
 }
 
 /// A tab's layout, as `layout.changed` and `layout.get` report it.
+///
+/// Shells draw from `rects`: every tile's rectangle in the unit square, its
+/// stacking order and whether it's shown (Monocle hides all but the focused
+/// tile without resizing them). `tree` is the tab's split tree: the source of
+/// truth for manual tabs, derived for dynamic ones (ADR 0010).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayoutState {
     pub window: WindowId,
@@ -211,6 +219,34 @@ pub struct LayoutState {
     pub focused: TileId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoomed: Option<TileId>,
+    #[serde(default)]
+    pub kind: LayoutKind,
+    /// Every kind's parameters, as the tab remembers them.
+    #[serde(default)]
+    pub params: LayoutParams,
+    /// Tile order of a dynamic tab, masters first; empty for manual tabs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<TileId>,
+    #[serde(default)]
+    pub rects: Vec<Placement>,
+}
+
+impl LayoutState {
+    /// The layout of `tab`, which lives in `window` › `workspace`.
+    pub fn of(window: WindowId, workspace: WorkspaceId, tab: &Tab) -> Self {
+        Self {
+            window,
+            workspace,
+            tab: tab.id,
+            tree: tab.root.clone(),
+            focused: tab.focused,
+            zoomed: tab.zoomed,
+            kind: tab.layout.kind,
+            params: tab.layout.params,
+            order: tab.layout.order.clone(),
+            rects: tab.placements(),
+        }
+    }
 }
 
 /// A workspace without its tabs.
@@ -240,6 +276,9 @@ pub struct TabInfo {
     pub id: TabId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The tab's layout kind, for a subtle hint in the tab bar.
+    #[serde(default)]
+    pub kind: LayoutKind,
 }
 
 impl Event {
