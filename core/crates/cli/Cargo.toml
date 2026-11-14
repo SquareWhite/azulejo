@@ -1,0 +1,16 @@
+[package]
+name = "azulejo-cli"
+description = "azj, the Azulejo command-line client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "azj"
+path = "src/main.rs"
+
+[dependencies]
+azulejo-api.workspace = true
+azulejo-protocol.workspace = true

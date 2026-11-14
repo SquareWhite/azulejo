@@ -1,6 +1,6 @@
 # PRD: Azulejo, a tiling terminal workspace for macOS and Linux
 
-Nov 3, 2026 · project maintainers · Updated Nov 3, 2026: added Linux, herdr attach findings
+Nov 3, 2026 · project maintainers · Updated Nov 3, 2026: added Linux; Gate G0 findings (see [ADRs](adr/README.md))
 
 ## Summary
 
@@ -66,14 +66,14 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F1 | Layout | Hierarchy of windows, workspaces, tabs and tiles; each tab is a tree of horizontal and vertical splits | P0 |
 | F2 | Layout | Keyboard actions to split, focus by direction, swap, move, resize, zoom and close tiles | P0 |
 | F3 | Layout | Alternative layout modes: master-stack and niri-style scrolling columns | P2 |
-| F4 | Layout | Animated open, close, move and resize; terminals scale a snapshot during motion and resize the PTY once at the end; can be turned off | P1 |
+| F4 | Layout | Animated open, close, move and resize; terminals scale a snapshot during motion and resize the PTY once, at the start of the motion, so the redraw finishes under the snapshot ([ADR 0004](adr/0004-animation-resize-timing.md)); can be turned off | P1 |
 | F5 | Layout | Command palette for every action | P1 |
 | F6 | Layout | Declarative layout files per project, loaded from the CLI or palette | P1 |
 | F7 | Tiles | Terminal tile built on Ghostty, reading the user's Ghostty config (full libghostty on macOS; libghostty-vt with our own renderer on Linux, VTE as a stopgap) | P0 |
 | F8 | Tiles | Browser tile on WebKit (WKWebView on macOS, WebKitGTK on Linux) with address bar, history, Web Inspector and localhost access | P0 |
 | F9 | Tiles | Preview tile: live-reloading markdown, code with syntax highlighting, and images, video and PDF | P0 |
 | F10 | Tiles | File browser tile: tree view, keyboard navigation, file watching, open in preview or terminal | P1 |
-| F11 | Tiles | Attention signal on a tile when herdr reports a pane notification or a blocked agent | P1 |
+| F11 | Tiles | Attention signal on a tile when herdr reports a blocked or finished agent. herdr doesn't pass on OSC 9/777/99 notifications, so generic "command finished" alerts wait on upstream ([ADR 0005](adr/0005-scrollback-and-passthrough.md)) | P1 |
 | F12 | herdr | Every terminal tile attaches to a herdr pane; a new terminal tile creates a herdr pane | P0 |
 | F13 | herdr | Each app workspace maps one-to-one to a herdr workspace | P0 |
 | F14 | herdr | Closing a tile detaches by default; killing the herdr pane is an explicit choice | P0 |
@@ -82,7 +82,7 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F17 | herdr | Workspaces backed by a remote herdr server over SSH | P2 |
 | F18 | API | Socket API to list, create, close, focus, move and resize windows, workspaces, tabs and tiles | P0 |
 | F19 | API | CLI covering the whole socket API, with JSON output; environment variables identify the calling tile and workspace | P0 |
-| F20 | API | Terminal operations: send text and keys, read the screen and scrollback | P0 |
+| F20 | API | Terminal operations: send text and keys, read the screen and scrollback (through herdr's `pane.read`) | P0 |
 | F21 | API | Browser operations: open a URL, accessibility snapshot, click, fill, evaluate JS, screenshot | P1 |
 | F22 | API | Event stream: tile created or closed, focus changed, agent state changed | P1 |
 | F23 | API | Python client mirroring the socket API, sync and async | P1 |
@@ -132,10 +132,11 @@ Agents reach Azulejo only through the socket API. Terminal tiles talk to herdr t
 
 - **Object model.** Window → workspace → tab → layout tree → tile. Each tile has a stable ID and a kind: `terminal`, `browser`, `preview` or `files`. A terminal tile also stores the herdr pane and terminal IDs it views.
 - **Core and shells.** The core is a Rust library. The macOS shell links it as a static library through a small C ABI; the Linux shell is Rust and links it directly. Shells send the same JSON commands the public API uses, so every user action is reachable through the API by construction.
-- **Terminal tiles.** The terminal surface runs `herdr terminal attach <terminal-id>` as its child process. herdr streams the current screen and then live ANSI frames; keys go straight back; resizing the PTY resizes the herdr pane. On macOS the surface is full libghostty. On Linux it starts on VTE and moves to libghostty-vt with our own GPU renderer, because libghostty's embedding API (renderer and surface) only supports macOS and iOS. herdr's NDJSON controller mode (`herdr terminal session control`) is the fallback if the attach command falls short. One adapter module owns all herdr wire names.
+- **Terminal tiles.** The terminal surface runs `herdr terminal attach <terminal-id>` as its child process ([ADR 0001](adr/0001-terminal-bridge.md)). herdr streams a full repaint and then re-rendered ANSI frames; keys, mouse and paste go straight back; the PTY size becomes the pane size. The herdr hop adds about 1.3 ms median keystroke → glyph. On macOS the surface is full libghostty. On Linux it starts on VTE and moves to libghostty-vt with our own GPU renderer, because libghostty's embedding API (renderer and surface) only supports macOS and iOS. herdr's NDJSON controller mode (`herdr terminal session control`) is the upgrade path: no detach key and explicit close records. One adapter module owns all herdr wire names.
+- **What herdr owns for terminals.** Because the stream is herdr's redraw, not the program's bytes, the local terminal never builds scrollback. Scrollback, find, title, cwd and agent state come from herdr's API and events ([ADR 0005](adr/0005-scrollback-and-passthrough.md)). Each terminal tile is its own herdr tab, inside a herdr workspace that maps 1:1 to the app workspace ([ADR 0002](adr/0002-herdr-mapping.md)). Tile state (attached, taken over, owned elsewhere, ended) follows the attach client's exit ([ADR 0003](adr/0003-take-over.md)). Azulejo starts herdr with a clean environment and sizes the PTY before attaching ([ADR 0006](adr/0006-herdr-process-hygiene.md)).
 - **Browser tiles.** WKWebView on macOS, WebKitGTK 6 on Linux. Both are WebKit, so the injected JavaScript for accessibility snapshot, click, fill and evaluate is shared. WebKit has no DevTools protocol.
 - **Preview and file tiles.** The core renders markdown and highlighted code to HTML and watches files; shells show it in a webview. Images, video and PDF use QuickLook on macOS and GTK4 media, glycin and poppler on Linux. File browser: NSOutlineView on macOS, GtkListView with a tree model on Linux, both fed by the core's file tree.
-- **Animations.** Core Animation on macOS, GtkSnapshot transforms driven by frame-clock tick callbacks on Linux. During motion a terminal shows a scaled snapshot, and its PTY is resized once when the motion ends.
+- **Animations.** Core Animation on macOS, GtkSnapshot transforms driven by frame-clock tick callbacks on Linux. During motion a terminal shows a scaled snapshot (an IOSurface copy on macOS), and its PTY is resized once when the motion starts. The spike held 120 Hz with no dropped frames.
 - **API.** JSON-RPC over a Unix socket in the user's runtime directory. Types are defined once in Rust and exported as JSON Schema; the CLI shares the Rust types and the Python client is generated from the schema.
 - **Persistence.** Layout and non-terminal tile state saved to disk on every change; terminal state lives in herdr.
 
@@ -163,14 +164,17 @@ The biggest risk is depending on two young projects, herdr and libghostty, whose
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | herdr socket API changes | Terminal tiles break on herdr upgrades | One adapter module; pin a minimum herdr protocol version; contribute upstream |
-| herdr attach streams re-rendered frames, not raw PTY bytes | Local scrollback, OSC 8 links, OSC 52 clipboard, kitty graphics or notifications may not pass through | Test in M0; use herdr's scroll, read and notification APIs where passthrough fails; controller mode as fallback |
+| herdr attach streams re-rendered frames, not raw PTY bytes | No local scrollback; OSC 52, OSC 9/777/99, BEL, kitty graphics, DECCKM and focus reporting are dropped | Scrollback, search, title and attention through herdr's API (ADR 0005); upstream asks filed |
+| OSC 52 clipboard lost | Copy from vim or agents to the system clipboard doesn't work in terminal tiles | Upstream ask; local selection copy and `pane.selection.read` meanwhile |
+| Detach key `ctrl+b q` can't be turned off | An accidental keypress drops the tile; tmux users lose `prefix q` | Reattach silently on an unrequested detach; upstream `--no-detach-key`; controller mode has no detach key |
+| Take-over is signalled only by the attach client's exit code and stderr | Wrong tile state if herdr changes its messages | Patterns live in the adapter with tests pinned to the supported herdr version; upstream ask for clearer exit reasons |
 | libghostty embedding API is unstable | Rendering breaks on Ghostty updates | Vendor a pinned Ghostty; bump it in dedicated changes; track upstream releases |
-| No libghostty renderer on Linux | Linux terminal quality and latency lag macOS | Ship on VTE first; build our renderer on libghostty-vt in M4; watch upstream for Linux embedding |
+| No libghostty renderer on Linux | Linux terminal quality and latency lag macOS; our renderer is 6 to 9 weeks to beat VTE, 10 to 12 to match Ghostty GTK | Ship on VTE first; build our renderer on libghostty-vt in M4, deferring kitty graphics and sprite polish to M5; consider shimming Ghostty's own MIT font and renderer code (saves 3 to 4 weeks); watch upstream for Linux embedding |
 | Two shells drift apart | Features land on one platform only | Logic lives in the core; every feature lands with core tests and API first; shared JS and HTML for webview tiles |
 | GTK4 animation performance | Janky motion on Linux | Snapshot-based motion, frame-clock driven; animations can be turned off; measure on GNOME and wlroots compositors |
-| Two clients on one herdr pane (app and phone) | Size fights, garbled full-screen apps | herdr allows one writable owner; newest client takes over, others observe read-only (confirm in M0) |
+| Two clients on one herdr pane (app and phone) | Size fights, garbled full-screen apps | One writable owner; explicit Take over / Take back, read-only observe otherwise (ADR 0003). A phone on the TUI sees Mac-sized panes while the Mac is attached |
 | Focus and key routing between terminals and webviews | Lost shortcuts, IME bugs, stuck focus | Central key router per shell, keymap in the core; a test suite of key and focus scenarios |
-| Terminal flicker during animation | Animations feel worse than none | Snapshot during motion, single PTY resize at the end; animations can be turned off |
+| Terminal flicker during animation | Animations feel worse than none | Snapshot during motion, single PTY resize at the start (ADR 0004); animations can be turned off |
 | WebKit limits for automation | Weaker agent browsing than Chrome-based tools | Injected JS first; revisit if agents hit hard limits |
 | Linux packaging | Flatpak sandbox blocks spawning herdr and the socket | Ship tarball, .deb and AUR first; Flatpak later with host access |
 
@@ -189,8 +193,8 @@ Success means Azulejo replaces the current terminal-plus-browser setup for daily
 
 - [x] Fork cmux or build from scratch? Decided: build from scratch, cmux as reference only.
 - [x] Cross-platform approach? Decided: shared Rust core, native shells (AppKit, GTK4); no Electron or Tauri.
-- [ ] When the app and the phone attach to the same herdr pane, does the newer client take over or mirror? Proposed: herdr allows one writable owner, so the newest takes over and the app shows the tile read-only with a "take back" action. Confirm in M0.
-- [ ] One herdr tab per terminal tile, or mirror the app's splits into herdr's layout so the phone sees the same arrangement? Decide in M0.
+- [x] When the app and the phone attach to the same herdr pane, does the newer client take over or mirror? Decided: one writable owner; the app asks before taking over, falls back to read-only, and never retakes automatically ([ADR 0003](adr/0003-take-over.md)).
+- [x] One herdr tab per terminal tile, or mirror the app's splits into herdr's layout? Decided: one herdr tab per tile; `layout.apply` kills live panes ([ADR 0002](adr/0002-herdr-mapping.md)).
 - [ ] Does the CLI live inside the app bundle or ship as a separate Homebrew formula and Linux package?
 - [ ] Open source from day one, and under which license?
 - [ ] Is the niri-style scrolling layout (F3) worth pulling into the MVP?

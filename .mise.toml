@@ -1,0 +1,7 @@
+# Toolchains for Azulejo. Run `mise install` once after cloning.
+[tools]
+rust = "1.99.1"
+zig = "0.17.0"           # Ghostty v1.4.0 minimum_zig_version
+xcodegen = "2.46.0"
+just = "1.59.0"
+uv = "0.11.19"

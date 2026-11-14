@@ -1,0 +1,18 @@
+[package]
+name = "azulejo-linux"
+description = "GTK4 shell for Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "azulejo"
+path = "src/main.rs"
+
+[dependencies]
+azulejo-engine.workspace = true
+azulejo-protocol.workspace = true
+gtk4 = { version = "0.11", package = "gtk4", features = ["v4_14"] }
+libadwaita = { version = "0.9", features = ["v1_5"] }

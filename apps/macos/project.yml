@@ -1,0 +1,39 @@
+name: Azulejo
+options:
+  bundleIdPrefix: dev.azulejo
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ARCHS: arm64
+targets:
+  Azulejo:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Azulejo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.azulejo.Azulejo
+        INFOPLIST_FILE: Resources/Info.plist
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/AzulejoCore
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../../target/$(AZJ_CARGO_PROFILE)
+        AZJ_CARGO_PROFILE: debug
+        OTHER_LDFLAGS: -lazulejo_ffi
+        CODE_SIGN_IDENTITY: "-"
+      configs:
+        Release:
+          AZJ_CARGO_PROFILE: release
+    preBuildScripts:
+      - name: Build Rust core
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="$HOME/.local/share/mise/shims:$PATH"
+          cd "$SRCROOT/../.."
+          if [ "$AZJ_CARGO_PROFILE" = release ]; then
+            cargo build -p azulejo-ffi --release
+          else
+            cargo build -p azulejo-ffi
+          fi
