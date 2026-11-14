@@ -25,6 +25,7 @@
 //! enabled = true
 //! duration_ms = 200
 //! curve = "ease_out"     # or "ease_in_out", "linear"
+//! style = "crop"         # moving tiles: "crop" (content at 1:1, revealed or cut off), "scale", "outline"
 //! tab_switch = "fade"    # tab/workspace switches: "fade", "slide" or "none"
 //! dim_inactive = false   # dim tiles without focus
 //! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
@@ -67,6 +68,7 @@ pub struct Animation {
     pub enabled: bool,
     pub duration_ms: u32,
     pub curve: Curve,
+    pub style: Style,
     pub tab_switch: TabSwitch,
     pub dim_inactive: bool,
     pub reduce_motion: ReduceMotion,
@@ -82,6 +84,7 @@ impl Default for Animation {
             enabled: true,
             duration_ms: 200,
             curve: Curve::EaseOut,
+            style: Style::Crop,
             tab_switch: TabSwitch::Fade,
             dim_inactive: false,
             reduce_motion: ReduceMotion::System,
@@ -95,6 +98,17 @@ pub enum Curve {
     EaseOut,
     EaseInOut,
     Linear,
+}
+
+/// What a tile's content does while its frame moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Style {
+    /// The frame is a clip: content stays at 1:1, revealed or cut off.
+    Crop,
+    /// The content scales with the frame (text stretches mid-motion).
+    Scale,
+    /// Only outlines move; content fades in at its new place at the end.
+    Outline,
 }
 
 /// How switching tab or workspace looks.
@@ -128,6 +142,7 @@ macro_rules! named {
     };
 }
 named!(Curve { EaseOut = "ease_out", EaseInOut = "ease_in_out", Linear = "linear" });
+named!(Style { Crop = "crop", Scale = "scale", Outline = "outline" });
 named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
 named!(ReduceMotion { System = "system", Ignore = "ignore" });
 
@@ -358,6 +373,14 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                 Curve::NAMES,
                 Curve::from_name,
                 &mut out.curve,
+            ),
+            ("style", _) => choice(
+                sink,
+                value,
+                "style",
+                Style::NAMES,
+                Style::from_name,
+                &mut out.style,
             ),
             ("tab_switch", _) => choice(
                 sink,

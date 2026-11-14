@@ -6,15 +6,22 @@ import QuartzCore
 ///
 /// How motion works (ADR 0004): every tile goes to its final frame at the
 /// start of a motion — so a terminal's PTY is resized exactly once, while a
-/// snapshot covers it — and a transform animation carries it visually from
-/// where it was to where it is. Nothing re-lays out per frame; Core Animation
-/// runs the motion in the render server.
+/// snapshot covers it — and Core Animation carries it visually from where it
+/// was to where it is. Nothing re-lays out per frame.
+///
+/// `style` says what the content does on the way:
+/// - "crop" (default): the tile's frame is a clip. Its bounds and position
+///   animate; content stays at 1:1, revealed or cut off by the moving edges.
+/// - "scale": a transform scales the whole tile (text stretches mid-motion).
+/// - "outline": tiles jump to their new place hidden; only outlines move, and
+///   content fades in at the end.
 @MainActor
 enum Motion {
     struct Settings: Equatable {
         var enabled = true
         var durationMs = 200
         var curve = "ease_out"
+        var style = "crop"
         var tabSwitch = "fade"
         var dimInactive = false
         var reduceMotion = "system"
@@ -24,6 +31,20 @@ enum Motion {
     /// Automation overrides (slow motion for mid-animation screenshots, or off).
     static var durationOverride: CFTimeInterval?
     static var enabledOverride: Bool?
+    static var styleOverride: String?
+
+    enum Style { case crop, scale, outline }
+
+    static var style: Style {
+        switch styleOverride ?? settings.style {
+        case "scale": .scale
+        case "outline": .outline
+        default: .crop
+        }
+    }
+
+    /// How long content takes to fade in after an outline motion.
+    static let outlineFade: CFTimeInterval = 0.08
 
     /// Reads `azj_core_animation`'s JSON. Called at launch and on `config.reloaded`.
     static func load(_ json: [String: Any]) {
@@ -31,6 +52,7 @@ enum Motion {
         if let v = json["enabled"] as? Bool { s.enabled = v }
         if let v = json["duration_ms"] as? Int { s.durationMs = v }
         if let v = json["curve"] as? String { s.curve = v }
+        if let v = json["style"] as? String { s.style = v }
         if let v = json["tab_switch"] as? String { s.tabSwitch = v }
         if let v = json["dim_inactive"] as? Bool { s.dimInactive = v }
         if let v = json["reduce_motion"] as? String { s.reduceMotion = v }
@@ -79,6 +101,70 @@ enum Motion {
         return CATransform3DConcat(CATransform3DMakeScale(sx, sy, 1), CATransform3DMakeTranslation(tx, ty, 0))
     }
 
+    // MARK: Crop geometry
+
+    /// Which side of the clip content sticks to, per axis. In container
+    /// coordinates: x `min` = left; y `min` = bottom, `max` = top.
+    enum Anchor { case min, mid, max }
+
+    /// Content sticks to the edge that moves least, so it stays still on
+    /// screen while the other edge reveals or cuts it. Equal moves (a slide):
+    /// top-left. `AZJ_CROP_ANCHOR=topleft` pins top-left always (comparison).
+    static func anchors(from: CGRect, to: CGRect) -> (x: Anchor, y: Anchor) {
+        if pinTopLeft { return (.min, .max) }
+        func pick(_ dMin: CGFloat, _ dMax: CGFloat, _ sameSize: Bool, tie: Anchor) -> Anchor {
+            if abs(dMin - dMax) < 0.5 { return sameSize ? tie : .mid }
+            return dMin < dMax ? .min : .max
+        }
+        let x = pick(abs(to.minX - from.minX), abs(to.maxX - from.maxX), abs(to.width - from.width) < 0.5, tie: .min)
+        let y = pick(abs(to.minY - from.minY), abs(to.maxY - from.maxY), abs(to.height - from.height) < 0.5, tie: .max)
+        return (x, y)
+    }
+
+    private static let pinTopLeft = ProcessInfo.processInfo.environment["AZJ_CROP_ANCHOR"] == "topleft"
+
+    /// The layer bounds that show a `clip`-sized window onto content laid out
+    /// at `content` size, stuck to `anchor`. `flipped`: the tile's own
+    /// coordinates run top-down.
+    static func cropBounds(clip: CGSize, content: CGSize, anchor: (x: Anchor, y: Anchor), flipped: Bool) -> CGRect {
+        func offset(_ a: Anchor, _ full: CGFloat, _ part: CGFloat) -> CGFloat {
+            switch a {
+            case .min: 0
+            case .mid: (full - part) / 2
+            case .max: full - part
+            }
+        }
+        let x = offset(anchor.x, content.width, clip.width)
+        // Bottom-up: y min (bottom) is bounds origin 0. Top-down: the top is.
+        let yAnchor: Anchor = flipped ? (anchor.y == .min ? .max : anchor.y == .max ? .min : .mid) : anchor.y
+        let y = offset(yAnchor, content.height, clip.height)
+        return CGRect(x: x, y: y, width: max(clip.width, 0), height: max(clip.height, 0))
+    }
+
+    /// The layer position that puts a layer's frame at `frame`.
+    static func position(of frame: CGRect, anchorPoint a: CGPoint) -> CGPoint {
+        CGPoint(x: frame.minX + a.x * frame.width, y: frame.minY + a.y * frame.height)
+    }
+
+    /// A rect in a tile's own coordinates → where it shows in the container,
+    /// with the tile's layer at `frame` showing `bounds`.
+    static func toContainer(_ r: CGRect, frame: CGRect, bounds: CGRect, flipped: Bool) -> CGRect {
+        let x = frame.minX + (r.minX - bounds.minX)
+        let y = flipped
+            ? frame.maxY - (r.maxY - bounds.minY)
+            : frame.minY + (r.minY - bounds.minY)
+        return CGRect(x: x, y: y, width: r.width, height: r.height)
+    }
+
+    /// The inverse of `toContainer`.
+    static func toTile(_ r: CGRect, frame: CGRect, bounds: CGRect, flipped: Bool) -> CGRect {
+        let x = r.minX - frame.minX + bounds.minX
+        let y = flipped
+            ? (frame.maxY - r.maxY + bounds.minY)
+            : (r.minY - frame.minY + bounds.minY)
+        return CGRect(x: x, y: y, width: r.width, height: r.height)
+    }
+
     /// Animations share these: duration, curve, full frame rate.
     static func configure(_ animation: CAAnimation, duration: CFTimeInterval) {
         animation.duration = duration
@@ -95,7 +181,19 @@ enum Motion {
 protocol MotionAware: AnyObject {
     /// About to move. `freeze`: cover live content with a snapshot of the last
     /// frame (the tile changes size, or is closing). Returns whether it froze.
-    @discardableResult func motionWillStart(freeze: Bool) -> Bool
+    /// `fill`: the snapshot follows the tile's bounds (scale style); otherwise
+    /// it stays at 1:1 where `placeSnapshot` puts it.
+    @discardableResult func motionWillStart(freeze: Bool, fill: Bool) -> Bool
+    /// The snapshot's frame in the tile's coordinates, while frozen.
+    var snapshotFrame: CGRect? { get }
+    /// The frozen frame's contents (an IOSurface), for a cross-fade ghost.
+    var snapshotContents: Any? { get }
+    /// Puts the 1:1 snapshot at `frame` (tile coordinates) over a plain
+    /// background spanning `cover`, which hides the live surface around it.
+    func placeSnapshot(_ frame: CGRect, cover: CGRect)
+    /// Reveal live content as soon as it has drawn at its new size, even
+    /// mid-motion (a growing tile: live content is never stretched).
+    func revealWhenFresh(clock: MotionClock)
     /// The motion is over: reveal live content once it's ready, polling on
     /// `clock` (once per frame).
     func motionDidEnd(clock: MotionClock)

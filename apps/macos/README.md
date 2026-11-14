@@ -62,19 +62,33 @@ and `<out>/result`.
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall
 actions, plus the focus ring and tab/workspace switches. Every tile goes to its
-final frame at the start of a motion and a transform animation carries it there
-visually, so nothing re-lays out per frame and Core Animation runs the motion
-in the render server. A terminal that changes size first covers itself with an
-IOSurface copy of its last frame, resizes its PTY once (ADR 0004; at most one
-per 50 ms while a key repeats), and shows the live surface again on the first
-fresh frame at the new size, or 250 ms after the motion at the latest. A
-change that arrives mid-motion starts from where every tile appears on screen.
+final frame at the start of a motion and Core Animation carries it there
+visually, so nothing re-lays out per frame. A terminal that changes size first
+covers itself with an IOSurface copy of its last frame, resizes its PTY once
+(ADR 0004; at most one per 50 ms while a key repeats), and shows the live
+surface again on the first fresh frame at the new size, or 250 ms after the
+motion at the latest. A change that arrives mid-motion starts from where every
+tile appears on screen.
+
+`style` picks what content does on the way:
+
+- `crop` (default): the tile's frame is a clip. Its bounds and position
+  animate; content stays at 1:1 and sticks to the edge that moves least, so
+  the moving edge reveals or cuts it off. A shrinking terminal shows its
+  snapshot at 1:1 until the motion ends; a growing one shows live content as
+  soon as it has drawn at the new size. New tiles sweep in with the divider,
+  closing tiles shrink away from the neighbour taking their space, and the
+  tall rotate cross-fades.
+- `scale`: a transform scales the whole tile, so text stretches mid-motion.
+- `outline`: tiles jump to their new place hidden, outlines move instead, and
+  content fades in over 80 ms at the end.
 
 ```toml
 [animation]
 enabled = true            # false: changes are instant
 duration_ms = 200         # 0–1000
 curve = "ease_out"        # "ease_out", "ease_in_out", "linear"
+style = "crop"            # "crop", "scale", "outline"
 tab_switch = "fade"       # tab and workspace switches: "fade", "slide", "none"
 dim_inactive = false      # dim tiles without focus
 reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on; "ignore"
@@ -83,7 +97,8 @@ reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on;
 Changes apply on save (config hot reload). `apps/macos/automation/anim.sh`
 runs a 60-animation stress on a dev instance (frame pacing from the display
 link, PTY resizes per motion, a capture after the stress); `--slow` runs
-1.5 s motions with mid-motion window captures. The app can't run
+1.5 s motions with mid-motion window captures. `AZJ_ANIM_STYLE=crop|scale|outline`
+runs one style regardless of the config. The app can't run
 `screencapture` itself, so `capture` lines drop a request the script takes.
 
 ## Layout of the code
@@ -95,7 +110,7 @@ link, PTY resizes per motion, a capture after the stress); `--slow` runs
 | `AppDelegate.swift` | `AppController`: windows, refresh from `session.get`, actions the shell resolves (switch tab N, last tab, cycling, renames) |
 | `WindowController.swift` | One window: sidebar, tab bar, tiles, HUD; persists its frame via `window.set_frame` |
 | `TileContainerView.swift` | Lays out the active tab's tree; keeps one view per tile across tabs and layout changes; focus ring; layout motion |
-| `Animation.swift` | `[animation]` settings, the motion transform, `MotionAware` (terminal freeze/reveal), frame clock, motion stats |
+| `Animation.swift` | `[animation]` settings, crop and scale geometry, `MotionAware` (terminal freeze/reveal), frame clock, motion stats |
 | `TileView.swift` | The `TileView` protocol and the placeholder tile |
 | `KeyRouter.swift` | Local keyDown monitor → `azj_core_key` → action, or pass through |
 | `MainMenu.swift` | Menus; shows each item's chord from the user's keymap |

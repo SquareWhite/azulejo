@@ -45,6 +45,7 @@ final class TileContainerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         addSubview(ring)
+        ring.layer?.zPosition = 2  // over moving tiles and outline ghosts
         clock.onChange = { [weak self] in self?.wake() }
     }
 
@@ -71,6 +72,7 @@ final class TileContainerView: NSView {
         let previousFocus = tab?.focused
         let tilesBefore = tab?.tiles.count ?? 0
         let zoomBefore = tab?.zoomed
+        let axisBefore = tab?.root.rootAxis
         finishLeaving()
 
         if switching, animate { addTabTransition(to: window) }
@@ -81,7 +83,7 @@ final class TileContainerView: NSView {
         for (id, view) in views where !alive.contains(id) {
             if animate, sameTab, view.superview === self, let from = before[id] {
                 // A closing terminal keeps a snapshot of its last frame to fade.
-                (view as? MotionAware)?.motionWillStart(freeze: true)
+                (view as? MotionAware)?.motionWillStart(freeze: true, fill: Motion.style == .scale)
                 closing.append((view, from))
             } else {
                 view.removeFromSuperview()
@@ -120,9 +122,12 @@ final class TileContainerView: NSView {
         }
 
         if animate && sameTab {
-            let kind = Self.kind(tilesBefore: tilesBefore, tilesAfter: tab?.tiles.count ?? 0,
+            var kind = Self.kind(tilesBefore: tilesBefore, tilesAfter: tab?.tiles.count ?? 0,
                                  zoomBefore: zoomBefore, zoomAfter: tab?.zoomed,
                                  focusChanged: previousFocus != tab?.focused)
+            if kind == "layout", let axisBefore, let after = tab?.root.rootAxis, after != axisBefore {
+                kind = "rotate"
+            }
             runMotion(kind: kind, before: before, appearing: appearing, created: created,
                       closing: closing, hiding: hiding,
                       ringBefore: ringBefore, focusChanged: previousFocus != tab?.focused, t0: t0)
@@ -190,10 +195,14 @@ final class TileContainerView: NSView {
                 // means it's there already, or on its way.
                 if !Self.close(view.frame, to) { movers.append((id, view, from, to, false)) }
             } else if created.contains(id) {
-                movers.append((id, view, growFrom(to: to, before: before, frames: frames), to, true))
+                let from = Motion.style == .scale
+                    ? growFrom(to: to, before: before, frames: frames)
+                    : sweepFrom(to: to, before: before, frames: frames)
+                movers.append((id, view, from, to, true))
             } else {
                 // Back on screen (unzoom): fade in where it belongs.
-                movers.append((id, view, to.insetBy(dx: to.width * 0.03, dy: to.height * 0.03), to, true))
+                let from = Motion.style == .scale ? to.insetBy(dx: to.width * 0.03, dy: to.height * 0.03) : to
+                movers.append((id, view, from, to, true))
             }
         }
         let layoutMoves = !movers.isEmpty || !closing.isEmpty || !hiding.isEmpty
@@ -209,10 +218,17 @@ final class TileContainerView: NSView {
         let retarget = CACurrentMediaTime() < motionEnds
         if retarget { MotionStats.shared.retargeted() } else { resizeCheck = [:]; resizeKind = kind }
         let duration = layoutMoves ? Motion.duration : Motion.focusDuration
+        let style = Motion.style
 
         // 1. Snapshot every terminal that ends at a new size, before it resizes.
+        //    Crop and outline keep it at 1:1, so note where it shows now.
+        var snapshotAt: [String: CGRect] = [:]
         for m in movers where !m.new && m.view.frame.size != m.to.size {
-            guard let aware = m.view as? MotionAware, aware.motionWillStart(freeze: true) else { continue }
+            guard let aware = m.view as? MotionAware else { continue }
+            let (frame, bounds) = geometry(m.view)
+            let shown = aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
+            guard aware.motionWillStart(freeze: true, fill: style == .scale) else { continue }
+            snapshotAt[m.id] = Motion.toContainer(shown, frame: frame, bounds: bounds, flipped: m.view.isFlipped)
             frozen[ObjectIdentifier(aware)] = aware
             if resizeCheck[m.id] == nil {
                 resizeCheck[m.id] = (aware.surfaceResizes, 0)
@@ -236,29 +252,29 @@ final class TileContainerView: NSView {
         // 3. Carry everything there visually.
         generation += 1
         let gen = generation
-        motionEnds = CACurrentMediaTime() + duration
+        let tail = style == .outline && layoutMoves ? Motion.outlineFade : 0
+        motionEnds = CACurrentMediaTime() + duration + tail
+        removeGhosts()
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen) }
         for m in movers {
             guard let layer = m.view.layer else { continue }
-            let group = CAAnimationGroup()
-            let move = CABasicAnimation(keyPath: "transform")
-            move.fromValue = NSValue(caTransform3D: Motion.transform(from: m.from, to: m.to, anchor: layer.anchorPoint))
-            move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-            group.animations = [move]
-            if m.new {
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = 0
-                fade.toValue = layer.opacity
-                group.animations?.append(fade)
+            switch style {
+            case .scale:
+                scaleMotion(layer, from: m.from, to: m.to, fadeIn: m.new, duration: duration)
+            case .crop where kind == "rotate":
+                crossFade(m.view, id: m.id, from: m.from, duration: duration)
+            case .crop:
+                cropMotion(m.view, id: m.id, from: m.from, to: m.to, fadeIn: m.new,
+                           snapshotAt: snapshotAt[m.id], duration: duration)
+            case .outline:
+                outlineMotion(m.view, id: m.id, from: m.from, to: m.to, duration: duration)
             }
-            Motion.configure(group, duration: duration)
-            layer.add(group, forKey: Self.motionKey)
             // The zoomed tile travels over its neighbours.
             layer.zPosition = tab?.zoomed == m.id ? 1 : 0
         }
-        for (view, from) in closing { leave(view, from: from, closed: true, duration: duration) }
-        for (view, from) in hiding { leave(view, from: from, closed: false, duration: duration) }
+        for (view, from) in closing { leave(view, from: from, closed: true, frames: frames, duration: duration) }
+        for (view, from) in hiding { leave(view, from: from, closed: false, frames: frames, duration: duration) }
         animateRing(from: ringBefore, duration: focusChanged || layoutMoves ? duration : 0)
         CATransaction.commit()
 
@@ -281,30 +297,245 @@ final class TileContainerView: NSView {
         return to.insetBy(dx: to.width * 0.04, dy: to.height * 0.04)
     }
 
-    /// Fades a tile out where it appears now, shrinking slightly, under the
-    /// rest; closed tiles go for good afterwards.
-    private func leave(_ view: NSView, from: CGRect, closed: Bool, duration: CFTimeInterval) {
+    /// Crop and outline: a new tile sweeps in with the divider. Its parent
+    /// gives up the space from its far edge, so the new tile grows from there.
+    private func sweepFrom(to: CGRect, before: [String: CGRect], frames: [String: CGRect]) -> CGRect {
+        let centre = CGPoint(x: to.midX, y: to.midY)
+        guard let parent = before.first(where: { $0.value.contains(centre) && frames[$0.key] != nil }),
+              let now = frames[parent.key]
+        else { return to }
+        let slack: CGFloat = Self.gap + 1
+        if now.maxX <= to.minX + slack { return CGRect(x: to.maxX, y: to.minY, width: 0, height: to.height) }
+        if now.minX >= to.maxX - slack { return CGRect(x: to.minX, y: to.minY, width: 0, height: to.height) }
+        if now.maxY <= to.minY + slack { return CGRect(x: to.minX, y: to.maxY, width: to.width, height: 0) }
+        if now.minY >= to.maxY - slack { return CGRect(x: to.minX, y: to.minY, width: to.width, height: 0) }
+        return to
+    }
+
+    /// Where a closing tile shrinks to: away from the neighbours that take
+    /// its space, so their edge sweeps over it. Nothing takes it: in place.
+    private func collapse(_ from: CGRect, frames: [String: CGRect]) -> CGRect {
+        let takers = frames.values.filter { $0.intersects(from) }
+        guard var u = takers.first else { return from }
+        for r in takers.dropFirst() { u = u.union(r) }
+        let left = u.minX < from.minX - 1, right = u.maxX > from.maxX + 1
+        let below = u.minY < from.minY - 1, above = u.maxY > from.maxY + 1
+        switch (left, right, below, above) {
+        case (true, false, _, _): return CGRect(x: from.maxX, y: from.minY, width: 0, height: from.height)
+        case (false, true, _, _): return CGRect(x: from.minX, y: from.minY, width: 0, height: from.height)
+        case (true, true, _, _): return CGRect(x: from.midX, y: from.minY, width: 0, height: from.height)
+        case (_, _, true, false): return CGRect(x: from.minX, y: from.maxY, width: from.width, height: 0)
+        case (_, _, false, true): return CGRect(x: from.minX, y: from.minY, width: from.width, height: 0)
+        case (_, _, true, true): return CGRect(x: from.minX, y: from.midY, width: from.width, height: 0)
+        default: return from
+        }
+    }
+
+    /// A view's frame and bounds as they show right now (mid-motion: the
+    /// presentation), in container and tile coordinates.
+    private func geometry(_ view: NSView) -> (frame: CGRect, bounds: CGRect) {
+        guard let layer = view.layer, layer.animation(forKey: Self.motionKey) != nil,
+              let p = layer.presentation()
+        else { return (view.frame, CGRect(origin: .zero, size: view.bounds.size)) }
+        return (p.frame, p.bounds)
+    }
+
+    /// Scale: a transform carries the tile from `from` (content stretches).
+    private func scaleMotion(_ layer: CALayer, from: CGRect, to: CGRect, fadeIn: Bool, duration: CFTimeInterval) {
+        let group = CAAnimationGroup()
+        let move = CABasicAnimation(keyPath: "transform")
+        move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: to, anchor: layer.anchorPoint))
+        move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        group.animations = [move]
+        if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
+        Motion.configure(group, duration: duration)
+        layer.add(group, forKey: Self.motionKey)
+    }
+
+    /// Crop: the tile's bounds and position animate, so its frame is a clip
+    /// over content at 1:1. Content sticks to the edge that moves least. A
+    /// frozen terminal's snapshot stays exactly where it shows now.
+    private func cropMotion(_ view: NSView, id: String, from: CGRect, to: CGRect, fadeIn: Bool,
+                            snapshotAt: CGRect?, duration: CFTimeInterval) {
+        guard let layer = view.layer else { return }
+        layer.masksToBounds = true
+        let anchor = Motion.anchors(from: from, to: to)
+        let flipped = view.isFlipped
+        let start = Motion.cropBounds(clip: from.size, content: to.size, anchor: anchor, flipped: flipped)
+        let end = CGRect(origin: .zero, size: to.size)
+        let group = CAAnimationGroup()
+        group.animations = clipAnimations(layer, from: from, fromBounds: start, to: to, toBounds: end)
+        if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
+        Motion.configure(group, duration: duration)
+        layer.add(group, forKey: Self.motionKey)
+
+        guard let aware = view as? MotionAware, let shown = snapshotAt else { return }
+        let picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
+        aware.placeSnapshot(picture, cover: start.union(end).union(picture))
+        // Growing: live content (laid out at the final size) is never
+        // stretched, so it can show as soon as it has drawn.
+        if to.width >= from.width - 0.5, to.height >= from.height - 0.5 {
+            aware.revealWhenFresh(clock: clock)
+        }
+    }
+
+    private func clipAnimations(_ layer: CALayer, from: CGRect, fromBounds: CGRect,
+                                to: CGRect, toBounds: CGRect) -> [CAAnimation] {
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: fromBounds)
+        bounds.toValue = NSValue(rect: toBounds)
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: Motion.position(of: from, anchorPoint: layer.anchorPoint))
+        position.toValue = NSValue(point: Motion.position(of: to, anchorPoint: layer.anchorPoint))
+        return [bounds, position]
+    }
+
+    private func fadeAnimation(from: Float, to: Float) -> CABasicAnimation {
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = to
+        return fade
+    }
+
+    /// Crop, tall rotate: sliding every tile across the tab looks wrong, so
+    /// the tile fades in at its new place (its snapshot at 1:1, top-left)
+    /// while a ghost of its last frame fades out at the old one.
+    private func crossFade(_ view: NSView, id: String, from: CGRect, duration: CFTimeInterval) {
+        guard let layer = view.layer else { return }
+        let fade = fadeAnimation(from: 0, to: layer.opacity)
+        Motion.configure(fade, duration: duration)
+        layer.add(fade, forKey: Self.motionKey)
+        guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { return }
+        let size = picture.size
+        let top = view.isFlipped ? 0 : view.bounds.height - size.height
+        aware.placeSnapshot(CGRect(x: 0, y: top, width: size.width, height: size.height), cover: view.bounds)
+        aware.revealWhenFresh(clock: clock)
+        if let contents = aware.snapshotContents {
+            let ghost = CALayer()
+            ghost.frame = CGRect(x: from.minX, y: from.maxY - size.height, width: size.width, height: size.height)
+            ghost.contents = contents
+            ghost.contentsGravity = .resize
+            ghost.contentsScale = window?.backingScaleFactor ?? 2
+            ghost.masksToBounds = true
+            ghost.cornerRadius = layer.cornerRadius
+            ghost.backgroundColor = layer.backgroundColor
+            ghost.zPosition = 0.5
+            ghost.opacity = 0
+            let out = fadeAnimation(from: 1, to: 0)
+            Motion.configure(out, duration: duration)
+            ghost.add(out, forKey: Self.motionKey)
+            addGhost(ghost, for: id)
+        }
+    }
+
+    /// Outline: the tile sits at its new place, hidden; an outline moves
+    /// there instead, and the content fades in at the end.
+    private func outlineMotion(_ view: NSView, id: String, from: CGRect, to: CGRect, duration: CFTimeInterval) {
+        guard let layer = view.layer else { return }
+        layer.add(hiddenUntilEnd(duration), forKey: Self.motionKey)
+        if let aware = view as? MotionAware, let picture = aware.snapshotFrame {
+            let top = view.isFlipped ? 0 : view.bounds.height - picture.height
+            aware.placeSnapshot(CGRect(x: 0, y: top, width: picture.width, height: picture.height), cover: view.bounds)
+        }
+        let ghost = outline(at: to)
+        let group = CAAnimationGroup()
+        group.animations = clipAnimations(ghost, from: from, fromBounds: CGRect(origin: .zero, size: from.size),
+                                          to: to, toBounds: CGRect(origin: .zero, size: to.size))
+        Motion.configure(group, duration: duration)
+        ghost.add(group, forKey: Self.motionKey)
+        addGhost(ghost, for: id)
+    }
+
+    /// Hidden for the motion, then an `outlineFade` fade in.
+    private func hiddenUntilEnd(_ duration: CFTimeInterval) -> CAAnimation {
+        let total = duration + Motion.outlineFade
+        let hide = CAKeyframeAnimation(keyPath: "opacity")
+        hide.values = [0, 0, 1]
+        hide.keyTimes = [0, NSNumber(value: duration / total), 1]
+        hide.duration = total
+        let rate = Motion.refreshRate
+        hide.preferredFrameRateRange = CAFrameRateRange(minimum: rate / 2, maximum: rate, preferred: rate)
+        return hide
+    }
+
+    /// A tile-shaped outline for outline motion.
+    private func outline(at frame: CGRect) -> CALayer {
+        let ghost = CALayer()
+        ghost.frame = frame
+        ghost.cornerRadius = 4
+        ghost.borderWidth = 1
+        ghost.borderColor = NSColor.tertiaryLabelColor.cgColor
+        ghost.backgroundColor = NSColor(calibratedWhite: 0.5, alpha: 0.10).cgColor
+        ghost.zPosition = 0.5
+        return ghost
+    }
+
+    /// Fades a tile out under the rest; closed tiles go for good afterwards.
+    /// Crop: its clip shrinks away from the neighbours taking its space.
+    /// Scale: it shrinks slightly. Outline: its outline does, content hidden.
+    private func leave(_ view: NSView, from: CGRect, closed: Bool, frames: [String: CGRect], duration: CFTimeInterval) {
         guard let layer = view.layer else {
             view.removeFromSuperview()
             return
         }
         layer.removeAnimation(forKey: Self.motionKey)
         let model = view.frame
-        let shrunk = from.insetBy(dx: from.width * 0.04, dy: from.height * 0.04)
-        let move = CABasicAnimation(keyPath: "transform")
-        move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: model, anchor: layer.anchorPoint))
-        move.toValue = NSValue(caTransform3D: Motion.transform(from: shrunk, to: model, anchor: layer.anchorPoint))
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = layer.opacity
-        fade.toValue = 0
+        let target = closed ? collapse(from, frames: frames) : from
         let group = CAAnimationGroup()
-        group.animations = [move, fade]
+        switch Motion.style {
+        case .scale:
+            let shrunk = from.insetBy(dx: from.width * 0.04, dy: from.height * 0.04)
+            let move = CABasicAnimation(keyPath: "transform")
+            move.fromValue = NSValue(caTransform3D: Motion.transform(from: from, to: model, anchor: layer.anchorPoint))
+            move.toValue = NSValue(caTransform3D: Motion.transform(from: shrunk, to: model, anchor: layer.anchorPoint))
+            group.animations = [move, fadeAnimation(from: layer.opacity, to: 0)]
+        case .crop:
+            let anchor = Motion.anchors(from: from, to: target)
+            let start = Motion.cropBounds(clip: from.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
+            let end = Motion.cropBounds(clip: target.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
+            group.animations = clipAnimations(layer, from: from, fromBounds: start, to: target, toBounds: end)
+                + [fadeAnimation(from: layer.opacity, to: 0) as CAAnimation]
+        case .outline:
+            group.animations = [fadeAnimation(from: 0, to: 0)]
+            if closed {
+                let ghost = outline(at: target)
+                let shrink = CAAnimationGroup()
+                shrink.animations = clipAnimations(
+                    ghost, from: from, fromBounds: CGRect(origin: .zero, size: from.size),
+                    to: target, toBounds: CGRect(origin: .zero, size: target.size))
+                    + [fadeAnimation(from: 1, to: 0) as CAAnimation]
+                shrink.fillMode = .forwards
+                shrink.isRemovedOnCompletion = false
+                Motion.configure(shrink, duration: duration)
+                ghost.add(shrink, forKey: Self.motionKey)
+                addGhost(ghost, for: nil)
+            }
+        }
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
         Motion.configure(group, duration: duration)
         layer.zPosition = -1
         layer.add(group, forKey: Self.motionKey)
         leaving.append((view, closed))
+    }
+
+    // MARK: Ghosts (outline motion, cross-fades)
+
+    private var ghosts: [CALayer] = []
+    /// Outline ghosts by tile, so a motion that retargets starts from where
+    /// the outline shows.
+    private var ghostByTile: [String: CALayer] = [:]
+
+    private func addGhost(_ ghost: CALayer, for id: String?) {
+        layer?.addSublayer(ghost)
+        ghosts.append(ghost)
+        if let id { ghostByTile[id] = ghost }
+    }
+
+    private func removeGhosts() {
+        for ghost in ghosts { ghost.removeFromSuperlayer() }
+        ghosts = []
+        ghostByTile = [:]
     }
 
     private func animateRing(from: CGRect?, duration: CFTimeInterval) {
@@ -335,7 +566,8 @@ final class TileContainerView: NSView {
     private func motionEnded(_ gen: Int) {
         guard gen == generation else { return }
         finishLeaving()
-        for view in subviews { view.layer?.zPosition = 0 }
+        removeGhosts()
+        for view in subviews where view !== ring { view.layer?.zPosition = 0 }
         for aware in frozen.values { aware.motionDidEnd(clock: clock) }
         frozen = [:]
         for (id, check) in resizeCheck {
@@ -350,10 +582,12 @@ final class TileContainerView: NSView {
     private func cancelMotion() {
         generation += 1
         motionEnds = 0
-        for view in subviews {
+        for view in subviews where view !== ring {
             view.layer?.removeAnimation(forKey: Self.motionKey)
             view.layer?.zPosition = 0
         }
+        ring.layer?.removeAnimation(forKey: Self.motionKey)
+        removeGhosts()
         finishLeaving()
         for aware in frozen.values { aware.motionCancelled() }
         frozen = [:]
@@ -418,7 +652,12 @@ final class TileContainerView: NSView {
     private func visualFrames() -> [String: CGRect] {
         var out: [String: CGRect] = [:]
         for (id, view) in views where view.superview === self {
-            out[id] = visual(view)
+            // Outline motion: the tile sits at its target; its outline shows.
+            if let ghost = ghostByTile[id], let p = ghost.presentation() {
+                out[id] = p.frame
+            } else {
+                out[id] = visual(view)
+            }
         }
         return out
     }
@@ -496,6 +735,14 @@ final class TileContainerView: NSView {
             onClickTile?(id)
         }
         super.mouseDown(with: event)
+    }
+}
+
+extension LayoutNode {
+    /// The axis of the top split; a tall rotate flips it.
+    var rootAxis: Axis? {
+        if case .split(let axis, _, _, _) = self { return axis }
+        return nil
     }
 }
 
