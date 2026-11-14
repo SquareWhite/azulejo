@@ -1,4 +1,5 @@
 import AppKit
+import IOSurface
 import GhosttyKit
 
 /// One libghostty surface: the user's Ghostty config, rendering on its own
@@ -131,11 +132,53 @@ final class TerminalSurfaceView: NSView {
     }
 
     /// Every size change reaches the PTY (and so the herdr pane) at once.
-    /// Animated layout (2.1) will resize once at the start of a motion.
+    /// During layout motion the tile sets this view's frame once, at the
+    /// start, while a snapshot covers it (ADR 0004).
     private func updateSurfaceSize() {
         guard let surface, bounds.width > 0, bounds.height > 0 else { return }
         let px = convertToBacking(NSRect(origin: .zero, size: bounds.size)).size
+        if px != lastPixelSize {
+            lastPixelSize = px
+            resizeCount += 1
+        }
         ghostty_surface_set_size(surface, UInt32(px.width), UInt32(px.height))
+    }
+
+    /// Times the surface (and so the PTY) changed pixel size; motion stats.
+    private(set) var resizeCount = 0
+    private(set) var lastPixelSize = CGSize.zero
+
+    // MARK: Snapshot
+
+    /// The IOSurface libghostty last presented (its layer's `contents`).
+    var presentedSurface: IOSurfaceRef? {
+        guard let c = layer?.contents else { return nil }
+        let cf = c as CFTypeRef
+        guard CFGetTypeID(cf) == IOSurfaceGetTypeID() else { return nil }
+        return (cf as! IOSurfaceRef)
+    }
+
+    /// A copy of the last presented frame. A copy because libghostty keeps
+    /// rendering into its swap chain; an IOSurface (not a CGImage) so Core
+    /// Animation shows it with no conversion at commit (1–2 ms, spike 0.5).
+    func snapshot() -> IOSurfaceRef? {
+        guard let src = presentedSurface else { return nil }
+        let w = IOSurfaceGetWidth(src), h = IOSurfaceGetHeight(src), bpr = IOSurfaceGetBytesPerRow(src)
+        guard w > 0, h > 0 else { return nil }
+        let props: [CFString: Any] = [
+            kIOSurfaceWidth: w, kIOSurfaceHeight: h,
+            kIOSurfaceBytesPerElement: IOSurfaceGetBytesPerElement(src),
+            kIOSurfaceBytesPerRow: bpr,
+            kIOSurfacePixelFormat: IOSurfaceGetPixelFormat(src),
+        ]
+        guard let dst = IOSurfaceCreate(props as CFDictionary) else { return nil }
+        if let cs = IOSurfaceCopyValue(src, kIOSurfaceColorSpace) { IOSurfaceSetValue(dst, kIOSurfaceColorSpace, cs) }
+        IOSurfaceLock(src, .readOnly, nil)
+        IOSurfaceLock(dst, [], nil)
+        memcpy(IOSurfaceGetBaseAddress(dst), IOSurfaceGetBaseAddress(src), bpr * h)
+        IOSurfaceUnlock(dst, [], nil)
+        IOSurfaceUnlock(src, .readOnly, nil)
+        return dst
     }
 
     // MARK: Keyboard

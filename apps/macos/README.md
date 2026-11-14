@@ -58,6 +58,34 @@ needs no Screen Recording permission. See the comment at the top of
 `Automation.swift` for the commands. Results land in `<out>/automation.log`
 and `<out>/result`.
 
+## Layout motion (F4, PLAN 2.1)
+
+Layout changes animate: split, close, move, swap, resize, zoom and the tall
+actions, plus the focus ring and tab/workspace switches. Every tile goes to its
+final frame at the start of a motion and a transform animation carries it there
+visually, so nothing re-lays out per frame and Core Animation runs the motion
+in the render server. A terminal that changes size first covers itself with an
+IOSurface copy of its last frame, resizes its PTY once (ADR 0004; at most one
+per 50 ms while a key repeats), and shows the live surface again on the first
+fresh frame at the new size, or 250 ms after the motion at the latest. A
+change that arrives mid-motion starts from where every tile appears on screen.
+
+```toml
+[animation]
+enabled = true            # false: changes are instant
+duration_ms = 200         # 0–1000
+curve = "ease_out"        # "ease_out", "ease_in_out", "linear"
+tab_switch = "fade"       # tab and workspace switches: "fade", "slide", "none"
+dim_inactive = false      # dim tiles without focus
+reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on; "ignore"
+```
+
+Changes apply on save (config hot reload). `apps/macos/automation/anim.sh`
+runs a 60-animation stress on a dev instance (frame pacing from the display
+link, PTY resizes per motion, a capture after the stress); `--slow` runs
+1.5 s motions with mid-motion window captures. The app can't run
+`screencapture` itself, so `capture` lines drop a request the script takes.
+
 ## Layout of the code
 
 | File | What |
@@ -66,7 +94,8 @@ and `<out>/result`.
 | `Core.swift` | C ABI wrapper: `send`, `execute` (replies), `key`, `action`, `keymap`, `info`; events hop to the main queue |
 | `AppDelegate.swift` | `AppController`: windows, refresh from `session.get`, actions the shell resolves (switch tab N, last tab, cycling, renames) |
 | `WindowController.swift` | One window: sidebar, tab bar, tiles, HUD; persists its frame via `window.set_frame` |
-| `TileContainerView.swift` | Lays out the active tab's tree; keeps one view per tile across tabs and layout changes; focus ring |
+| `TileContainerView.swift` | Lays out the active tab's tree; keeps one view per tile across tabs and layout changes; focus ring; layout motion |
+| `Animation.swift` | `[animation]` settings, the motion transform, `MotionAware` (terminal freeze/reveal), frame clock, motion stats |
 | `TileView.swift` | The `TileView` protocol and the placeholder tile |
 | `KeyRouter.swift` | Local keyDown monitor → `azj_core_key` → action, or pass through |
 | `MainMenu.swift` | Menus; shows each item's chord from the user's keymap |

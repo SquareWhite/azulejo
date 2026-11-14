@@ -429,6 +429,29 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
     out(json!({"platform": platform.name(), "prefix": prefix, "bindings": bindings}))
 }
 
+/// The current `[animation]` settings, as JSON: `{"enabled":true,
+/// "duration_ms":200,"curve":"ease_out","tab_switch":"fade",
+/// "dim_inactive":false,"reduce_motion":"system"}`. Follows config reloads.
+/// Free with `azj_string_free`; NULL on a bad handle.
+///
+/// # Safety
+/// `core` must come from `azj_core_new*` and not be freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
+        return std::ptr::null_mut();
+    };
+    let a = app.config().animation;
+    out(json!({
+        "enabled": a.enabled,
+        "duration_ms": a.duration_ms,
+        "curve": a.curve.name(),
+        "tab_switch": a.tab_switch.name(),
+        "dim_inactive": a.dim_inactive,
+        "reduce_motion": a.reduce_motion.name(),
+    }))
+}
+
 fn failure(code: &str, message: &str) -> Value {
     json!({"ok": false, "error": {"code": code, "message": message}})
 }
@@ -658,6 +681,13 @@ mod tests {
                 Value::Null,
                 "prefix mode is off by default"
             );
+
+            let animation = take(azj_core_animation(core));
+            assert_eq!(animation["enabled"], true);
+            assert_eq!(animation["duration_ms"], 200);
+            assert_eq!(animation["curve"], "ease_out");
+            assert_eq!(animation["tab_switch"], "fade");
+            assert_eq!(animation["reduce_motion"], "system");
             azj_core_free(core);
         }
     }

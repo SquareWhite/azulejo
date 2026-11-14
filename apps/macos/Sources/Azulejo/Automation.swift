@@ -21,6 +21,15 @@ import AppKit
 ///     tile verb [arg]        hand a verb to the focused tile (AutomatableTile)
 ///     until key value [ms]   wait until `expect key value` holds (default 5000)
 ///                            tile kinds add `tile.*` keys to expect/until
+///     anim duration MS       slow (or speed up) layout motion; `default` resets
+///     anim enabled BOOL      force motion on or off; `default` follows config
+///     anim reset             clear motion stats
+///     anim stats [name]      write motion stats → <out>/name.json (anim-stats)
+///     anim expect-clean [N]  fail if more than N (default 0) frames dropped, or
+///                            PTY resizes ≠ one per terminal per motion
+///     capture name [ms]      after ms, ask the harness to `screencapture` the
+///                            window → <out>/name.png (Metal and in-flight
+///                            motion included, unlike `shot`)
 ///     quit                   finish (implied at the end)
 ///
 /// Writes `<out>/automation.log` (every step with the layout after it) and
@@ -81,6 +90,8 @@ final class Automation {
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
         case "until": return until(arg)
+        case "anim": animCommand(arg); delay = 0
+        case "capture": capture(arg); delay = 0
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
@@ -145,6 +156,52 @@ final class Automation {
         } catch {
             failures.append("line \(step): shot \(name): \(error)")
         }
+    }
+
+    private func animCommand(_ arg: String) {
+        let parts = arg.split(separator: " ").map(String.init)
+        let value = parts.count > 1 ? parts[1] : ""
+        switch parts.first ?? "" {
+        case "duration":
+            Motion.durationOverride = value == "default" ? nil : (Double(value) ?? 200) / 1000
+        case "enabled":
+            Motion.enabledOverride = value == "default" ? nil : value == "true"
+        case "reset":
+            MotionStats.shared.reset()
+        case "stats":
+            let summary = MotionStats.shared.summary()
+            let name = value.isEmpty ? "anim-stats" : value
+            if let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: out.appendingPathComponent("\(name).json"))
+            }
+            record("anim stats: \(summary.filter { $0.key != "resize_mismatches" })")
+        case "expect-clean":
+            let summary = MotionStats.shared.summary()
+            let dropped = summary["dropped_frames"] as? Int ?? -1
+            let mismatches = summary["resize_mismatches"] as? [String] ?? []
+            let allowed = Int(value) ?? 0
+            if dropped > allowed { failures.append("line \(step): \(dropped) dropped frame(s), allowed \(allowed)") }
+            if !mismatches.isEmpty { failures.append("line \(step): \(mismatches.joined(separator: ", "))") }
+        default:
+            failures.append("line \(step): anim needs duration|enabled|reset|stats|expect-clean")
+        }
+        record("anim \(arg)")
+    }
+
+    /// A window capture by the system (Metal layers and running animations
+    /// included). The app can't run `screencapture` itself (no Screen
+    /// Recording permission), so it drops a request in `<out>/.capture/` for
+    /// the harness to take (apps/macos/automation/anim.sh watches it).
+    private func capture(_ arg: String) {
+        let parts = arg.split(separator: " ").map(String.init)
+        guard let name = parts.first else { return }
+        let delay = parts.count > 1 ? (Double(parts[1]) ?? 0) / 1000 : 0
+        let dir = out.appendingPathComponent(".capture", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            try? Data().write(to: dir.appendingPathComponent(name), options: .atomic)
+        }
+        record("capture \(name) +\(Int(delay * 1000)) ms")
     }
 
     private func expect(_ arg: String) {

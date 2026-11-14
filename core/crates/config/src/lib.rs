@@ -24,6 +24,10 @@
 //! [animation]
 //! enabled = true
 //! duration_ms = 200
+//! curve = "ease_out"     # or "ease_in_out", "linear"
+//! tab_switch = "fade"    # tab/workspace switches: "fade", "slide" or "none"
+//! dim_inactive = false   # dim tiles without focus
+//! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
 //!
 //! [herdr]
 //! session = "default"    # herdr session for terminal tiles: "default" (herdr's own) or a name
@@ -62,6 +66,10 @@ pub const DEFAULT_KEYMAP: &str = include_str!("../../../../shared/config/keymap.
 pub struct Animation {
     pub enabled: bool,
     pub duration_ms: u32,
+    pub curve: Curve,
+    pub tab_switch: TabSwitch,
+    pub dim_inactive: bool,
+    pub reduce_motion: ReduceMotion,
 }
 
 impl Animation {
@@ -73,9 +81,55 @@ impl Default for Animation {
         Animation {
             enabled: true,
             duration_ms: 200,
+            curve: Curve::EaseOut,
+            tab_switch: TabSwitch::Fade,
+            dim_inactive: false,
+            reduce_motion: ReduceMotion::System,
         }
     }
 }
+
+/// The timing curve of layout motion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Curve {
+    EaseOut,
+    EaseInOut,
+    Linear,
+}
+
+/// How switching tab or workspace looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabSwitch {
+    Fade,
+    Slide,
+    None,
+}
+
+/// Whether the OS "reduce motion" setting turns animation off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReduceMotion {
+    /// Follow the OS: no motion while it asks for reduced motion.
+    System,
+    /// Animate anyway.
+    Ignore,
+}
+
+macro_rules! named {
+    ($ty:ident { $($variant:ident = $name:literal),+ $(,)? }) => {
+        impl $ty {
+            pub const NAMES: &[&str] = &[$($name),+];
+            pub fn name(self) -> &'static str {
+                match self { $($ty::$variant => $name),+ }
+            }
+            pub fn from_name(name: &str) -> Option<$ty> {
+                match name { $($name => Some($ty::$variant),)+ _ => None }
+            }
+        }
+    };
+}
+named!(Curve { EaseOut = "ease_out", EaseInOut = "ease_in_out", Linear = "linear" });
+named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
+named!(ReduceMotion { System = "system", Ignore = "ignore" });
 
 /// Which herdr session terminal tiles live in (ADR 0008).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,9 +306,37 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
         sink.error(value.span(), "`animation` must be a table");
         return;
     };
+    fn choice<T: Copy>(
+        sink: &mut Sink<'_>,
+        value: &toml::Spanned<DeValue<'_>>,
+        key: &str,
+        names: &[&str],
+        parse: fn(&str) -> Option<T>,
+        out: &mut T,
+    ) {
+        let found = match value.get_ref() {
+            DeValue::String(s) => parse(s.as_ref()),
+            _ => None,
+        };
+        match found {
+            Some(v) => *out = v,
+            None => sink.error(
+                value.span(),
+                format!(
+                    "`animation.{key}` must be one of {}",
+                    names
+                        .iter()
+                        .map(|n| format!("\"{n}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ),
+        }
+    }
     for (key, value) in table.iter() {
         match (key.get_ref().as_ref(), value.get_ref()) {
             ("enabled", DeValue::Boolean(b)) => out.enabled = *b,
+            ("dim_inactive", DeValue::Boolean(b)) => out.dim_inactive = *b,
             ("duration_ms", DeValue::Integer(i)) => {
                 match i64::from_str_radix(i.as_str(), i.radix()) {
                     Ok(ms) if (0..=i64::from(Animation::MAX_DURATION_MS)).contains(&ms) => {
@@ -269,7 +351,35 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                     ),
                 }
             }
+            ("curve", _) => choice(
+                sink,
+                value,
+                "curve",
+                Curve::NAMES,
+                Curve::from_name,
+                &mut out.curve,
+            ),
+            ("tab_switch", _) => choice(
+                sink,
+                value,
+                "tab_switch",
+                TabSwitch::NAMES,
+                TabSwitch::from_name,
+                &mut out.tab_switch,
+            ),
+            ("reduce_motion", _) => choice(
+                sink,
+                value,
+                "reduce_motion",
+                ReduceMotion::NAMES,
+                ReduceMotion::from_name,
+                &mut out.reduce_motion,
+            ),
             ("enabled", _) => sink.error(value.span(), "`animation.enabled` must be true or false"),
+            ("dim_inactive", _) => sink.error(
+                value.span(),
+                "`animation.dim_inactive` must be true or false",
+            ),
             ("duration_ms", _) => sink.error(
                 value.span(),
                 "`animation.duration_ms` must be a whole number",
