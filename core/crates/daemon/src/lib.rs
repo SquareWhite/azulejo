@@ -2,11 +2,12 @@
 //! API server. The macOS shell gets this through the C ABI (`azj_core_new`);
 //! `azulejod` runs it headless for development and end-to-end tests.
 //!
-//! herdr runs in a dedicated named session, `azulejo` by default
-//! (ADR 0007): Azulejo starts that server itself, so its panes get a clean
-//! environment (ADR 0006), and Azulejo never adopts or closes panes in a herdr
-//! TUI the user runs by hand. `[herdr] session = "default"` opts into herdr's
-//! default session instead.
+//! By default Azulejo connects to herdr's default session, the one the user's
+//! own herdr TUI and phone use (ADR 0008), and adopts what already runs
+//! there. If that server isn't running, Azulejo starts it with a clean
+//! environment (ADR 0006); a server the user started keeps whatever
+//! environment it was started with. `[herdr] session = "NAME"` picks a named
+//! session instead.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -334,8 +335,14 @@ mod tests {
     fn config_picks_the_herdr_session() {
         assert_eq!(
             herdr_session(&HerdrConfig::default()),
-            Some(HerdrSession::named("azulejo"))
+            Some(HerdrSession::default_session()),
+            "the user's own herdr session by default (ADR 0008)"
         );
+        let named = HerdrConfig {
+            enabled: true,
+            session: Some("azulejo".into()),
+        };
+        assert_eq!(herdr_session(&named), Some(HerdrSession::named("azulejo")));
         let off = HerdrConfig {
             enabled: false,
             ..HerdrConfig::default()

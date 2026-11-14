@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::ModelError;
 use crate::ids::{TabId, TileId, WindowId, WorkspaceId};
 use crate::layout::{Direction, Node};
-use crate::tile::Tile;
+use crate::tile::{HerdrRef, Tile};
 
 /// A tab: one layout tree. A tab always holds at least one tile; closing its
 /// last tile closes the tab.
@@ -91,6 +91,11 @@ pub struct Session {
     /// `None` exactly when there are no windows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focused_window: Option<WindowId>,
+    /// herdr panes whose tiles were closed here. Adoption skips them, so a
+    /// closed (detached) tile doesn't come back on the next relaunch. Pruned
+    /// once herdr no longer has the pane.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detached_herdr: Vec<HerdrRef>,
 }
 
 /// Where the user's focus is. Inner fields are `None` when that level is empty.
@@ -478,6 +483,29 @@ impl Session {
             tab: ws.tabs.len() - 1,
         };
         self.activate(p);
+        Ok(id)
+    }
+
+    /// Adds a ready-made tab (e.g. one adopted from herdr) to `workspace`
+    /// without moving focus, unless the workspace had no tabs. The tab must
+    /// be well formed and its IDs new.
+    pub fn insert_tab(&mut self, workspace: WorkspaceId, tab: Tab) -> Result<TabId, ModelError> {
+        let (wi, si) = self.workspace_index(workspace)?;
+        let mut seen: HashSet<TileId> = self.tiles().map(|(_, t)| t.id).collect();
+        let fresh_tab = self.tab_index(tab.id).is_err();
+        if !fresh_tab {
+            return Err(ModelError::InvalidValue(format!(
+                "tab {} already exists",
+                tab.id
+            )));
+        }
+        check_tab(&tab, &mut seen).map_err(ModelError::InvalidValue)?;
+        let id = tab.id;
+        let ws = &mut self.windows[wi].workspaces[si];
+        ws.tabs.push(tab);
+        if ws.active_tab.is_none() {
+            ws.active_tab = Some(id);
+        }
         Ok(id)
     }
 

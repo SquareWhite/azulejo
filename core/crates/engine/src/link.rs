@@ -19,7 +19,7 @@ use azulejo_model::{HerdrRef, Session, Tile, TileContent, TileId, WorkspaceId};
 use azulejo_protocol::{Command, Event, TerminalBind, WorkspaceBind};
 use tokio::sync::mpsc;
 
-use crate::{Engine, diff};
+use crate::{Engine, adopt, diff};
 
 /// What the engine needs from herdr. [`herdr::Client`] implements it; tests
 /// use a fake.
@@ -41,6 +41,9 @@ pub trait HerdrPort: Send + Sync + 'static {
         &self,
         stored: herdr::TerminalRef,
     ) -> impl Future<Output = Result<herdr::Resolved, String>> + Send;
+
+    /// What herdr is running, for adoption (ADR 0008). Must only read.
+    fn survey(&self) -> impl Future<Output = Result<herdr::Survey, String>> + Send;
 
     /// herdr's lifecycle events. Called once, inside the runtime.
     fn events(&self) -> mpsc::Receiver<herdr::StreamItem>;
@@ -109,6 +112,10 @@ impl HerdrPort for herdr::Client {
         herdr::Client::reresolve(self, &stored)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn survey(&self) -> Result<herdr::Survey, String> {
+        herdr::Client::survey(self).await.map_err(|e| e.to_string())
     }
 
     async fn send_text(&self, pane_id: String, text: String) -> Result<(), String> {
@@ -183,6 +190,8 @@ pub enum Effect {
         stored: HerdrRef,
         herdr_workspace: Option<String>,
     },
+    /// Read what herdr runs, to adopt tabs nobody here knows (ADR 0008).
+    Survey,
 }
 
 /// Results fed back to the engine. Not part of the public API.
@@ -200,6 +209,10 @@ pub enum Internal {
     MarkEnded {
         tile: TileId,
     },
+    /// What herdr runs; adopt what's new.
+    Surveyed(Box<herdr::Survey>),
+    /// The survey failed (logged); nothing to adopt this time.
+    SurveyFailed,
 }
 
 impl Engine {
@@ -233,6 +246,19 @@ impl Engine {
                     _ => return Vec::new(),
                 }
                 diff(&before, &self.session, false)
+            }
+            Internal::Surveyed(survey) => {
+                let before = self.session.clone();
+                let placeholder = self.placeholder.take();
+                if !adopt::adopt(&mut self.session, &survey, placeholder) {
+                    return Vec::new();
+                }
+                debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                diff(&before, &self.session, false)
+            }
+            Internal::SurveyFailed => {
+                self.placeholder = None;
+                Vec::new()
             }
         }
     }
@@ -326,10 +352,14 @@ fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
 pub struct Reaction {
     pub internals: Vec<Internal>,
     pub effects: Vec<Effect>,
+    /// herdr has new or possibly missed tabs: survey and adopt (ADR 0008).
+    pub survey: bool,
 }
 
-/// Matches herdr events to bound tiles. Panes herdr creates on its own
-/// (phone, CLI, agents) aren't adopted yet: that's PLAN step 2.7.
+/// Matches herdr events to bound tiles. New herdr workspaces and tabs (from
+/// the user's herdr TUI, a phone, the CLI) ask for a survey, which adopts
+/// them; panes split off inside a tab already shown here aren't adopted yet:
+/// that's PLAN step 2.7.
 pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
     use herdr::HerdrEvent as E;
     let mut reaction = Reaction::default();
@@ -358,8 +388,10 @@ pub fn reconcile(item: &herdr::StreamItem, session: &Session) -> Reaction {
                 .into_iter()
                 .filter(|e| matches!(e, Effect::Reresolve { .. }))
                 .collect();
+            reaction.survey = true;
         }
         herdr::StreamItem::Event(event) => match event {
+            E::WorkspaceCreated(_) | E::TabCreated(_) => reaction.survey = true,
             E::PaneClosed { pane_id, .. } | E::PaneExited { pane_id, .. } => {
                 end_where(&mut reaction, &|h| h.pane_id == pane_id.as_str());
             }
@@ -516,6 +548,13 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     Err(e) => log(format!("herdr: checking tile {tile}: {e}")),
                 }
             }
+            Effect::Survey => match port.survey().await {
+                Ok(survey) => out(Internal::Surveyed(Box::new(survey))),
+                Err(e) => {
+                    log(format!("herdr: reading its workspaces: {e}"));
+                    out(Internal::SurveyFailed);
+                }
+            },
         }
     }
 }

@@ -1984,6 +1984,13 @@
     "Session": {
       "description": "Everything the app shows.",
       "properties": {
+        "detached_herdr": {
+          "description": "herdr panes whose tiles were closed here. Adoption skips them, so a\nclosed (detached) tile doesn't come back on the next relaunch. Pruned\nonce herdr no longer has the pane.",
+          "items": {
+            "$ref": "#/$defs/HerdrRef"
+          },
+          "type": "array"
+        },
         "focused_window": {
           "anyOf": [
             {

@@ -31,6 +31,10 @@ struct FakeState {
     scrolled: Vec<(String, u64)>,
     /// Makes every terminal I/O call fail, as when herdr is down.
     down: bool,
+    /// What the user already runs in herdr before Azulejo connects.
+    existing: herdr::Survey,
+    /// Every herdr call, by name, in order.
+    calls: Vec<&'static str>,
 }
 
 #[derive(Clone, Default)]
@@ -44,6 +48,38 @@ impl Fake {
     fn send(&self, item: herdr::StreamItem) {
         let tx = self.state().events.clone().expect("subscribed");
         tx.blocking_send(item).unwrap();
+    }
+
+    /// A herdr that already runs `existing`.
+    fn with_existing(existing: herdr::Survey) -> Fake {
+        let fake = Fake::default();
+        {
+            let mut s = fake.state();
+            for p in &existing.panes {
+                s.panes.push(p.terminal_ref());
+            }
+            for w in &existing.workspaces {
+                s.workspaces.push(w.workspace_id.0.clone());
+            }
+            // Keep IDs Azulejo makes clear of the existing ones.
+            s.next = 100;
+            s.created_workspaces = 100;
+            s.existing = existing;
+        }
+        fake
+    }
+
+    /// herdr calls that change something.
+    fn mutations(&self) -> Vec<&'static str> {
+        let s = self.state();
+        let mut out: Vec<&'static str> = s
+            .calls
+            .iter()
+            .copied()
+            .filter(|c| !matches!(*c, "survey" | "reresolve" | "ensure_workspace(existing)"))
+            .collect();
+        out.dedup();
+        out
     }
 }
 
@@ -83,11 +119,13 @@ impl HerdrPort for Fake {
         if let Some(id) = existing
             && s.workspaces.contains(&id)
         {
+            s.calls.push("ensure_workspace(existing)");
             return Ok(herdr::EnsuredWorkspace {
                 workspace: info(&id),
                 created_terminal: None,
             });
         }
+        s.calls.push("ensure_workspace(create)");
         s.created_workspaces += 1;
         let id = format!("w{}", s.created_workspaces);
         s.workspaces.push(id.clone());
@@ -104,6 +142,7 @@ impl HerdrPort for Fake {
         spec: herdr::TerminalSpec,
     ) -> Result<herdr::TerminalRef, String> {
         let mut s = self.state();
+        s.calls.push("create_terminal");
         if !s.workspaces.contains(&spec.workspace_id.0) {
             return Err(format!("no workspace {}", spec.workspace_id));
         }
@@ -114,13 +153,15 @@ impl HerdrPort for Fake {
 
     async fn kill_terminal(&self, pane_id: String) -> Result<(), String> {
         let mut s = self.state();
+        s.calls.push("kill_terminal");
         s.panes.retain(|p| p.pane_id.0 != pane_id);
         s.killed.push(pane_id);
         Ok(())
     }
 
     async fn reresolve(&self, stored: herdr::TerminalRef) -> Result<herdr::Resolved, String> {
-        let s = self.state();
+        let mut s = self.state();
+        s.calls.push("reresolve");
         if let Some(r) = s.resolve.get(&stored.terminal_id.0) {
             return Ok(r.clone());
         }
@@ -130,6 +171,43 @@ impl HerdrPort for Fake {
                 None => herdr::Resolved::Gone,
             },
         )
+    }
+
+    async fn survey(&self) -> Result<herdr::Survey, String> {
+        let mut s = self.state();
+        s.calls.push("survey");
+        let mut survey = s.existing.clone();
+        survey
+            .panes
+            .retain(|p| s.panes.iter().any(|t| t.terminal_id == p.terminal_id));
+        for t in &s.panes {
+            if survey.panes.iter().any(|p| p.terminal_id == t.terminal_id) {
+                continue;
+            }
+            survey.panes.push(pane_info(t));
+            if !survey.tabs.iter().any(|tab| tab.tab_id == t.tab_id) {
+                survey.tabs.push(
+                    serde_json::from_value(json!({
+                        "tab_id": t.tab_id,
+                        "workspace_id": t.workspace_id,
+                    }))
+                    .unwrap(),
+                );
+            }
+            if !survey
+                .workspaces
+                .iter()
+                .any(|w| w.workspace_id == t.workspace_id)
+            {
+                survey.workspaces.push(
+                    serde_json::from_value(json!({ "workspace_id": t.workspace_id })).unwrap(),
+                );
+            }
+        }
+        survey
+            .tabs
+            .retain(|tab| survey.panes.iter().any(|p| p.tab_id == tab.tab_id));
+        Ok(survey)
     }
 
     fn events(&self) -> tmpsc::Receiver<herdr::StreamItem> {
@@ -711,4 +789,113 @@ fn herdr_socket_comes_from_the_port() {
     assert_eq!(core.herdr_socket(), None);
     let core = Core::start(opts(None));
     assert_eq!(core.herdr_socket(), None);
+}
+
+// ----- adoption (ADR 0008) -----
+
+fn adopted(s: &Session) -> usize {
+    terminals(s).iter().filter(|(_, h, _)| h.is_some()).count()
+}
+
+/// Waits until every bound tile has been re-checked once (restore ran).
+fn wait_for_calls(fake: &Fake, call: &str, n: usize) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.state().calls.iter().filter(|c| **c == call).count() < n {
+        assert!(Instant::now() < deadline, "calls: {:?}", fake.state().calls);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn adopting_and_restoring_never_change_herdr() {
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let session = wait_until(&core, |s| adopted(s) == 6);
+    wait_for_calls(&fake, "reresolve", 6);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(fake.mutations(), Vec::<&str>::new());
+    assert_eq!(fake.state().calls[0], "survey", "adoption comes first");
+    assert_eq!(session.windows[0].workspaces.len(), 2, "no placeholder");
+    core.shutdown();
+
+    // Relaunch from saved state: still nothing but reads.
+    let dir = std::env::temp_dir().join(format!("azj-adopt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let state = dir.join("state.json");
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(Some(state.clone())), fake.clone());
+    let first = wait_until(&core, |s| adopted(s) == 6);
+    wait_for_calls(&fake, "reresolve", 6);
+    core.shutdown();
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(Some(state)), fake.clone());
+    wait_for_calls(&fake, "reresolve", 6);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        core.session().unwrap(),
+        first,
+        "same session, no duplicates"
+    );
+    assert_eq!(fake.mutations(), Vec::<&str>::new());
+    core.shutdown();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_empty_herdr_still_gets_the_first_terminal() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    wait_until(&core, all_bound);
+    let s = fake.state();
+    assert_eq!(s.calls[0], "survey");
+    assert_eq!(s.created_workspaces, 1);
+}
+
+#[test]
+fn new_herdr_tabs_are_adopted_and_detached_ones_stay_out() {
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    wait_until(&core, |s| adopted(s) == 6);
+
+    // The user opens a tab in their herdr TUI.
+    let pane: herdr::PaneInfo = serde_json::from_value(json!({
+        "pane_id": "w2:p7", "terminal_id": "term_tui", "workspace_id": "w2", "tab_id": "w2:t7"
+    }))
+    .unwrap();
+    let tab: herdr::TabInfo =
+        serde_json::from_value(json!({ "tab_id": "w2:t7", "workspace_id": "w2", "number": 7 }))
+            .unwrap();
+    {
+        let mut s = fake.state();
+        s.panes.push(pane.terminal_ref());
+        s.existing.panes.push(pane);
+        s.existing.tabs.push(tab.clone());
+    }
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::TabCreated(tab)));
+    let session = wait_until(&core, |s| adopted(s) == 7);
+    let tile = session
+        .tiles()
+        .find(|(_, t)| {
+            matches!(&t.content, TileContent::Terminal { herdr: Some(h), .. } if h.pane_id == "w2:p7")
+        })
+        .map(|(_, t)| t.id)
+        .unwrap();
+
+    // Closing it here detaches; a resync doesn't bring it back.
+    core.execute(Command::TileClose(TileClose {
+        tile: Some(tile),
+        kill: false,
+    }))
+    .unwrap();
+    fake.send(herdr::StreamItem::Resync);
+    let surveys = fake
+        .state()
+        .calls
+        .iter()
+        .filter(|c| **c == "survey")
+        .count();
+    wait_for_calls(&fake, "survey", surveys + 1);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(adopted(&core.session().unwrap()), 6);
+    assert_eq!(fake.mutations(), Vec::<&str>::new());
 }

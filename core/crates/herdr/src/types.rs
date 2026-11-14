@@ -146,11 +146,77 @@ pub struct Snapshot {
     pub version: String,
     pub protocol: u32,
     #[serde(default)]
+    pub focused_workspace_id: Option<WorkspaceId>,
+    #[serde(default)]
     pub workspaces: Vec<WorkspaceInfo>,
     #[serde(default)]
     pub tabs: Vec<TabInfo>,
     #[serde(default)]
     pub panes: Vec<PaneInfo>,
+}
+
+/// Which way a herdr split places its second child.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitDirection {
+    /// `second` sits to the right of `first`.
+    Right,
+    /// `second` sits below `first`.
+    Down,
+}
+
+/// One node of a herdr tab's split tree, from `layout.export`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LayoutNode {
+    Pane {
+        #[serde(default)]
+        pane_id: Option<PaneId>,
+    },
+    Split {
+        direction: SplitDirection,
+        /// Share of the space given to `first`.
+        ratio: f64,
+        first: Box<LayoutNode>,
+        second: Box<LayoutNode>,
+    },
+}
+
+impl LayoutNode {
+    /// Pane IDs at the leaves, left to right.
+    pub fn panes(&self) -> Vec<&PaneId> {
+        match self {
+            LayoutNode::Pane { pane_id } => pane_id.iter().collect(),
+            LayoutNode::Split { first, second, .. } => {
+                let mut out = first.panes();
+                out.extend(second.panes());
+                out
+            }
+        }
+    }
+}
+
+/// A tab's split tree, from `layout.export`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TabLayout {
+    pub workspace_id: WorkspaceId,
+    pub tab_id: TabId,
+    #[serde(default)]
+    pub zoomed: bool,
+    #[serde(default)]
+    pub focused_pane_id: Option<PaneId>,
+    pub root: LayoutNode,
+}
+
+/// A read-only picture of a herdr server: the snapshot plus the split tree of
+/// every tab with more than one pane. What Azulejo adopts from (ADR 0008).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Survey {
+    pub workspaces: Vec<WorkspaceInfo>,
+    pub tabs: Vec<TabInfo>,
+    pub panes: Vec<PaneInfo>,
+    pub layouts: Vec<TabLayout>,
+    pub focused_workspace_id: Option<WorkspaceId>,
 }
 
 /// What `ping` reports.

@@ -1,6 +1,8 @@
 # 0002: One herdr tab per terminal tile
 
-Status: accepted · Nov 3, 2026 · Gate G0
+Status: accepted · Nov 3, 2026 · Gate G0 · amended by [0008](0008-use-the-users-herdr-session.md)
+
+> Amended by ADR 0008: herdr tabs that already exist are adopted whole, so an adopted tab can hold several tiles mirroring herdr's splits. Tiles Azulejo creates still get one herdr tab each.
 
 ## Context
 

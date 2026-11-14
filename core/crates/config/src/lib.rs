@@ -26,7 +26,7 @@
 //! duration_ms = 200
 //!
 //! [herdr]
-//! session = "azulejo"    # herdr session for terminal tiles; "default" = herdr's own
+//! session = "default"    # herdr session for terminal tiles: "default" (herdr's own) or a name
 //! enabled = true         # false: terminal tiles stay unbound (no herdr)
 //! ```
 
@@ -71,18 +71,16 @@ impl Default for Animation {
     }
 }
 
-/// Which herdr session terminal tiles live in (ADR 0007).
+/// Which herdr session terminal tiles live in (ADR 0008).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HerdrConfig {
     pub enabled: bool,
-    /// The session name. `None` means herdr's default session.
+    /// The session name. `None`, the default, means herdr's default session:
+    /// the one the user's own `herdr` TUI and phone use.
     pub session: Option<String>,
 }
 
 impl HerdrConfig {
-    /// Azulejo's own named session, so it never shares a server with a herdr
-    /// TUI the user runs by hand.
-    pub const DEFAULT_SESSION: &str = "azulejo";
     /// What `session = "default"` means: herdr's default session.
     pub const HERDR_DEFAULT: &str = "default";
 }
@@ -91,7 +89,7 @@ impl Default for HerdrConfig {
     fn default() -> Self {
         HerdrConfig {
             enabled: true,
-            session: Some(Self::DEFAULT_SESSION.to_owned()),
+            session: None,
         }
     }
 }

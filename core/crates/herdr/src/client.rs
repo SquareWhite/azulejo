@@ -16,7 +16,8 @@ use crate::event::Subscription;
 use crate::stream::EventStream;
 use crate::types::{
     EnsuredWorkspace, PaneId, PaneInfo, ReadResult, ReadSource, Resolved, ServerInfo, Snapshot,
-    TabId, TerminalId, TerminalRef, TerminalSpec, WorkspaceId, WorkspaceInfo, WorkspaceSpec,
+    Survey, TabId, TabLayout, TerminalId, TerminalRef, TerminalSpec, WorkspaceId, WorkspaceInfo,
+    WorkspaceSpec,
 };
 use crate::wire::{self, method};
 
@@ -132,6 +133,45 @@ impl Client {
     pub async fn snapshot(&self) -> Result<Snapshot> {
         let r = self.call(method::SESSION_SNAPSHOT, json!({})).await?;
         wire::field(&r, "snapshot")
+    }
+
+    /// A tab's split tree. Read-only (`layout.export`); Azulejo never calls
+    /// `layout.apply`, which replaces live panes.
+    pub async fn layout_export(&self, tab: &TabId) -> Result<TabLayout> {
+        let r = self
+            .call(method::LAYOUT_EXPORT, json!({ "tab_id": tab }))
+            .await?;
+        wire::field(&r, "layout")
+    }
+
+    /// Everything Azulejo needs to adopt what's already running: the
+    /// snapshot, plus the split tree of each tab with more than one pane.
+    /// Only reads. A tab that closes between the two calls is skipped.
+    pub async fn survey(&self) -> Result<Survey> {
+        let snapshot = self.snapshot().await?;
+        let mut layouts = Vec::new();
+        for tab in &snapshot.tabs {
+            let panes = snapshot
+                .panes
+                .iter()
+                .filter(|p| p.tab_id == tab.tab_id)
+                .count();
+            if panes < 2 {
+                continue;
+            }
+            match self.layout_export(&tab.tab_id).await {
+                Ok(layout) => layouts.push(layout),
+                Err(e) if e.is_not_found() => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Survey {
+            workspaces: snapshot.workspaces,
+            tabs: snapshot.tabs,
+            panes: snapshot.panes,
+            layouts,
+            focused_workspace_id: snapshot.focused_workspace_id,
+        })
     }
 
     // ---- workspaces ------------------------------------------------------
@@ -530,6 +570,46 @@ mod tests {
         assert_eq!(seen[1]["params"]["env"]["AZULEJO_TILE_ID"], "t1");
         assert_eq!(seen[1]["params"]["label"], "tile");
         assert_ne!(seen[0]["id"], seen[1]["id"]);
+    }
+
+    #[tokio::test]
+    async fn survey_reads_the_snapshot_and_multi_pane_layouts() {
+        // Replies as herdr 0.9.1 sends them (trimmed).
+        let path = temp_socket("survey");
+        let server = fake_server(path.clone(), 2, |req| {
+            let id = &req["id"];
+            match req["method"].as_str().unwrap() {
+                "session.snapshot" => {
+                    format!(
+                        r#"{{"id":{id},"result":{{"type":"session_snapshot","snapshot":{{"version":"0.9.1","protocol":22,"focused_workspace_id":"w1","workspaces":[{{"workspace_id":"w1","number":1,"label":"probe","active_tab_id":"w1:t1"}}],"tabs":[{{"tab_id":"w1:t1","workspace_id":"w1","number":1,"label":"1","pane_count":3}},{{"tab_id":"w1:t2","workspace_id":"w1","number":2,"pane_count":1}}],"panes":[{{"pane_id":"w1:p1","terminal_id":"term_a","workspace_id":"w1","tab_id":"w1:t1"}},{{"pane_id":"w1:p2","terminal_id":"term_b","workspace_id":"w1","tab_id":"w1:t1"}},{{"pane_id":"w1:p3","terminal_id":"term_c","workspace_id":"w1","tab_id":"w1:t1"}},{{"pane_id":"w1:p4","terminal_id":"term_d","workspace_id":"w1","tab_id":"w1:t2"}}],"layouts":[]}}}}}}"#
+                    ) + "\n"
+                }
+                "layout.export" => {
+                    assert_eq!(req["params"]["tab_id"], "w1:t1", "only multi-pane tabs");
+                    format!(
+                        r#"{{"id":{id},"result":{{"type":"layout_export","layout":{{"workspace_id":"w1","tab_id":"w1:t1","zoomed":false,"focused_pane_id":"w1:p1","root":{{"type":"split","direction":"right","ratio":0.5,"first":{{"type":"pane","pane_id":"w1:p1","cwd":"/Users/x"}},"second":{{"type":"split","direction":"down","ratio":0.3,"first":{{"type":"pane","pane_id":"w1:p2"}},"second":{{"type":"pane","pane_id":"w1:p3"}}}}}}}}}}}}"#
+                    ) + "\n"
+                }
+                other => panic!("survey must only read, not call {other}"),
+            }
+        });
+        let survey = Client::new(&path, opts()).survey().await.unwrap();
+        assert_eq!(survey.focused_workspace_id, Some("w1".into()));
+        assert_eq!(survey.panes.len(), 4);
+        assert_eq!(survey.layouts.len(), 1);
+        let layout = &survey.layouts[0];
+        let panes: Vec<&str> = layout.root.panes().iter().map(|p| p.as_str()).collect();
+        assert_eq!(panes, ["w1:p1", "w1:p2", "w1:p3"]);
+        assert!(matches!(
+            layout.root,
+            crate::LayoutNode::Split {
+                direction: crate::SplitDirection::Right,
+                ..
+            }
+        ));
+        let seen = server.await.unwrap();
+        let methods: Vec<&str> = seen.iter().map(|r| r["method"].as_str().unwrap()).collect();
+        assert_eq!(methods, ["session.snapshot", "layout.export"]);
     }
 
     #[tokio::test]
