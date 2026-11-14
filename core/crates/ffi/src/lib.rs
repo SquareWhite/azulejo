@@ -408,7 +408,8 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
     let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
         return std::ptr::null_mut();
     };
-    let keymap = &app.config().keymap;
+    let config = app.config();
+    let keymap = &config.keymap;
     let platform = keymap.platform();
     let bindings: Vec<Value> = keymap
         .bindings(None)
