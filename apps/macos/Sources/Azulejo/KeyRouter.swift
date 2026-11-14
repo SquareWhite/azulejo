@@ -16,6 +16,10 @@ final class KeyRouter {
     private(set) var resizing = false
     /// keyDowns the monitor has seen (automation checks it reached us).
     private(set) var seen = 0
+    /// Automation keys handed to the router directly because the monitor
+    /// hadn't seen them yet (by event timestamp). If the queued event turns
+    /// up after all — the main thread was busy — it's dropped, not typed twice.
+    private var routedDirectly: Set<TimeInterval> = []
 
     init(app: AppController) {
         self.app = app
@@ -24,9 +28,15 @@ final class KeyRouter {
     func install() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if self.routedDirectly.remove(event.timestamp) != nil { return nil }
             self.seen += 1
             return Perf.measure("key") { self.handle(event) } ? nil : event
         }
+    }
+
+    /// Automation: `event` is being routed by hand; drop it if it arrives later.
+    func markRoutedDirectly(_ event: NSEvent) {
+        routedDirectly.insert(event.timestamp)
     }
 
     /// Returns true when the event was consumed.
