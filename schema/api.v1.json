@@ -469,6 +469,23 @@
           "type": "object"
         },
         {
+          "description": "A preview tile's rendered content; replies `preview`. Shells call it\nwhen they create a preview view; later changes arrive as\n`preview.updated` events.",
+          "properties": {
+            "method": {
+              "const": "preview.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
           "properties": {
             "method": {
@@ -1309,6 +1326,23 @@
             "data"
           ],
           "type": "object"
+        },
+        {
+          "description": "A preview tile's file was (re)rendered: on open, on restore and after\nevery change on disk. Not saved; `preview.get` returns the latest.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/PreviewContent"
+            },
+            "event": {
+              "const": "preview.updated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1674,6 +1708,81 @@
         }
       ]
     },
+    "PreviewContent": {
+      "description": "A rendered preview, from `preview.updated` or `preview.get`.",
+      "properties": {
+        "html": {
+          "description": "A complete HTML document for the tile's webview; absent for native\nkinds. When the tile already shows `path`, pass it to\n`azulejoPreview.swap(html)` (shared/webview/preview.js) to keep the\nscroll position.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/PreviewKind"
+        },
+        "language": {
+          "description": "Syntax name for `code`, e.g. `Rust`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision": {
+          "description": "Counts renders of this tile in this run, so a shell can drop stale\nupdates.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        },
+        "truncated": {
+          "default": false,
+          "description": "Only the start of a very large file was rendered.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tile",
+        "path",
+        "kind",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "PreviewKind": {
+      "description": "What a preview tile shows.",
+      "oneOf": [
+        {
+          "enum": [
+            "markdown",
+            "code",
+            "text",
+            "video",
+            "audio",
+            "pdf",
+            "directory",
+            "missing",
+            "unreadable"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "Native kinds: the shell shows `path` with QuickLook (macOS) or GTK\n(Linux); there's no `html`.",
+          "type": "string"
+        },
+        {
+          "const": "binary",
+          "description": "The rest get an explanatory `html` page.",
+          "type": "string"
+        }
+      ]
+    },
     "PreviewOpen": {
       "properties": {
         "path": {
@@ -1903,6 +2012,20 @@
           "properties": {
             "type": {
               "const": "scroll",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PreviewContent",
+          "description": "A preview tile's content, from `preview.get`.",
+          "properties": {
+            "type": {
+              "const": "preview",
               "type": "string"
             }
           },
@@ -3219,6 +3342,7 @@
     "tile.rename",
     "browser.open",
     "preview.open",
+    "preview.get",
     "layout.get",
     "layout.split",
     "layout.focus",

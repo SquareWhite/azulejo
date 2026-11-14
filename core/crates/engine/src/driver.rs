@@ -18,6 +18,7 @@ use tokio::sync::mpsc as tmpsc;
 
 use crate::link::{self, Effect, HerdrPort, Internal};
 use crate::persist::{self, Loaded, Saver};
+use crate::preview::{self, Previews};
 use crate::{Engine, Outcome, terminal};
 
 /// Called with a log line. Defaults to stderr.
@@ -45,6 +46,12 @@ enum Msg {
     Command(Command, mpsc::Sender<Result<Outcome, Error>>),
     Internal(Internal),
     Herdr(StreamItem),
+    /// A preview tile's file finished rendering.
+    Preview(
+        azulejo_protocol::TileId,
+        PathBuf,
+        Box<azulejo_preview::Rendered>,
+    ),
     Subscribe(mpsc::Sender<Event>),
     Shutdown(mpsc::Sender<()>),
 }
@@ -185,6 +192,18 @@ fn run<P: HerdrPort>(
         saver.schedule(engine.session().clone());
     }
 
+    // Preview tiles: watch their files and render off this thread.
+    let mut previews = {
+        let out = self_tx.clone();
+        Previews::new(
+            Arc::new(move |tile, path, rendered| {
+                let _ = out.send(Msg::Preview(tile, path, Box::new(rendered)));
+            }),
+            opts.log.clone(),
+        )
+    };
+    previews.sync(engine.session());
+
     // herdr: a worker for effects and a forwarder for herdr's events.
     let mut herdr = port.map(|port| {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -239,10 +258,12 @@ fn run<P: HerdrPort>(
     let publish = |engine: &Engine,
                    events: &[Event],
                    herdr: &Option<Herdr<P>>,
-                   listeners: &mut Vec<mpsc::Sender<Event>>| {
+                   listeners: &mut Vec<mpsc::Sender<Event>>,
+                   previews: &mut Previews| {
         if events.is_empty() {
             return;
         }
+        previews.sync(engine.session());
         if let Some(saver) = &saver {
             saver.schedule(engine.session().clone());
         }
@@ -281,17 +302,58 @@ fn run<P: HerdrPort>(
                     }
                 }
             }
+            Msg::Command(Command::PreviewGet(target), reply) => {
+                let result = engine.preview_path(target.tile).and_then(|(id, path)| {
+                    path.map(|p| (id, PathBuf::from(p))).ok_or_else(|| {
+                        Error::new(
+                            ErrorCode::InvalidState,
+                            format!("{id} has no file yet; use preview.open"),
+                        )
+                    })
+                });
+                match result {
+                    Err(e) => {
+                        let _ = reply.send(Err(e));
+                    }
+                    Ok((id, path)) => match previews.latest(id, &path) {
+                        Some(content) => {
+                            let _ = reply.send(Ok(Outcome {
+                                reply: Reply::Preview(content.clone()),
+                                events: Vec::new(),
+                            }));
+                        }
+                        // Not rendered yet: render now, off this thread.
+                        None => {
+                            let revision = previews.revision();
+                            std::thread::spawn(move || {
+                                let rendered = azulejo_preview::render(&path);
+                                let content = preview::content(id, &path, rendered, revision);
+                                let _ = reply.send(Ok(Outcome {
+                                    reply: Reply::Preview(content),
+                                    events: Vec::new(),
+                                }));
+                            });
+                        }
+                    },
+                }
+            }
             Msg::Command(command, reply) => {
                 let result = engine.execute(command);
                 if let Ok(outcome) = &result {
-                    publish(&engine, &outcome.events, &herdr, &mut listeners);
+                    publish(
+                        &engine,
+                        &outcome.events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                    );
                 }
                 let _ = reply.send(result);
             }
             Msg::Internal(internal) => {
                 let surveyed = matches!(internal, Internal::Surveyed(_) | Internal::SurveyFailed);
                 let events = engine.apply_internal(internal);
-                publish(&engine, &events, &herdr, &mut listeners);
+                publish(&engine, &events, &herdr, &mut listeners, &mut previews);
                 if surveyed && let Some(h) = &mut herdr {
                     h.survey_done(&engine);
                 }
@@ -300,7 +362,7 @@ fn run<P: HerdrPort>(
                 let reaction = link::reconcile(&item, engine.session());
                 for internal in reaction.internals {
                     let events = engine.apply_internal(internal);
-                    publish(&engine, &events, &herdr, &mut listeners);
+                    publish(&engine, &events, &herdr, &mut listeners, &mut previews);
                 }
                 if let Some(h) = &mut herdr {
                     for effect in reaction.effects {
@@ -309,6 +371,11 @@ fn run<P: HerdrPort>(
                     if reaction.survey {
                         h.request_survey();
                     }
+                }
+            }
+            Msg::Preview(tile, path, rendered) => {
+                if let Some(event) = previews.accept(tile, &path, *rendered) {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
             }
             Msg::Subscribe(listener) => listeners.push(listener),
@@ -321,6 +388,7 @@ fn run<P: HerdrPort>(
             }
         }
     }
+    drop(previews);
     // Stop herdr work before the saver goes; panes keep running in herdr.
     if let Some(h) = herdr.take() {
         h.runtime.shutdown_background();

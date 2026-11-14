@@ -79,6 +79,54 @@ pub enum Event {
     /// The focused window, workspace, tab or tile changed.
     #[serde(rename = "focus.changed")]
     FocusChanged(Focus),
+
+    /// A preview tile's file was (re)rendered: on open, on restore and after
+    /// every change on disk. Not saved; `preview.get` returns the latest.
+    #[serde(rename = "preview.updated")]
+    PreviewUpdated(PreviewContent),
+}
+
+/// What a preview tile shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewKind {
+    Markdown,
+    Code,
+    Text,
+    /// Native kinds: the shell shows `path` with QuickLook (macOS) or GTK
+    /// (Linux); there's no `html`.
+    Image,
+    Video,
+    Audio,
+    Pdf,
+    /// The rest get an explanatory `html` page.
+    Binary,
+    Directory,
+    Missing,
+    Unreadable,
+}
+
+/// A rendered preview, from `preview.updated` or `preview.get`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PreviewContent {
+    pub tile: TileId,
+    pub path: String,
+    pub kind: PreviewKind,
+    /// A complete HTML document for the tile's webview; absent for native
+    /// kinds. When the tile already shows `path`, pass it to
+    /// `azulejoPreview.swap(html)` (shared/webview/preview.js) to keep the
+    /// scroll position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    /// Syntax name for `code`, e.g. `Rust`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Only the start of a very large file was rendered.
+    #[serde(default)]
+    pub truncated: bool,
+    /// Counts renders of this tile in this run, so a shell can drop stale
+    /// updates.
+    pub revision: u64,
 }
 
 /// A tab's layout, as `layout.changed` and `layout.get` report it.

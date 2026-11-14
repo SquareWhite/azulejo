@@ -179,6 +179,15 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
         Ok(p) => p,
         Err(e) => return usage_error(err, &e),
     };
+    // The core runs elsewhere (its own working directory), so relative paths
+    // only mean something here.
+    if let Ok(cwd) = std::env::current_dir() {
+        absolutise_paths(
+            &mut params,
+            &cwd,
+            std::env::var_os("HOME").map(PathBuf::from),
+        );
+    }
 
     let mut client = match Client::connect(&socket) {
         Ok(c) => c,
@@ -214,6 +223,51 @@ pub fn run(args: Vec<String>, env: &Env, out: &mut dyn Write, err: &mut dyn Writ
             exit::API_ERROR
         }
         Err(e) => unreachable(err, &e),
+    }
+}
+
+/// Params that name files or folders: top-level `path`, `cwd` and `root`, and
+/// the same inside a tile's `content`.
+const PATH_PARAMS: [&str; 3] = ["path", "cwd", "root"];
+
+/// Makes relative path params absolute against `cwd`, and expands a leading
+/// `~/` (or a bare `~`) against `home`.
+pub fn absolutise_paths(
+    params: &mut Map<String, Value>,
+    cwd: &std::path::Path,
+    home: Option<PathBuf>,
+) {
+    let fix = |value: &mut Value| {
+        let Value::String(text) = value else { return };
+        if text.is_empty() {
+            return;
+        }
+        let path = if text == "~" || text.starts_with("~/") {
+            let Some(home) = &home else { return };
+            let rest = text.trim_start_matches('~').trim_start_matches('/');
+            if rest.is_empty() {
+                home.clone()
+            } else {
+                home.join(rest)
+            }
+        } else if std::path::Path::new(text.as_str()).is_absolute() {
+            return;
+        } else {
+            cwd.join(text.as_str())
+        };
+        *text = path.to_string_lossy().into_owned();
+    };
+    for key in PATH_PARAMS {
+        if let Some(value) = params.get_mut(key) {
+            fix(value);
+        }
+    }
+    if let Some(Value::Object(content)) = params.get_mut("content") {
+        for key in PATH_PARAMS {
+            if let Some(value) = content.get_mut(key) {
+                fix(value);
+            }
+        }
     }
 }
 
@@ -537,4 +591,55 @@ fn help_method(spec: &MethodSpec) -> String {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixed(params: Value) -> Value {
+        let Value::Object(mut map) = params else {
+            panic!()
+        };
+        absolutise_paths(
+            &mut map,
+            std::path::Path::new("/work/proj"),
+            Some(PathBuf::from("/home/me")),
+        );
+        Value::Object(map)
+    }
+
+    #[test]
+    fn relative_paths_become_absolute() {
+        assert_eq!(
+            fixed(json!({"path": "docs/plan.md", "tile": "tile_x"})),
+            json!({"path": "/work/proj/docs/plan.md", "tile": "tile_x"})
+        );
+        assert_eq!(
+            fixed(json!({"content": {"kind": "preview", "path": "a.md"}, "cwd": "."})),
+            json!({"content": {"kind": "preview", "path": "/work/proj/a.md"}, "cwd": "/work/proj/."})
+        );
+        assert_eq!(
+            fixed(json!({"content": {"kind": "files", "root": "src"}})),
+            json!({"content": {"kind": "files", "root": "/work/proj/src"}})
+        );
+    }
+
+    #[test]
+    fn absolute_home_and_other_params_are_left_alone_or_expanded() {
+        assert_eq!(
+            fixed(json!({"path": "/etc/hosts"})),
+            json!({"path": "/etc/hosts"})
+        );
+        assert_eq!(
+            fixed(json!({"path": "~/notes.md"})),
+            json!({"path": "/home/me/notes.md"})
+        );
+        assert_eq!(fixed(json!({"path": "~"})), json!({"path": "/home/me"}));
+        assert_eq!(
+            fixed(json!({"url": "docs/x", "path": ""})),
+            json!({"url": "docs/x", "path": ""})
+        );
+    }
 }

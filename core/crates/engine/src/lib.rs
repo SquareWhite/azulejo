@@ -8,6 +8,7 @@ mod diff;
 mod driver;
 pub mod link;
 pub mod persist;
+mod preview;
 pub mod terminal;
 
 use azulejo_model::{HerdrRef, ModelError, Session, Tile, TileContent, TileId, WorkspaceId};
@@ -309,6 +310,13 @@ impl Engine {
                 }
                 Reply::Ok
             }
+            // Rendering reads files; `Core` answers this off the engine.
+            Command::PreviewGet(_) => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "previews need a running core",
+                ));
+            }
 
             Command::LayoutGet => {
                 let tile = focus.tile.ok_or_else(nothing)?;
@@ -403,6 +411,15 @@ impl Engine {
                 ));
             }
         })
+    }
+
+    /// The file a preview tile shows (the focused tile when `tile` is absent).
+    pub fn preview_path(&self, tile: Option<TileId>) -> Result<(TileId, Option<String>), Error> {
+        let id = self.session.target(tile)?;
+        match &self.session.tile(id)?.content {
+            TileContent::Preview { path } => Ok((id, path.clone())),
+            other => Err(wrong_kind(id, other, "preview")),
+        }
     }
 
     /// The herdr pane behind a terminal tile (the focused tile when `tile` is

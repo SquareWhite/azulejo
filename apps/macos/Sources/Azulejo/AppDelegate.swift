@@ -36,7 +36,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         installSignalHandlers()
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
         keys.install()
-        core.onEvent = { [weak self] _ in self?.scheduleRefresh() }
+        PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
+        core.onEvent = { [weak self] json in
+            PreviewTileView.route(json)
+            self?.scheduleRefresh()
+        }
         refresh()
         if session?.windows.isEmpty ?? true {
             send(["method": "window.create"])
