@@ -69,7 +69,7 @@ fn stderr(o: &Output) -> String {
 }
 
 fn json_of(o: &Output) -> Value {
-    assert!(o.status.success(), "azj failed: {}", stderr(o));
+    assert!(o.status.success(), "azj failed: {}{}", stdout(o), stderr(o));
     serde_json::from_str(&stdout(o)).unwrap()
 }
 
@@ -194,6 +194,122 @@ fn acts_on_the_calling_tile() {
     );
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("--no-caller"), "{}", stderr(&out));
+}
+
+/// Runs `azj` like [`azj`], from working folder `cwd`.
+fn azj_in(cwd: &Path, socket: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_azj"));
+    cmd.env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("AZULEJO_SOCKET", socket)
+        .current_dir(cwd)
+        .args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn preview_open_from_a_terminal_opens_the_plan_beside_it() {
+    let app = start();
+    let work = app.dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    // What azj sees as its working folder (/tmp is a symlink on macOS).
+    let work = work.canonicalize().unwrap();
+    let mut client = Client::connect(&app.socket).unwrap();
+    let terminal = client.call("tile.list", None).unwrap()["tiles"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let out = azj_in(
+        &work,
+        &app.socket,
+        &[("AZULEJO_TILE_ID", &terminal)],
+        &["--json", "preview", "open", "--path", "plan.md"],
+    );
+    let reply = json_of(&out);
+    assert_eq!(reply["type"], "created");
+    let preview = reply["tile"].as_str().unwrap().to_owned();
+    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
+    assert_eq!(info["kind"], "preview");
+    assert_eq!(info["path"], work.join("plan.md").display().to_string());
+    let layout = client.call("layout.get", None).unwrap();
+    assert_eq!(layout["tree"]["a"]["id"], terminal.as_str());
+    assert_eq!(layout["tree"]["b"]["id"], preview.as_str());
+    assert_eq!(layout["focused"], terminal.as_str(), "focus stays put");
+
+    // Run against the preview tile itself, it shows the file there.
+    let out = azj_in(
+        &work,
+        &app.socket,
+        &[],
+        &[
+            "--json", "preview", "open", "--tile", &preview, "--path", "b.md",
+        ],
+    );
+    assert_eq!(json_of(&out)["type"], "ok");
+    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
+    assert_eq!(info["path"], work.join("b.md").display().to_string());
+    assert_eq!(
+        client.call("tile.list", None).unwrap()["tiles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn files_open_paths_are_relative_to_the_tiles_root_not_azjs_folder() {
+    let app = start();
+    let root = app.dir.join("repo");
+    let elsewhere = app.dir.join("elsewhere");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(root.join("README.md"), "# hi\n").unwrap();
+    let files = json_of(&azj(
+        &app.socket,
+        &[],
+        &[
+            "--json",
+            "tile",
+            "split",
+            "--right",
+            "--kind",
+            "files",
+            "--root",
+            root.to_str().unwrap(),
+        ],
+    ))["tile"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let out = azj_in(
+        &elsewhere,
+        &app.socket,
+        &[],
+        &[
+            "--json",
+            "files",
+            "open",
+            "--tile",
+            &files,
+            "--path",
+            "README.md",
+            "--target",
+            "terminal",
+        ],
+    );
+    let terminal = json_of(&out)["tile"].as_str().unwrap().to_owned();
+    let info = json_of(&azj(
+        &app.socket,
+        &[],
+        &["--json", "tile", "get", &terminal],
+    ));
+    assert_eq!(info["cwd"], root.display().to_string(), "{info}");
 }
 
 #[test]
@@ -395,4 +511,102 @@ fn events_flags_are_checked() {
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
     let o = azj(&app.socket, &[], &["events", "--workspace", "nope"]);
     assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+}
+
+/// Parses a `--json` error: one object on stdout, nothing on stderr, and the
+/// usual exit code.
+fn json_error(o: &Output, exit: i32) -> Value {
+    assert_eq!(o.status.code(), Some(exit), "{}{}", stdout(o), stderr(o));
+    assert_eq!(stderr(o), "", "--json errors go to stdout only");
+    let text = stdout(o);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    let error: Value = serde_json::from_str(&text).unwrap();
+    let keys: Vec<&String> = error.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["code", "data", "message"], "{error}");
+    assert!(error["message"].as_str().is_some_and(|m| !m.is_empty()));
+    assert!(error["data"].is_object(), "{error}");
+    error
+}
+
+#[test]
+fn json_errors_without_a_daemon_are_objects() {
+    let socket = Path::new("/tmp/azj-nothing-here/azulejo.sock");
+    for args in [
+        &["--json", "ping"][..],
+        &["--json", "call", "core.ping"],
+        &["--json", "events", "--count", "1"],
+    ] {
+        let error = json_error(&azj(socket, &[], args), 3);
+        assert_eq!(error["code"], "unavailable", "{args:?}");
+        assert_eq!(error["data"]["socket"], socket.display().to_string());
+        assert!(
+            error["message"].as_str().unwrap().contains("isn't running"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn json_errors_from_the_core_keep_its_code_and_data() {
+    let app = start();
+    let missing = "tile_01JBX3K6Z8V9W0Q1R2S3T4V5W6";
+    let error = json_error(
+        &azj(&app.socket, &[], &["--json", "tile", "get", missing]),
+        1,
+    );
+    assert_eq!(error["code"], "not_found");
+    assert_eq!(error["data"], json!({"tile": missing}));
+    assert!(
+        !error["message"].as_str().unwrap().contains(missing),
+        "the message names no IDs: {error}"
+    );
+
+    let error = json_error(&azj(&app.socket, &[], &["--json", "call", "nope.thing"]), 1);
+    assert_eq!(error["code"], "method_not_found");
+
+    // A stale caller from the environment.
+    let error = json_error(
+        &azj(
+            &app.socket,
+            &[("AZULEJO_TILE_ID", missing)],
+            &["--json", "tile", "get"],
+        ),
+        1,
+    );
+    assert_eq!(error["code"], "not_found");
+    assert_eq!(error["data"]["tile"], missing);
+}
+
+#[test]
+fn json_errors_for_bad_arguments() {
+    let app = start();
+    let cases: &[(&[&str], &str)] = &[
+        (&["--json"], "invalid_request"),
+        (&["--json", "tile", "--right"], "invalid_request"),
+        (&["--json", "nope", "thing"], "method_not_found"),
+        (&["--json", "help", "nope"], "method_not_found"),
+        (&["--json", "layout", "split"], "invalid_params"),
+        (&["--json", "call"], "invalid_request"),
+        (&["--json", "call", "core.ping", "{"], "invalid_params"),
+        (&["--json", "events", "--count", "lots"], "invalid_params"),
+        (&["--json", "ping", "--socket"], "invalid_params"),
+    ];
+    for (args, code) in cases {
+        let error = json_error(&azj(&app.socket, &[], args), 2);
+        assert_eq!(error["code"], *code, "{args:?}: {error}");
+    }
+    let error = json_error(&azj(&app.socket, &[], &["--json", "nope", "thing"]), 2);
+    assert_eq!(error["data"], json!({"method": "nope.thing"}));
+    let error = json_error(&azj(&app.socket, &[], &["--json", "events", "-n", "x"]), 2);
+    assert_eq!(error["data"], json!({"param": "count"}));
+
+    // Without --json it's still text on stderr.
+    let o = azj(&app.socket, &[], &["nope", "thing"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert_eq!(stdout(&o), "");
+    assert!(
+        stderr(&o).starts_with("azj: unknown command"),
+        "{}",
+        stderr(&o)
+    );
 }

@@ -31,6 +31,10 @@ Dogfooding: "animations stretch the content of the tile, which looks bad". `[ani
 - **Outline** hides content during the motion, moves outlines only, and fades content in over 80 ms at the end.
 - Same budget: 60-animation stress at 120 Hz, crop 0 dropped frames, outline 1, scale 3 (≤ 3 single missed ticks allowed); 114/114 PTY resizes in every style.
 
+## Amendment, Nov 4, 2026: the reveal doesn't need the display link
+
+The e2e pass (V1) saw terminals stuck on their motion snapshot with the screen locked. The reveal polled only on the container's display link, which doesn't tick then; libghostty kept drawing (first frame at the new size 1–11 ms after the resize). A plain timer now takes the snapshot down 50 ms after the 250 ms deadline if the clock hasn't. With the screen on the clock still reveals first. Captures report what each terminal shows and flag a stale frame (`STALE` in automation.log, `<name>.fresh.json`); `apps/macos/automation/e2e/stale-check.sh` checks the screen-on path.
+
 ## Evidence
 
 - `spikes/macos-anim/README.md`, findings table

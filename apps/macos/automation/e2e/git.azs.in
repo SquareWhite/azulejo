@@ -1,0 +1,22 @@
+# B12: git branch per workspace. A checkout typed in the tile reaches the
+# sidebar within 1 s; detached HEAD shows @sha, a dirty tree •; outside a
+# repo nothing; a long branch truncates. git.sh fills @FX@ and @SHA@.
+log B12 git
+delivery direct
+until terminal.phase attached 10000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/azulejo\n"}}
+until sidebar.branches main 5000
+wait 500
+core {"method":"terminal.send_text","params":{"text":"git checkout -q -b feature/e2e\n"}}
+until sidebar.branches feature/e2e 1000
+core {"method":"terminal.send_text","params":{"text":"git checkout -q --detach\n"}}
+until sidebar.branches @@SHA@ 1000
+core {"method":"terminal.send_text","params":{"text":"git checkout -q main; echo dirty >> README.md\n"}}
+until sidebar.branches main • 1500
+shot 01-dirty
+core {"method":"terminal.send_text","params":{"text":"git checkout -q README.md; cd @FX@/not-a-repo\n"}}
+until sidebar.branches - 1500
+shot 02-no-repo
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/sample-project\n"}}
+until sidebar.branches audit/critical-path-review 1500
+shot 03-long-branch

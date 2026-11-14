@@ -126,9 +126,10 @@ class TileFrame: NSView, TileView {
     // MARK: Corners in motion
 
     /// Crop motion animates this frame's bounds (a clip over 1:1 content);
-    /// the caps follow the visible rect from `from` to `to` (bounds
-    /// coordinates) with the motion's timing.
+    /// the caps and the header strip follow the visible rect from `from` to
+    /// `to` (bounds coordinates) with the motion's timing.
     func animateCorners(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        animateHeader(from: from, to: to, duration: duration, holdAtEnd: holdAtEnd)
         let position = CABasicAnimation(keyPath: "position")
         position.fromValue = NSValue(point: CGPoint(x: from.midX, y: from.midY))
         position.toValue = NSValue(point: CGPoint(x: to.midX, y: to.midY))
@@ -145,7 +146,65 @@ class TileFrame: NSView, TileView {
         corners.add(group, forKey: Self.cornerMotionKey)
     }
 
-    func stopCornerMotion() { corners.removeAnimation(forKey: Self.cornerMotionKey) }
+    func stopCornerMotion() {
+        corners.removeAnimation(forKey: Self.cornerMotionKey)
+        header.layer?.removeAnimation(forKey: Self.cornerMotionKey)
+        header.badge?.layer?.removeAnimation(forKey: Self.cornerMotionKey)
+    }
+
+    /// The header strip is chrome, not content: it rides the top of the
+    /// visible rect. Content sticks to the edge that moves least, so a tile
+    /// growing upwards (a swap out of the stack) would otherwise show its
+    /// body with the strip still cut off above the clip (B4b). The strip
+    /// spans the visible width, its title centred in it (left-aligned when
+    /// it has controls, as at rest).
+    private func animateHeader(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        guard !header.isHidden, let layer = header.layer else { return }
+        let h = header.frame.height, w = header.frame.width
+        guard h > 0, w > 0 else { return }
+        let a = layer.anchorPoint
+        let centred = header.centred
+        func strip(_ clip: CGRect) -> (position: CGPoint, bounds: CGRect) {
+            let frame = CGRect(x: clip.minX, y: clip.maxY - h, width: clip.width, height: h)
+            let bounds = CGRect(x: centred ? (w - clip.width) / 2 : 0, y: 0, width: clip.width, height: h)
+            return (Motion.position(of: frame, anchorPoint: a), bounds)
+        }
+        let start = strip(from), end = strip(to)
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: start.position)
+        position.toValue = NSValue(point: end.position)
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: start.bounds)
+        bounds.toValue = NSValue(rect: end.bounds)
+        let group = CAAnimationGroup()
+        group.animations = [position, bounds]
+        if holdAtEnd {
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+        }
+        Motion.configure(group, duration: duration)
+        layer.add(group, forKey: Self.cornerMotionKey)
+        animateBadge(from: from, to: to, width: w, centred: centred, duration: duration, holdAtEnd: holdAtEnd)
+    }
+
+    /// The badge keeps to the visible strip's right end. The strip's bounds
+    /// shift to keep a centred title centred, which would carry the badge
+    /// past the clip; this moves it back by as much.
+    private func animateBadge(from: CGRect, to: CGRect, width w: CGFloat, centred: Bool,
+                              duration: CFTimeInterval, holdAtEnd: Bool) {
+        guard let layer = header.badge?.layer else { return }
+        func shift(_ clip: CGRect) -> CGFloat { centred ? (clip.width - w) / 2 : clip.width - w }
+        let x = layer.position.x
+        let move = CABasicAnimation(keyPath: "position.x")
+        move.fromValue = x + shift(from)
+        move.toValue = x + shift(to)
+        if holdAtEnd {
+            move.fillMode = .forwards
+            move.isRemovedOnCompletion = false
+        }
+        Motion.configure(move, duration: duration)
+        layer.add(move, forKey: Self.cornerMotionKey)
+    }
 
     private static let cornerMotionKey = "azj.corners"
 
@@ -181,6 +240,7 @@ class TileFrame: NSView, TileView {
 
     func setFocused(_ focused: Bool) {
         header.focused = focused
+        if focused { TileFocus.returnToFindBar(of: content) }
         content.setFocused(focused)
     }
 
@@ -226,13 +286,14 @@ extension TileFrame: AutomatableTile {
         var state = (content as? AutomatableTile)?.automationState() ?? [:]
         state["tile.header.title"] = header.titleText
         state["tile.header.subtitle"] = header.subtitleText
+        state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
         return state
     }
 }
 
 /// The strip across the top of a tile: icon, bold title, " — " and a muted
-/// subtitle (truncated in the middle), then the tile's own controls. Centred
+/// subtitle (a path keeps its last folder), then the tile's own controls. Centred
 /// like the mockup's terminal tiles; left-aligned when the tile puts controls
 /// on the right (preview, files). The focused tile's strip is a shade lighter
 /// (as the mockup's focused tile is), with a hairline underneath.
@@ -257,8 +318,10 @@ final class TileHeaderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         icon.image = NSImage(systemSymbolName: Self.symbol(kind), accessibilityDescription: kind.rawValue)
-        icon.symbolConfiguration = .init(pointSize: 11, weight: .regular)
-        label.lineBreakMode = .byTruncatingMiddle
+        icon.symbolConfiguration = .init(pointSize: Design.Symbol.header, weight: .regular)
+        // Paths are fitted before they get here (`fitPath`); what's still too
+        // long (a long title or command) loses its end.
+        label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.cell?.truncatesLastVisibleLine = true
         addSubview(icon)
@@ -269,6 +332,9 @@ final class TileHeaderView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Title and icon centred in the strip (no controls on the right).
+    var centred: Bool { accessory == nil }
 
     func setAccessory(_ view: NSView) {
         accessory?.removeFromSuperview()
@@ -290,41 +356,99 @@ final class TileHeaderView: NSView {
         render()
     }
 
-    private func render() {
+    /// The agent badge (the attention overlay makes and fills it) at the
+    /// strip's right end; the title keeps clear of it. A subview, so it rides
+    /// with the strip when the strip follows a crop clip mid-motion (F6).
+    var badge: NSView? {
+        didSet {
+            if oldValue !== badge, oldValue?.superview === self { oldValue?.removeFromSuperview() }
+            if let badge, badge.superview !== self { addSubview(badge) }
+            needsLayout = true
+        }
+    }
+
+    /// Room kept clear at the strip's right end for the badge.
+    private var trailingInset: CGFloat = 0
+
+    /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
+    private(set) var shownSubtitle = ""
+
+    private func render() { needsLayout = true }
+
+    /// Title and subtitle for `room` points. A path subtitle loses folders
+    /// from its front ("…/work/azulejo"), so the folder that matters stays;
+    /// anything else, and a path whose last folder alone is too long, is cut
+    /// at the end by the label.
+    private func text(room: CGFloat) -> NSAttributedString {
         let text = NSMutableAttributedString(string: titleText, attributes: [
             .font: Design.Font.headerTitle,
             .foregroundColor: focused ? Design.Color.textPrimary : Design.Color.textSecondary,
         ])
+        shownSubtitle = ""
         if !subtitleText.isEmpty {
-            text.append(NSAttributedString(string: " — \(subtitleText)", attributes: [
-                .font: Design.Font.headerSubtitle,
-                .foregroundColor: Design.Color.textMuted,
-            ]))
+            let subtitleRoom = room - ceil(text.size().width) - 4
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Design.Font.headerSubtitle, .foregroundColor: Design.Color.textMuted,
+            ]
+            shownSubtitle = Self.fitPath(subtitleText, room: subtitleRoom) {
+                NSAttributedString(string: " — \($0)", attributes: attributes).size().width
+            }
+            text.append(NSAttributedString(string: " — \(shownSubtitle)", attributes: attributes))
         }
-        label.attributedStringValue = text
-        needsLayout = true
+        return text
+    }
+
+    /// `path` as it fits in `room` (measured by `width`): whole, else with
+    /// leading folders swapped for "…", always keeping the last one. Text
+    /// that isn't a path (a command) comes back unchanged.
+    static func fitPath(_ path: String, room: CGFloat, width: (String) -> CGFloat) -> String {
+        guard path.hasPrefix("/") || path.hasPrefix("~/"), width(path) > room else { return path }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count > 1 else { return path }
+        for start in 1..<parts.count {
+            let candidate = "…/" + parts[start...].joined(separator: "/")
+            if width(candidate) <= room { return candidate }
+        }
+        // Not even "…/last" fits: the last folder alone, cut at its end.
+        return String(parts[parts.count - 1])
     }
 
     override func layout() {
         super.layout()
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
-        var right = bounds.width - margin
-        if let accessory {
-            let size = accessory.fittingSize
-            let w = min(size.width, max(bounds.width * 0.6, 0))
-            accessory.frame = NSRect(x: right - w, y: (h - size.height) / 2, width: w, height: size.height)
-            right -= w + spacing
+        trailingInset = 0
+        if let badge {
+            let size = badge.fittingSize, inset = Design.Space.badgeInset
+            badge.frame = NSRect(x: bounds.width - inset - size.width, y: (h - size.height) / 2,
+                                 width: size.width, height: size.height)
+            trailingInset = size.width + inset
         }
+        var right = bounds.width - margin - trailingInset
+        if let accessory {
+            // The tile's controls show whole or not at all: below
+            // `headerTitleMin` of room for the title they hide (Preview |
+            // Source, the files buttons), never clipped to "Prev".
+            let size = accessory.fittingSize
+            let titleRoom = right - size.width - spacing - margin - iconSize - spacing
+            accessory.isHidden = titleRoom < Design.Space.headerTitleMin
+            if !accessory.isHidden {
+                accessory.frame = NSRect(x: right - size.width, y: (h - size.height) / 2,
+                                         width: size.width, height: size.height)
+                right -= size.width + spacing
+            }
+        }
+        let room = max(right - margin - iconSize - spacing, 0)
+        label.attributedStringValue = text(room: room - 4)
         // Measured from the text itself: a truncating label's intrinsic width
         // follows its current frame, so a strip that grew kept the "…".
         let natural = label.attributedStringValue.size()
         let labelHeight = ceil(natural.height)
-        let room = max(right - margin - iconSize - spacing, 0)
         let labelWidth = min(ceil(natural.width) + 4, room)
-        // Centred over the whole strip unless controls sit on the right.
+        // Centred over the whole strip unless controls sit on the right; kept
+        // clear of anything over the strip's right end.
         let group = iconSize + spacing + labelWidth
-        let left = accessory == nil ? max(margin, (bounds.width - group) / 2) : margin
+        let left = accessory != nil ? margin : max(margin, min((bounds.width - group) / 2, right - group))
         icon.frame = NSRect(x: left, y: (h - iconSize) / 2, width: iconSize, height: iconSize)
         label.frame = NSRect(x: left + iconSize + spacing, y: (h - labelHeight) / 2,
                              width: labelWidth, height: labelHeight)

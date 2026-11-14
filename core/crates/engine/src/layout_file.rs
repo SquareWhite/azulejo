@@ -813,8 +813,9 @@ pub fn export(s: &Session, focus: Focus, p: &LayoutExport) -> Result<String, Err
             if ws.tabs.is_empty() {
                 return Err(Error::new(
                     ErrorCode::InvalidState,
-                    format!("workspace {id} has no tabs to export"),
-                ));
+                    "the workspace has no tabs to export",
+                )
+                .with_data(serde_json::json!({ "workspace": id })));
             }
             let cwd = ws.cwd.as_deref();
             let mut file = FileSpec {
@@ -1038,12 +1039,14 @@ fn round(x: f64) -> f64 {
     (x * 10_000.0).round() / 10_000.0
 }
 
-/// `path` relative to `base` when it's inside it; unchanged otherwise.
+/// `path` relative to `base` when it's inside it; otherwise as it was, but
+/// tidied: doubled slashes (`$TMPDIR/x` gives `…/T//x`) and `.` parts go.
 fn relative(base: Option<&Path>, path: &str) -> String {
-    match base.and_then(|b| Path::new(path).strip_prefix(b).ok()) {
+    let path: PathBuf = Path::new(path).components().collect();
+    match base.and_then(|b| path.strip_prefix(b).ok()) {
         Some(rest) if rest.as_os_str().is_empty() => ".".into(),
-        Some(rest) => rest.display().to_string(),
-        None => path.to_owned(),
+        Some(rest) => path_string(rest),
+        None => path_string(&path),
     }
 }
 

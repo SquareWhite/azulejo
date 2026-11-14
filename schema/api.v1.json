@@ -677,7 +677,7 @@
           "type": "object"
         },
         {
-          "description": "Shows `path` in a preview tile.",
+          "description": "Shows `path` in a preview tile. When `tile` is a preview tile it\nshows the file and replies `ok`. Any other tile (say, the terminal\n`azj` runs in) gets a new preview tile to its right, and the reply is\n`created` with it; focus stays where it was.",
           "properties": {
             "method": {
               "const": "preview.open",
@@ -1575,7 +1575,11 @@
         "code": {
           "$ref": "#/$defs/ErrorCode"
         },
+        "data": {
+          "description": "For programs: what the error is about, such as `{\"tile\": \"tile_…\",\n\"direction\": \"right\"}` or `{\"param\": \"kind\"}`. Over JSON-RPC these\nfields sit in the error's `data` beside `code`."
+        },
         "message": {
+          "description": "For people: shells show it as is, so it names no IDs.",
           "type": "string"
         }
       },
@@ -2212,7 +2216,7 @@
           "type": "object"
         },
         {
-          "description": "The core's link to herdr came up or dropped. After `connected: true`,\nshells reattach terminal tiles that gave up waiting. Not saved.",
+          "description": "The core's link to Local's herdr came up or dropped; sent only when\nthat changes. `connected: true` comes once the core has re-checked\nevery bound tile's pane (a herdr restart gives each pane a new\nterminal), so shells reattach waiting terminal tiles to current\npanes. Not saved.",
           "properties": {
             "data": {
               "properties": {
@@ -2639,7 +2643,7 @@
     "FilesReveal": {
       "properties": {
         "path": {
-          "description": "A file or folder under the tile's root: absolute or relative to it.",
+          "description": "A file or folder under the tile's root: absolute, or relative to the\ntile's root.",
           "type": "string"
         },
         "tile": {
@@ -3717,6 +3721,7 @@
     "PreviewOpen": {
       "properties": {
         "path": {
+          "description": "The file to show. `azj` makes a relative path absolute against its\nown working folder.",
           "type": "string"
         },
         "tile": {
@@ -3728,7 +3733,7 @@
               "type": "null"
             }
           ],
-          "description": "A preview tile; defaults to the focused tile."
+          "description": "The preview tile to show `path` in, or the tile to open a new preview\nbeside; defaults to the focused tile."
         }
       },
       "required": [
@@ -4043,6 +4048,17 @@
               },
               "type": "array"
             },
+            "scroll": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ScrollState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "With `locate`: the terminal's view when it was searched."
+            },
             "truncated": {
               "default": false,
               "description": "herdr cut the history short; older lines weren't searched.",
@@ -4176,6 +4192,24 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "offset_from_bottom": {
+          "description": "With `locate`: the `terminal.scroll` offset that puts this line in\nthe middle of the view.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "row": {
+          "description": "With `locate`: the line's first row in herdr's buffer, 0 being the\noldest row herdr keeps (a soft-wrapped line takes several rows).\nAbsent when the rows couldn't be matched up with the lines.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "text": {
           "type": "string"
@@ -4606,13 +4640,18 @@
           "type": "boolean"
         },
         "lines": {
-          "description": "How many lines of history to search; herdr's default when absent.",
+          "description": "How many lines of history to search; herdr's default when absent, or\nall of it with `locate`.",
           "format": "uint32",
           "minimum": 0,
           "type": [
             "integer",
             "null"
           ]
+        },
+        "locate": {
+          "default": false,
+          "description": "Also work out where each match sits in herdr's buffer (`row`) and the\n`terminal.scroll` offset that shows it mid-view, as a find bar needs.\nCosts two more herdr calls.",
+          "type": "boolean"
         },
         "query": {
           "description": "Literal text to find.",

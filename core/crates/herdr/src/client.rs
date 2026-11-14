@@ -341,22 +341,13 @@ impl Client {
     /// `--env` vars.
     pub async fn reresolve(&self, stored: &TerminalRef) -> Result<Resolved> {
         let panes = self.panes().await?;
-        if let Some(p) = panes.iter().find(|p| p.terminal_id == stored.terminal_id) {
-            return Ok(
-                if p.pane_id == stored.pane_id && p.tab_id == stored.tab_id {
-                    Resolved::Same(p.clone())
-                } else {
-                    Resolved::Moved(p.clone())
-                },
-            );
-        }
-        if let Some(p) = panes
-            .iter()
-            .find(|p| p.pane_id == stored.pane_id && p.tab_id == stored.tab_id)
-        {
-            return Ok(Resolved::Respawned(p.clone()));
-        }
-        Ok(Resolved::Gone)
+        Ok(resolve_in(&panes, stored))
+    }
+
+    /// [`Client::reresolve`] for several terminals with one `pane.list`.
+    pub async fn reresolve_many(&self, stored: &[TerminalRef]) -> Result<Vec<Resolved>> {
+        let panes = self.panes().await?;
+        Ok(stored.iter().map(|s| resolve_in(&panes, s)).collect())
     }
 
     // ---- terminal operations (F20) -----------------------------------------
@@ -487,6 +478,24 @@ impl Client {
     }
 }
 
+/// What became of `stored`, given every pane herdr has now.
+fn resolve_in(panes: &[PaneInfo], stored: &TerminalRef) -> Resolved {
+    if let Some(p) = panes.iter().find(|p| p.terminal_id == stored.terminal_id) {
+        return if p.pane_id == stored.pane_id && p.tab_id == stored.tab_id {
+            Resolved::Same(p.clone())
+        } else {
+            Resolved::Moved(p.clone())
+        };
+    }
+    if let Some(p) = panes
+        .iter()
+        .find(|p| p.pane_id == stored.pane_id && p.tab_id == stored.tab_id)
+    {
+        return Resolved::Respawned(p.clone());
+    }
+    Resolved::Gone
+}
+
 async fn round_trip(conn: &mut Conn, line: &str) -> Result<Option<String>> {
     conn.write.write_all(line.as_bytes()).await?;
     conn.write.flush().await?;
@@ -515,11 +524,14 @@ mod tests {
     use super::*;
     use tokio::net::UnixListener;
 
-    fn temp_socket(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("azj-h-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join("s.sock")
+    /// A socket path in a fresh temp folder, removed when the guard drops.
+    fn temp_socket(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("azj-h-{name}-"))
+            .tempdir()
+            .unwrap();
+        let path = dir.path().join("s.sock");
+        (dir, path)
     }
 
     /// A fake herdr that answers `n` requests with `reply(request_line)`.
@@ -557,7 +569,7 @@ mod tests {
 
     #[tokio::test]
     async fn ping_checks_protocol_version() {
-        let path = temp_socket("old");
+        let (_dir, path) = temp_socket("old");
         let server = fake_server(path.clone(), 1, |req| {
             format!(
                 "{{\"id\":{},\"result\":{{\"type\":\"pong\",\"version\":\"0.1.0\",\"protocol\":3}}}}\n",
@@ -581,7 +593,7 @@ mod tests {
 
     #[tokio::test]
     async fn correlates_ids_and_types_results() {
-        let path = temp_socket("ok");
+        let (_dir, path) = temp_socket("ok");
         let server = fake_server(path.clone(), 2, |req| {
             match req["method"].as_str().unwrap() {
                 "ping" => format!(
@@ -616,7 +628,7 @@ mod tests {
     #[tokio::test]
     async fn survey_reads_the_snapshot_and_multi_pane_layouts() {
         // Replies as herdr 0.9.1 sends them (trimmed).
-        let path = temp_socket("survey");
+        let (_dir, path) = temp_socket("survey");
         let server = fake_server(path.clone(), 2, |req| {
             let id = &req["id"];
             match req["method"].as_str().unwrap() {
@@ -655,7 +667,7 @@ mod tests {
 
     #[tokio::test]
     async fn not_found_becomes_none() {
-        let path = temp_socket("nf");
+        let (_dir, path) = temp_socket("nf");
         let server = fake_server(path.clone(), 1, |req| {
             format!(
                 "{{\"id\":{},\"error\":{{\"code\":\"pane_not_found\",\"message\":\"gone\"}}}}\n",
@@ -669,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn waits_for_a_server_that_comes_up_late() {
-        let path = temp_socket("late");
+        let (_dir, path) = temp_socket("late");
         let p2 = path.clone();
         let server = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(300)).await;
@@ -689,7 +701,7 @@ mod tests {
 
     #[tokio::test]
     async fn gives_up_when_nobody_listens() {
-        let path = temp_socket("none");
+        let (_dir, path) = temp_socket("none");
         let client = Client::new(
             &path,
             ClientOptions {
@@ -706,7 +718,7 @@ mod tests {
 
     #[tokio::test]
     async fn times_out_on_a_silent_server() {
-        let path = temp_socket("silent");
+        let (_dir, path) = temp_socket("silent");
         let listener = UnixListener::bind(&path).unwrap();
         let hold = tokio::spawn(async move {
             let (s, _) = listener.accept().await.unwrap();

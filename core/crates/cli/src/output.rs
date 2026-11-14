@@ -69,6 +69,24 @@ pub fn human(result: &Value) -> String {
                 out.push('\n');
             }
         }
+        Some("matches") => {
+            // grep-like: `line: text`, with where it sits when located.
+            for m in result["matches"].as_array().into_iter().flatten() {
+                let at = match (m["row"].as_u64(), m["offset_from_bottom"].as_u64()) {
+                    (Some(row), Some(offset)) => format!(" (row {row}, scroll {offset})"),
+                    _ => String::new(),
+                };
+                let _ = writeln!(
+                    out,
+                    "{}{at}: {}",
+                    scalar(&m["line"]),
+                    m["text"].as_str().unwrap_or("")
+                );
+            }
+            if result["truncated"].as_bool() == Some(true) {
+                out.push_str("(history cut short: older lines weren't searched)\n");
+            }
+        }
         Some("layout_file") => match result["path"].as_str() {
             Some(path) => {
                 let _ = writeln!(out, "wrote {path}");
@@ -383,6 +401,19 @@ mod tests {
         assert_eq!(
             text,
             "* tile_1  browser   http://localhost:3000\n  tile_2  terminal  herdr w1:p2\n"
+        );
+    }
+
+    #[test]
+    fn matches_read_like_grep() {
+        let text = human(&json!({"type": "matches", "truncated": true, "matches": [
+            {"line": 3, "text": "error: boom"},
+            {"line": 9, "text": "error again", "row": 12, "offset_from_bottom": 40}
+        ]}));
+        assert_eq!(
+            text,
+            "3: error: boom\n9 (row 12, scroll 40): error again\n\
+             (history cut short: older lines weren't searched)\n"
         );
     }
 }

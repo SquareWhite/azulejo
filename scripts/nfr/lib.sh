@@ -8,9 +8,9 @@
 #   NFR_APP=/path/Azulejo.app   which bundle to launch (default: the debug build)
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-export AZJ_DEV_NAME=nfr
-dev="$root/.dev/nfr"
-session=azj-dev-nfr
+export AZJ_DEV_NAME="${AZJ_DEV_NAME:-nfr}"
+dev="$root/.dev/$AZJ_DEV_NAME"
+session="azj-dev-$AZJ_DEV_NAME"
 config="$dev/config/azulejo/config.toml"
 state="$dev/state/state.json"
 sock="$dev/run/azulejo.sock"

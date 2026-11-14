@@ -34,9 +34,9 @@ make_app() { # make_app <dir> <commit> <behaviour>
   local app="$1/Azulejo.app" commit="$2" behaviour="${3:-exit}"
   mkdir -p "$app/Contents/MacOS"
   if [[ "$behaviour" == ignore ]]; then
-    printf '#!/bin/bash\ntrap "" TERM\nwhile :; do sleep 0.1; done\n' > "$app/Contents/MacOS/Azulejo"
+    printf '#!/bin/bash\ntrap "" TERM\n[ -n "${AZJ_TEST_READY:-}" ] && : > "$AZJ_TEST_READY"\nwhile :; do sleep 0.1; done\n' > "$app/Contents/MacOS/Azulejo"
   else
-    printf '#!/bin/bash\ntrap "exit 0" TERM\nwhile :; do sleep 0.1; done\n' > "$app/Contents/MacOS/Azulejo"
+    printf '#!/bin/bash\ntrap "exit 0" TERM\n[ -n "${AZJ_TEST_READY:-}" ] && : > "$AZJ_TEST_READY"\nwhile :; do sleep 0.1; done\n' > "$app/Contents/MacOS/Azulejo"
   fi
   chmod +x "$app/Contents/MacOS/Azulejo"
   cat > "$app/Contents/Info.plist" <<PLIST
@@ -66,10 +66,14 @@ installed_commit() {
 }
 
 start_installed() { # run the installed stand-in, like a running Azulejo; sets $pid
-  "$AZJ_DOGFOOD_APPS_DIR/Azulejo.app/Contents/MacOS/Azulejo" >/dev/null 2>&1 &
+  # Wait until its TERM trap is in place: the first exec of a freshly signed
+  # bundle can take longer than a fixed sleep, and a TERM before the trap
+  # kills even the stand-in that should ignore it (E2E, Nov 2026).
+  local ready="$tmp/ready.$RANDOM"
+  AZJ_TEST_READY="$ready" "$AZJ_DOGFOOD_APPS_DIR/Azulejo.app/Contents/MacOS/Azulejo" >/dev/null 2>&1 &
   pid=$!
   dummy_pids+=("$pid")
-  sleep 0.3
+  for _ in $(seq 100); do [[ -e "$ready" ]] && break; sleep 0.05; done
 }
 
 # --- list on an empty dir

@@ -359,6 +359,20 @@ D.1–D.9 ticked; the side-by-side comparison signed off.
 - Traffic lights in the scene's capture (5dc9fef): the capture method. `capture-v1.png` is the app's render of its content view, and the lights live in the title bar outside it; both in-app renders draw them now (grey: the automation window is never key). Recaptured; compare-v1 items 5 and 6 fixed.
 - Preview headings about twice the mockup's size (9002409): body 13 px, heading 18 px semibold, code 11 px, mockup colours in dark.
 
+### E2E status
+
+**Status (Nov 4, 2026):** [docs/testing/e2e-plan.md](docs/testing/e2e-plan.md) ran twice: [11-03](docs/testing/e2e-report-2026-11-03.md) and [11-04](docs/testing/e2e-report-2026-11-04.md). As of 5f7a013, fixes for the findings from both runs are merged, apart from the designer questions in the 11-04 report. V14 (tab labels heavier than the mockup's, "( ctrl+d" spacing) is also still open; neither report files it as a designer question.
+
+**Needs the maintainer (screen on):**
+- `apps/macos/automation/e2e/stale-check.sh`
+- `anim.sh` display-link ticks
+- `scripts/nfr/coldstart.sh` first frame
+- Quick Look visuals
+- Light appearance
+- Hover states
+- Real Reduce Motion
+- ⌘K → Esc over an open find bar, by hand
+
 ---
 
 ## M3 — Linux MVP, all P0 (4 to 6 weeks)

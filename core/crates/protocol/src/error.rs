@@ -47,7 +47,13 @@ impl ErrorCode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Error {
     pub code: ErrorCode,
+    /// For people: shells show it as is, so it names no IDs.
     pub message: String,
+    /// For programs: what the error is about, such as `{"tile": "tile_…",
+    /// "direction": "right"}` or `{"param": "kind"}`. Over JSON-RPC these
+    /// fields sit in the error's `data` beside `code`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }
 
 impl Error {
@@ -55,7 +61,19 @@ impl Error {
         Self {
             code,
             message: message.into(),
+            data: None,
         }
+    }
+
+    /// Adds `data`'s fields (an object) to the error's data.
+    pub fn with_data(mut self, data: serde_json::Value) -> Self {
+        match (&mut self.data, data) {
+            (Some(serde_json::Value::Object(have)), serde_json::Value::Object(more)) => {
+                have.extend(more)
+            }
+            (slot, data) => *slot = Some(data),
+        }
+        self
     }
 }
 
@@ -69,11 +87,28 @@ impl std::error::Error for Error {}
 
 impl From<ModelError> for Error {
     fn from(e: ModelError) -> Self {
+        use serde_json::json;
         let code = match &e {
             e if e.is_not_found() => ErrorCode::NotFound,
             ModelError::InvalidValue(_) => ErrorCode::InvalidParams,
             _ => ErrorCode::InvalidState,
         };
-        Error::new(code, e.to_string())
+        let data = match &e {
+            ModelError::WindowNotFound(id) => Some(json!({ "window": id })),
+            ModelError::WorkspaceNotFound(id) => Some(json!({ "workspace": id })),
+            ModelError::TabNotFound(id) => Some(json!({ "tab": id })),
+            ModelError::TileNotFound(id) => Some(json!({ "tile": id })),
+            ModelError::NoNeighbour { tile, direction }
+            | ModelError::NoEdge { tile, direction } => {
+                Some(json!({ "tile": tile, "direction": direction }))
+            }
+            ModelError::DifferentTabs { a, b } => Some(json!({ "tiles": [a, b] })),
+            ModelError::NothingFocused | ModelError::InvalidValue(_) => None,
+        };
+        let error = Error::new(code, e.to_string());
+        match data {
+            Some(data) => error.with_data(data),
+            None => error,
+        }
     }
 }

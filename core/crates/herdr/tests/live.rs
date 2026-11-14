@@ -230,6 +230,13 @@ async fn full_lifecycle_against_real_herdr() {
         Resolved::Same(_)
     ));
     assert_eq!(client.reresolve(&term).await.unwrap(), Resolved::Gone);
+    // The same answers, in order, from one read of herdr's panes.
+    let many = client
+        .reresolve_many(&[keep.clone(), term.clone()])
+        .await
+        .unwrap();
+    assert!(matches!(many[0], Resolved::Same(_)), "{many:?}");
+    assert_eq!(many[1], Resolved::Gone);
 
     // Restart the server mid-test: requests and the event stream recover.
     client.stop_server().await.unwrap();
@@ -262,6 +269,13 @@ async fn full_lifecycle_against_real_herdr() {
     };
     assert_eq!(p.pane_id, keep.pane_id);
     assert_ne!(p.terminal_id, keep.terminal_id);
+    assert_eq!(
+        client
+            .reresolve_many(std::slice::from_ref(&keep))
+            .await
+            .unwrap(),
+        [Resolved::Respawned(p)]
+    );
 
     // Events flow on the recovered stream.
     client
@@ -292,8 +306,11 @@ async fn attach_command_runs_and_reports_takeover() {
 
     // herdr attach needs a terminal with a size, so run it under `script`,
     // which gives it a PTY. stderr goes to a file via with_stderr_file.
-    let dir = std::env::temp_dir().join(format!("azj-attach-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let errs = tempfile::Builder::new()
+        .prefix("azj-attach-")
+        .tempdir()
+        .unwrap();
+    let dir = errs.path();
     let spawn = |takeover: bool, name: &str| {
         let err = dir.join(format!("{name}.err"));
         let _ = std::fs::remove_file(&err);

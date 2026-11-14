@@ -459,6 +459,55 @@ fn export_of_one_tab_and_relative_paths() {
 }
 
 #[test]
+fn export_tidies_doubled_slashes_in_paths() {
+    // A cwd built as `$TMPDIR/name`, where $TMPDIR ends in a slash.
+    let mut engine = Engine::new();
+    let created = engine
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                cwd: Some("/var/folders/mf/T//azj-e2e".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    let Reply::Created(azulejo_protocol::Created {
+        workspace: Some(ws),
+        ..
+    }) = created.reply
+    else {
+        panic!("{:?}", created.reply);
+    };
+    let mut content = TileContent::terminal();
+    if let TileContent::Terminal { cwd, .. } = &mut content {
+        *cwd = Some("/srv//app/./web".into());
+    }
+    engine
+        .execute(Command::TabCreate(azulejo_protocol::TabCreate {
+            workspace: Some(ws),
+            content: Some(content),
+            ..Default::default()
+        }))
+        .unwrap();
+    let toml = match engine
+        .execute(Command::LayoutExport(LayoutExport {
+            workspace: Some(ws),
+            ..LayoutExport::default()
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::LayoutFile { toml, .. } => toml,
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        toml.contains("cwd = \"/var/folders/mf/T/azj-e2e\""),
+        "{toml}"
+    );
+    assert!(toml.contains("cwd = \"/srv/app/web\""), "{toml}");
+    assert!(!toml.contains("//"), "{toml}");
+}
+
+#[test]
 fn adopted_style_trees_export_generically() {
     // A tree no shorthand covers still exports, as `root`.
     let mut engine = Engine::new();

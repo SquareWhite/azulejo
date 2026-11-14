@@ -246,7 +246,8 @@ class Gen:
         sig = f"    {'async ' if is_async else ''}def {name}({', '.join(args)}) -> Reply:"
         lines = [sig]
         doc = (cmd["doc"] or "").strip()
-        param_docs = [f"{py_name(k)}: {d.strip().splitlines()[0]}" for k, _, _, d, _ in cmd["params"] if d]
+        # Whole descriptions, one line each: the first line alone can stop mid-sentence.
+        param_docs = [f"{py_name(k)}: {' '.join(d.split())}" for k, _, _, d, _ in cmd["params"] if d]
         full = f"`{cmd['method']}`." + (f" {doc}" if doc else "")
         if param_docs:
             full += "\n\n" + "\n".join(param_docs)

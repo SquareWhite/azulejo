@@ -39,6 +39,13 @@ impl Session {
     }
 }
 
+/// Whether [`Herdr::connect_or_start`] found the server running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerOrigin {
+    Running,
+    Started,
+}
+
 /// The herdr executable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Herdr {
@@ -114,6 +121,19 @@ impl Herdr {
         session: &Session,
         opts: ClientOptions,
     ) -> Result<(Client, ServerInfo)> {
+        self.connect_or_start(session, opts)
+            .await
+            .map(|(client, info, _)| (client, info))
+    }
+
+    /// [`Herdr::ensure_server`], also saying whether the server was already
+    /// running. One that was just started has fresh terminals in every pane
+    /// it restored.
+    pub async fn connect_or_start(
+        &self,
+        session: &Session,
+        opts: ClientOptions,
+    ) -> Result<(Client, ServerInfo, ServerOrigin)> {
         let socket = self.socket_path(session).await?;
         let probe = Client::new(
             &socket,
@@ -126,7 +146,7 @@ impl Herdr {
             },
         );
         match probe.ping().await {
-            Ok(info) => return Ok((Client::new(socket, opts), info)),
+            Ok(info) => return Ok((Client::new(socket, opts), info, ServerOrigin::Running)),
             Err(e) if e.is_unreachable() => {}
             Err(e) => return Err(e),
         }
@@ -143,7 +163,7 @@ impl Herdr {
             },
         );
         let info = waiting.ping().await?;
-        Ok((Client::new(socket, opts), info))
+        Ok((Client::new(socket, opts), info, ServerOrigin::Started))
     }
 
     fn spawn_server(&self, session: &Session) -> Result<()> {

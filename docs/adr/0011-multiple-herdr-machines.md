@@ -1,6 +1,6 @@
 # 0011: Several herdr machines at once, taken from herdr
 
-Status: accepted · Nov 3, 2026 · M2 (PLAN 2.13, PRD F17)
+Status: accepted · Nov 3, 2026 · M2 (PLAN 2.13, PRD F17) · amended Nov 4, 2026: `connected` means the bound panes are checked (see "Amendment")
 
 ## Context
 
@@ -44,3 +44,13 @@ Only `herdr machine list --json` reads the catalogue without connecting (`src/cl
 - **Tile moves across machines:** a terminal tile keeps its own `HerdrRef.machine`, so moving it into a Local workspace keeps it attached to its remote pane. New terminals follow the workspace.
 - **Not verified live:** the SSH path against a real remote. Tests run the same bridge and attach commands through a stand-in `ssh` that executes the remote script locally against throwaway herdr sessions; the real-SSH checks are in PLAN's deferred list.
 - **Rejected:** an Azulejo-owned `[[machines]]` list with hosts (duplicates herdr; user said no); `herdr --machine X <cli>` per call (no event stream, one process per request); OpenSSH Unix-socket forwarding (`-L local.sock:remote.sock`) — works with any herdr but needs the remote socket path first and bypasses herdr's own bridge and its capability check.
+
+## Amendment (Nov 4, 2026): `connected` means the bound panes are checked
+
+The e2e pass measured a herdr restart taking 1.7–1.8 s to reattach. The core said `connected` the moment the event stream came back, so shells reattached to terminals the restart had replaced, failed, and switched only when the rebinds landed (docs/measurements.md, "herdr reconnect after the e2e pass").
+
+- A machine reads `connected` once the core has reached it **and** re-checked every bound tile's pane (one `pane.list`), on add and after every connect or resync. The check runs beside the worker, so a slow survey doesn't hold it up. Until then it reads `connecting` or `reconnecting`.
+- `machine.status` and Local's `herdr.status` go out only when the state changes.
+- Terminal tiles hold their attach until their machine is `connected` (2 s at most).
+- Local starts `connected` when its herdr was already running at launch: its panes are most likely the saved ones, and a normal relaunch shouldn't wait. A herdr the core had to start reads `connecting` until the check is in.
+- The local event stream retries at least every 250 ms while herdr is down; remote machines keep their 1–30 s back-off.

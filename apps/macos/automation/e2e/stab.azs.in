@@ -1,0 +1,36 @@
+# B15: kill this app's WebContent and QuickLook processes (only ones whose
+# responsible process is the app: killrp.py). Terminals keep running; the
+# browser tile shows its banner and reloads. stab.sh fills @HERE@ @SITE@ @FX@.
+log B15 stability
+delivery direct
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+core {"method":"terminal.send_text","params":{"text":"while true; date +%s >> @OUT@/ticker.txt; sleep 0.5; end\n"}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@FX@/doc.pdf"}}}
+until tile.mode native-pdf 5000
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"browser","url":"@SITE@"}}}
+until tile.title Page A 8000
+wait 1500
+sh pgrep -P $PPID | sort > {out}/children-before.txt
+sh wc -l < {out}/ticker.txt > {out}/ticks-before.txt
+sh python3 @HERE@/killrp.py $PPID com.apple.WebKit.WebContent > {out}/killed-webcontent.txt
+until tile.banner This page stopped working. 5000
+shot 01-browser-crashed
+sh python3 @HERE@/killrp.py $PPID quicklook > {out}/killed-quicklook.txt
+wait 2500
+shot 02-after-quicklook-kill
+sh pgrep -P $PPID | sort > {out}/children-after.txt
+sh test "$(wc -l < {out}/ticker.txt)" -gt "$(cat {out}/ticks-before.txt)"
+sh cmp {out}/children-before.txt {out}/children-after.txt
+expect windows 1
+# Recover: reload the page (⌘R in the page).
+tile key cmd+r
+until tile.title Page A 8000
+wait 800
+log banner after reload follows
+remember tile.banner
+shot 03-browser-reloaded
+key alt+k
+expect tile.kind preview
+log preview after QuickLook kill
+remember tile.mode

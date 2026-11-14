@@ -280,3 +280,84 @@ Nov 3, 2026, Apple Silicon, 120 Hz built-in display, screen unlocked (display li
 | Setup before the first frame | 5.3 ms median, 20.3 ms max |
 
 One run, not six, so the ≥ 5-of-6 target above stays open. The inner tile views no longer round and mask their own corners (terminal radius 4, tile radius 6 before), so no layer in a tile is masked with a radius now; crop motion's clip is rectangular. GPU-side offscreen passes can't be counted without Instruments (full Xcode).
+
+## herdr reconnect after the e2e pass: cause and fix
+
+**Date:** Nov 4, 2026
+**Machine:** macOS test environment, herdr 0.9.1, debug builds (`just mac`). Screen locked, other agents' builds running: the load average is next to every number.
+**Builds:** 1.13 (`3a0755b`), before (`5c35b22`, the e2e pass) and after (this branch), each built from its own tree and run on its own `perf…` dev instance.
+**Method:**
+- `scripts/nfr/reconnect.sh [runs]` (new): restore.sh's session (6 terminals, a browser and a zoomed preview), then per run: stop herdr for 1 s and start it (server start → every terminal reattached and holding), and quit, stop herdr and launch (launch → every terminal attached and holding).
+- A scratch harness doing the same through `apps/macos/dev.sh` (rounds 1 and 2 below), so launches include `dev.sh`.
+- `apps/macos/automation/restore.sh`, unchanged, for the other restore steps.
+- `scripts/nfr/coldstart.sh 10` for boot.
+
+### What was slow
+
+A timestamped trace of the core and the shell (not committed) showed where the time went. herdr's machine list, git and header polling weren't on the path. Machines are off in dev profiles and run on their own thread anyway; git runs on its own threads; process polling runs beside the worker.
+
+1. **Shells reattached to terminals herdr had replaced.** A herdr restart gives every pane a fresh terminal. The core sent `herdr.status connected` as soon as its event stream came back, and checked the tiles afterwards: one `pane.list` per tile, queued on the worker behind a survey. So every tile first reattached to its old terminal ("terminal not found"), then switched when the rebind landed. Since 2.15, header and agent updates also restarted attaches to the dead terminal while a tile waited out "terminal gone".
+2. **That churn sometimes killed the new attach.** An attach started right after the tile stopped its previous one sometimes died within 10–30 ms, before writing a status or stderr. The trace shows it; the libghostty mechanism wasn't pinned down. The tile read it as a failure. It was the second in 10 s (herdr going away was the first), so the tile backed off for 1 s: the 1.7–1.8 s restarts. At launch, the retry hit "already attached" and waited 250 ms: the ~800 ms launches.
+3. **The event stream retried up to 1 s apart.** After restore.sh's 1 s outage, the next try came 0.5–0.6 s after herdr was back. That's the ~750 ms floor, in 1.13 too.
+
+### Fixes
+
+- **Core:** a machine counts as `connected` only after the core has rebound its tiles to the panes herdr has now. One `pane.list` covers all tiles, run beside the worker when a machine is added and on every connect and resync. `herdr.status` and `machine.status` are sent only on change. Local starts `connected` when herdr was already running, so a normal relaunch doesn't wait. The local event stream retries at least every 250 ms. ADR 0011 has the amendment.
+- **Shell:** terminal tiles wait for their machine to be connected (2 s at most). "herdr back" reattaches after the session refresh, with the new bindings. "Terminal gone" holds still until the core decides. A rebind clears the old terminal's failure history. "Already attached" retries after 0.1–0.4 s instead of 0.25 s each.
+
+### Before and after
+
+`scripts/nfr/reconnect.sh 5`, one build after the other:
+
+| Build | herdr restart → reattached | Launch with herdr stopped | Load |
+| --- | --- | --- | --- |
+| 1.13 (`3a0755b`) | 736, 743, 862, 943, 766 ms (median 766) | 442, 449, 382, 305, 436 ms (median 436) | 1.0–1.3 |
+| Before (`5c35b22`) | 844, **1845**, 733, 735, 744 ms (median 744) | 460, 808, 798, 796, 481 ms (median 796) | 1.2–1.5 |
+| After | 201, 335, 315, 326, 311 ms (median 315) | 376, 325, 322, 382, 375 ms (median 375) | 0.9–1.2 |
+| After, earlier run | 330, 302, 320, 331, 304 ms | 368, 353, 437, 394, 342 ms | 1.7–2.2 |
+
+Scratch harness through `dev.sh`, two rounds of 5, builds interleaved:
+
+| Build | herdr restart → reattached | Launch with herdr stopped | Load |
+| --- | --- | --- | --- |
+| 1.13 | 741–944 ms, median 849 | 316–469 ms, median 450 | 1.2–3.6 |
+| Before | 773–1815 ms, median 862; **4 of 10 over 1.7 s** | 337–1315 ms, median 480; 4 of 10 over 800 ms | 1.1–2.3 |
+| After | 207–333 ms, median 320 | 355–405 ms, median 398 | 1.4–4.1 |
+
+`apps/macos/automation/restore.sh`, every step's checks passed:
+
+| Step | Before (2 runs) | After (3 runs) |
+| --- | --- | --- |
+| Quit → relaunch | 281, 284 ms | 286, 289, 273 ms |
+| kill -9 → relaunch | 290, 289 ms | 288, 282, 411 ms |
+| Attach processes killed, then wake | 176, 62 ms | 170, 165, 64 ms |
+| Same, no wake (1 s back-off) | 1112, 1102 ms | 1105, 1105, 1104 ms |
+| herdr restart | 1825, 1821 ms | 198, 222, 203 ms |
+| Launch with herdr stopped | 438, 824 ms | 397, 391, 392 ms |
+
+Loads were 1.6–2.1.
+
+- **Targets met.** Launch with herdr stopped is now 322–437 ms, under 1.13's 460–490. herdr restart reattaches in 198–335 ms across 23 runs, against the 1 s target and the 2 s NFR.
+- **Relaunch and wake don't move.** With herdr already running, Local is connected from the start and tiles attach as before.
+
+### Cold start
+
+`scripts/nfr/coldstart.sh 10`. Medians in ms, from process start. First frame isn't measurable: the screen was locked, so it hit the 2 s fallback.
+
+| Build | Load | Empty: core | Empty: layout | Restored: core | Restored: layout | Restored: terminals attached |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1.13 | 3.0 | 73.6 | 138.1 | 82.8 | 229.2 | 217.6 |
+| Before | 1.5–1.9 | 76.2 | 162.6 | 81.3 | 248.1 | 236.5 |
+| After | 1.6–1.8 | 76.9 | 156.9 | 84.0 | 249.8 | 238.1 |
+
+- **Core boot hasn't regressed.** It's within 4 % of 1.13. The e2e pass's +18 % was load.
+- **Layout is ~20 ms slower than 1.13, and this work doesn't change that.** It's the new window chrome (sidebar, tab strip, cards, header strips, palette), built in the first refresh, with no single hotspot:
+  - views ~5 ms
+  - applying the window ~10 ms more
+  - showing it ~7 ms more
+
+  Opening the first `NSWindow` (~21 ms) costs the same in every build. The 500 ms cold-start NFR still has plenty of room.
+
+### Also seen
+
+herdr 0.9.1 sometimes takes ~100–110 ms to pick up a new API connection. With a debug-logging server, our request was "received" 105 ms after we'd connected, while other clients got answers in between. When it hits the boot `ping`, core boot grows by that much. That's herdr's side; it's intermittent and the same in every build.

@@ -458,13 +458,57 @@ fn rename_and_open_update_tiles() {
             path: Some("/tmp/plan.md".into())
         }
     );
-    let err = engine
+    // Another kind of tile gets a new preview beside it.
+    let outcome = engine
         .execute(Command::PreviewOpen(PreviewOpen {
             tile: Some(browser),
             path: "/tmp/plan.md".into(),
         }))
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidState);
+        .unwrap();
+    assert!(matches!(outcome.reply, Reply::Created(Created { tile: Some(t), .. }) if t != preview));
+}
+
+#[test]
+fn preview_open_from_a_terminal_opens_a_preview_to_its_right_and_keeps_focus() {
+    let mut engine = Engine::new();
+    let terminal = engine.session().focused_tile().unwrap();
+    let outcome = engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: Some(terminal),
+            path: "/work/plan.md".into(),
+        }))
+        .unwrap();
+    let Reply::Created(Created {
+        tile: Some(preview),
+        ..
+    }) = outcome.reply
+    else {
+        panic!("expected created, got {:?}", outcome.reply);
+    };
+    let s = engine.session();
+    assert_eq!(
+        s.tile(preview).unwrap().content,
+        TileContent::Preview {
+            path: Some("/work/plan.md".into())
+        }
+    );
+    assert_eq!(s.focused_tile(), Some(terminal));
+    let tab = s.tab(s.focus().tab.unwrap()).unwrap();
+    assert_eq!(tab.root.tiles(), vec![terminal, preview]);
+    assert!(!names(&outcome.events).contains(&"focus.changed".to_owned()));
+
+    // Focus elsewhere stays there too: naming another tile doesn't pull
+    // focus to it.
+    split(&mut engine, Direction::Down);
+    let focused = engine.session().focused_tile().unwrap();
+    engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: Some(terminal),
+            path: "/work/other.md".into(),
+        }))
+        .unwrap();
+    assert_eq!(engine.session().focused_tile(), Some(focused));
+    assert_eq!(engine.session().check_invariants(), Ok(()));
 }
 
 #[test]
@@ -474,6 +518,59 @@ fn search_finds_lines_case_insensitively_by_default() {
     assert_eq!(hits.iter().map(|m| m.line).collect::<Vec<_>>(), vec![1, 2]);
     assert_eq!(crate::terminal::search(text, "WARN", true).len(), 1);
     assert!(crate::terminal::search(text, "nope", false).is_empty());
+}
+
+#[test]
+fn line_rows_follow_soft_wraps() {
+    use crate::terminal::line_rows;
+    // Typed lines against the rows on screen: line 1 wraps (herdr trims the
+    // space at the wrap), line 2 is blank.
+    let lines = ["$ ls", "one two three", "", "end"];
+    let rows = ["$ ls", "one two", " three", "", "end"];
+    assert_eq!(
+        line_rows(&lines, &rows),
+        vec![Some(0), Some(1), Some(3), Some(4)]
+    );
+    // Rows that stop lining up (output arrived between the reads).
+    let moved = ["$ ls", "one two", "new output"];
+    assert_eq!(line_rows(&lines, &moved), vec![Some(0), None, None, None]);
+    assert_eq!(
+        line_rows(&lines, &["$ ls"]),
+        vec![Some(0), None, None, None]
+    );
+}
+
+#[test]
+fn first_row_finds_the_view_in_a_cut_read() {
+    use crate::terminal::first_row;
+    let view = |offset| azulejo_protocol::ScrollState {
+        offset_from_bottom: offset,
+        max_offset_from_bottom: 10,
+        viewport_rows: 2,
+    };
+    // Buffer rows 0..12; herdr gave rows 5..=10 (row 11 is blank, trimmed).
+    let rows = ["e", "f", "x", "x", "y", "$"];
+    // Live view: rows 10 and 11, shown as "$" alone.
+    assert_eq!(first_row(&rows, &["$"], &view(0)), Some(5));
+    // Scrolled up 3: rows 7 and 8, "x x"; nearest the guess wins.
+    assert_eq!(first_row(&rows, &["x", "x"], &view(3)), Some(5));
+    // Scrolled above the read: no anchor.
+    assert_eq!(first_row(&rows, &["a", "b"], &view(9)), None);
+}
+
+#[test]
+fn centre_puts_a_row_mid_view() {
+    use crate::terminal::centre;
+    let view = azulejo_protocol::ScrollState {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 128,
+        viewport_rows: 40,
+    };
+    // Rows 0..168; row 122 shows mid-view with its top at 102.
+    assert_eq!(centre(122, &view), 26);
+    // Near the top: as far up as it goes; near the bottom: the live view.
+    assert_eq!(centre(3, &view), 128);
+    assert_eq!(centre(167, &view), 0);
 }
 
 #[test]

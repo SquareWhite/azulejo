@@ -44,7 +44,7 @@ enum AttentionStyle {
             } else if attention > 0 {
                 (color, count) = (AttentionStyle.done, attention)
             } else if working > 0 {
-                (color, count) = (AttentionStyle.working.withAlphaComponent(0.6), 0)
+                (color, count) = (AttentionStyle.working.withAlphaComponent(Design.Alpha.workingMarker), 0)
             } else {
                 return nil
             }
@@ -55,11 +55,16 @@ enum AttentionStyle {
     }
 }
 
-/// Badges over the tiles: the agent's name and state in each terminal
-/// tile's top-right corner, and a thin coloured border on tiles that need a
-/// look. Lies over the tile container and passes every click through.
+/// Badges on the tiles: the agent's name and state at the right end of each
+/// terminal tile's header strip (clear of the terminal's text; the badge is
+/// the strip's subview, so it moves with it and the title keeps clear of
+/// it), and a thin coloured border on tiles that need a look. The overlay
+/// lies over the tile container and passes every click through.
 @MainActor
 final class AttentionOverlayView: NSView {
+    /// A tile's header strip, so the badge can sit in it.
+    var header: ((String) -> TileHeaderView?)?
+    /// Badges by tile; each lives in its tile's header strip.
     private var badges: [String: AgentBadgeView] = [:]
     private var borders: [String: NSView] = [:]
     /// What's drawn, for automation: tile id → "blocked!" / "working" / …
@@ -91,18 +96,24 @@ final class AttentionOverlayView: NSView {
                   agent.status != .unknown || agent.attention
             else { continue }
             seen.insert(id)
-            let badge = badges[id] ?? {
-                let b = AgentBadgeView()
-                addSubview(b)
-                badges[id] = b
-                return b
-            }()
+            let badge = badges[id] ?? AgentBadgeView()
+            badges[id] = badge
             badge.apply(tile)
-            let size = badge.fittingSize
-            // Just below the tile's header strip (F28), clear of its controls.
-            let top = frame.maxY - min(TileFrame.headerHeight, frame.height)
-            badge.frame = NSRect(x: frame.maxX - size.width - 8, y: top - size.height - 6,
-                                 width: size.width, height: size.height)
+            // In the header strip's right end. A narrow tile gets the dot
+            // alone, so the title keeps some room.
+            badge.compact = false
+            if badge.fittingSize.width > frame.width * 0.45 { badge.compact = true }
+            if let strip = header?(id), !strip.isHidden {
+                // The strip lays it out and keeps its title clear of it.
+                strip.badge = badge
+            } else {
+                // A tile without a strip: over its top right corner.
+                if badge.superview !== self { addSubview(badge) }
+                let size = badge.fittingSize, inset = Design.Space.badgeInset
+                let top = min(TileFrame.headerHeight, frame.height)
+                badge.frame = NSRect(x: frame.maxX - size.width - inset, y: frame.maxY - top + (top - size.height) / 2,
+                                     width: size.width, height: size.height)
+            }
 
             let focused = tab?.focused == id
             if agent.attention, !focused || agent.status == .blocked {
@@ -116,7 +127,7 @@ final class AttentionOverlayView: NSView {
                     return v
                 }()
                 border.layer?.borderColor = (agent.status == .blocked
-                    ? AttentionStyle.blocked : AttentionStyle.done).withAlphaComponent(0.85).cgColor
+                    ? AttentionStyle.blocked : AttentionStyle.done).withAlphaComponent(Design.Alpha.attentionBorder).cgColor
                 border.frame = frame.insetBy(dx: -1, dy: -1)
             } else if let border = borders.removeValue(forKey: id) {
                 border.removeFromSuperview()
@@ -124,6 +135,7 @@ final class AttentionOverlayView: NSView {
             state[Short.id(id)] = agent.status.rawValue + (agent.attention ? "!" : "")
         }
         for (id, badge) in badges where !seen.contains(id) {
+            if let strip = header?(id), strip.badge === badge { strip.badge = nil }
             badge.removeFromSuperview()
             badges[id] = nil
         }
@@ -135,31 +147,51 @@ final class AttentionOverlayView: NSView {
     }
 }
 
-/// "● claude · blocked" in a tile's corner. Working agents get a slow,
-/// gentle pulse on the dot; nothing else moves.
+/// "● claude · blocked" in a tile's header strip; just "●" when `compact`.
+/// Working agents get a slow, gentle pulse on the dot; nothing else moves.
 @MainActor
 final class AgentBadgeView: NSView {
     private let dot = CALayer()
     private let label = NSTextField(labelWithString: "")
     private var pulsing = false
+    private var labelConstraints: [NSLayoutConstraint] = []
+    private var compactConstraints: [NSLayoutConstraint] = []
+    private static let dotSize = Design.Radius.badgeDot * 2
+
+    /// The dot alone (narrow tiles); the label stays in the tooltip.
+    var compact = false {
+        didSet {
+            guard compact != oldValue else { return }
+            label.isHidden = compact
+            NSLayoutConstraint.deactivate(compact ? labelConstraints : compactConstraints)
+            NSLayoutConstraint.activate(compact ? compactConstraints : labelConstraints)
+            needsLayout = true
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.badge
         layer?.backgroundColor = Design.Color.badge.cgColor
-        dot.cornerRadius = 4
+        dot.cornerRadius = Design.Radius.badgeDot
         layer?.addSublayer(dot)
         label.font = Design.Font.badgeLabel
         label.textColor = Design.Color.textOnAccent
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
-        NSLayoutConstraint.activate([
+        labelConstraints = [
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             label.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-        ])
+        ]
+        let side = Self.dotSize + 10
+        compactConstraints = [
+            widthAnchor.constraint(equalToConstant: side),
+            heightAnchor.constraint(equalToConstant: side),
+        ]
+        NSLayoutConstraint.activate(labelConstraints)
     }
 
     @available(*, unavailable)
@@ -178,6 +210,7 @@ final class AgentBadgeView: NSView {
         case .unknown: "…"
         }
         label.stringValue = "\(name) · \(status)"
+        toolTip = label.stringValue
         let color = AttentionStyle.color(for: tile) ?? AttentionStyle.idle
         dot.backgroundColor = color.cgColor
         setPulse(agent.status == .working)
@@ -186,7 +219,8 @@ final class AgentBadgeView: NSView {
 
     override func layout() {
         super.layout()
-        dot.frame = CGRect(x: 8, y: bounds.midY - 4, width: 8, height: 8)
+        let d = Self.dotSize, x = compact ? (bounds.width - d) / 2 : 8
+        dot.frame = CGRect(x: x, y: bounds.midY - d / 2, width: d, height: d)
     }
 
     private func setPulse(_ on: Bool) {
@@ -195,7 +229,7 @@ final class AgentBadgeView: NSView {
         if on, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             let pulse = CABasicAnimation(keyPath: "opacity")
             pulse.fromValue = 1
-            pulse.toValue = 0.35
+            pulse.toValue = Design.Alpha.badgePulse
             pulse.duration = 1.2
             pulse.autoreverses = true
             pulse.repeatCount = .infinity

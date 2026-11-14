@@ -1,0 +1,16 @@
+# B4: [animation] enabled = false makes layout changes instant.
+log B4 animation off
+delivery direct
+until terminal.phase attached 10000
+anim reset
+key ctrl+cmd+t
+capture off-split-30 30
+wait 600
+capture off-split-end 0
+wait 300
+key alt+shift+m
+capture off-zoom-30 30
+wait 600
+capture off-zoom-end 0
+wait 300
+anim stats off-stats

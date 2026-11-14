@@ -93,7 +93,7 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
 | `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
 | `goto` (quick open, places only: opens with `@`) | unbound | was `cmd+p`; rebind it to get that back |
-| `find` (scrollback search via herdr, ADR 0005; page find in browser) | `cmd+f` | new |
+| `find` (scrollback search via herdr in terminals, ADR 0005; page find in browsers and previews; the filter in files) | `cmd+f` | new |
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
@@ -208,6 +208,8 @@ To verify in 1.7: whether this still holds when the pane has the kitty keyboard 
 | `alt+<letter>` | types `˙∆˚¬…` in text fields | in browser tiles `alt+h/j/k/l/w/o` won't type those characters, which is acceptable. Shells lose fish's `alt+h` (help), `alt+l` (list dir) and `alt+w` (whatis), as they already do under herdr |
 
 **Browser-tile shortcuts:** `cmd+l` (address bar), `cmd+r` (reload), `cmd+[` / `cmd+]` (back/forward) and `cmd+f` (find) don't collide with anything above. `cmd+[` / `cmd+]` were deliberately not used for tab cycling; `ctrl+tab` covers that.
+
+**Find bar (`cmd+f`):** in terminal, browser and preview tiles a bar opens under the header. `enter` or `cmd+g` goes to the next match, `shift+enter` or `cmd+shift+g` to the previous one, and `esc` closes the bar and hands the keyboard back to the tile. While you type there, other chords resolve without the tile's context, so `cmd+a` selects the query. In terminals the search runs over herdr's history (at most its last 1000 rows; the count shows `+` when that cut anything off), newest match first. The pane scrolls so the match sits mid-view, libghostty highlights every match in view, and `esc` scrolls back to where you were. In files tiles, `cmd+f` opens the filter (like `/`).
 
 ### Hammerspoon
 

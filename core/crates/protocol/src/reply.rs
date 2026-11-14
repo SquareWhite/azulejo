@@ -53,6 +53,9 @@ pub enum Reply {
         /// herdr cut the history short; older lines weren't searched.
         #[serde(default)]
         truncated: bool,
+        /// With `locate`: the terminal's view when it was searched.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scroll: Option<ScrollState>,
     },
     /// An event stream started; notifications carry this `subscription`.
     Subscribed {
@@ -126,6 +129,15 @@ pub struct SearchMatch {
     /// 0-based line in the searched history, oldest first.
     pub line: usize,
     pub text: String,
+    /// With `locate`: the line's first row in herdr's buffer, 0 being the
+    /// oldest row herdr keeps (a soft-wrapped line takes several rows).
+    /// Absent when the rows couldn't be matched up with the lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row: Option<u64>,
+    /// With `locate`: the `terminal.scroll` offset that puts this line in
+    /// the middle of the view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_from_bottom: Option<u64>,
 }
 
 /// IDs of what a command created; only the relevant fields are set.

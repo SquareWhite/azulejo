@@ -37,6 +37,10 @@ final class TileContainerView: NSView {
 
     let clock = MotionClock()
     private var link: CADisplayLink?
+    /// Display-link ticks so far; a motion that saw none ran with the
+    /// display asleep or the screen locked.
+    private(set) var linkTicks = 0
+    private var ticksAtMotionStart = 0
 
     override var isFlipped: Bool { false }
 
@@ -189,6 +193,9 @@ final class TileContainerView: NSView {
         views.values.compactMap { ($0 as? MotionAware)?.surfaceResizes }.reduce(0, +)
     }
 
+    /// A tile's header strip, for overlays drawn in it (the agent badge).
+    func header(of id: String) -> TileHeaderView? { (views[id] as? TileFrame)?.header }
+
     /// Frames of the tiles actually on screen (Monocle and zoom hide the
     /// rest), for overlays such as attention badges.
     func visibleTileFrames() -> [String: CGRect] {
@@ -289,6 +296,13 @@ final class TileContainerView: NSView {
             CATransaction.commit()
         }
 
+        // The z positions set below (leaving tiles under the rest, a zoomed
+        // tile over its neighbours, the ring on top) in the subview order
+        // too: anything that draws the layer tree in list order, as the app's
+        // own captures do (`render(in:)` ignores zPosition), would otherwise
+        // show a fading tile over the one growing into its space (V20).
+        restack(back: closing.map(\.0) + hiding.map(\.0), front: tab?.zoomed.flatMap { views[$0] })
+
         // 3. Carry everything there visually.
         generation += 1
         let gen = generation
@@ -296,9 +310,10 @@ final class TileContainerView: NSView {
         motionEnds = CACurrentMediaTime() + duration + tail
         MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, motionEnds)
         Perf.motionStarted = CACurrentMediaTime()
+        ticksAtMotionStart = linkTicks
         removeGhosts()
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen) }
+        CATransaction.setCompletionBlock { [weak self] in self?.motionEnded(gen, via: "completion") }
         for m in movers {
             guard let layer = m.view.layer else { continue }
             switch style {
@@ -332,6 +347,20 @@ final class TileContainerView: NSView {
 
         MotionStats.shared.started(kind: kind, setup: CACurrentMediaTime() - t0)
         wake()
+    }
+
+    /// Reorders the subviews: `back` first, `front` just under the ring, the
+    /// ring last. Setting `subviews` to the same views reorders them without
+    /// removing any, so first responder and surfaces stay put.
+    private func restack(back: [NSView], front: NSView?) {
+        let backIDs = Set(back.map(ObjectIdentifier.init))
+        let current = subviews
+        var ordered = current.filter { backIDs.contains(ObjectIdentifier($0)) }
+        ordered += current.filter { !backIDs.contains(ObjectIdentifier($0)) && $0 !== front && $0 !== ring }
+        if let front, front.superview === self, !backIDs.contains(ObjectIdentifier(front)) { ordered.append(front) }
+        if ring.superview === self { ordered.append(ring) }
+        guard ordered.count == current.count, !zip(ordered, current).allSatisfy({ $0 === $1 }) else { return }
+        subviews = ordered
     }
 
     /// A new tile grows out of the edge it shares with the tile it split from;
@@ -635,8 +664,12 @@ final class TileContainerView: NSView {
         (view as? TileFrame)?.stopCornerMotion()
     }
 
-    private func motionEnded(_ gen: Int) {
+    private func motionEnded(_ gen: Int, via: String) {
         guard gen == generation else { return }
+        if !frozen.isEmpty || linkTicks == ticksAtMotionStart {
+            Motion.log("motion \(gen) ended (\(via)): \(frozen.count) frozen terminal(s), "
+                + "\(linkTicks - ticksAtMotionStart) display-link tick(s)")
+        }
         finishLeaving()
         removeGhosts()
         for view in subviews where view !== ring { view.layer?.zPosition = 0 }
@@ -708,7 +741,7 @@ final class TileContainerView: NSView {
         let dim = Motion.settings.dimInactive && visibleTiles.count > 1
         for id in visibleTiles {
             guard let view = views[id] else { continue }
-            let alpha: CGFloat = dim && id != tab.focused ? 0.72 : 1
+            let alpha: CGFloat = dim && id != tab.focused ? Design.Alpha.unfocusedTile : 1
             guard view.alphaValue != alpha else { continue }
             if animate {
                 NSAnimationContext.runAnimationGroup { ctx in
@@ -719,6 +752,18 @@ final class TileContainerView: NSView {
                 view.alphaValue = alpha
             }
         }
+    }
+
+    /// Automation: what each visible terminal shows right now (live surface
+    /// or motion snapshot) and whether it's current, for captures that would
+    /// otherwise pass off an old frame as the app's state.
+    func captureFreshness() -> (tiles: [[String: Any]], ticks: Int) {
+        let moving = CACurrentMediaTime() < motionEnds
+        let shown = Set(visibleTiles)
+        let tiles = views.filter { shown.contains($0.key) }.sorted { $0.key < $1.key }.compactMap { _, view in
+            ((view as? TileFrame)?.content as? TerminalTileView)?.captureFreshness(moving: moving)
+        }
+        return (tiles, linkTicks - ticksAtMotionStart)
     }
 
     /// Automation: each tile's on-screen frame right now (mid-motion: the
@@ -786,6 +831,7 @@ final class TileContainerView: NSView {
     }
 
     @objc private func tick(_ link: CADisplayLink) {
+        linkTicks += 1
         let now = CACurrentMediaTime()
         if now <= motionEnds + 0.02 {
             MotionStats.shared.tick(link.timestamp, now: now)

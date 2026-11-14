@@ -46,7 +46,7 @@ cat >"$side/machines.json" <<EOF
 [{"id":"0123456789abcdef0123456789abcdef","label":"standin","target":"standin-host",
   "session":"$remote","enabled":true,"selected":false},
  {"id":"fedcba9876543210fedcba9876543210","label":"parked","target":"parked-host",
-  "session":"default","enabled":false,"selected":false}]
+  "session":"azj-dev-$AZJ_DEV_NAME-parked","enabled":false,"selected":false}]
 EOF
 cat >"$dev/config/azulejo/config.toml" <<EOF
 # Dev profile config (written by automation/machines.sh)

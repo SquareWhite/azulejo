@@ -118,10 +118,11 @@ impl World {
         let mut all = vec!["--json"];
         all.extend_from_slice(args);
         let out = self.azj_raw(&all);
+        // With --json the error object is on stdout.
         assert!(
             out.status.success(),
             "azj {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
+            String::from_utf8_lossy(&out.stdout)
         );
         serde_json::from_slice(&out.stdout).unwrap()
     }

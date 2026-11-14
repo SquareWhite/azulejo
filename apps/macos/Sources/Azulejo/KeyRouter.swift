@@ -89,7 +89,17 @@ final class KeyRouter {
             return false
         }
 
-        let outcome = app.core.key(chord: chord, tile: controller.keyContext)
+        // A tile's find bar takes its own keys (enter, shift+enter, ⌘G,
+        // escape). Other chords resolve without the tile's context while
+        // typing there: ⌘A selects the query instead of toggling the sidebar.
+        let findBar = FindBar.focused(in: event.window ?? controller.window)
+        if let findBar, findBar.handle(chord: chord) {
+            app.core.resetKeys()
+            lastOutcome = "find"
+            return true
+        }
+        let context = findBar == nil ? controller.keyContext : nil
+        let outcome = app.core.key(chord: chord, tile: context)
         app.log("key \(chord) → \(Self.describe(outcome))")
         let kind = outcome["outcome"] as? String ?? "?"
         lastOutcome = kind == "action" ? "action:\(Self.describe(outcome))" : (kind == "unhandled" ? "passed" : kind)

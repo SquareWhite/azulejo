@@ -122,8 +122,11 @@ pub enum Event {
     #[serde(rename = "files.git")]
     FilesGit(crate::files::FilesGit),
 
-    /// The core's link to herdr came up or dropped. After `connected: true`,
-    /// shells reattach terminal tiles that gave up waiting. Not saved.
+    /// The core's link to Local's herdr came up or dropped; sent only when
+    /// that changes. `connected: true` comes once the core has re-checked
+    /// every bound tile's pane (a herdr restart gives each pane a new
+    /// terminal), so shells reattach waiting terminal tiles to current
+    /// panes. Not saved.
     #[serde(rename = "herdr.status")]
     HerdrStatus {
         connected: bool,

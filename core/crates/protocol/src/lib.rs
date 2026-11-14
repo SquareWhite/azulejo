@@ -14,6 +14,7 @@ mod error;
 mod event;
 mod files;
 mod machines;
+mod params;
 mod project;
 mod reply;
 mod schema;

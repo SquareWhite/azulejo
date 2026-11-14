@@ -16,7 +16,13 @@ import GhosttyKit
 /// - **ended**: the pane is gone. Respawn starts a new pane in the tile's
 ///   place; Close closes the tile.
 /// - **waiting**: no pane yet, herdr is unreachable (retries with backoff), or
-///   the core runs without herdr.
+///   the core runs without herdr. A tile also waits until the core says its
+///   machine is connected: the core checks every bound pane first, so after
+///   a herdr restart the tile attaches to the pane herdr has now, not to the
+///   terminal the restart replaced (attaching to that one, then switching,
+///   cost a failed attach and up to a second's back-off).
+/// - **gone**: herdr says the terminal is gone; the core is about to close
+///   the tile, end it or rebind it. Nothing restarts until it does.
 ///
 /// Closing the tile only detaches: the pane keeps running in herdr. Killing it
 /// is the core's `tile.close {kill: true}`.
@@ -32,6 +38,8 @@ final class TerminalTileView: NSView, TileView {
         case observing(takenOver: Bool)
         case ended
         case retrying(attempt: Int)
+        /// The attach ended with "terminal gone": wait for the core's verdict.
+        case gone
     }
 
     private var phase: Phase = .waiting("starting…")
@@ -43,6 +51,8 @@ final class TerminalTileView: NSView, TileView {
     private var focused = false
     private var closed = false
     private var retryWork: DispatchWorkItem?
+    /// Attaches anyway if the core never says the machine is connected.
+    private var connectWait: DispatchWorkItem?
     private var resizeWork: DispatchWorkItem?
     private var observedSize: (cols: Int, rows: Int)?
     /// Recent detaches (ctrl+b q); a burst means something keeps detaching us.
@@ -55,6 +65,8 @@ final class TerminalTileView: NSView, TileView {
     private var ownAttachEnded: (terminal: String, at: Date)?
     private var ghostRetries: [Date] = []
     private let overlay = TerminalOverlay()
+    /// ⌘F: made on first use, then kept with its query.
+    private var finder: TerminalFinder?
     private let runDir: URL
     /// Layout motion (ADR 0004): the last frame, covering the live surface
     /// while the tile moves and the PTY redraws at its new size. `freeze` is
@@ -64,6 +76,13 @@ final class TerminalTileView: NSView, TileView {
     private var freezeImage: NSView?
     private var freezeFills = true
     private var freezeBefore: IOSurfaceRef?
+    /// When the snapshot went up and when its motion ended, for the reveal log.
+    private var frozenAt: CFTimeInterval = 0
+    private var motionEndedAt: CFTimeInterval?
+    /// Bumped by every motion that freezes (or keeps frozen) this tile.
+    private var motionToken = 0
+    /// How long after a motion the reveal waits for a fresh frame at most.
+    static let revealDeadline: CFTimeInterval = 0.25
     /// PTY resizes are at most one per 50 ms while frozen (key repeat).
     private var lastSurfaceResize: CFTimeInterval = 0
     private var pendingSurfaceResize: DispatchWorkItem?
@@ -72,6 +91,10 @@ final class TerminalTileView: NSView, TileView {
     private static var log: (String) -> Void = { _ in }
     /// Every open terminal tile, for herdr.status and wake health checks.
     private static let live = NSHashTable<TerminalTileView>.weakObjects()
+    /// Machines (`local` or herdr's ID) the core has said are connected, with
+    /// their bound panes checked: `machines.list`, then `herdr.status` and
+    /// `machine.status`.
+    private static var connected: Set<String> = []
     /// When the current wait for an attach began (launch, wake, herdr back),
     /// and why; logged with the time it took (PLAN 1.12: ≤ 2 s).
     private var attachClock: (start: Date, reason: String)?
@@ -81,6 +104,7 @@ final class TerminalTileView: NSView, TileView {
     static func install(core: Core, log: @escaping (String) -> Void) {
         Self.core = core
         Self.log = log
+        TerminalSurfaceView.log = log
         guard TerminalRuntime.start(log: log) != nil else { return }
         TileViews.register(.terminal) { tile in TerminalTileView(tile) }
         installDebugHook()
@@ -123,6 +147,8 @@ final class TerminalTileView: NSView, TileView {
     func setFocused(_ focused: Bool) {
         self.focused = focused
         guard focused, let window, TileFocus.canTake(in: window) else { return }
+        // Typing in this tile's find bar: refreshes leave it there.
+        if finder?.bar.holdsKeyboard == true { return }
         let target: NSView = surface ?? self
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }
@@ -132,6 +158,7 @@ final class TerminalTileView: NSView, TileView {
         pendingSurfaceResize?.cancel()
         Self.live.remove(self)
         retryWork?.cancel()
+        connectWait?.cancel()
         resizeWork?.cancel()
         stopSurface()
         try? FileManager.default.removeItem(at: runDir)
@@ -142,6 +169,7 @@ final class TerminalTileView: NSView, TileView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         overlay.frame = bounds
+        layoutFindBar()
         if freezeFills {
             freeze?.frame = bounds
             freezeImage?.frame = bounds
@@ -207,6 +235,12 @@ final class TerminalTileView: NSView, TileView {
                 : .waiting("no herdr: this terminal has no session")
             return render()
         }
+        if let last = lastTerminal, last != herdr.terminalId {
+            // A new terminal: the old one's failures say nothing about it.
+            failures.removeAll()
+            detaches.removeAll()
+            ghostRetries.removeAll()
+        }
         if phase == .ended {
             phase = .waiting("reattaching…")
             if attachClock == nil { attachClock = (Date(), "rebind") }
@@ -222,6 +256,10 @@ final class TerminalTileView: NSView, TileView {
             case .observing(let takenOver): startObserve(takenOver: takenOver)
             case .retrying where lastTerminal == herdr.terminalId:
                 break // the timer restarts it
+            case .gone where lastTerminal == herdr.terminalId:
+                break // the core closes, ends or rebinds it
+            case .waiting where connectWait != nil && !Self.isConnected(herdr.machine):
+                break // the core says when the machine is connected
             case .retrying:
                 // Rebound while backing off (herdr respawned the pane): no
                 // reason to wait for the timer.
@@ -234,8 +272,14 @@ final class TerminalTileView: NSView, TileView {
         render()
     }
 
-    private func startAttach(takeover: Bool) {
+    private func startAttach(takeover: Bool, force: Bool = false) {
         guard let herdr = model.herdr else { return }
+        if !takeover, !force, !Self.isConnected(herdr.machine) {
+            waitForConnection()
+            return
+        }
+        connectWait?.cancel()
+        connectWait = nil
         let started = startSurface(
             mode: takeover ? "takeover" : "attach", herdr: herdr, readOnly: false)
         if started {
@@ -248,6 +292,31 @@ final class TerminalTileView: NSView, TileView {
             }
         }
         render()
+    }
+
+    /// Holds the attach until the core says the tile's machine is connected
+    /// (`herdrBack`), or 2 s at most.
+    private func waitForConnection() {
+        if case .waiting = phase {} else { phase = .waiting("connecting to herdr…") }
+        render()
+        guard connectWait == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.closed, self.surface == nil, self.model.ended != true else { return }
+            self.connectWait = nil
+            Self.log("terminal \(Short.id(self.tileID)): no word from the core; attaching anyway")
+            self.startAttach(takeover: false, force: true)
+        }
+        connectWait = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    private static func isConnected(_ machine: String?) -> Bool {
+        connected.contains(machine ?? MachineModel.local)
+    }
+
+    /// The core's machine list (`machines.list`): which machines are connected.
+    static func noteMachines(_ machines: [MachineModel]) {
+        connected = Set(machines.filter { $0.state == .connected }.map(\.id))
     }
 
     private func startObserve(takenOver: Bool) {
@@ -299,6 +368,7 @@ final class TerminalTileView: NSView, TileView {
         }
         // Sized by setFrameSize, so motion controls when the PTY resizes.
         view.autoresizingMask = []
+        view.logName = Short.id(tileID)
         view.onExit = { [weak self, weak view] in
             guard let self, let view, view === self.surface else { return }
             self.surfaceExited(readOnly: readOnly)
@@ -311,8 +381,11 @@ final class TerminalTileView: NSView, TileView {
         lastTerminal = herdr.terminalId
         Self.log("terminal \(Short.id(tileID)): \(mode) \(herdr.terminalId)")
         // A surface that comes up (attach finished, reattach) takes the
-        // keyboard from its tile, but not from the ⌘K field (TileFocus).
-        if focused, let window, TileFocus.canTake(in: window) { window.makeFirstResponder(view) }
+        // keyboard from its tile, but not from the ⌘K field (TileFocus) or
+        // the tile's find bar.
+        if focused, let window, TileFocus.canTake(in: window), finder?.bar.holdsKeyboard != true {
+            window.makeFirstResponder(view)
+        }
         return true
     }
 
@@ -358,7 +431,8 @@ final class TerminalTileView: NSView, TileView {
             // let go of it yet. Try again shortly rather than going read-only.
             phase = .waiting("reattaching…")
             render()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            let delay = 0.1 * Double(max(1, ghostRetries.count))
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, !self.closed, self.surface == nil,
                       self.model.herdr?.terminalId == herdr.terminalId else { return }
                 self.startAttach(takeover: false)
@@ -378,6 +452,8 @@ final class TerminalTileView: NSView, TileView {
             if case .retrying(let n) = phase {
                 retry(attempt: n + 1)
             } else {
+                phase = .gone
+                render()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self, !self.closed, self.surface == nil,
                           self.model.ended != true, self.model.herdr?.terminalId == herdr.terminalId
@@ -490,6 +566,8 @@ final class TerminalTileView: NSView, TileView {
         switch phase {
         case .retrying, .waiting:
             retryWork?.cancel()
+            connectWait?.cancel()
+            connectWait = nil
             if attachClock == nil { attachClock = (Date(), reason) }
             Self.log("terminal \(Short.id(tileID)): reattaching (\(reason))")
             startAttach(takeover: false)
@@ -518,9 +596,13 @@ final class TerminalTileView: NSView, TileView {
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            object["event"] as? String == "machine.status",
            let machine = (object["data"] as? [String: Any])?["machine"] as? [String: Any],
-           let id = machine["id"] as? String,
-           machine["state"] as? String == "connected"
+           let id = machine["id"] as? String
         {
+            guard machine["state"] as? String == "connected" else {
+                Self.connected.remove(id)
+                return
+            }
+            Self.connected.insert(id)
             log("machine \(machine["label"] as? String ?? id) connected")
             for tile in live.allObjects where (tile.model.herdr?.machine ?? MachineModel.local) == id {
                 tile.herdrBack(reason: "machine back")
@@ -535,6 +617,7 @@ final class TerminalTileView: NSView, TileView {
         else { return }
         let connected = body["connected"] as? Bool == true
         log("herdr \(connected ? "connected" : "disconnected: \(body["message"] as? String ?? "")")")
+        if connected { Self.connected.insert(MachineModel.local) } else { Self.connected.remove(MachineModel.local) }
         guard connected else { return }
         for tile in live.allObjects where tile.model.herdr?.machine == nil {
             tile.herdrBack(reason: "herdr back")
@@ -576,10 +659,10 @@ final class TerminalTileView: NSView, TileView {
             Self.log("terminal \(Short.id(tileID)): phase \(phaseName)")
         }
         switch phase {
-        case .attached:
+        case .attached, .gone:
             overlay.show(nil)
         case .waiting(let text):
-            overlay.show(.init(style: .full, title: text, detail: nil, buttons: []))
+            overlay.show(.init(style: .placeholder, title: text, detail: nil, buttons: []))
         case .observing(let takenOver):
             overlay.show(.init(
                 style: .banner,
@@ -644,6 +727,7 @@ final class TerminalTileView: NSView, TileView {
         case .observing(let takenOver): takenOver ? "observing-taken-over" : "observing"
         case .ended: "ended"
         case .retrying: "retrying"
+        case .gone: "gone"
         }
     }
 }
@@ -653,6 +737,54 @@ private extension NSView {
         if let tile = self as? TerminalTileView, tile.tileID == id { return tile }
         for sub in subviews { if let found = sub.findTerminal(id) { return found } }
         return nil
+    }
+}
+
+// MARK: - Find (⌘F)
+
+extension TerminalTileView: Findable {
+    var findBar: FindBar? { finder?.bar }
+
+    func beginFind() -> String? {
+        guard model.herdr != nil, model.ended != true else { return "no herdr pane to search" }
+        let finder = self.finder ?? makeFinder()
+        if finder.bar.superview == nil {
+            // Over the top rows, not above them: shrinking the surface would
+            // resize the PTY and reflow herdr's pane mid-search.
+            addSubview(finder.bar, positioned: .above, relativeTo: overlay)
+        }
+        layoutFindBar()
+        finder.open()
+        return nil
+    }
+
+    private func makeFinder() -> TerminalFinder {
+        let finder = TerminalFinder(tileID: tileID, core: { Self.core }, surface: { [weak self] in self?.surface })
+        finder.bar.onFocus = { [weak self] in
+            // A click into the bar of a tile that isn't focused focuses it.
+            if self?.focused == false { self?.clickFocus() }
+        }
+        finder.onClosed = { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self.surface ?? self)
+        }
+        self.finder = finder
+        return finder
+    }
+
+    fileprivate func layoutFindBar() {
+        guard let bar = finder?.bar else { return }
+        bar.frame = NSRect(x: 0, y: bounds.height - FindBar.height, width: bounds.width, height: FindBar.height)
+    }
+}
+
+extension TerminalTileView: AutomatableTile {
+    func automate(_ verb: String, _ arg: String) -> String? {
+        "unknown terminal verb \(verb)"
+    }
+
+    func automationState() -> [String: String] {
+        finder?.automationState() ?? ["tile.find": "closed"]
     }
 }
 
@@ -680,6 +812,7 @@ extension TerminalTileView: MotionAware {
 
     @discardableResult
     func motionWillStart(freeze: Bool, fill: Bool) -> Bool {
+        motionToken += 1  // a reveal timer from an earlier motion no longer applies
         if self.freeze != nil { return true }  // mid-motion: keep the first snapshot
         guard freeze, let surface, let image = surface.snapshot() else { return false }
         let scale = window?.backingScaleFactor ?? 2
@@ -702,6 +835,8 @@ extension TerminalTileView: MotionAware {
         freezeImage = picture
         freezeFills = fill
         freezeBefore = surface.presentedSurface
+        frozenAt = CACurrentMediaTime()
+        motionEndedAt = nil
         return true
     }
 
@@ -720,7 +855,7 @@ extension TerminalTileView: MotionAware {
         clock.add { [weak self] _ in
             guard let self, self.freeze != nil else { return false }
             if self.liveFrameReady() {
-                self.unfreeze()
+                self.unfreeze(reason: "fresh")
                 return false
             }
             return true
@@ -730,20 +865,31 @@ extension TerminalTileView: MotionAware {
     func motionDidEnd(clock: MotionClock) {
         guard freeze != nil else { return }
         flushSurfaceResize()
-        let deadline = CACurrentMediaTime() + 0.25
+        motionEndedAt = CACurrentMediaTime()
+        let deadline = CACurrentMediaTime() + Self.revealDeadline
         clock.add { [weak self] now in
             guard let self, self.freeze != nil else { return false }
             if self.liveFrameReady() || now > deadline {
-                self.unfreeze()
+                self.unfreeze(reason: now > deadline ? "deadline" : "fresh")
                 return false
             }
             return true
+        }
+        // The clock runs on the display link, which doesn't tick while the
+        // screen is locked or the display sleeps (and may not while the
+        // window is hidden). libghostty keeps drawing then, so the snapshot
+        // must still go: a plain timer takes it down shortly after the
+        // deadline if the clock hasn't.
+        let token = motionToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealDeadline + 0.05) { [weak self] in
+            guard let self, self.freeze != nil, self.motionToken == token else { return }
+            self.unfreeze(reason: "timer, no display-link tick")
         }
     }
 
     func motionCancelled() {
         flushSurfaceResize()
-        unfreeze()
+        unfreeze(reason: "cancelled")
     }
 
     /// The live surface has drawn a new frame at its current pixel size.
@@ -758,7 +904,8 @@ extension TerminalTileView: MotionAware {
         return sized && fresh
     }
 
-    private func unfreeze() {
+    private func unfreeze(reason: String) {
+        if freeze != nil { logReveal(reason) }
         freezeImage?.removeFromSuperview()
         freeze?.removeFromSuperview()
         freeze = nil
@@ -766,12 +913,65 @@ extension TerminalTileView: MotionAware {
         freezeFills = true
         freezeBefore = nil
     }
+
+    /// What a capture of this tile shows right now (automation): the live
+    /// surface or its motion snapshot, and whether that's current. `stale`
+    /// lists what makes it not current; empty when it is. `moving`: a motion
+    /// is in flight, so a snapshot is expected.
+    func captureFreshness(moving: Bool) -> [String: Any] {
+        let now = CACurrentMediaTime()
+        var info: [String: Any] = ["tile": Short.id(tileID), "phase": phaseName]
+        var stale: [String] = []
+        if freeze != nil {
+            info["shows"] = "snapshot"
+            let since = now - (motionEndedAt ?? frozenAt)
+            if !moving, since > Self.revealDeadline + 0.1 {
+                stale.append("its motion snapshot is still up \(Int(since * 1000)) ms after "
+                    + (motionEndedAt == nil ? "freezing" : "the motion ended"))
+            }
+        } else {
+            info["shows"] = surface == nil ? "overlay" : "live"
+        }
+        if let surface {
+            let px = surface.lastPixelSize
+            info["surface_px"] = "\(Int(px.width))x\(Int(px.height))"
+            info["presented_px"] = surface.presentedSizeText
+            if surface.resizedAt > 0 { info["ms_since_resize"] = Int((now - surface.resizedAt) * 1000) }
+            if surface.lastFrameSeenAt > 0 { info["ms_since_frame_seen"] = Int((now - surface.lastFrameSeenAt) * 1000) }
+            if !surface.presentedAtSize {
+                stale.append("the live surface shows a \(surface.presentedSizeText) px frame but is "
+                    + "\(Int(px.width))x\(Int(px.height)) px: libghostty hasn't drawn since the resize")
+            }
+        }
+        info["stale"] = stale
+        return info
+    }
+
+    /// One line per reveal: why, when, and whether the live surface it
+    /// uncovers has drawn at its size (`STALE` when it hasn't).
+    private func logReveal(_ reason: String) {
+        let now = CACurrentMediaTime()
+        var line = "terminal \(Short.id(tileID)): revealed (\(reason)) "
+        if let end = motionEndedAt {
+            line += "\(Int((now - end) * 1000)) ms after the motion ended"
+        } else {
+            line += "mid-motion, \(Int((now - frozenAt) * 1000)) ms after freezing"
+        }
+        if let surface {
+            let px = surface.lastPixelSize
+            line += "; live frame \(surface.presentedSizeText) px for \(Int(px.width))x\(Int(px.height))"
+            if !surface.presentedAtSize { line += " STALE" }
+        }
+        Self.log(line)
+    }
 }
 
 @MainActor
 final class TerminalOverlay: NSView {
     enum Action { case takeOver, respawn, close, retryNow }
-    enum Style { case full, banner }
+    /// `placeholder`: a new pane on its way, drawn on the terminal's own
+    /// background so a split doesn't flash a dark hole before the shell.
+    enum Style { case full, placeholder, banner }
 
     struct Button {
         let action: Action
@@ -819,19 +1019,24 @@ final class TerminalOverlay: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         NSLayoutConstraint.deactivate(constraints.filter { $0.firstItem === stack || $0.secondItem === stack })
         let title = NSTextField(labelWithString: content.title)
-        title.font = content.style == .full ? Design.Font.overlayTitle : Design.Font.overlayTitleSmall
-        title.textColor = Design.Color.textOnAccent
+        title.font = content.style == .banner ? Design.Font.overlayTitleSmall : Design.Font.overlayTitle
+        title.textColor = content.style == .placeholder ? Design.Color.textMuted : Design.Color.textOnAccent
         actions = content.buttons.map(\.action)
         let buttons = content.buttons.enumerated().map { index, button in
             let b = NSButton(title: button.title, target: self, action: #selector(pressed(_:)))
             b.tag = index
             b.bezelStyle = .rounded
-            b.controlSize = content.style == .full ? .regular : .small
+            b.controlSize = content.style == .banner ? .small : .regular
             return b
         }
         switch content.style {
-        case .full:
-            layer?.backgroundColor = Design.Color.overlay.cgColor
+        case .full, .placeholder:
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.backgroundColor = (content.style == .placeholder
+                    ? TerminalRuntime.shared?.background ?? Design.Color.tile
+                    : Design.Color.overlay).cgColor
+            }
+            stack.layer?.backgroundColor = nil
             stack.orientation = .vertical
             stack.addArrangedSubview(title)
             if let detail = content.detail {

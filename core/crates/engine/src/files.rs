@@ -512,6 +512,14 @@ impl Files {
         Ok(joined.canonicalize().unwrap_or(joined))
     }
 
+    /// `path` made absolute against a files tile's or panel's root; `path`
+    /// unchanged when the core isn't showing `tile`.
+    pub(crate) fn absolute(&self, tile: TileId, path: &str) -> String {
+        self.join(tile, Some(path))
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| path.to_owned())
+    }
+
     fn join(&self, tile: TileId, path: Option<&str>) -> Result<PathBuf, Error> {
         let root = &self.state(tile)?.root;
         Ok(match path {
@@ -531,8 +539,9 @@ fn done(reply: Reply, events: Vec<Event>) -> Handled {
 fn not_ready(tile: TileId) -> Error {
     Error::new(
         ErrorCode::InvalidState,
-        format!("{tile} isn't a files tile the core is showing"),
+        "that isn't a files tile the core is showing",
     )
+    .with_data(serde_json::json!({ "tile": tile }))
 }
 
 /// The folder a files tile shows: its root, or the home folder.

@@ -1,0 +1,70 @@
+# B3: the maintainer's tall flow in a dynamic Tile tab, then the layout cycle with
+# PTY resize accounting (anim expect-clean: one resize per changed terminal
+# per motion, none for Monocle focus switches).
+log B3 dynamic layouts
+delivery direct
+until terminal.phase attached 10000
+expect kind tile
+# --- the tall flow, keystroke for keystroke ---
+key ctrl+cmd+t
+key ctrl+cmd+t
+key ctrl+cmd+t
+until tiles 4 3000
+expect focus 4
+expect masters 1
+wait 1500
+anim reset
+key alt+enter
+expect key.last action:promote_tile
+expect focus 1
+wait 600
+key alt+o
+expect orientation top
+wait 600
+key alt+o
+expect orientation left
+wait 600
+key alt+l
+key ctrl+alt+shift+j
+wait 600
+key alt+shift+e
+expect key.last action:equalize_layout
+wait 600
+key alt+h
+key ctrl+alt+shift+l
+expect ratio 0.55
+wait 600
+shot 01-tall-flow
+# --- cycle Tile → Monocle → Three Column → manual and back ---
+key alt+backslash
+expect kind monocle
+wait 600
+remember resizes
+key alt+l
+wait 400
+key alt+l
+wait 400
+key alt+h
+wait 400
+unchanged resizes
+shot 02-monocle
+key alt+backslash
+expect kind three_column
+wait 600
+shot 03-three-column
+key alt+shift+t
+expect kind manual
+wait 600
+key alt+shift+t
+expect kind three_column
+wait 600
+key alt+t
+expect kind tile
+wait 800
+anim stats dyn-stats
+anim expect-clean
+shot 04-back-to-tile
+# What herdr itself holds on each pane's screen, next to the in-app shot.
+wait 1500
+shot 05-settled
+sh for i in 1 2 3 4; do :; done; {herdr} --session {session} pane read {pane:1} --source visible --format text > {out}/pane1.txt; {herdr} --session {session} pane read {pane:2} --source visible --format text > {out}/pane2.txt; {herdr} --session {session} pane read {pane:4} --source visible --format text > {out}/pane4.txt

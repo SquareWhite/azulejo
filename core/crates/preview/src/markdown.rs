@@ -48,6 +48,32 @@ pub(crate) fn render_body(text: &str, path: &Path) -> String {
     let mut out = String::with_capacity(text.len() * 2);
     // Writing to a String can't fail.
     let _ = format_html_with_plugins(root, &options, &mut out, &plugins);
+    checkboxes_into_paragraphs(out)
+}
+
+/// In a loose list (items apart by blank lines) comrak writes a task item's
+/// checkbox before the item's first paragraph, so the text starts on the
+/// next line. Moves the checkbox into that paragraph, as GitHub does. Raw
+/// HTML is escaped, so only comrak's own markup matches.
+fn checkboxes_into_paragraphs(html: String) -> String {
+    const ITEM: &str = "<li class=\"task-list-item\">";
+    const PARAGRAPH: &str = "\n<p>";
+    let mut out = String::with_capacity(html.len() + 16);
+    let mut rest = html.as_str();
+    while let Some(i) = rest.find(ITEM) {
+        let after = i + ITEM.len();
+        out.push_str(&rest[..after]);
+        rest = &rest[after..];
+        if rest.starts_with("<input ")
+            && let Some(end) = rest.find("/> ").map(|e| e + "/> ".len())
+            && rest[end..].starts_with(PARAGRAPH)
+        {
+            out.push_str("<p>");
+            out.push_str(&rest[..end]);
+            rest = &rest[end + PARAGRAPH.len()..];
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -235,5 +261,32 @@ mod tests {
         assert!(!html.contains("<script>"), "{html}");
         assert!(!html.contains("<b>"), "{html}");
         assert!(!html.contains("javascript:"), "{html}");
+    }
+
+    #[test]
+    fn loose_task_items_keep_the_checkbox_on_the_texts_line() {
+        let html = render_body("- [ ] one\n\n- [x] two\n\n  more\n", Path::new("/tmp/a.md"));
+        assert_eq!(
+            html,
+            "<ul class=\"contains-task-list\">\n\
+             <li class=\"task-list-item\"><p><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\" /> one</p>\n\
+             </li>\n\
+             <li class=\"task-list-item\"><p><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\" /> two</p>\n\
+             <p>more</p>\n\
+             </li>\n\
+             </ul>\n"
+        );
+        // Tight lists were fine and stay as they were.
+        let tight = render_body("- [ ] one\n- [x] two\n", Path::new("/tmp/a.md"));
+        assert!(
+            tight.contains("<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\" /> one</li>"),
+            "{tight}"
+        );
+        // Text that only looks like the markup is escaped, so it's left alone.
+        let text = render_body(
+            "`<li class=\"task-list-item\"><input />`\n",
+            Path::new("/tmp/a.md"),
+        );
+        assert!(!text.contains("<p><input"), "{text}");
     }
 }

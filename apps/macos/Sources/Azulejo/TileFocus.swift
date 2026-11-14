@@ -12,6 +12,12 @@ import AppKit
 ///
 /// A real focus change (a different tile is now focused) still moves the
 /// keyboard: the container sets `focusMoving` while it applies one.
+///
+/// A tile's open find bar is part of the tile: when the tile is focused again
+/// after something outside it had the keyboard (the ⌘K menu, another tab,
+/// the sidebar), the bar gets the keyboard back if it had it then
+/// (`returnToFindBar`, from `TileFrame.setFocused`, ahead of the tile's own
+/// `setFocused`, which then leaves the bar alone).
 @MainActor
 enum TileFocus {
     /// Set by TileContainerView while it applies a change of focused tile.
@@ -21,11 +27,20 @@ enum TileFocus {
         focusMoving || !typingOutsideTiles(in: window)
     }
 
+    /// Hands the keyboard back to `tile`'s open find bar if the bar had it
+    /// when the keyboard last left the tile.
+    static func returnToFindBar(of tile: any TileView) {
+        guard let bar = (tile as? Findable)?.findBar, bar.isOpen, bar.keepsKeyboard, !bar.holdsKeyboard,
+              let window = bar.window, canTake(in: window)
+        else { return }
+        bar.takeKeyboard()
+    }
+
     /// A visible text field (or its field editor) outside every tile container
     /// has the keyboard, or a view inside something that keeps the keyboard
     /// (the sidebar's Files tree). Fields inside tiles — the browser's
-    /// address bar, the files filter — don't count: the focused tile manages
-    /// those itself.
+    /// address bar, the files filter, a find bar — don't count: the focused
+    /// tile manages those itself (its `setFocused` leaves them alone).
     static func typingOutsideTiles(in window: NSWindow) -> Bool {
         guard let responder = window.firstResponder as? NSView else { return false }
         var view = responder

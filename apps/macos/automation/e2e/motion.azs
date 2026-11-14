@@ -1,0 +1,28 @@
+# C6: slowed focus-ring morph and tab-switch fade, captured mid-motion
+# (in-app renders of the presentation layers; `capture` also asks for a
+# system capture, which needs an unlocked screen).
+log C6 motion polish
+delivery direct
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+key ctrl+cmd+v
+until tiles 2 3000
+wait 2500
+anim duration 1500
+key alt+h
+capture 01-focus-a 300
+capture 01-focus-b 750
+wait 1900
+capture 01-focus-c 0
+wait 300
+key cmd+shift+t
+until tabs 2 3000
+wait 2500
+key ctrl+1
+capture 02-tab-a 150
+capture 02-tab-b 500
+capture 02-tab-c 900
+wait 1900
+capture 02-tab-d 0
+wait 300
+anim stats motion-stats
