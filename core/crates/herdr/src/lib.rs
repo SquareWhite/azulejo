@@ -18,18 +18,24 @@ mod client;
 mod env;
 mod error;
 mod event;
+mod machine;
 mod server;
 mod stream;
+mod transport;
 mod types;
 mod wire;
 
 pub use attach::{AttachCommand, AttachExit};
 pub use client::{Backoff, Client, ClientOptions};
 pub use env::{clean_env, clean_process_env};
-pub use error::{Error, Result};
+pub use error::{Error, Result, needs_attention};
 pub use event::{HerdrEvent, Subscription};
+pub use machine::{
+    MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
+};
 pub use server::{Herdr, Session};
 pub use stream::{EventStream, StreamItem};
+pub use transport::{BridgeCommand, Transport};
 pub use types::*;
 
 /// Minimum herdr socket protocol version Azulejo supports (herdr 0.9.x).

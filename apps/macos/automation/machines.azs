@@ -1,0 +1,39 @@
+# herdr machines in the sidebar (PLAN 2.13, ADR 0011). Run by
+# automation/machines.sh, which sets up the "remote" machine `standin` (a
+# throwaway herdr session reached through an ssh stand-in) and a disabled
+# one, `parked`. Written for AZJ_DEV_NAME=mm; machines.sh renders it for
+# the instance it runs on.
+
+log machines
+# Local plus herdr's list: standin connects, parked stays off.
+until machines Local=connected,parked=off,standin=connected 20000
+# standin's own workspace is adopted under its group.
+until sidebar.machines Local ●|parked ● Off|standin ● 10000
+wait 800
+shot 01-groups
+
+# "+" on standin: a workspace there with a terminal attached over `ssh -tt`.
+machine-add standin
+until workspace.machine standin 5000
+wait 2500
+sh {herdr} --session azj-dev-mm-remote pane send-text {pane} 'echo "shell on $HERDR_WORKSPACE_ID via ssh"'
+sh {herdr} --session azj-dev-mm-remote pane send-keys {pane} enter
+wait 1200
+shot 02-remote-terminal
+
+# Cut the "SSH link": end the running bridges and refuse new ones. Only
+# standin's group says so; Local stays connected.
+sh touch {out}/../mm.machines/ssh.fail
+sh pkill -f 'azj-dev-mm-remote remote-api-bridge' || true
+until machines Local=connected,parked=off,standin=reconnecting 10000
+expect sidebar.machines Local ●|parked ● Off|standin ● Reconnecting…
+wait 500
+shot 03-reconnecting
+
+# The link comes back: connected again.
+sh rm -f {out}/../mm.machines/ssh.fail
+until machines Local=connected,parked=off,standin=connected 40000
+expect sidebar.machines Local ●|parked ● Off|standin ●
+wait 500
+shot 04-back
+quit

@@ -222,7 +222,9 @@ impl Engine {
                 let window = p.window.or(focus.window).ok_or_else(nothing)?;
                 let count = s.window(window)?.workspaces.len();
                 let name = p.name.unwrap_or_else(|| format!("workspace {}", count + 1));
+                let machine = p.machine.filter(|m| m != azulejo_protocol::LOCAL_MACHINE);
                 let workspace = s.create_workspace(window, name, p.cwd)?;
+                s.set_workspace_machine(workspace, machine)?;
                 Reply::Created(Created {
                     workspace: Some(workspace),
                     ..Created::default()
@@ -548,6 +550,13 @@ impl Engine {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
                     "the command list needs a running core with a config",
+                ));
+            }
+            // Machines are links `Core` holds (ADR 0011).
+            Command::MachinesList => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "machines need a running core",
                 ));
             }
             // The engine can't do I/O; `Core` runs these against herdr.

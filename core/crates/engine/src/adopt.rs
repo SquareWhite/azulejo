@@ -10,6 +10,9 @@
 //! closed here (`Session::detached_herdr`). Panes split off later inside a
 //! tab shown here (the herdr TUI, a phone, an agent) join that tab beside
 //! their herdr sibling (F15, ADR 0009).
+//!
+//! Each herdr machine is surveyed and adopted on its own (ADR 0011): a
+//! survey only matches, prunes and creates things on its own machine.
 
 use std::collections::HashMap;
 
@@ -19,19 +22,22 @@ use azulejo_model::{
     WorkspaceId,
 };
 
+use crate::link::Machine;
+
 /// Mirrors herdr tabs nobody here knows about into `session`. `placeholder` is
 /// the empty workspace a fresh session starts with: it's dropped when adoption
 /// brought in anything, so a first launch shows the user's herdr workspaces
 /// instead of an extra empty one. Returns whether anything changed.
 pub fn adopt(
     session: &mut Session,
+    machine: &Machine,
     survey: &herdr::Survey,
     placeholder: Option<WorkspaceId>,
 ) -> bool {
     let detached_before = session.detached_herdr.len();
     session
         .detached_herdr
-        .retain(|r| survey.panes.iter().any(|p| same_pane(p, r)));
+        .retain(|r| r.machine != *machine || survey.panes.iter().any(|p| same_pane(p, r)));
     let mut changed = session.detached_herdr.len() != detached_before;
 
     let known: Vec<HerdrRef> = session
@@ -41,6 +47,7 @@ pub fn adopt(
             _ => None,
         })
         .chain(session.detached_herdr.iter().cloned())
+        .filter(|r| r.machine == *machine)
         .collect();
     let is_known = |p: &herdr::PaneInfo| known.iter().any(|r| same_pane(p, r));
 
@@ -70,7 +77,7 @@ pub fn adopt(
             .filter(|(_, panes)| !panes.is_empty() && !panes.iter().any(|p| is_known(p)))
             .collect();
 
-        let existing = find_workspace(session, hw.workspace_id.as_str());
+        let existing = find_workspace(session, machine, hw.workspace_id.as_str());
         if let Some(id) = existing {
             mapped.insert(hw.workspace_id.as_str(), id);
         }
@@ -79,14 +86,14 @@ pub fn adopt(
         }
         let (workspace, created) = match existing {
             Some(id) => (id, false),
-            None => (new_workspace(session, hw), true),
+            None => (new_workspace(session, machine, hw), true),
         };
         mapped.insert(hw.workspace_id.as_str(), workspace);
 
         let mut active = None;
         for (tab, panes) in adoptable {
             let layout = survey.layouts.iter().find(|l| l.tab_id == tab.tab_id);
-            let built = build_tab(tab, &panes, layout);
+            let built = build_tab(machine, tab, &panes, layout);
             let id = built.id;
             if session.insert_tab(workspace, built).is_ok() {
                 adopted_any = true;
@@ -100,7 +107,7 @@ pub fn adopt(
         }
     }
     changed |= adopted_any;
-    changed |= adopt_split_panes(session, survey, &is_known);
+    changed |= adopt_split_panes(session, machine, survey, &is_known);
 
     if adopted_any
         && let Some(ph) = placeholder
@@ -134,17 +141,22 @@ pub fn same_pane(p: &herdr::PaneInfo, r: &HerdrRef) -> bool {
         || (p.pane_id.as_str() == r.pane_id && p.tab_id.as_str() == r.tab_id)
 }
 
-fn find_workspace(session: &Session, herdr: &str) -> Option<WorkspaceId> {
+fn find_workspace(session: &Session, machine: &Machine, herdr: &str) -> Option<WorkspaceId> {
     session
         .windows
         .iter()
         .flat_map(|w| &w.workspaces)
-        .find(|w| w.herdr_workspace.as_deref() == Some(herdr))
+        .find(|w| w.machine == *machine && w.herdr_workspace.as_deref() == Some(herdr))
         .map(|w| w.id)
 }
 
-/// A new Azulejo workspace bound to `hw`, added without moving focus.
-fn new_workspace(session: &mut Session, hw: &herdr::WorkspaceInfo) -> WorkspaceId {
+/// A new Azulejo workspace on `machine` bound to `hw`, added without moving
+/// focus.
+fn new_workspace(
+    session: &mut Session,
+    machine: &Machine,
+    hw: &herdr::WorkspaceInfo,
+) -> WorkspaceId {
     let name = hw
         .label
         .clone()
@@ -176,6 +188,9 @@ fn new_workspace(session: &mut Session, hw: &herdr::WorkspaceInfo) -> WorkspaceI
     };
     session
         .bind_workspace(id, hw.workspace_id.0.clone())
+        .expect("workspace just created");
+    session
+        .set_workspace_machine(id, machine.clone())
         .expect("workspace just created");
     id
 }
@@ -219,11 +234,12 @@ fn is_pristine(session: &Session, id: WorkspaceId) -> bool {
 /// An Azulejo tab mirroring one herdr tab. Uses herdr's split tree when it
 /// matches the panes; otherwise lays the panes out side by side.
 pub fn build_tab(
+    machine: &Machine,
     tab: &herdr::TabInfo,
     panes: &[&herdr::PaneInfo],
     layout: Option<&herdr::TabLayout>,
 ) -> Tab {
-    let tiles: Vec<Tile> = panes.iter().map(|p| pane_tile(p)).collect();
+    let tiles: Vec<Tile> = panes.iter().map(|p| pane_tile(machine, p)).collect();
     let by_pane: HashMap<&str, TileId> = panes
         .iter()
         .zip(&tiles)
@@ -265,7 +281,7 @@ pub fn build_tab(
 
 /// A terminal tile bound to an existing herdr pane. Its agent state comes
 /// from the survey afterwards (`agent::refresh`).
-fn pane_tile(p: &herdr::PaneInfo) -> Tile {
+fn pane_tile(machine: &Machine, p: &herdr::PaneInfo) -> Tile {
     let mut content = TileContent::terminal();
     if let TileContent::Terminal { cwd, herdr, .. } = &mut content {
         *cwd = p.cwd.clone();
@@ -273,6 +289,7 @@ fn pane_tile(p: &herdr::PaneInfo) -> Tile {
             pane_id: p.pane_id.0.clone(),
             terminal_id: p.terminal_id.0.clone(),
             tab_id: p.tab_id.0.clone(),
+            machine: machine.clone(),
         });
     }
     Tile {
@@ -289,6 +306,7 @@ fn pane_tile(p: &herdr::PaneInfo) -> Tile {
 /// Returns whether anything was added.
 fn adopt_split_panes(
     session: &mut Session,
+    machine: &Machine,
     survey: &herdr::Survey,
     is_known: &dyn Fn(&herdr::PaneInfo) -> bool,
 ) -> bool {
@@ -311,12 +329,12 @@ fn adopt_split_panes(
             let before = pending.len();
             pending.retain(|p| {
                 let Some((anchor, direction, ratio)) =
-                    layout.and_then(|l| beside(session, &l.root, p.pane_id.as_str()))
+                    layout.and_then(|l| beside(session, machine, &l.root, p.pane_id.as_str()))
                 else {
                     return true;
                 };
                 let placed = session
-                    .insert_tile_beside(anchor, direction, pane_tile(p), ratio)
+                    .insert_tile_beside(anchor, direction, pane_tile(machine, p), ratio)
                     .is_ok();
                 added |= placed;
                 !placed
@@ -328,27 +346,29 @@ fn adopt_split_panes(
         // The rest: the stack of the tab showing this herdr tab's panes.
         let Some(target) = panes
             .iter()
-            .find_map(|p| tile_for_pane(session, p.pane_id.as_str()))
+            .find_map(|p| tile_for_pane(session, machine, p.pane_id.as_str()))
             .and_then(|tile| session.locate(tile).ok())
             .map(|path| session.ids_at(path).2)
         else {
             continue;
         };
         for p in pending {
-            added |= session.insert_tile_auto(target, pane_tile(p)).is_ok();
+            added |= session
+                .insert_tile_auto(target, pane_tile(machine, p))
+                .is_ok();
         }
     }
     added
 }
 
-/// The bound, live tile showing `pane`.
-fn tile_for_pane(session: &Session, pane: &str) -> Option<TileId> {
+/// The bound, live tile showing `pane` on `machine`.
+fn tile_for_pane(session: &Session, machine: &Machine, pane: &str) -> Option<TileId> {
     session.tiles().find_map(|(_, t)| match &t.content {
         TileContent::Terminal {
             herdr: Some(h),
             ended: false,
             ..
-        } if h.pane_id == pane => Some(t.id),
+        } if h.machine == *machine && h.pane_id == pane => Some(t.id),
         _ => None,
     })
 }
@@ -357,6 +377,7 @@ fn tile_for_pane(session: &Session, pane: &str) -> Option<TileId> {
 /// the side `pane` is on, and the split's ratio.
 fn beside(
     session: &Session,
+    machine: &Machine,
     root: &herdr::LayoutNode,
     pane: &str,
 ) -> Option<(TileId, azulejo_model::Direction, f64)> {
@@ -377,16 +398,16 @@ fn beside(
     } else if is_leaf(first) {
         (second, false)
     } else if holds(first) {
-        return beside(session, first, pane);
+        return beside(session, machine, first, pane);
     } else if holds(second) {
-        return beside(session, second, pane);
+        return beside(session, machine, second, pane);
     } else {
         return None;
     };
     let anchor = sibling
         .panes()
         .iter()
-        .find_map(|p| tile_for_pane(session, p.as_str()))?;
+        .find_map(|p| tile_for_pane(session, machine, p.as_str()))?;
     let direction = match (direction, forward) {
         (herdr::SplitDirection::Right, true) => Direction::Right,
         (herdr::SplitDirection::Right, false) => Direction::Left,

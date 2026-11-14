@@ -275,6 +275,7 @@ final class TerminalTileView: NSView, TileView {
             "stderr_file": err.path,
             "status_file": status.path,
         ]
+        if let machine = herdr.machine { request["machine"] = machine }
         if readOnly {
             let size = observeSize()
             observedSize = size
@@ -333,6 +334,7 @@ final class TerminalTileView: NSView, TileView {
             .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         let stderr = try? String(contentsOf: runDir.appendingPathComponent("stderr"), encoding: .utf8)
         var request: [String: Any] = ["terminal_id": herdr.terminalId]
+        if let machine = herdr.machine { request["machine"] = machine }
         request["status"] = status.map { Int($0) } ?? NSNull()
         request["stderr"] = stderr.map { String($0.suffix(2000)) } ?? NSNull()
         if attachClock == nil { attachClock = (Date(), "attach ended") }
@@ -506,8 +508,23 @@ final class TerminalTileView: NSView, TileView {
         herdrBack(reason: reason)
     }
 
-    /// Routes core events this kind cares about: `herdr.status`.
+    /// Routes core events this kind cares about: `herdr.status` (Local) and
+    /// `machine.status` (any machine, ADR 0011).
     static func route(_ json: String) {
+        if json.contains("\"machine.status\""),
+           let data = json.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           object["event"] as? String == "machine.status",
+           let machine = (object["data"] as? [String: Any])?["machine"] as? [String: Any],
+           let id = machine["id"] as? String,
+           machine["state"] as? String == "connected"
+        {
+            log("machine \(machine["label"] as? String ?? id) connected")
+            for tile in live.allObjects where (tile.model.herdr?.machine ?? MachineModel.local) == id {
+                tile.herdrBack(reason: "machine back")
+            }
+            return
+        }
         guard json.contains("\"herdr.status\""),
               let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -517,7 +534,9 @@ final class TerminalTileView: NSView, TileView {
         let connected = body["connected"] as? Bool == true
         log("herdr \(connected ? "connected" : "disconnected: \(body["message"] as? String ?? "")")")
         guard connected else { return }
-        for tile in live.allObjects { tile.herdrBack(reason: "herdr back") }
+        for tile in live.allObjects where tile.model.herdr?.machine == nil {
+            tile.herdrBack(reason: "herdr back")
+        }
     }
 
     /// Wake (NSWorkspace) and the dev hook: check every terminal tile.

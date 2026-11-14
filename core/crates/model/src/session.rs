@@ -236,6 +236,10 @@ pub struct Workspace {
     /// The herdr workspace backing this one, once the adapter has created it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub herdr_workspace: Option<String>,
+    /// The herdr machine its terminals run on: `None` for Local, else
+    /// herdr's saved-machine ID (ADR 0011).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
     pub tabs: Vec<Tab>,
     /// `None` exactly when there are no tabs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -512,6 +516,7 @@ impl Session {
             name: workspace_name.into(),
             cwd,
             herdr_workspace: None,
+            machine: None,
             tabs: Vec::new(),
             active_tab: None,
         };
@@ -581,6 +586,7 @@ impl Session {
             name: name.into(),
             cwd,
             herdr_workspace: None,
+            machine: None,
             tabs: Vec::new(),
             active_tab: None,
         };
@@ -641,6 +647,16 @@ impl Session {
         name: impl Into<String>,
     ) -> Result<(), ModelError> {
         self.workspace_mut(id)?.name = name.into();
+        Ok(())
+    }
+
+    /// Puts `id`'s terminals on a herdr machine (`None` = Local).
+    pub fn set_workspace_machine(
+        &mut self,
+        id: WorkspaceId,
+        machine: Option<String>,
+    ) -> Result<(), ModelError> {
+        self.workspace_mut(id)?.machine = machine;
         Ok(())
     }
 

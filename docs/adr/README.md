@@ -14,3 +14,4 @@ One file per decision: `NNNN-short-title.md`, numbered in order. Each record say
 | [0008](0008-use-the-users-herdr-session.md) | Use the user's own herdr session and adopt what already runs there |
 | [0009](0009-changes-made-in-herdr.md) | Exited panes end their tile, panes closed in herdr remove it; split-off panes and agent status follow herdr |
 | [0010](0010-dynamic-layouts.md) | Bismuth-style dynamic layouts per tab (Tile, Monocle, Three Column); new tabs default to Tile; manual split tree stays a layout kind |
+| [0011](0011-multiple-herdr-machines.md) | Several herdr machines at once, taken from herdr's saved machines; API over herdr's `remote-api-bridge`, terminals over `ssh -tt … terminal attach` |

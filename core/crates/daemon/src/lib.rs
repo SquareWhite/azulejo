@@ -8,7 +8,11 @@
 //! environment (ADR 0006); a server the user started keeps whatever
 //! environment it was started with. `[herdr] session = "NAME"` picks a named
 //! session instead.
+//!
+//! herdr's saved machines come along too (ADR 0011, [`machines`]): each gets
+//! its own link in the core, and terminal tiles on them attach over SSH.
 
+mod machines;
 mod watch;
 
 use std::path::{Path, PathBuf};
@@ -17,9 +21,14 @@ use std::sync::{Arc, RwLock};
 use azulejo_api::{CoreDispatcher, Server, ServerHandle, WithInfo};
 use azulejo_config::{Config, HerdrConfig, Platform};
 use azulejo_engine::{Core, CoreOptions, LogFn, persist};
-use azulejo_herdr::{AttachCommand, ClientOptions, Herdr, Session as HerdrSession, TerminalId};
+use azulejo_herdr::{
+    AttachCommand, Backoff, Client, ClientOptions, Herdr, PaneId, RemoteMachine,
+    Session as HerdrSession, Ssh, TerminalId,
+};
 use serde_json::{Map, Value};
 
+pub use machines::Source as MachineSource;
+use machines::{MachineSync, Registry};
 pub use watch::diagnostic;
 use watch::{ConfigWatch, SharedConfig};
 
@@ -91,6 +100,65 @@ impl HerdrInfo {
     }
 }
 
+/// Where a terminal tile's pane runs: Local, or one of herdr's saved
+/// machines (ADR 0011).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalTarget {
+    Local(HerdrInfo),
+    Remote(RemoteMachine),
+}
+
+impl TerminalTarget {
+    /// The attach command for a tile's PTY (`ssh -tt …` on a remote machine).
+    pub fn attach(&self, terminal: &str, takeover: bool) -> AttachCommand {
+        match self {
+            TerminalTarget::Local(h) => h.attach(terminal, takeover),
+            TerminalTarget::Remote(m) => m.attach(&TerminalId(terminal.to_owned()), takeover),
+        }
+    }
+
+    /// The read-only view at the tile's size.
+    pub fn observe(&self, pane: &str, cols: u16, rows: u16) -> AttachCommand {
+        let pane = PaneId(pane.to_owned());
+        match self {
+            TerminalTarget::Local(h) => h.herdr.observe(&h.session, &pane, cols, rows),
+            TerminalTarget::Remote(m) => m.observe(&pane, cols, rows),
+        }
+    }
+
+    /// A client for asking herdr why an attach ended; answers quickly or
+    /// not at all.
+    pub fn diagnose_client(&self) -> Client {
+        match self {
+            TerminalTarget::Local(h) => Client::new(
+                &h.socket,
+                ClientOptions {
+                    request_timeout: std::time::Duration::from_secs(2),
+                    connect: Backoff {
+                        initial: std::time::Duration::from_millis(50),
+                        max: std::time::Duration::from_millis(200),
+                        give_up_after: std::time::Duration::from_millis(500),
+                    },
+                },
+            ),
+            TerminalTarget::Remote(m) => Client::bridged(
+                m.bridge(),
+                ClientOptions {
+                    request_timeout: std::time::Duration::from_secs(4),
+                    connect: Backoff {
+                        give_up_after: std::time::Duration::ZERO,
+                        ..Backoff::default()
+                    },
+                },
+            ),
+        }
+    }
+
+    pub fn is_remote(&self) -> bool {
+        matches!(self, TerminalTarget::Remote(_))
+    }
+}
+
 /// A running core. Dropping it stops the API server, saves pending state and
 /// stops the engine; herdr panes keep running.
 pub struct App {
@@ -101,6 +169,9 @@ pub struct App {
     watch: Option<ConfigWatch>,
     platform: Platform,
     herdr: Option<HerdrInfo>,
+    /// herdr's saved machines terminal tiles can attach to.
+    remote: Registry,
+    machines: Option<MachineSync>,
     socket: Option<PathBuf>,
     state_path: Option<PathBuf>,
 }
@@ -144,6 +215,11 @@ impl App {
             HerdrChoice::Session(session) => Some(session.clone()),
             HerdrChoice::FromConfig => herdr_session(&config.herdr),
         };
+        // herdr's saved machines: on with herdr's default session, off with a
+        // named one unless the config says so (ADR 0011).
+        let machines_on = session.as_ref().is_some_and(|s| {
+            config.herdr.enabled && config.herdr.machines.unwrap_or(s.name().is_none())
+        });
         let herdr = session.and_then(|session| match connect_herdr(&session) {
             Ok(found) => Some(found),
             Err(e) => {
@@ -186,6 +262,32 @@ impl App {
             )
         });
 
+        let remote: Registry = Default::default();
+        let machines = if machines_on {
+            let herdr_cfg = config.read().map(|c| c.herdr.clone()).unwrap_or_default();
+            let source = match (&herdr_cfg.machines_file, &herdr_info) {
+                (Some(file), _) => Some(machines::Source::File(file.clone())),
+                (None, Some(h)) => Some(machines::Source::Herdr(h.herdr.clone())),
+                (None, None) => Herdr::locate().ok().map(machines::Source::Herdr),
+            };
+            source.map(|source| {
+                let mut ssh = Ssh::default();
+                if let Some(program) = &herdr_cfg.ssh {
+                    ssh.program = program.clone();
+                }
+                MachineSync::start(
+                    &core,
+                    source,
+                    ssh,
+                    config.clone(),
+                    remote.clone(),
+                    log.clone(),
+                )
+            })
+        } else {
+            None
+        };
+
         let mut app = App {
             core: Some(core.clone()),
             server: None,
@@ -193,6 +295,8 @@ impl App {
             watch,
             platform: opts.platform,
             herdr: herdr_info,
+            remote,
+            machines,
             socket,
             state_path: opts.state_path,
         };
@@ -241,6 +345,21 @@ impl App {
         self.herdr.as_ref()
     }
 
+    /// Where a terminal tile on `machine` (a `HerdrRef.machine`: `None` or
+    /// `"local"` for Local, else herdr's machine ID) attaches. `None` when
+    /// that machine isn't known or connected here.
+    pub fn terminal_target(&self, machine: Option<&str>) -> Option<TerminalTarget> {
+        match machine.filter(|m| *m != azulejo_protocol::LOCAL_MACHINE) {
+            None => self.herdr.clone().map(TerminalTarget::Local),
+            Some(id) => self
+                .remote
+                .lock()
+                .ok()
+                .and_then(|r| r.get(id).cloned())
+                .map(TerminalTarget::Remote),
+        }
+    }
+
     /// The API socket, when the API is being served.
     pub fn socket(&self) -> Option<&Path> {
         self.socket.as_deref()
@@ -277,6 +396,7 @@ impl App {
     }
 
     fn stop(&mut self) {
+        self.machines.take();
         self.watch.take();
         if let Some(server) = self.server.take() {
             server.shutdown();
@@ -315,7 +435,10 @@ fn connect_herdr(
         .map_err(|e| azulejo_herdr::Error::Binary(format!("tokio runtime: {e}")))?;
     let (client, _) = runtime.block_on(herdr.ensure_server(session, ClientOptions::default()))?;
     let info = HerdrInfo {
-        socket: client.socket_path().to_owned(),
+        socket: client
+            .socket_path()
+            .expect("a local herdr session has a socket")
+            .to_owned(),
         herdr,
         session: session.clone(),
     };
@@ -496,6 +619,7 @@ mod tests {
         let named = HerdrConfig {
             enabled: true,
             session: Some("azulejo".into()),
+            ..HerdrConfig::default()
         };
         assert_eq!(herdr_session(&named), Some(HerdrSession::named("azulejo")));
         let off = HerdrConfig {
@@ -506,6 +630,7 @@ mod tests {
         let default = HerdrConfig {
             enabled: true,
             session: None,
+            ..HerdrConfig::default()
         };
         assert_eq!(
             herdr_session(&default),

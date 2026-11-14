@@ -104,11 +104,15 @@ async fn session(
         give_up_after: Duration::ZERO,
         ..client.options().connect
     };
-    let stream = client
+    let conn = client
         .connect_with_backoff(once)
         .await
         .map_err(|e| e.to_string())?;
-    let (read, mut write) = stream.into_split();
+    let mut write = conn.write;
+    let read = crate::transport::GuardedRead {
+        inner: conn.read,
+        guard: conn.guard,
+    };
     let line = wire::encode(
         &format!("azj-sub-{seq}"),
         method::EVENTS_SUBSCRIBE,
@@ -126,6 +130,11 @@ async fn session(
         let next = lines.next_line().await;
         let text = match next {
             Ok(Some(text)) => text,
+            Ok(None) | Err(_) if lines.get_ref().get_ref().guard.is_some() => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let why = lines.get_ref().get_ref().bridge_error().expect("bridge");
+                return finish(started, why.to_string());
+            }
             Ok(None) => return finish(started, "herdr closed the event stream".into()),
             Err(e) => return finish(started, e.to_string()),
         };

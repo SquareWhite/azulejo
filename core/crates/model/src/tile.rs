@@ -40,6 +40,26 @@ pub struct HerdrRef {
     pub pane_id: String,
     pub terminal_id: String,
     pub tab_id: String,
+    /// The herdr machine the pane runs on: `None` for Local, else herdr's
+    /// saved-machine ID (ADR 0011). herdr IDs are only unique per server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
+}
+
+impl HerdrRef {
+    /// A pane on Local.
+    pub fn local(
+        pane_id: impl Into<String>,
+        terminal_id: impl Into<String>,
+        tab_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            pane_id: pane_id.into(),
+            terminal_id: terminal_id.into(),
+            tab_id: tab_id.into(),
+            machine: None,
+        }
+    }
 }
 
 /// A tile's content and its kind-specific state.

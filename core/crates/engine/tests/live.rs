@@ -302,7 +302,7 @@ fn terminal_io_round_trips_through_a_real_pane() {
     let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
     // The exit at the end checks I/O on an ended tile.
     core.set_on_exit(OnExit::Keep);
-    assert_eq!(core.herdr_socket(), Some(h.client.socket_path()));
+    assert_eq!(core.herdr_socket(), h.client.socket_path());
     let session = wait_until(&core, Duration::from_secs(10), all_bound);
     let tile = session.focused_tile().unwrap();
 
@@ -727,4 +727,134 @@ fn a_shell_that_exits_closes_its_tile_and_leaves_nothing_in_herdr() {
     });
     assert_eq!(bound_terminals(&after).len(), 2);
     core.shutdown();
+}
+
+fn on_machine(s: &Session, machine: Option<&str>) -> usize {
+    bound_terminals(s)
+        .into_iter()
+        .filter(|(_, h, _)| h.as_ref().is_some_and(|h| h.machine.as_deref() == machine))
+        .count()
+}
+
+fn machine_state(e: &Event, id: &str, state: azulejo_protocol::MachineState) -> bool {
+    matches!(e, Event::MachineStatus { machine } if machine.id == id && machine.state == state)
+}
+
+/// herdr's saved machines (ADR 0011), simulated: a second throwaway session
+/// reached only through the SSH path (an `ssh` stand-in that runs the remote
+/// command here) and herdr's `remote-api-bridge`.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn a_remote_machine_alongside_local() {
+    use azulejo_protocol::MachineState::Connected;
+    let local = TempHerdr::start();
+    let remote = TempHerdr::start();
+    remote.cli(&["workspace", "create", "--label", "on-remote"]);
+    let dir = std::env::temp_dir().join(format!("azj-live-mm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let ssh = dir.join("ssh");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh"),
+        &ssh,
+    )
+    .unwrap();
+    let fail = std::path::PathBuf::from(format!("{}.fail", ssh.display()));
+    let machine = azulejo_herdr::RemoteMachine::new(
+        azulejo_herdr::MachineProfile {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            label: "standin".into(),
+            target: "standin-host".into(),
+            session: remote.name.clone(),
+            enabled: true,
+        },
+        azulejo_herdr::Ssh {
+            program: ssh.clone(),
+            control_dir: dir.clone(),
+        },
+    );
+    let id = machine.profile.id.clone();
+
+    let core = Core::start_with_herdr(opts(&dir.join("state.json")), local.client.clone());
+    let events = core.subscribe();
+    wait_until(&core, Duration::from_secs(10), all_bound);
+    let local_tiles = on_machine(&core.session().unwrap(), None);
+    let before_local = local.structure();
+    core.add_machine(id.clone(), "standin".into(), machine.client());
+    // Adopted over SSH: the remote session's workspace and its pane.
+    let s = wait_until(&core, Duration::from_secs(15), |s| {
+        s.windows[0]
+            .workspaces
+            .iter()
+            .any(|w| w.name == "on-remote" && w.machine.as_deref() == Some(id.as_str()))
+            && on_machine(s, Some(&id)) == 1
+    });
+    assert_eq!(on_machine(&s, None), local_tiles);
+    wait_for_event(&events, |e| machine_state(e, &id, Connected));
+
+    // A workspace made on the machine runs its shell there.
+    let t0 = Instant::now();
+    let reply = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                name: Some("made-here".into()),
+                machine: Some("standin".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(created) = reply.reply else {
+        panic!("{reply:?}")
+    };
+    let ws_id = created.workspace.unwrap();
+    core.execute(Command::TabCreate(azulejo_protocol::TabCreate {
+        workspace: Some(ws_id),
+        ..Default::default()
+    }))
+    .unwrap();
+    let s = wait_until(&core, Duration::from_secs(15), |s| {
+        let ws = s.workspace(ws_id).unwrap();
+        !ws.tabs.is_empty()
+            && ws.tabs.iter().flat_map(|t| &t.tiles).all(|t| {
+                matches!(&t.content, TileContent::Terminal { herdr: Some(h), .. } if h.machine.is_some())
+            })
+    });
+    eprintln!("remote workspace + terminal: {:?}", t0.elapsed());
+    let herdr_ws = s.workspace(ws_id).unwrap().herdr_workspace.clone().unwrap();
+    assert!(
+        remote
+            .panes()
+            .iter()
+            .any(|p| p.workspace_id.as_str() == herdr_ws),
+        "the pane is in the remote herdr"
+    );
+    assert_eq!(local.structure(), before_local, "Local's herdr untouched");
+
+    // Cut the "SSH link": end the running bridges as a dropped link would
+    // end ssh, and refuse new ones. Only that machine reconnects.
+    std::fs::write(&fail, "").unwrap();
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &format!("{} remote-api-bridge", remote.name)])
+        .status();
+    let down = wait_for_event(
+        &events,
+        |e| matches!(e, Event::MachineStatus { machine } if machine.id == id && machine.state != Connected),
+    );
+    eprintln!("link down: {down:?}");
+    std::fs::remove_file(&fail).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(40);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(e) if machine_state(&e, &id, Connected) => break,
+            Ok(Event::HerdrStatus {
+                connected: false, ..
+            }) => panic!("Local dropped too"),
+            Ok(_) => {}
+            Err(_) => panic!("machine never came back"),
+        }
+    }
+    eprintln!("link back after {:?}", t0.elapsed());
+    core.shutdown();
+    let _ = std::fs::remove_dir_all(&dir);
 }

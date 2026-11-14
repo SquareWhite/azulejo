@@ -41,11 +41,16 @@ struct WorkspaceModel: Decodable, Equatable {
     var cwd: String?
     var tabs: [TabModel]
     var activeTab: String?
+    /// The herdr machine its terminals run on; nil for Local (ADR 0011).
+    var machine: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, cwd, tabs
+        case id, name, cwd, tabs, machine
         case activeTab = "active_tab"
     }
+
+    /// The machine ID shells use: `"local"` for Local.
+    var machineID: String { machine ?? MachineModel.local }
 
     var tab: TabModel? { tabs.first { $0.id == activeTab } ?? tabs.first }
 }
@@ -148,12 +153,31 @@ struct HerdrRefModel: Decodable, Equatable {
     var paneId: String
     var terminalId: String
     var tabId: String
+    /// The herdr machine the pane runs on; nil for Local (ADR 0011).
+    var machine: String?
 
     enum CodingKeys: String, CodingKey {
         case paneId = "pane_id"
         case terminalId = "terminal_id"
         case tabId = "tab_id"
+        case machine
     }
+}
+
+/// A herdr machine and the core's link to it (`machines.list`, ADR 0011).
+struct MachineModel: Decodable, Equatable {
+    static let local = "local"
+
+    enum State: String, Decodable {
+        case connecting, connected, reconnecting, error, off
+    }
+
+    var id: String
+    var label: String
+    var state: State
+    var message: String?
+
+    var isLocal: Bool { id == Self.local }
 }
 
 /// One tile with its kind-specific fields flattened in, as the core sends it.

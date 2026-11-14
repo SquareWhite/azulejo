@@ -92,6 +92,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -d "$app" ]] || { echo "dev.sh: build first (just mac)" >&2; exit 1; }
+# macOS caps Unix socket paths at 103 bytes; the core would refuse to start.
+if (( ${#socket} > 103 )); then
+  echo "dev.sh: socket path is ${#socket} bytes, over macOS's 103: $socket" >&2
+  echo "dev.sh: run from a shorter checkout path or use a shorter AZJ_DEV_NAME" >&2
+  exit 2
+fi
 if pid="$(running_pid)"; then
   echo "dev.sh: the dev app is already running (pid $pid); use --stop" >&2
   exit 1
@@ -122,19 +128,45 @@ fi
 
 flags=(-n)
 [[ $bg -eq 1 ]] && flags+=(-g)
+# A pidfile left by a crash would make this launch look dead.
+rm -f "$pidfile"
 : >"$logfile"
 open "${flags[@]}" "${envs[@]}" --stdout "$logfile" --stderr "$logfile" "$app"
 
-# Wait for the app to write its pid.
-for _ in $(seq 100); do [[ -s "$pidfile" ]] && break; sleep 0.1; done
-pid="$(cat "$pidfile" 2>/dev/null || true)"
-echo "dev app running (pid ${pid:-?}); herdr session $session; socket $socket; log $logfile"
+# The app failed to start: say so loudly, with the end of its log.
+died() {
+  echo "dev.sh: FAILED: $1" >&2
+  if [[ -s "$logfile" ]]; then
+    echo "dev.sh: last lines of $logfile:" >&2
+    tail -n 15 "$logfile" | sed 's/^/  | /' >&2
+  fi
+  exit 1
+}
 
-if [[ $wait -eq 1 && -n "$pid" ]]; then
+# Wait for the app to write its pid (it does once the core is up).
+for _ in $(seq 100); do
+  [[ -s "$pidfile" ]] && break
+  # The app logs this and exits when the core can't start; don't sit out 10 s.
+  grep -q "the core didn't start\|azulejo: the dev profile\|azulejo: dev profile ended up" "$logfile" 2>/dev/null && break
+  sleep 0.1
+done
+pid="$(cat "$pidfile" 2>/dev/null || true)"
+[[ -n "$pid" ]] || died "the app never started (no pid after 10 s)"
+# With the API required, the socket appears once the core is serving.
+for _ in $(seq 100); do
+  [[ -S "$socket" ]] && break
+  kill -0 "$pid" 2>/dev/null || died "the app exited before serving its socket"
+  sleep 0.1
+done
+[[ -S "$socket" ]] || died "no API socket at $socket after 10 s"
+echo "dev app running (pid $pid); herdr session $session; socket $socket; log $logfile"
+
+if [[ $wait -eq 1 ]]; then
   while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
   if [[ -n "$automation" ]]; then
-    result="$(cat "$out/result" 2>/dev/null || echo "no result")"
+    result="$(cat "$out/result" 2>/dev/null || true)"
+    [[ -n "$result" ]] || died "the app exited without an automation result (log $out/automation.log)"
     echo "automation: $result (log $out/automation.log)"
-    [[ "$result" == ok* ]]
+    [[ "$result" == ok* ]] || exit 1
   fi
 fi

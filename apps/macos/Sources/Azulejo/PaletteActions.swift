@@ -202,24 +202,29 @@ extension AppController {
         for (w, window) in session.windows.enumerated() {
             let where0 = multiWindow ? "window \(w + 1) · " : ""
             for ws in window.workspaces {
+                // Remote workspaces (ADR 0011) carry their machine's name, in
+                // the detail and in what the query matches.
+                let host = Self.machineLabel(ws.machineID, machines: machines)
+                let where1 = where0 + (host.map { "\($0) · " } ?? "")
                 let blocked = ws.tabs.flatMap(\.tiles).filter { $0.agent?.status == .blocked }.count
                 items.append(PaletteItem(
                     id: "ws:" + ws.id, title: ws.name, kind: .workspace,
-                    detail: where0 + "\(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
-                    searchExtra: ws.cwd ?? "",
+                    detail: where1 + "\(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
+                    searchExtra: [ws.cwd, host].compactMap { $0 }.joined(separator: " "),
                     dot: blocked > 0 ? AttentionStyle.blocked : nil))
                 for tab in ws.tabs {
                     if ws.tabs.count > 1 || tab.tiles.count > 1 {
                         items.append(PaletteItem(
                             id: "tab:" + tab.id, title: tab.label, kind: .tab,
-                            detail: "\(where0)in \(ws.name)"))
+                            detail: "\(where1)in \(ws.name)",
+                            searchExtra: host ?? ""))
                     }
                     for tile in tab.tiles {
                         items.append(PaletteItem(
                             id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),
-                            detail: "\(where0)in \(ws.name)",
+                            detail: "\(where1)in \(ws.name)",
                             searchExtra: [tile.cwd, tile.url, tile.path, tile.root, tile.agent?.name,
-                                          tile.command?.joined(separator: " ")]
+                                          tile.command?.joined(separator: " "), host]
                                 .compactMap { $0 }.joined(separator: " "),
                             dot: AttentionStyle.color(for: tile)))
                     }
@@ -227,6 +232,13 @@ extension AppController {
             }
         }
         return items
+    }
+
+    /// A remote machine's label for ⌘K rows; nil for Local. A machine herdr
+    /// no longer lists shows its ID's start, as the sidebar does.
+    static func machineLabel(_ id: String, machines: [MachineModel]) -> String? {
+        if id == MachineModel.local { return nil }
+        return machines.first(where: { $0.id == id })?.label ?? "machine \(id.prefix(8))"
     }
 
     /// The best name for a tile: its title, page title, agent, cwd, URL or path.

@@ -11,6 +11,7 @@ fn sample_commands() -> Vec<Command> {
         pane_id: "w1:p1".into(),
         terminal_id: "term_abc".into(),
         tab_id: "w1:t1".into(),
+        machine: None,
     };
     vec![
         Command::Ping,
@@ -38,6 +39,7 @@ fn sample_commands() -> Vec<Command> {
             window: Some(window),
             name: Some("api".into()),
             cwd: None,
+            machine: Some("dev-server".into()),
         }),
         Command::WorkspaceClose(WorkspaceTarget {
             workspace: Some(workspace),
@@ -251,6 +253,7 @@ fn sample_commands() -> Vec<Command> {
             path: Some("/src/shop/.azulejo.toml".into()),
         }),
         Command::CommandsList,
+        Command::MachinesList,
     ]
 }
 
@@ -278,6 +281,7 @@ fn sample_events() -> Vec<Event> {
             pane_id: "w1:p2".into(),
             terminal_id: "term_x".into(),
             tab_id: "w1:t2".into(),
+            machine: None,
         }),
         ended: false,
         on_exit: Some(azulejo_protocol::OnExit::Keep),
@@ -391,6 +395,17 @@ fn sample_events() -> Vec<Event> {
         Event::HerdrStatus {
             connected: false,
             message: Some("connection refused".into()),
+        },
+        Event::MachineStatus {
+            machine: MachineInfo {
+                id: "0123456789abcdef0123456789abcdef".into(),
+                label: "dev-server".into(),
+                state: MachineState::Reconnecting,
+                message: Some("ssh: connect to host dev-server port 22: Connection refused".into()),
+            },
+        },
+        Event::MachineRemoved {
+            machine: "0123456789abcdef0123456789abcdef".into(),
         },
         Event::TileAttentionChanged {
             tab,
@@ -592,6 +607,14 @@ fn replies_round_trip() {
                 needs_tile: true,
                 prompt: None,
                 planned: false,
+            }],
+        },
+        Reply::Machines {
+            machines: vec![MachineInfo {
+                id: LOCAL_MACHINE.into(),
+                label: "Local".into(),
+                state: MachineState::Connected,
+                message: None,
             }],
         },
     ];
