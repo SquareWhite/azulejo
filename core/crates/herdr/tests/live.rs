@@ -1,0 +1,349 @@
+//! Integration tests against a real herdr, in a throwaway named session.
+//! Ignored by default; run with `just test-herdr`. Never touches the user's
+//! default session: every herdr process gets a clean environment and an
+//! explicit `--session`.
+
+use std::time::Duration;
+
+use azulejo_herdr::{
+    AttachExit, Client, ClientOptions, Herdr, HerdrEvent, ReadSource, Resolved, Session,
+    StreamItem, Subscription, TerminalSpec, TileEnv, WorkspaceSpec,
+};
+
+/// Stops and deletes the session even if the test panics.
+struct TempSession {
+    herdr: Herdr,
+    name: String,
+    socket: std::path::PathBuf,
+}
+
+impl TempSession {
+    async fn new() -> Self {
+        let herdr = Herdr::locate().expect("herdr on PATH");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let name = format!("azj-test-{}-{nanos:x}", std::process::id());
+        let socket = herdr.socket_path(&Session::named(&name)).await.unwrap();
+        Self {
+            herdr,
+            name,
+            socket,
+        }
+    }
+
+    fn session(&self) -> Session {
+        Session::named(&self.name)
+    }
+}
+
+impl Drop for TempSession {
+    fn drop(&mut self) {
+        let socket = self.socket.clone();
+        let name = self.name.clone();
+        let bin = self.herdr.path().to_owned();
+        // Separate thread: Drop can run inside the runtime.
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let _ = Client::new(&socket, quick()).stop_server().await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let _ = Herdr::with_path(bin).delete_session(&name).await;
+            });
+        })
+        .join()
+        .unwrap();
+    }
+}
+
+fn quick() -> ClientOptions {
+    ClientOptions {
+        request_timeout: Duration::from_secs(5),
+        connect: azulejo_herdr::Backoff {
+            initial: Duration::from_millis(50),
+            max: Duration::from_millis(500),
+            give_up_after: Duration::from_secs(10),
+        },
+    }
+}
+
+async fn next_event(
+    events: &mut azulejo_herdr::EventStream,
+    want: impl Fn(&StreamItem) -> bool,
+) -> StreamItem {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let item = events.recv().await.expect("stream ended");
+            if want(&item) {
+                return item;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for event")
+}
+
+async fn read_until(client: &Client, pane: &azulejo_herdr::PaneId, needle: &str) -> String {
+    for _ in 0..50 {
+        let text = client
+            .read(pane, ReadSource::Recent, Some(50))
+            .await
+            .unwrap()
+            .text;
+        if text.contains(needle) {
+            return text;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("`{needle}` never appeared in the pane");
+}
+
+#[tokio::test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+async fn full_lifecycle_against_real_herdr() {
+    let tmp = TempSession::new().await;
+    let session = tmp.session();
+
+    // Start the server (clean env) and check the version.
+    let (client, info) = tmp.herdr.ensure_server(&session, quick()).await.unwrap();
+    assert!(info.protocol >= azulejo_herdr::MIN_PROTOCOL);
+    // A second ensure finds the running server.
+    let (_, again) = tmp.herdr.ensure_server(&session, quick()).await.unwrap();
+    assert_eq!(again, info);
+
+    let mut events = client.subscribe(Subscription::lifecycle());
+    assert_eq!(
+        next_event(&mut events, |_| true).await,
+        StreamItem::Connected
+    );
+
+    // Workspace 1:1. Creating returns herdr's built-in first terminal.
+    let ensured = client
+        .ensure_workspace(
+            None,
+            &WorkspaceSpec {
+                label: Some("azj-ws".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let ws = ensured.workspace.workspace_id.clone();
+    assert!(ensured.created_terminal.is_some());
+    let reused = client
+        .ensure_workspace(Some(&ws), &WorkspaceSpec::default())
+        .await
+        .unwrap();
+    assert_eq!(reused.workspace.workspace_id, ws);
+    assert!(reused.created_terminal.is_none());
+
+    // A terminal tile = a labelled tab with the tile's env vars.
+    let env = TileEnv {
+        socket: "/tmp/azj.sock".into(),
+        tile_id: "tile-42".into(),
+        workspace_id: "app-ws-1".into(),
+    };
+    let term = client
+        .create_terminal(&TerminalSpec {
+            workspace_id: ws.clone(),
+            label: Some("agent".into()),
+            cwd: None,
+            env: env.to_pairs(),
+        })
+        .await
+        .unwrap();
+    assert!(term.terminal_id.as_str().starts_with("term_"));
+    next_event(
+        &mut events,
+        |i| matches!(i, StreamItem::Event(HerdrEvent::PaneCreated(p)) if p.pane_id == term.pane_id),
+    )
+    .await;
+
+    // The env reaches the shell, and the server didn't leak ours. `env`
+    // output works in any shell (the user's may be fish).
+    client
+        .send_text(
+            &term.pane_id,
+            "env | sort | grep -E '^(AZULEJO|CLAUDE)'; echo done-$AZULEJO_WORKSPACE_ID",
+        )
+        .await
+        .unwrap();
+    client.send_keys(&term.pane_id, &["Enter"]).await.unwrap();
+    let text = read_until(&client, &term.pane_id, "done-app-ws-1").await;
+    assert!(text.contains("\nAZULEJO_TILE_ID=tile-42"), "{text}");
+    assert!(
+        !text.contains("\nCLAUDE"),
+        "inherited CLAUDE* vars leaked: {text}"
+    );
+
+    // Lookups.
+    let found = client
+        .resolve_terminal(&term.terminal_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.pane_id, term.pane_id);
+    assert!(client.pane(&"w99:p99".into()).await.unwrap().is_none());
+    let snap = client.snapshot().await.unwrap();
+    assert!(snap.panes.iter().any(|p| p.terminal_id == term.terminal_id));
+    client.scroll(&term.pane_id, 0).await.unwrap();
+
+    // Attach exit diagnosis for a live terminal vs a gone one.
+    assert_eq!(
+        client
+            .diagnose_attach_exit(Some(1), None, &term.terminal_id)
+            .await,
+        AttachExit::TakenOver
+    );
+    assert_eq!(
+        client
+            .diagnose_attach_exit(Some(1), None, &"term_nope".into())
+            .await,
+        AttachExit::TerminalGone
+    );
+
+    // Kill = close the pane; its tab goes with it.
+    client.kill_terminal(&term.pane_id).await.unwrap();
+    next_event(&mut events, |i| {
+        matches!(i, StreamItem::Event(HerdrEvent::PaneClosed { pane_id, .. }) if *pane_id == term.pane_id)
+            || matches!(i, StreamItem::Event(HerdrEvent::TabClosed { tab_id, .. }) if *tab_id == term.tab_id)
+    })
+    .await;
+    assert!(client.pane(&term.pane_id).await.unwrap().is_none());
+
+    // A second terminal survives into the restart below.
+    let keep = client
+        .create_terminal(&TerminalSpec {
+            workspace_id: ws.clone(),
+            label: Some("keep".into()),
+            cwd: None,
+            env: env.to_pairs(),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(
+        client.reresolve(&keep).await.unwrap(),
+        Resolved::Same(_)
+    ));
+    assert_eq!(client.reresolve(&term).await.unwrap(), Resolved::Gone);
+
+    // Restart the server mid-test: requests and the event stream recover.
+    client.stop_server().await.unwrap();
+    next_event(&mut events, |i| matches!(i, StreamItem::Disconnected(_))).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let restart = {
+        let herdr = tmp.herdr.clone();
+        let session = session.clone();
+        tokio::spawn(async move { herdr.ensure_server(&session, quick()).await })
+    };
+    // The old client rides out the restart through its connect backoff.
+    let after = client.ping().await.unwrap();
+    assert_eq!(after.protocol, info.protocol);
+    restart.await.unwrap().unwrap();
+    assert_eq!(
+        next_event(&mut events, |i| matches!(i, StreamItem::Resync)).await,
+        StreamItem::Resync
+    );
+
+    // herdr restores workspaces, tabs and pane IDs on restart, but with
+    // fresh processes and new terminal IDs.
+    let ensured = client
+        .ensure_workspace(Some(&ws), &WorkspaceSpec::default())
+        .await
+        .unwrap();
+    assert_eq!(ensured.workspace.workspace_id, ws);
+    assert!(ensured.created_terminal.is_none());
+    let Resolved::Respawned(p) = client.reresolve(&keep).await.unwrap() else {
+        panic!("expected the kept terminal to come back respawned");
+    };
+    assert_eq!(p.pane_id, keep.pane_id);
+    assert_ne!(p.terminal_id, keep.terminal_id);
+
+    // Events flow on the recovered stream.
+    client
+        .create_terminal(&TerminalSpec {
+            workspace_id: ws.clone(),
+            label: None,
+            cwd: None,
+            env: vec![],
+        })
+        .await
+        .unwrap();
+    next_event(&mut events, |i| {
+        matches!(i, StreamItem::Event(HerdrEvent::PaneCreated(_)))
+    })
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+async fn attach_command_runs_and_reports_takeover() {
+    let tmp = TempSession::new().await;
+    let session = tmp.session();
+    let (client, _) = tmp.herdr.ensure_server(&session, quick()).await.unwrap();
+    let (_, term) = client
+        .create_workspace(&WorkspaceSpec::default())
+        .await
+        .unwrap();
+
+    // herdr attach needs a terminal with a size, so run it under `script`,
+    // which gives it a PTY. stderr goes to a file via with_stderr_file.
+    let dir = std::env::temp_dir().join(format!("azj-attach-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let spawn = |takeover: bool, name: &str| {
+        let err = dir.join(format!("{name}.err"));
+        let _ = std::fs::remove_file(&err);
+        let cmd = tmp
+            .herdr
+            .attach(&session, &term.terminal_id, takeover)
+            .with_stderr_file(&err);
+        // `script`'s PTY starts at 0x0, and attach refuses a zero-sized PTY.
+        let mut argv = vec![
+            "-q".to_owned(),
+            "/dev/null".to_owned(),
+            "/bin/sh".to_owned(),
+            "-c".to_owned(),
+            r#"stty rows 30 cols 100; exec "$0" "$@""#.to_owned(),
+        ];
+        argv.extend(cmd.argv());
+        let child = tokio::process::Command::new("script")
+            .args(&argv)
+            .env_clear()
+            .envs(cmd.env.clone())
+            .env("TERM", "xterm-256color")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        (child, err)
+    };
+
+    let (mut first, first_err) = spawn(false, "first");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        first.try_wait().unwrap().is_none(),
+        "first attach should be running"
+    );
+
+    let (mut second, _) = spawn(true, "second");
+    let status = tokio::time::timeout(Duration::from_secs(5), first.wait())
+        .await
+        .expect("first attach should exit after takeover")
+        .unwrap();
+    let stderr = std::fs::read_to_string(&first_err).unwrap_or_default();
+    let exit = client
+        .diagnose_attach_exit(status.code(), Some(&stderr), &term.terminal_id)
+        .await;
+    assert_eq!(
+        exit,
+        AttachExit::TakenOver,
+        "status {status:?}, stderr {stderr:?}"
+    );
+    let _ = second.kill().await;
+}
