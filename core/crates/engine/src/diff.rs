@@ -42,7 +42,7 @@ impl<'a> Index<'a> {
     }
 }
 
-fn workspace_info(ws: &azulejo_model::Workspace) -> WorkspaceInfo {
+pub(crate) fn workspace_info(ws: &azulejo_model::Workspace) -> WorkspaceInfo {
     WorkspaceInfo {
         id: ws.id,
         name: ws.name.clone(),
@@ -51,7 +51,7 @@ fn workspace_info(ws: &azulejo_model::Workspace) -> WorkspaceInfo {
     }
 }
 
-fn tab_info(tab: &Tab) -> TabInfo {
+pub(crate) fn tab_info(tab: &Tab) -> TabInfo {
     TabInfo {
         id: tab.id,
         name: tab.name.clone(),

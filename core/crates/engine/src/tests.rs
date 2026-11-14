@@ -239,12 +239,190 @@ fn tile_list_and_get_report_location_and_focus() {
 }
 
 #[test]
-fn terminal_io_waits_for_the_herdr_adapter() {
+fn terminal_io_needs_a_core_with_herdr() {
     let mut engine = Engine::new();
     let err = engine
         .execute(Command::TerminalRead(TerminalRead::default()))
         .unwrap_err();
-    assert_eq!(err.code, ErrorCode::Unsupported);
+    assert_eq!(err.code, ErrorCode::Unavailable);
+    // An unbound terminal has no pane to talk to yet.
+    assert_eq!(
+        engine.terminal_pane(None).unwrap_err().code,
+        ErrorCode::Unavailable
+    );
+}
+
+#[test]
+fn lists_report_structure_and_focus() {
+    let mut engine = Engine::new();
+    let first_ws = engine.session().focus().workspace.unwrap();
+    let Reply::Created(c) = engine
+        .execute(Command::WorkspaceCreate(WorkspaceCreate {
+            name: Some("web".into()),
+            ..WorkspaceCreate::default()
+        }))
+        .unwrap()
+        .reply
+    else {
+        panic!()
+    };
+    let web = c.workspace.unwrap();
+    engine
+        .execute(Command::TabCreate(TabCreate {
+            workspace: Some(web),
+            name: Some("dev".into()),
+            content: None,
+        }))
+        .unwrap();
+    engine
+        .execute(Command::TabCreate(TabCreate {
+            workspace: Some(web),
+            name: None,
+            content: Some(TileContent::Browser { url: None }),
+        }))
+        .unwrap();
+
+    let Reply::Windows { windows } = engine.execute(Command::WindowList).unwrap().reply else {
+        panic!()
+    };
+    assert_eq!(windows.len(), 1);
+    assert!(windows[0].focused);
+    assert_eq!(windows[0].workspaces, vec![first_ws, web]);
+
+    let Reply::Workspaces { workspaces } = engine
+        .execute(Command::WorkspaceList(WorkspaceList::default()))
+        .unwrap()
+        .reply
+    else {
+        panic!()
+    };
+    let names: Vec<_> = workspaces
+        .iter()
+        .map(|w| (w.workspace.name.as_str(), w.tabs, w.active))
+        .collect();
+    assert_eq!(names, vec![("main", 1, false), ("web", 2, true)]);
+    assert!(workspaces[1].focused);
+
+    let Reply::Tabs { tabs } = engine
+        .execute(Command::TabList(TabList {
+            workspace: Some(web),
+        }))
+        .unwrap()
+        .reply
+    else {
+        panic!()
+    };
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(tabs[0].tab.name.as_deref(), Some("dev"));
+    assert!(!tabs[0].active && tabs[1].active && tabs[1].focused);
+    assert!(tabs.iter().all(|t| t.workspace == web && t.tiles == 1));
+
+    let Reply::Tabs { tabs } = engine
+        .execute(Command::TabList(TabList::default()))
+        .unwrap()
+        .reply
+    else {
+        panic!()
+    };
+    assert_eq!(tabs.len(), 3);
+
+    let missing = engine
+        .execute(Command::TabList(TabList {
+            workspace: Some(WorkspaceId::new()),
+        }))
+        .unwrap_err();
+    assert_eq!(missing.code, ErrorCode::NotFound);
+}
+
+#[test]
+fn rename_and_open_update_tiles() {
+    let mut engine = Engine::new();
+    let term = engine.session().focused_tile().unwrap();
+    let out = engine
+        .execute(Command::TileRename(TileRename {
+            tile: None,
+            title: Some("server".into()),
+        }))
+        .unwrap();
+    assert!(out.events.iter().any(
+        |e| matches!(e, Event::TileUpdated { tile, .. } if tile.title.as_deref() == Some("server"))
+    ));
+    engine
+        .execute(Command::TileRename(TileRename {
+            tile: Some(term),
+            title: Some(String::new()),
+        }))
+        .unwrap();
+    assert_eq!(engine.session().tile(term).unwrap().title, None);
+
+    let err = engine
+        .execute(Command::BrowserOpen(BrowserOpen {
+            tile: None,
+            url: "http://localhost:3000".into(),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+    assert!(
+        err.message.contains("terminal tile, not a browser"),
+        "{err}"
+    );
+
+    let split = |engine: &mut Engine, content| {
+        let Reply::Created(c) = engine
+            .execute(Command::LayoutSplit(LayoutSplit {
+                tile: None,
+                direction: Direction::Right,
+                content: Some(content),
+            }))
+            .unwrap()
+            .reply
+        else {
+            panic!()
+        };
+        c.tile.unwrap()
+    };
+    let browser = split(&mut engine, TileContent::Browser { url: None });
+    let out = engine
+        .execute(Command::BrowserOpen(BrowserOpen {
+            tile: Some(browser),
+            url: "http://localhost:3000".into(),
+        }))
+        .unwrap();
+    assert!(out.events.iter().any(|e| matches!(
+        e,
+        Event::TileUpdated { tile, .. }
+            if tile.content == TileContent::Browser { url: Some("http://localhost:3000".into()) }
+    )));
+
+    let preview = split(&mut engine, TileContent::Preview { path: None });
+    engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: None,
+            path: "/tmp/plan.md".into(),
+        }))
+        .unwrap();
+    assert_eq!(
+        engine.session().tile(preview).unwrap().content,
+        TileContent::Preview {
+            path: Some("/tmp/plan.md".into())
+        }
+    );
+    let err = engine
+        .execute(Command::PreviewOpen(PreviewOpen {
+            tile: Some(browser),
+            path: "/tmp/plan.md".into(),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+}
+
+#[test]
+fn search_finds_lines_case_insensitively_by_default() {
+    let text = "ok\nWARN low disk\nwarn again\n\nfine";
+    let hits = crate::terminal::search(text, "warn", false);
+    assert_eq!(hits.iter().map(|m| m.line).collect::<Vec<_>>(), vec![1, 2]);
+    assert_eq!(crate::terminal::search(text, "WARN", true).len(), 1);
+    assert!(crate::terminal::search(text, "nope", false).is_empty());
 }
 
 #[test]

@@ -130,6 +130,33 @@ fn sample_commands() -> Vec<Command> {
             source: ReadSource::RecentUnwrapped,
             lines: Some(50),
         }),
+        Command::TerminalScroll(TerminalScroll {
+            tile: Some(tile),
+            offset_from_bottom: 120,
+        }),
+        Command::TerminalSearch(TerminalSearch {
+            tile: None,
+            query: "error".into(),
+            case_sensitive: true,
+            lines: Some(2000),
+        }),
+        Command::WindowList,
+        Command::WorkspaceList(WorkspaceList {
+            window: Some(window),
+        }),
+        Command::TabList(TabList { workspace: None }),
+        Command::TileRename(TileRename {
+            tile: Some(tile),
+            title: Some("server".into()),
+        }),
+        Command::BrowserOpen(BrowserOpen {
+            tile: None,
+            url: "http://localhost:3000".into(),
+        }),
+        Command::PreviewOpen(PreviewOpen {
+            tile: Some(tile),
+            path: "plan.md".into(),
+        }),
     ]
 }
 
@@ -291,6 +318,55 @@ fn replies_round_trip() {
             focused: false,
             tile: tile.clone(),
         }),
+        Reply::Windows {
+            windows: vec![WindowSummary {
+                id: WindowId::new(),
+                focused: true,
+                active_workspace: WorkspaceId::new(),
+                workspaces: vec![WorkspaceId::new()],
+                frame: None,
+            }],
+        },
+        Reply::Workspaces {
+            workspaces: vec![WorkspaceSummary {
+                window: WindowId::new(),
+                active: true,
+                focused: false,
+                tabs: 2,
+                workspace: WorkspaceInfo {
+                    id: WorkspaceId::new(),
+                    name: "web".into(),
+                    cwd: None,
+                    herdr_workspace: Some("w2".into()),
+                },
+            }],
+        },
+        Reply::Tabs {
+            tabs: vec![TabSummary {
+                window: WindowId::new(),
+                workspace: WorkspaceId::new(),
+                active: true,
+                focused: true,
+                tiles: 3,
+                focused_tile: tile.id,
+                tab: TabInfo {
+                    id: TabId::new(),
+                    name: Some("dev".into()),
+                },
+            }],
+        },
+        Reply::Scroll(ScrollState {
+            offset_from_bottom: 10,
+            max_offset_from_bottom: 400,
+            viewport_rows: 40,
+        }),
+        Reply::Matches {
+            matches: vec![SearchMatch {
+                line: 3,
+                text: "error: boom".into(),
+            }],
+            truncated: true,
+        },
     ];
     for reply in replies {
         let json = serde_json::to_string(&reply).unwrap();

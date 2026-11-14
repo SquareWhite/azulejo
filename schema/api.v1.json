@@ -8,6 +8,28 @@
       ],
       "type": "string"
     },
+    "BrowserOpen": {
+      "properties": {
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A browser tile; defaults to the focused tile."
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
     "Command": {
       "description": "A request to the core.",
       "oneOf": [
@@ -95,6 +117,36 @@
             },
             "params": {
               "$ref": "#/$defs/WindowSetFrame"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Every window; replies `windows`.",
+          "properties": {
+            "method": {
+              "const": "window.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "method"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Workspaces of one window, or of all windows; replies `workspaces`.",
+          "properties": {
+            "method": {
+              "const": "workspace.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/WorkspaceList"
             }
           },
           "required": [
@@ -192,6 +244,23 @@
             },
             "params": {
               "$ref": "#/$defs/WorkspaceBind"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Tabs of one workspace, or of all workspaces; replies `tabs`.",
+          "properties": {
+            "method": {
+              "const": "tab.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TabList"
             }
           },
           "required": [
@@ -340,6 +409,57 @@
             },
             "params": {
               "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sets or clears a tile's title.",
+          "properties": {
+            "method": {
+              "const": "tile.rename",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileRename"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Points a browser tile at `url`; the shell loads it on `tile.updated`.",
+          "properties": {
+            "method": {
+              "const": "browser.open",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/BrowserOpen"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Shows `path` in a preview tile.",
+          "properties": {
+            "method": {
+              "const": "preview.open",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/PreviewOpen"
             }
           },
           "required": [
@@ -581,7 +701,7 @@
           "type": "object"
         },
         {
-          "description": "Reads a terminal's screen or history; replies `text`.",
+          "description": "Reads a terminal's screen or history; replies `text`. History lives in\nherdr, not in the tile (ADR 0005).",
           "properties": {
             "method": {
               "const": "terminal.read",
@@ -589,6 +709,40 @@
             },
             "params": {
               "$ref": "#/$defs/TerminalRead"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Scrolls a terminal's view; replies `scroll`. 0 is the live bottom.",
+          "properties": {
+            "method": {
+              "const": "terminal.scroll",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalScroll"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Finds lines containing `query` in a terminal's history; replies\n`matches`. Runs over `recent_unwrapped` output in the core.",
+          "properties": {
+            "method": {
+              "const": "terminal.search",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TerminalSearch"
             }
           },
           "required": [
@@ -705,6 +859,11 @@
         {
           "const": "unsupported",
           "description": "Not available in this build or configuration.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "A service the command needs (herdr) isn't reachable right now.",
           "type": "string"
         }
       ]
@@ -1515,6 +1674,28 @@
         }
       ]
     },
+    "PreviewOpen": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A preview tile; defaults to the focused tile."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
     "ReadSource": {
       "description": "What `terminal.read` returns.",
       "oneOf": [
@@ -1658,8 +1839,147 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "windows",
+              "type": "string"
+            },
+            "windows": {
+              "items": {
+                "$ref": "#/$defs/WindowSummary"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "windows"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "workspaces",
+              "type": "string"
+            },
+            "workspaces": {
+              "items": {
+                "$ref": "#/$defs/WorkspaceSummary"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "workspaces"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "tabs": {
+              "items": {
+                "$ref": "#/$defs/TabSummary"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "tabs",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tabs"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ScrollState",
+          "description": "Where a terminal's view sits after `terminal.scroll`.",
+          "properties": {
+            "type": {
+              "const": "scroll",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Lines that matched `terminal.search`.",
+          "properties": {
+            "matches": {
+              "items": {
+                "$ref": "#/$defs/SearchMatch"
+              },
+              "type": "array"
+            },
+            "truncated": {
+              "default": false,
+              "description": "herdr cut the history short; older lines weren't searched.",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "matches",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "matches"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "ScrollState": {
+      "properties": {
+        "max_offset_from_bottom": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "offset_from_bottom": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "viewport_rows": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "offset_from_bottom",
+        "max_offset_from_bottom",
+        "viewport_rows"
+      ],
+      "type": "object"
+    },
+    "SearchMatch": {
+      "properties": {
+        "line": {
+          "description": "0-based line in the searched history, oldest first.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "text"
+      ],
+      "type": "object"
     },
     "Session": {
       "description": "Everything the app shows.",
@@ -1787,6 +2107,22 @@
       ],
       "type": "object"
     },
+    "TabList": {
+      "properties": {
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this workspace's tabs; all when absent."
+        }
+      },
+      "type": "object"
+    },
     "TabMove": {
       "properties": {
         "index": {
@@ -1831,6 +2167,52 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "TabSummary": {
+      "description": "A tab and where it lives.",
+      "properties": {
+        "active": {
+          "description": "The workspace's active tab.",
+          "type": "boolean"
+        },
+        "focused": {
+          "description": "The focused tab.",
+          "type": "boolean"
+        },
+        "focused_tile": {
+          "$ref": "#/$defs/TileId"
+        },
+        "id": {
+          "$ref": "#/$defs/TabId"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tiles": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        }
+      },
+      "required": [
+        "window",
+        "workspace",
+        "active",
+        "focused",
+        "tiles",
+        "focused_tile",
+        "id"
+      ],
       "type": "object"
     },
     "TabTarget": {
@@ -1890,6 +2272,65 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "TerminalScroll": {
+      "properties": {
+        "offset_from_bottom": {
+          "description": "Lines above the live bottom; 0 returns to it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "offset_from_bottom"
+      ],
+      "type": "object"
+    },
+    "TerminalSearch": {
+      "properties": {
+        "case_sensitive": {
+          "default": false,
+          "type": "boolean"
+        },
+        "lines": {
+          "description": "How many lines of history to search; herdr's default when absent.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "description": "Literal text to find.",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "query"
+      ],
       "type": "object"
     },
     "TerminalSendKeys": {
@@ -2335,6 +2776,28 @@
       },
       "type": "object"
     },
+    "TileRename": {
+      "properties": {
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "description": "`null` or absent clears the title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "TileTarget": {
       "properties": {
         "tile": {
@@ -2419,6 +2882,43 @@
       "required": [
         "window",
         "frame"
+      ],
+      "type": "object"
+    },
+    "WindowSummary": {
+      "description": "A window without its workspaces' contents.",
+      "properties": {
+        "active_workspace": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "focused": {
+          "type": "boolean"
+        },
+        "frame": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Frame"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/WindowId"
+        },
+        "workspaces": {
+          "items": {
+            "$ref": "#/$defs/WorkspaceId"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "focused",
+        "active_workspace",
+        "workspaces"
       ],
       "type": "object"
     },
@@ -2555,6 +3055,22 @@
       ],
       "type": "object"
     },
+    "WorkspaceList": {
+      "properties": {
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WindowId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this window's workspaces; all when absent."
+        }
+      },
+      "type": "object"
+    },
     "WorkspaceMove": {
       "properties": {
         "index": {
@@ -2600,6 +3116,54 @@
       ],
       "type": "object"
     },
+    "WorkspaceSummary": {
+      "description": "A workspace and where it lives.",
+      "properties": {
+        "active": {
+          "description": "The window's active workspace.",
+          "type": "boolean"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "focused": {
+          "description": "Active in the focused window.",
+          "type": "boolean"
+        },
+        "herdr_workspace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/WorkspaceId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tabs": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window": {
+          "$ref": "#/$defs/WindowId"
+        }
+      },
+      "required": [
+        "window",
+        "active",
+        "focused",
+        "tabs",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "WorkspaceTarget": {
       "properties": {
         "workspace": {
@@ -2627,12 +3191,15 @@
     "window.close",
     "window.focus",
     "window.set_frame",
+    "window.list",
+    "workspace.list",
     "workspace.create",
     "workspace.close",
     "workspace.focus",
     "workspace.rename",
     "workspace.move",
     "workspace.bind",
+    "tab.list",
     "tab.create",
     "tab.close",
     "tab.focus",
@@ -2642,6 +3209,9 @@
     "tile.get",
     "tile.close",
     "tile.focus",
+    "tile.rename",
+    "browser.open",
+    "preview.open",
     "layout.get",
     "layout.split",
     "layout.focus",
@@ -2656,7 +3226,9 @@
     "terminal.bind",
     "terminal.send_text",
     "terminal.send_keys",
-    "terminal.read"
+    "terminal.read",
+    "terminal.scroll",
+    "terminal.search"
   ],
   "title": "Azulejo API",
   "version": 1
