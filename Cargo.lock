@@ -41,6 +41,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "azulejo-daemon"
+version = "0.0.1"
+dependencies = [
+ "azulejo-api",
+ "azulejo-config",
+ "azulejo-engine",
+ "azulejo-herdr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "azulejo-engine"
 version = "0.0.1"
 dependencies = [
@@ -56,7 +69,8 @@ dependencies = [
 name = "azulejo-ffi"
 version = "0.0.1"
 dependencies = [
- "azulejo-engine",
+ "azulejo-daemon",
+ "azulejo-herdr",
  "azulejo-protocol",
  "cbindgen",
  "serde_json",

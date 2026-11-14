@@ -20,6 +20,11 @@ test-herdr:
     cargo test -p azulejo-herdr --test live -- --ignored --test-threads=1
     cargo test -p azulejo-engine --test live -- --ignored --test-threads=1
 
+# Headless end to end: azulejod + azj against a real herdr in a throwaway session
+e2e:
+    cargo build -p azulejo-cli -p azulejo-daemon
+    cargo test -p azulejo-daemon --test e2e -- --ignored --test-threads=1 --nocapture
+
 # Build the macOS app into target/macos/Azulejo.app
 mac:
     apps/macos/bundle.sh

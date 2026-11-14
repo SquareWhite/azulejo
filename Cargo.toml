@@ -20,6 +20,7 @@ azulejo-herdr = { path = "core/crates/herdr" }
 azulejo-engine = { path = "core/crates/engine" }
 azulejo-api = { path = "core/crates/api" }
 azulejo-config = { path = "core/crates/config" }
+azulejo-daemon = { path = "core/crates/daemon" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.2"

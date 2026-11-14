@@ -1,0 +1,28 @@
+[package]
+name = "azulejo-daemon"
+description = "Boots the core (config, saved state, engine, herdr, API server); azulejod runs it headless"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "azulejo_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "azulejod"
+path = "src/main.rs"
+
+[dependencies]
+azulejo-api.workspace = true
+azulejo-config.workspace = true
+azulejo-engine.workspace = true
+azulejo-herdr.workspace = true
+serde_json.workspace = true
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "signal", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "time"] }
