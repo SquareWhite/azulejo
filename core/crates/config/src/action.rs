@@ -57,7 +57,11 @@ pub enum Action {
     NewWindow,
     CloseWindow,
     // App
+    /// The ⌘K menu: commands and jump targets in one list.
+    QuickOpen,
+    /// The same menu limited to commands (opens with `>`).
     CommandPalette,
+    /// The same menu limited to workspaces, tabs and tiles (opens with `@`).
     Goto,
     Find,
     OpenConfig,
@@ -134,6 +138,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("rename_tab", RenameTab),
         ("new_window", NewWindow),
         ("close_window", CloseWindow),
+        ("quick_open", QuickOpen),
         ("command_palette", CommandPalette),
         ("goto", Goto),
         ("find", Find),
@@ -198,7 +203,7 @@ impl Action {
     pub fn target(self) -> Target {
         use Action::*;
         let method = match self {
-            ResizeMode | CommandPalette | Goto | Find | OpenConfig | ReloadConfig
+            ResizeMode | QuickOpen | CommandPalette | Goto | Find | OpenConfig | ReloadConfig
             | ToggleSidebar | EnterPrefix => return Target::Shell,
             FocusTile(_) => "layout.focus",
             SwapTile(_) => "layout.swap",

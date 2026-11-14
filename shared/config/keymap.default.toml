@@ -73,12 +73,14 @@ previous_tab = "ctrl+shift+tab"
 close_tab    = "cmd+w"
 
 # App
-command_palette = "cmd+shift+p"
-goto            = "cmd+p"             # workspace / tab / tile picker (herdr prefix+w, prefix+g)
+quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/tiles (">" commands, "@" jump)
+# command_palette (opens quick open with ">") and goto (with "@") are unbound
+# by default; bind them here to get cmd+shift+p / cmd+p back.
 find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers
 new_window      = "cmd+n"
 open_config     = "cmd+,"
-# Deliberately unbound: cmd+h, cmd+m, cmd+` (macOS), cmd+k (clear does nothing under herdr).
+# Deliberately unbound: cmd+h, cmd+m, cmd+` (macOS). cmd+k takes over Ghostty's
+# clear_screen; ctrl+l still clears (docs/keybindings.md).
 
 [keys.macos.terminal]
 toggle_sidebar = "cmd+a"              # herdr binding; terminal-only so cmd+a stays select-all elsewhere
@@ -125,8 +127,7 @@ next_tab     = "ctrl+tab"
 previous_tab = "ctrl+shift+tab"
 close_tab    = "super+w"
 
-command_palette = "super+shift+p"
-goto            = "super+p"
+quick_open      = "super+k"
 find            = "super+f"
 new_window      = "super+n"
 open_config     = "super+comma"
@@ -166,8 +167,8 @@ rename_tile      = "prefix+shift+p"
 new_workspace    = "prefix+shift+n"
 rename_workspace = "prefix+shift+w"
 close_workspace  = "prefix+shift+d"
-goto             = ["prefix+w", "prefix+g"]
+goto             = ["prefix+w", "prefix+g"]   # quick open with "@"
 toggle_sidebar   = "prefix+b"
 edit_scrollback  = "prefix+e"
 find             = "prefix+["         # herdr copy mode -> Azulejo scrollback search
-command_palette  = "prefix+?"         # herdr help -> palette lists every binding
+command_palette  = "prefix+?"         # herdr help -> quick open with ">" lists every binding

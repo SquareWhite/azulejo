@@ -82,13 +82,31 @@ One more thing from the config: `tall.py` encodes a placement rule, kitty's `tal
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` | herdr |
 | `close_tab` | `cmd+w` | herdr |
 | `toggle_sidebar` | `cmd+a`, **terminal tiles only** | herdr (see conflicts) |
-| `command_palette` | `cmd+shift+p` | new (Zed / VS Code convention) |
-| `goto` (workspace, tab or tile picker) | `cmd+p` | new, covers `prefix+w` and `prefix+g` |
+| `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
+| `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
+| `goto` (quick open, places only: opens with `@`) | unbound | was `cmd+p`; rebind it to get that back |
 | `find` (scrollback search via herdr, ADR 0005; page find in browser) | `cmd+f` | new |
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
 Rename, close workspace, kill the herdr pane, help and edit-scrollback are left to the palette and to prefix mode.
+
+### Quick open (⌘K)
+
+One menu for commands and places. On an empty query it lists recent rows first (commands and places mixed), then workspaces, tabs and tiles, then commands. Typing fuzzy-matches across all of them, ranked together: whole or leading matches on a name come first, places win a close tie with commands, and recently used rows get a boost. Each row says what it is (Workspace, Tab, Terminal, Browser, Preview, Files or Command), and commands show their chords.
+
+- `>` at the start limits it to commands (what `cmd+shift+p` used to open).
+- `@` limits it to workspaces, tabs and tiles (what `cmd+p` used to open).
+- Commands that need input (renames, open URL, layouts) ask for it inline, as before.
+- `command_palette` and `goto` still exist as actions with no default chord. Bind them to open the menu with `>` or `@` already typed:
+
+```toml
+[keys]
+command_palette = "cmd+shift+p"
+goto            = "cmd+p"
+```
+
+**`cmd+k` and Ghostty.** Ghostty binds `cmd+k` to `clear_screen` by default; Azulejo's key router sees the chord first, so in Azulejo `cmd+k` opens quick open. Clearing still works with `ctrl+l` (the shell clears and redraws). Chords Azulejo doesn't bind still reach the terminal surface, so Ghostty `keybind` lines for other keys keep working, e.g. `keybind = cmd+shift+k=clear_screen` in your Ghostty config. Under herdr that clear is cosmetic: herdr owns the screen and its scrollback, and redraws on the next update.
 
 ### Linux defaults
 
@@ -104,7 +122,7 @@ Rename, close workspace, kill the herdr pane, help and edit-scrollback are left 
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` |
 | `close_tab` | `super+w` |
 | `toggle_sidebar` | `super+a`, terminal tiles only |
-| `command_palette` / `goto` / `find` | `super+shift+p` / `super+p` / `super+f` |
+| `quick_open` / `find` | `super+k` / `super+f` (`command_palette` and `goto` unbound, as on macOS) |
 | `new_window` / `open_config` | `super+n` / `super+comma` |
 
 **Caveat: the window manager sees Super first.** On Wayland and X11 the compositor's own bindings win, so a clash means Azulejo never gets the key. Known clashes with stock defaults:
@@ -127,7 +145,7 @@ The Linux terminal convention (kitty, GNOME Terminal, Ptyxis). It avoids every W
 | `switch_workspace` 1–8, `last_workspace` | `alt+1..8`, `alt+9`/`alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
 | `close_tab` | `ctrl+shift+w` | |
 | `toggle_sidebar` | `ctrl+shift+b` | `ctrl+shift+a` is select-all in GTK terminals |
-| `command_palette` / `goto` / `find` | `ctrl+shift+p` / unbound / `ctrl+shift+f` | `ctrl+p` is shell history |
+| `quick_open` / `find` | `ctrl+shift+p` / `ctrl+shift+f` | VS Code's palette chord; `ctrl+p` is shell history and `ctrl+shift+k` is scroll-up in kitty |
 | `new_window` / `open_config` | `ctrl+shift+n` / `ctrl+comma` | |
 
 Match keys by physical key (hardware keycode), not by the shifted keyval. Otherwise `ctrl+shift+minus` arrives as `underscore` on GTK, and `alt+shift+h` arrives as `H`.

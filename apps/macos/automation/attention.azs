@@ -69,8 +69,9 @@ seen-visible on
 until focused.agent blocked 3000
 seen-visible off
 
-# The picker shows the agents too (dot) and finds tiles by agent name.
-key cmd+p
-palette type codex
+# ⌘K shows the agents too (dot) and finds tiles by agent name.
+key cmd+k
+palette type @codex
 expect palette.top codex
+expect palette.topkind Terminal
 key escape

@@ -1,41 +1,61 @@
-# Command palette (⌘⇧P), picker (⌘P) and the config reload banner, in-process
-# on a dev instance (no OS input):  apps/macos/automation/chrome.sh
+# The ⌘K quick-open menu (commands + workspaces/tabs/tiles in one list) and
+# the config reload banner, in-process on a dev instance (no OS input):
+#   apps/macos/automation/chrome.sh
 # Fresh dev state: one window, one workspace, one tab, one terminal tile.
 
-log palette
+log quick open
+palette forget
 expect palette closed
-key cmd+shift+p
-expect palette commands
-shot 10-palette-open
+key cmd+k
+expect palette all
+# Empty query, nothing recent yet: places first, then commands, all mixed in.
+expect palette.topkind Workspace
+expect palette.kinds Command,Terminal,Workspace
+shot 10-quickopen-open
 palette type split right
 expect palette.top Split right
-shot 11-palette-split-right
+expect palette.topkind Command
+shot 11-quickopen-split-right
 key enter
 until tiles 2
 expect palette closed
 
 # Typing through real key events goes to the search field, not the keymap
 # (r/o/t aren't bound, but alt+h would be: it must not move focus here).
-key cmd+shift+p
+key cmd+k
 key r
 key o
 key t
 expect palette.top Rotate layout
 key alt+h
-expect palette commands
+expect palette all
 expect focus 2
 key escape
 expect palette closed
 
-# Recently run commands come first on an empty query.
-key cmd+shift+p
+# Recently run rows come first on an empty query.
+key cmd+k
 expect palette.top Split right
-# ⌘⇧P again closes it.
-key cmd+shift+p
+# ⌘K again closes it.
+key cmd+k
 expect palette closed
 
+# ">" limits the list to commands, "@" to places; switching is just typing.
+key cmd+k
+palette type >
+expect palette commands
+expect palette.kinds Command
+palette type >zoom
+expect palette.top Zoom tile
+shot 12-quickopen-commands
+palette type @
+expect palette jump
+expect palette.kinds Tab,Terminal,Workspace
+shot 13-quickopen-jump
+key escape
+
 # Arrow keys move the selection.
-key cmd+shift+p
+key cmd+k
 palette type focus tile
 key down
 key down
@@ -44,19 +64,19 @@ log selected after down, down, up
 key escape
 
 # Two-step command: rename the tab inline.
-key cmd+shift+p
+key cmd+k
 palette type rename tab
 expect palette.top Rename tab…
 key enter
 expect palette prompt:rename_tab
-shot 12-palette-prompt
+shot 14-quickopen-prompt
 palette type Agents
 key enter
 expect palette closed
 until tab.label Agents
 
 # Method-only command with a prompt: save the layout.
-key cmd+shift+p
+key cmd+k
 palette type save layout
 expect palette.top Save layout as…
 key enter
@@ -65,43 +85,61 @@ palette type {out}/exported.toml
 key enter
 expect palette closed
 
-# Picker: jump to another workspace by name.
+# Jump: a workspace by name, from the same menu (no ⌘P any more).
 core {"method":"workspace.create","params":{"name":"Docs"}}
 until workspaces 2
 key cmd+1
 until workspace 1
-key cmd+p
-expect palette goto
+key cmd+k
 palette type docs
 expect palette.top Docs
-shot 13-picker
+expect palette.topkind Workspace
+shot 15-quickopen-jump-docs
 key enter
 until workspace 2
 expect palette closed
 key cmd+1
 until workspace 1
 
+# Jump to a tile by kind from a mixed query: the browser tile by its URL host.
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"http://localhost:9/azj-quickopen"}}}
+until tiles 3
+key cmd+k
+palette type @quickopen
+expect palette.topkind Browser
+key escape
+
+# The old chords are unbound by default.
+key cmd+shift+p
+expect palette closed
+key cmd+p
+expect palette closed
+
 # --- config reload banner (F25b) ---
 sh cp {config} {config}.orig
 sh printf '\n[keys]\nthis is not toml =\n' >> {config}
 until banner Config not applied; keeping the previous one. 4000
-shot 14-banner-error
-# The old config stays: ⌘⇧P still opens the palette.
+shot 16-banner-error
+# The old config stays: ⌘K still opens the menu.
+key cmd+k
+expect palette all
+key escape
+# Fixed with new bindings: banner goes, ⌘⇧P and ⌘P come back pre-scoped.
+sh cp {config}.orig {config}
+sh printf '\n[keys]\ncommand_palette = "cmd+shift+p"\ngoto = "cmd+p"\n' >> {config}
+until banner none 4000
 key cmd+shift+p
 expect palette commands
-key escape
-# Fixed with a new binding: banner goes, the palette moves to ⌘K.
-sh cp {config}.orig {config}
-sh printf '\n[keys]\ncommand_palette = "cmd+k"\n' >> {config}
-until banner none 4000
-key cmd+k
-expect palette commands
-key escape
+# ⌘P while it's open switches the scope instead of closing.
+key cmd+p
+expect palette jump
+key cmd+p
+expect palette closed
 # A warning (duplicate binding) shows the banner without blocking.
 sh cp {config}.orig {config}
-sh printf '\n[keys]\nzoom_tile = "cmd+k"\ncommand_palette = "cmd+k"\n' >> {config}
+sh printf '\n[keys]\nzoom_tile = "cmd+k"\nquick_open = "cmd+k"\n' >> {config}
 wait 800
 log banner after duplicate binding
-shot 15-banner-warning
+shot 17-banner-warning
 sh cp {config}.orig {config}
 until banner none 4000

@@ -1,43 +1,76 @@
 import AppKit
 
-/// What the palette (⌘⇧P) and picker (⌘P) list, and what choosing a row
-/// does. Commands come from the core's `commands.list` (the keymap's actions
-/// plus user-facing methods, with current chords); the picker lists every
-/// workspace, tab and tile in the session.
+/// What the ⌘K quick-open menu lists, and what choosing a row does. Commands
+/// come from the core's `commands.list` (the keymap's actions plus
+/// user-facing methods, with current chords); jump targets are every
+/// workspace, tab and tile in the session. Both sit in one list.
 @MainActor
 enum PaletteStore {
-    /// `commands.list` entries by id, from the last time the palette opened.
+    /// `commands.list` entries by id, from the last time the menu opened.
     static var entries: [String: [String: Any]] = [:]
 
-    /// Recently run rows, newest first, per mode. A per-viewer convenience:
-    /// lost with the app's defaults, which is fine.
-    static func recents(_ mode: PaletteView.Mode) -> [String] {
-        UserDefaults.standard.stringArray(forKey: key(mode)) ?? []
+    /// The menu's own actions: it doesn't list itself.
+    static let selfActions: Set<String> = ["quick_open", "command_palette", "goto"]
+
+    /// Recently run rows (commands and places), newest first. A per-viewer
+    /// convenience: lost with the app's defaults, which is fine.
+    static func recents() -> [String] {
+        if let list = UserDefaults.standard.stringArray(forKey: key("quickOpen")) { return list }
+        // Before ⌘K there were two lists: start from both, places first.
+        let goto = UserDefaults.standard.stringArray(forKey: key("paletteRecent.goto")) ?? []
+        let commands = UserDefaults.standard.stringArray(forKey: key("paletteRecent.commands")) ?? []
+        var merged: [String] = []
+        for id in zip(goto, commands).flatMap({ [$0, $1] }) + goto + commands where !merged.contains(id) {
+            merged.append(id)
+        }
+        return Array(merged.prefix(30))
     }
 
-    static func remember(_ id: String, _ mode: PaletteView.Mode) {
-        var list = recents(mode).filter { $0 != id }
+    static func remember(_ id: String) {
+        var list = recents().filter { $0 != id }
         list.insert(id, at: 0)
-        UserDefaults.standard.set(Array(list.prefix(30)), forKey: key(mode))
+        UserDefaults.standard.set(Array(list.prefix(30)), forKey: key("quickOpen"))
     }
 
     /// Dev runs share the installed app's defaults domain: keep their
-    /// recents apart so test runs never reorder the user's palette.
-    private static func key(_ mode: PaletteView.Mode) -> String {
-        let dev = ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" ? "dev." : ""
-        return "\(dev)paletteRecent.\(mode.rawValue)"
+    /// recents apart so test runs never reorder the user's menu.
+    private static var isDev: Bool { ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" }
+
+    private static func key(_ name: String) -> String {
+        (isDev ? "dev." : "") + name
+    }
+
+    /// Clears the dev profile's recents (automation). Never touches the
+    /// installed app's keys: refuses outside dev runs.
+    static func forgetDevRecents() -> Bool {
+        guard isDev else { return false }
+        for name in ["quickOpen", "paletteRecent.goto", "paletteRecent.commands"] {
+            UserDefaults.standard.removeObject(forKey: key(name))
+        }
+        return true
     }
 }
 
 extension AppController {
-    func openPalette(_ mode: PaletteView.Mode, in controller: WindowController) {
+    /// Opens the ⌘K menu with `query` in the field: `""` lists everything,
+    /// `">"` commands only (the old ⌘⇧P), `"@"` places only (the old ⌘P).
+    /// The same call while it's open in that scope closes it; from another
+    /// scope it switches.
+    func openQuickOpen(query: String = "", in controller: WindowController) {
         let palette = controller.palette
-        if palette.isOpen, palette.mode == mode { return palette.close() }
-        let items = mode == .commands ? commandItems(for: controller) : gotoItems(for: controller)
+        if palette.isOpen {
+            if palette.promptingFor == nil, palette.scope == PaletteView.Scope.of(query).scope {
+                return palette.close()
+            }
+            palette.setQuery(query)
+            controller.layoutChrome()
+            return
+        }
+        let items = gotoItems(for: controller) + commandItems(for: controller)
         palette.onRun = { [weak self, weak controller] item, input in
             guard let self, let controller else { return }
-            PaletteStore.remember(item.id, mode)
-            if mode == .commands {
+            PaletteStore.remember(item.id)
+            if item.kind.isCommand {
                 self.runCommand(item, input: input, in: controller)
             } else {
                 self.runGoto(item)
@@ -46,7 +79,7 @@ extension AppController {
         palette.onClose = { [weak controller] in
             controller?.tiles.focusedView?.setFocused(true)
         }
-        palette.open(mode, items: items, recents: PaletteStore.recents(mode))
+        palette.open(items: items, recents: PaletteStore.recents(), query: query)
         controller.layoutChrome()
     }
 
@@ -62,14 +95,14 @@ extension AppController {
         var items: [PaletteItem] = []
         for entry in list {
             guard let id = entry["id"] as? String, let title = entry["title"] as? String else { continue }
-            // The palette doesn't list itself.
-            if id == "command_palette" { continue }
+            // The menu doesn't list itself.
+            if PaletteStore.selfActions.contains(id) { continue }
             PaletteStore.entries[id] = entry
             let planned = entry["planned"] as? Bool ?? false
             let needsTile = entry["needs_tile"] as? Bool ?? false
             let prompt = entry["prompt"] as? String
             var item = PaletteItem(
-                id: id, title: title,
+                id: id, title: title, kind: .command,
                 detail: entry["category"] as? String ?? "",
                 chords: entry["chords"] as? [String] ?? [],
                 prompt: prompt, searchExtra: id)
@@ -166,20 +199,20 @@ extension AppController {
             for ws in window.workspaces {
                 let blocked = ws.tabs.flatMap(\.tiles).filter { $0.agent?.status == .blocked }.count
                 items.append(PaletteItem(
-                    id: "ws:" + ws.id, title: ws.name,
-                    detail: where0 + "workspace · \(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
+                    id: "ws:" + ws.id, title: ws.name, kind: .workspace,
+                    detail: where0 + "\(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
                     searchExtra: ws.cwd ?? "",
                     dot: blocked > 0 ? AttentionStyle.blocked : nil))
                 for tab in ws.tabs {
                     if ws.tabs.count > 1 || tab.tiles.count > 1 {
                         items.append(PaletteItem(
-                            id: "tab:" + tab.id, title: tab.label,
-                            detail: "\(where0)tab in \(ws.name)"))
+                            id: "tab:" + tab.id, title: tab.label, kind: .tab,
+                            detail: "\(where0)in \(ws.name)"))
                     }
                     for tile in tab.tiles {
                         items.append(PaletteItem(
-                            id: "tile:" + tile.id, title: Self.tileTitle(tile),
-                            detail: "\(where0)\(tile.kind.rawValue) in \(ws.name)",
+                            id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),
+                            detail: "\(where0)in \(ws.name)",
                             searchExtra: [tile.cwd, tile.url, tile.path, tile.root, tile.agent?.name,
                                           tile.command?.joined(separator: " ")]
                                 .compactMap { $0 }.joined(separator: " "),
