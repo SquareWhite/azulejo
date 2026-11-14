@@ -293,32 +293,41 @@ All P1 boxes ticked on macOS (2.9 dropped). The 4-week success-metric clock star
 
 The designer's mockup is `docs/design/mockup-v1.png` (local capture), described region by region with sampled colours in [docs/design/README.md](docs/design/README.md). the maintainer's direction (Nov 3, 2026): get the basic functionality working first, then polish the GUI. This milestone is visual only. The functional items the mockup implies were decided on Nov 3, 2026 (see "Decided from the mockup" below): three moved into M2 as 2.13–2.15, and the rest stay here. Starts after G2, or earlier for steps that don't depend on unfinished M2 work.
 
-- [ ] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
+- [x] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
   **Done when** no view hard-codes a colour or radius.
+  **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: 1 pt accent outline at 45 %, pending designer confirmation (docs/design/README.md).
 
-- [ ] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
+- [x] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
+  **Result:** 94663ec (merged 3da01cf): hidden title bar, lights at the card's top left, toolbar row 60 pt, empty toolbar space drags the window. Fixed in D.9: the content view now paints the window colour (the gaps around the cards were see-through), and the lights are re-placed after every refresh (a workspace rename or switch put them back behind the card). The full D.9 scene's capture lacked them because the app's render covers only the content view; it draws the title bar's buttons now (5dc9fef).
 
-- [ ] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
+- [x] **D.3 Sidebar.** Rounded card, Agents | Files segmented control (Files shows the project tree from 2.5's core in the sidebar, for the focused workspace's root), group headers with a connection dot, workspace rows (status icon, name, right-aligned branch slot, selection highlight), "+" per group, footer rollup counts.
   **Done when** the sidebar matches the mockup with fixture data, including truncation of long branch names, and the Files panel navigates and opens files like the files tile.
+  **Result:** `Sidebar.swift` styles the content of D.2's card: Agents | Files switch, machine groups (dot, or amber spinner + "Reconnecting…"; rows dimmed while a machine isn't connected), workspace rows (status icon, name, branch truncated on the right, selected fill, hover), "+" per group, footer counts. Files is a new core `files.panel` (a tree outside the layout; `files.open` from it lands beside the focused tile, which keeps focus); Esc hands the keyboard back, and refreshes don't take it (`KeepsKeyboard` in TileFocus). Remote workspaces' files aren't shown yet. `apps/macos/automation/sidebar.sh` checks it; screenshots compared with the mockup's left column. Open: the working icon (`progress.indicator`, D.1) draws rays where the mockup has a partial ring; "done" can't be simulated with `herdr pane report-agent`.
 
-- [ ] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
+- [x] **D.4 Tab strip.** Pill container, status icon per tab, selected-tab fill, "+".
   **Done when** tabs match the mockup and attention state shows on them.
+  **Result:** 94663ec (merged 3da01cf): pill strip, state icon per tab (blocked, done, working, idle), selected fill, "+", ellipsis when short of room; the layout kind is in the tooltip.
 
-- [ ] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
+- [x] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
   **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
+  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Focus indicator still pending the designer. Mid-motion captures (the app's render, `anim.sh --slow`) show caps and headers moving with the tiles and no content outside any card; the ring now rides with the focused tile, and cross-fade ghosts stay in their old card (5eabfc9).
 
-- [ ] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
+- [x] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
   **Done when** it matches the mockup's browser tile.
+  **Result:** 36 pt chrome replaces the header strip; centred host + path with globe (lock for https), full URL while editing; the old ⋯ menu moved to right-click.
 
-- [ ] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
+- [x] **D.7 Preview header.** File icon, truncated file name, Preview | Source segmented control (behaviour from 2.15, restyled here).
   **Done when** it matches the mockup's preview tile.
+  **Result:** left-aligned file name, Preview | Source pill on the right, Open and Reveal on hover; the page's dark palette now matches the mockup (body #252930).
 
-- [ ] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
+- [x] **D.8 Search field and ⌘K.** The toolbar's "Jump to workspace or tile" field opens quick open (2.2) as a dropdown anchored to the field, with the key badge showing the bound chord. The ⌘K part is done: quick open (commands and places in one menu) is on `cmd+k` / `super+k` since the ⌘K merge; the toolbar field is still to do here.
   **Done when** clicking the field or pressing the chord opens the same menu.
+  **Result:** 94663ec (merged 3da01cf): the field shows the bound chord (⌘K) and opens quick open as a dropdown hanging from it, by click or chord.
 
-- [ ] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
+- [x] **D.9 Mockup comparison.** An automation script lays out the mockup's scene with fixture data (four tiles, three tabs, the sidebar groups) and captures the window; the capture sits next to `mockup-v1.png` in `docs/design/` for review.
   **Done when** the maintainer and the designer sign off on the side-by-side.
+  **Result:** `apps/macos/automation/mockup.sh` builds the scene on its own dev instance (fixture repos, stand-in machines "build-server" and a disconnected "dev-server", a fixture web page, ADR and test output) and captures it at 1440 × 900: `docs/design/capture-v1.png` (local capture), side by side with the mockup and the remaining differences in [compare-v1.md](docs/design/compare-v1.md). The working icon is now the mockup's partial ring (`azulejo.ring`, drawn by the app; it turns while motion is on). Sign-off pending.
 
 ### Decided from the mockup (Nov 3, 2026)
 
@@ -335,6 +344,20 @@ Details and status per element are in [docs/design/README.md](docs/design/README
 
 ### Gate GD
 D.1–D.9 ticked; the side-by-side comparison signed off.
+
+**Status (Nov 3, 2026):** D.1–D.9 ticked; waiting for sign-off on [compare-v1.md](docs/design/compare-v1.md).
+
+**Pending the designer:**
+- The focus indicator (a 1 pt accent outline today; the mockup shows none) and whether the focused tile's body gets the mockup's lighter tint (terminals draw their own body from the Ghostty theme).
+- The agent badge in the tile corner ("claude · working"): keep, limit to blocked or finished, or drop.
+- Which state a workspace row shows when its tabs disagree (the mockup: working, with a blocked tab).
+- The default terminal font size when the user's Ghostty config sets none.
+- The mockup's wording: "session" becomes "workspace".
+
+**Resolved after D.9 (Nov 3, 2026):**
+- Crop motion "snapshot past the edge" (5eabfc9): the snapshot was clipped all along; the focus ring was the edge it crossed. It went from the old focused tile straight to the new one, so mid-split it cut across the shrinking tile (and across both cards on a close). It now follows the focused tile's own path. Cross-fade ghosts (rotate, Tile → Three Column) drew a tile's last frame unclipped, past the container's edge for a tile back from Monocle; they're clipped to the old card and only for tiles that were on screen. Slowed captures of split, resize, swap, zoom, rotate, Monocle, Three Column and close: no bright pixel outside the logged tile and ring frames (was 3–5,840 per capture). Crop stress: 55 animations, PTY resizes 115/115, 0 dropped ticks, but with the screen locked (0 display-link ticks; 1 of 1,436 main-thread passes over a frame), so the screen-on run stays a deferred check.
+- Traffic lights in the scene's capture (5dc9fef): the capture method. `capture-v1.png` is the app's render of its content view, and the lights live in the title bar outside it; both in-app renders draw them now (grey: the automation window is never key). Recaptured; compare-v1 items 5 and 6 fixed.
+- Preview headings about twice the mockup's size (9002409): body 13 px, heading 18 px semibold, code 11 px, mockup colours in dark.
 
 ---
 

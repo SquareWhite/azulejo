@@ -156,6 +156,14 @@ pub enum Command {
     /// `created` with the tile.
     #[serde(rename = "files.open")]
     FilesOpen(crate::files::FilesOpen),
+    /// Opens a files panel on `root` (or points an existing one there);
+    /// replies `created` with the panel's id as `tile`. Panels live outside
+    /// the session and aren't saved; shells open them again after a relaunch.
+    #[serde(rename = "files.panel")]
+    FilesPanel(crate::files::FilesPanel),
+    /// Closes a files panel and stops watching its folders.
+    #[serde(rename = "files.panel_close")]
+    FilesPanelClose(crate::files::FilesPanelClose),
 
     // ----- layout (F2) -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
@@ -317,6 +325,8 @@ pub const METHODS: &[&str] = &[
     "files.reveal",
     "files.toggle_hidden",
     "files.open",
+    "files.panel",
+    "files.panel_close",
     "layout.get",
     "layout.split",
     "layout.focus",

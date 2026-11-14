@@ -14,6 +14,11 @@ test:
 lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
+    scripts/design-tokens --check
+
+# Regenerate the macOS shell's Design.swift from shared/design/tokens.json
+design-tokens:
+    scripts/design-tokens
 
 # herdr adapter and engine integration tests against a real herdr in throwaway sessions
 test-herdr:
@@ -75,6 +80,10 @@ mac-layouts: mac
 # menu, layouts, tabs, herdr changes and input methods; in-process, dev profile
 mac-focus: mac
     apps/macos/automation/focus/focus.sh
+
+# The designer mockup's scene with fixture data, captured for docs/design (D.9)
+mac-mockup: mac
+    apps/macos/automation/mockup.sh
 
 # Lint the GTK4 Linux shell (needs GTK 4.14+ and libadwaita 1.5+)
 lint-linux:

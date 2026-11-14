@@ -75,9 +75,9 @@ final class PreviewTileView: NSView, TileView {
         model = tile
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 6
+        // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.tile.cgColor
 
         // The controls live in the tile's header strip (TileFrame, F28/F29).
         header.onOpen = { [weak self] in self?.openInDefaultApp() }
@@ -94,8 +94,8 @@ final class PreviewTileView: NSView, TileView {
         ])
 
         placeholder.alignment = .center
-        placeholder.textColor = .secondaryLabelColor
-        placeholder.font = .systemFont(ofSize: 13)
+        placeholder.textColor = Design.Color.textSecondary
+        placeholder.font = Design.Font.body
         placeholder.translatesAutoresizingMaskIntoConstraints = false
 
         Self.live[tileID] = WeakPreview(self)
@@ -112,7 +112,9 @@ final class PreviewTileView: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Design.Color.tile.cgColor
+        }
     }
 
     // MARK: TileView
@@ -461,28 +463,22 @@ private final class PreviewNavigation: NSObject, WKNavigationDelegate {
 /// Preview | Source (F29), and two actions. The file's name and folder are
 /// the header's own title and subtitle.
 @MainActor
-private final class PreviewHeader: NSView {
+/// The preview tile's part of the header strip (D.7): the Preview | Source
+/// toggle on the right, like the mockup. Open and Reveal show while the
+/// pointer is over the header; the syntax and kind go in the toggle's tooltip.
+private final class PreviewHeader: NSView, HeaderHoverAware {
     var onOpen: () -> Void = {}
     var onReveal: () -> Void = {}
     var onMode: (Bool) -> Void = { _ in }
-    private let detail = NSTextField(labelWithString: "")
-    private let mode = NSSegmentedControl(
-        labels: ["Preview", "Source"], trackingMode: .selectOne, target: nil, action: nil)
+    private let mode = PillToggle(labels: ["Preview", "Source"])
     private let open = NSButton()
     private let reveal = NSButton()
     private let stack: NSStackView
 
     init() {
-        stack = NSStackView(views: [detail, mode, open, reveal])
+        stack = NSStackView(views: [open, reveal, mode])
         super.init(frame: .zero)
-        detail.font = .systemFont(ofSize: 10)
-        detail.textColor = .tertiaryLabelColor
-        detail.lineBreakMode = .byTruncatingTail
-        mode.controlSize = .mini
-        mode.font = .systemFont(ofSize: 10)
-        mode.selectedSegment = 0
-        mode.target = self
-        mode.action = #selector(modeChanged)
+        mode.onChange = { [weak self] _ in self?.modeChanged() }
         mode.toolTip = "Show the file rendered, or its source"
         for (button, symbol, tip) in [
             (open, "arrow.up.forward.app", "Open in the default app"),
@@ -492,13 +488,15 @@ private final class PreviewHeader: NSView {
             button.isBordered = false
             button.controlSize = .small
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+            button.contentTintColor = Design.Color.textMuted
             button.toolTip = tip
             button.target = self
+            button.isHidden = true
         }
         open.action = #selector(openClicked)
         reveal.action = #selector(revealClicked)
         stack.orientation = .horizontal
-        stack.spacing = 6
+        stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -515,7 +513,7 @@ private final class PreviewHeader: NSView {
     override var fittingSize: NSSize { stack.fittingSize }
 
     func setPath(_ path: String?, detail text: String? = nil, exists: Bool = true) {
-        if let text { detail.stringValue = text }
+        if let text { mode.toolTip = "\(text) — show the file rendered, or its source" }
         open.isEnabled = path != nil && exists
         reveal.isEnabled = path != nil && exists
     }
@@ -523,6 +521,11 @@ private final class PreviewHeader: NSView {
     /// Which segment shows as selected.
     func setSource(_ source: Bool) {
         mode.selectedSegment = source ? 1 : 0
+    }
+
+    func headerHover(_ inside: Bool) {
+        open.isHidden = !inside
+        reveal.isHidden = !inside
     }
 
     /// Images, video and PDF have no source to show.
@@ -538,6 +541,9 @@ private final class PreviewHeader: NSView {
         mode.selectedSegment = source ? 1 : 0
         modeChanged()
     }
+
+    /// Automation: Open and Reveal show (pointer over the header).
+    var actionsShown: Bool { !open.isHidden }
 
     @objc private func modeChanged() { onMode(mode.selectedSegment == 1) }
     @objc private func openClicked() { onOpen() }

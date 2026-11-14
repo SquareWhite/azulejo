@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use azulejo_protocol::{
     Command, Direction, ErrorCode, Event, FilesDir, FilesListing, FilesOpen, FilesOpenTarget,
-    FilesReveal, FilesSetRoot, FilesToggleHidden, LayoutSplit, Reply, TileContent, TileId,
+    FilesPanel, FilesPanelClose, FilesReveal, FilesSetRoot, FilesToggleHidden, LayoutSplit, Reply,
+    TileContent, TileId,
 };
 
 use crate::{Core, CoreOptions};
@@ -434,6 +435,113 @@ fn closing_the_tile_stops_its_watches() {
         err.code,
         ErrorCode::NotFound | ErrorCode::InvalidState
     ));
+}
+
+fn open_panel(core: &Core, panel: Option<TileId>, root: &Path) -> TileId {
+    match core
+        .execute(Command::FilesPanel(FilesPanel {
+            panel,
+            root: root.display().to_string(),
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::Created(c) => c.tile.unwrap(),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn a_panel_lists_watches_and_opens_outside_the_layout() {
+    let (_t, root) = tree();
+    let core = core();
+    let events = core.subscribe();
+    let before = core.session().unwrap();
+    let panel = open_panel(&core, None, &root);
+    // Not a tile: the session doesn't change.
+    assert_eq!(core.session().unwrap(), before);
+    assert_eq!(names(&expand(&core, panel, None)), ["src/", "README.md"]);
+    assert_eq!(
+        names(&expand(&core, panel, Some("src"))),
+        ["deep/", "main.rs"]
+    );
+
+    std::thread::sleep(Duration::from_millis(300));
+    while events.try_recv().is_ok() {}
+    fs::write(root.join("src/new.rs"), "").unwrap();
+    let e = next(&events, Duration::from_secs(2), |e| {
+        changed_dirs(e, panel).is_some()
+    })
+    .expect("files.changed for the panel");
+    assert_eq!(
+        changed_dirs(&e, panel).unwrap(),
+        vec![root.join("src").display().to_string()]
+    );
+
+    // A panel survives session changes that drop files tiles.
+    let focused = core.session().unwrap().focused_tile().unwrap();
+    core.execute(Command::LayoutSplit(LayoutSplit {
+        tile: None,
+        direction: Direction::Right,
+        content: None,
+    }))
+    .unwrap();
+    assert_eq!(names(&expand(&core, panel, None)), ["src/", "README.md"]);
+
+    // Opening a file shows it beside the focused tile, which keeps focus.
+    let focused_now = core.session().unwrap().focused_tile().unwrap();
+    let preview = match core
+        .execute(Command::FilesOpen(FilesOpen {
+            tile: Some(panel),
+            path: root.join("README.md").display().to_string(),
+            target: FilesOpenTarget::Preview,
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::Created(c) => c.tile.unwrap(),
+        other => panic!("unexpected {other:?}"),
+    };
+    let session = core.session().unwrap();
+    assert_ne!(preview, focused);
+    assert_eq!(session.focused_tile(), Some(focused_now));
+    assert!(session.tiles().any(|(_, t)| t.id == preview
+        && t.content
+            == TileContent::Preview {
+                path: Some(root.join("README.md").display().to_string())
+            }));
+
+    // Pointing it elsewhere keeps its id; the same root is a no-op.
+    assert_eq!(open_panel(&core, Some(panel), &root.join("src")), panel);
+    assert_eq!(
+        names(&expand(&core, panel, None)),
+        ["deep/", "main.rs", "new.rs"]
+    );
+    assert_eq!(open_panel(&core, Some(panel), &root.join("src")), panel);
+
+    // A file isn't a root.
+    let err = core
+        .execute(Command::FilesPanel(FilesPanel {
+            panel: Some(panel),
+            root: root.join("README.md").display().to_string(),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+
+    // Closing stops its watches and forgets it.
+    core.execute(Command::FilesPanelClose(FilesPanelClose { panel }))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    while events.try_recv().is_ok() {}
+    fs::write(root.join("src/after.rs"), "").unwrap();
+    assert!(
+        next(&events, Duration::from_millis(300), |e| changed_dirs(
+            e, panel
+        )
+        .is_some())
+        .is_none()
+    );
+    assert!(expand_err(&core, panel).code != ErrorCode::Internal);
 }
 
 fn expand_err(core: &Core, tile: TileId) -> azulejo_protocol::Error {

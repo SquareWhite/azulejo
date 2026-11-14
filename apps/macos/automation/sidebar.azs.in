@@ -1,0 +1,106 @@
+# Sidebar (D.3) check, in-process. sidebar.sh fills in @DIR@: a folder of
+# small git repos named after the workspaces, each on its own branch.
+# Agent states are simulated with `herdr pane report-agent` on the dev
+# instance's own herdr session (herdr can't report "done").
+
+log sidebar
+seen-visible off
+sidebar mode agents
+expect sidebar.mode agents
+until sidebar.machines Local ● 5000
+
+# Five workspaces like the mockup's: azulejo (working), sample-service (blocked),
+# sample-project (long branch, blocked), sample-dashboard (idle), config.
+core {"method":"workspace.rename","params":{"name":"azulejo"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/azulejo"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"sample-service"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/sample-service"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"sample-project"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/sample-project"}}
+action new_workspace
+until workspaces 4 5000
+core {"method":"workspace.rename","params":{"name":"sample-dashboard"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/sample-dashboard"}}
+action new_workspace
+until workspaces 5 5000
+core {"method":"workspace.rename","params":{"name":"config"}}
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/config"}}
+until sidebar.branches main|development|audit/critical-path-review|dev|main 5000
+expect sidebar.statuses idle|idle|idle|idle|idle
+expect sidebar.footer working=0,blocked=0,idle=5,done=0
+
+# Agent states: each workspace's terminal needs its herdr binding first.
+action switch_workspace 1
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
+until sidebar.statuses working|idle|idle|idle|idle 5000
+action switch_workspace 2
+wait 1000
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state blocked
+action switch_workspace 3
+wait 1000
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state blocked
+until sidebar.statuses working|blocked|blocked|idle|idle 5000
+expect sidebar.footer working=1,blocked=2,idle=2,done=0
+expect sidebar.markers ●|●1|●1|-|-
+action switch_workspace 1
+expect workspace 1
+shot 01-agents
+
+# A click on a row focuses its workspace.
+sidebar select 4
+expect workspace 4
+sidebar select 1
+expect workspace 1
+
+# Files: the focused workspace's repository.
+sidebar mode files
+expect sidebar.mode files
+until sidebar.files.names src,README.md 5000
+expect sidebar.files.root @DIR@/azulejo
+shot 02-files
+sidebar focus
+expect sidebar.files.keyboard yes
+key j
+expect sidebar.files.selected README.md
+key k
+expect sidebar.files.selected src
+key l
+until sidebar.files.names src,main.rs,README.md 3000
+# A refresh from the core (agent state, headers) leaves the keyboard here.
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
+wait 600
+expect sidebar.files.keyboard yes
+# Return opens a file beside the focused tile; the keyboard stays in the tree.
+remember tiles
+key j
+expect sidebar.files.selected src/main.rs
+key return
+until tiles 2 3000
+expect sidebar.files.keyboard yes
+expect focus 1
+shot 03-opened
+# Esc hands the keyboard back to the focused tile.
+key esc
+expect sidebar.files.keyboard no
+
+# Another workspace: the tree follows its repository.
+action switch_workspace 2
+until sidebar.files.root @DIR@/sample-service 3000
+expect sidebar.files.names README.md
+
+# Back to the list; the panel closes.
+sidebar mode agents
+expect sidebar.mode agents
+expect sidebar.statuses working|blocked|blocked|idle|idle
+shot 04-back

@@ -847,6 +847,40 @@
           "type": "object"
         },
         {
+          "description": "Opens a files panel on `root` (or points an existing one there);\nreplies `created` with the panel's id as `tile`. Panels live outside\nthe session and aren't saved; shells open them again after a relaunch.",
+          "properties": {
+            "method": {
+              "const": "files.panel",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesPanel"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Closes a files panel and stops watching its folders.",
+          "properties": {
+            "method": {
+              "const": "files.panel_close",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesPanelClose"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
           "properties": {
             "method": {
@@ -2544,7 +2578,7 @@
               "type": "null"
             }
           ],
-          "description": "The files tile the path comes from; defaults to the focused tile."
+          "description": "The files tile the path comes from; defaults to the focused tile. A\nfiles panel (`files.panel`) works too: the path then opens beside the\nfocused tile. Any other tile is used as the anchor when `path` is\nabsolute."
         }
       },
       "required": [
@@ -2566,6 +2600,41 @@
           "type": "string"
         }
       ]
+    },
+    "FilesPanel": {
+      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.",
+      "properties": {
+        "panel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The panel to point at `root`; a new panel when absent."
+        },
+        "root": {
+          "description": "The folder to show; `~` expands to the home folder.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    },
+    "FilesPanelClose": {
+      "properties": {
+        "panel": {
+          "$ref": "#/$defs/TileId"
+        }
+      },
+      "required": [
+        "panel"
+      ],
+      "type": "object"
     },
     "FilesReveal": {
       "properties": {
@@ -5811,6 +5880,8 @@
     "files.reveal",
     "files.toggle_hidden",
     "files.open",
+    "files.panel",
+    "files.panel_close",
     "layout.get",
     "layout.split",
     "layout.focus",

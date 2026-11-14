@@ -12,8 +12,8 @@ import QuartzCore
 /// holding a key never queues up motion.
 @MainActor
 final class TileContainerView: NSView {
-    static let gap: CGFloat = 4
-    static let inset: CGFloat = 4
+    static let gap = Design.Space.gutter
+    static let inset = Design.Space.tileInset
     private static let motionKey = "azj.motion"
 
     private var views: [String: any TileView] = [:]
@@ -43,7 +43,7 @@ final class TileContainerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = Design.Color.window.cgColor
         addSubview(ring)
         ring.layer?.zPosition = 2  // over moving tiles and outline ghosts
         clock.onChange = { [weak self] in self?.wake() }
@@ -202,7 +202,7 @@ final class TileContainerView: NSView {
         for (id, frame) in frames { views[id]?.frame = frame }
         if let tab, let focused = frames[tab.focused], visibleTiles.count > 1 || tab.zoomed != nil {
             ring.isHidden = false
-            ring.frame = focused.insetBy(dx: -2, dy: -2)
+            ring.frame = focused.insetBy(dx: -Design.Border.focus, dy: -Design.Border.focus)
             ring.zoomed = tab.zoomed != nil
         } else {
             ring.isHidden = true
@@ -280,7 +280,7 @@ final class TileContainerView: NSView {
         }
 
         // 2. Final frames now: the one resize, under the snapshots.
-        for m in movers { m.view.layer?.removeAnimation(forKey: Self.motionKey) }
+        for m in movers { stopMotion(m.view) }
         Perf.measure("motion.layout") {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -305,7 +305,7 @@ final class TileContainerView: NSView {
             case .scale:
                 scaleMotion(layer, from: m.from, to: m.to, fadeIn: m.new, duration: duration)
             case .crop where kind == "rotate":
-                crossFade(m.view, id: m.id, from: m.from, duration: duration)
+                crossFade(m.view, from: m.from, wasShown: !m.new, duration: duration)
             case .crop:
                 cropMotion(m.view, id: m.id, from: m.from, to: m.to, fadeIn: m.new,
                            snapshotAt: snapshotAt[m.id], duration: duration)
@@ -317,7 +317,17 @@ final class TileContainerView: NSView {
         }
         for (view, from) in closing { leave(view, from: from, closed: true, frames: frames, duration: duration) }
         for (view, from) in hiding { leave(view, from: from, closed: false, frames: frames, duration: duration) }
-        animateRing(from: ringBefore, duration: focusChanged || layoutMoves ? duration : 0)
+        // The ring rides with the focused tile when it moves (a new tile
+        // sweeping in, a neighbour growing into a closed tile's space): an
+        // independent path from the old focus cut across the other cards.
+        var ringFrom = ringBefore
+        var ringFades = ringBefore == nil
+        if layoutMoves, !(style == .crop && kind == "rotate"),
+           let focused = tab?.focused, let m = movers.first(where: { $0.id == focused }) {
+            ringFrom = m.from.insetBy(dx: -Design.Border.focus, dy: -Design.Border.focus)
+            ringFades = ringFades || m.new
+        }
+        animateRing(from: ringFrom, fadeIn: ringFades, duration: focusChanged || layoutMoves ? duration : 0)
         CATransaction.commit()
 
         MotionStats.shared.started(kind: kind, setup: CACurrentMediaTime() - t0)
@@ -410,6 +420,8 @@ final class TileContainerView: NSView {
         if fadeIn { group.animations?.append(fadeAnimation(from: 0, to: layer.opacity)) }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
+        // The card's rounded corners follow the moving clip (D.5).
+        (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: false)
 
         guard let aware = view as? MotionAware, let shown = snapshotAt else { return }
         let picture = Motion.toTile(shown, frame: from, bounds: start, flipped: flipped)
@@ -442,7 +454,7 @@ final class TileContainerView: NSView {
     /// Crop, tall rotate: sliding every tile across the tab looks wrong, so
     /// the tile fades in at its new place (its snapshot at 1:1, top-left)
     /// while a ghost of its last frame fades out at the old one.
-    private func crossFade(_ view: NSView, id: String, from: CGRect, duration: CFTimeInterval) {
+    private func crossFade(_ view: NSView, from: CGRect, wasShown: Bool, duration: CFTimeInterval) {
         guard let layer = view.layer else { return }
         let fade = fadeAnimation(from: 0, to: layer.opacity)
         Motion.configure(fade, duration: duration)
@@ -450,24 +462,32 @@ final class TileContainerView: NSView {
         guard let aware = view as? MotionAware, let picture = aware.snapshotFrame else { return }
         let size = picture.size
         let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - size.height
-        aware.placeSnapshot(CGRect(x: 0, y: top, width: size.width, height: size.height), cover: view.bounds)
+        aware.placeSnapshot(CGRect(x: aware.contentLeft, y: top, width: size.width, height: size.height),
+                            cover: view.bounds)
         aware.revealWhenFresh(clock: clock)
-        if let contents = aware.snapshotContents {
-            let ghost = CALayer()
-            ghost.frame = CGRect(x: from.minX, y: from.maxY - size.height, width: size.width, height: size.height)
-            ghost.contents = contents
-            ghost.contentsGravity = .resize
-            ghost.contentsScale = window?.backingScaleFactor ?? 2
-            ghost.masksToBounds = true
-            ghost.cornerRadius = layer.cornerRadius
-            ghost.backgroundColor = layer.backgroundColor
-            ghost.zPosition = 0.5
-            ghost.opacity = 0
-            let out = fadeAnimation(from: 1, to: 0)
-            Motion.configure(out, duration: duration)
-            ghost.add(out, forKey: Self.motionKey)
-            addGhost(ghost, for: id)
-        }
+        // The ghost stands for the card as it was on screen, so a tile that
+        // wasn't (back from Monocle or zoom) leaves none. It's clipped to the
+        // old card: a snapshot bigger than it never draws past its edges.
+        guard wasShown, let contents = aware.snapshotContents else { return }
+        let ghost = CALayer()
+        ghost.frame = from
+        ghost.masksToBounds = true
+        ghost.cornerRadius = Design.Radius.tile
+        ghost.zPosition = 0.5
+        ghost.opacity = 0
+        let image = CALayer()
+        image.frame = CGRect(x: aware.contentLeft, y: from.height - aware.headerInset - size.height,
+                             width: size.width, height: size.height)
+        image.contents = contents
+        image.contentsGravity = .resize
+        image.contentsScale = window?.backingScaleFactor ?? 2
+        image.backgroundColor = layer.backgroundColor
+        ghost.addSublayer(image)
+        let out = fadeAnimation(from: 1, to: 0)
+        Motion.configure(out, duration: duration)
+        ghost.add(out, forKey: Self.motionKey)
+        // Not by tile: the tile itself is already where it shows.
+        addGhost(ghost, for: nil)
     }
 
     /// Outline: the tile sits at its new place, hidden; an outline moves
@@ -477,7 +497,8 @@ final class TileContainerView: NSView {
         layer.add(hiddenUntilEnd(duration), forKey: Self.motionKey)
         if let aware = view as? MotionAware, let picture = aware.snapshotFrame {
             let top = view.isFlipped ? aware.headerInset : view.bounds.height - aware.headerInset - picture.height
-            aware.placeSnapshot(CGRect(x: 0, y: top, width: picture.width, height: picture.height), cover: view.bounds)
+            aware.placeSnapshot(CGRect(x: aware.contentLeft, y: top, width: picture.width, height: picture.height),
+                                cover: view.bounds)
         }
         let ghost = outline(at: to)
         let group = CAAnimationGroup()
@@ -504,10 +525,10 @@ final class TileContainerView: NSView {
     private func outline(at frame: CGRect) -> CALayer {
         let ghost = CALayer()
         ghost.frame = frame
-        ghost.cornerRadius = 4
-        ghost.borderWidth = 1
-        ghost.borderColor = NSColor.tertiaryLabelColor.cgColor
-        ghost.backgroundColor = NSColor(calibratedWhite: 0.5, alpha: 0.10).cgColor
+        ghost.cornerRadius = Design.Radius.ghost
+        ghost.borderWidth = Design.Border.hairline
+        ghost.borderColor = Design.Color.textMuted.cgColor
+        ghost.backgroundColor = Design.Color.ghostFill.cgColor
         ghost.zPosition = 0.5
         return ghost
     }
@@ -520,7 +541,7 @@ final class TileContainerView: NSView {
             view.removeFromSuperview()
             return
         }
-        layer.removeAnimation(forKey: Self.motionKey)
+        stopMotion(view)
         let model = view.frame
         let target = closed ? collapse(from, frames: frames) : from
         let group = CAAnimationGroup()
@@ -537,6 +558,7 @@ final class TileContainerView: NSView {
             let end = Motion.cropBounds(clip: target.size, content: model.size, anchor: anchor, flipped: view.isFlipped)
             group.animations = clipAnimations(layer, from: from, fromBounds: start, to: target, toBounds: end)
                 + [fadeAnimation(from: layer.opacity, to: 0) as CAAnimation]
+            (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: true)
         case .outline:
             group.animations = [fadeAnimation(from: 0, to: 0)]
             if closed {
@@ -580,13 +602,14 @@ final class TileContainerView: NSView {
         ghostByTile = [:]
     }
 
-    private func animateRing(from: CGRect?, duration: CFTimeInterval) {
+    private func animateRing(from: CGRect?, fadeIn: Bool, duration: CFTimeInterval) {
         guard let layer = ring.layer else { return }
         layer.removeAnimation(forKey: Self.motionKey)
         guard !ring.isHidden, duration > 0 else { return }
         let to = ring.frame
         let a = layer.anchorPoint
         let group = CAAnimationGroup()
+        group.animations = []
         if let from {
             let bounds = CABasicAnimation(keyPath: "bounds.size")
             bounds.fromValue = NSValue(size: from.size)
@@ -594,15 +617,22 @@ final class TileContainerView: NSView {
             let position = CABasicAnimation(keyPath: "position")
             position.fromValue = NSValue(point: CGPoint(x: from.minX + a.x * from.width, y: from.minY + a.y * from.height))
             position.toValue = NSValue(point: CGPoint(x: to.minX + a.x * to.width, y: to.minY + a.y * to.height))
-            group.animations = [bounds, position]
-        } else {
+            group.animations?.append(contentsOf: [bounds, position])
+        }
+        if fadeIn {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 0
             fade.toValue = 1
-            group.animations = [fade]
+            group.animations?.append(fade)
         }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
+    }
+
+    /// Drops a tile's motion, its corner caps' included.
+    private func stopMotion(_ view: NSView) {
+        view.layer?.removeAnimation(forKey: Self.motionKey)
+        (view as? TileFrame)?.stopCornerMotion()
     }
 
     private func motionEnded(_ gen: Int) {
@@ -625,7 +655,7 @@ final class TileContainerView: NSView {
         generation += 1
         motionEnds = 0
         for view in subviews where view !== ring {
-            view.layer?.removeAnimation(forKey: Self.motionKey)
+            stopMotion(view)
             view.layer?.zPosition = 0
         }
         ring.layer?.removeAnimation(forKey: Self.motionKey)
@@ -638,7 +668,7 @@ final class TileContainerView: NSView {
 
     private func finishLeaving() {
         for (view, closed) in leaving {
-            view.layer?.removeAnimation(forKey: Self.motionKey)
+            stopMotion(view)
             view.layer?.zPosition = 0
             if closed {
                 view.removeFromSuperview()
@@ -689,6 +719,15 @@ final class TileContainerView: NSView {
                 view.alphaValue = alpha
             }
         }
+    }
+
+    /// Automation: each tile's on-screen frame right now (mid-motion: the
+    /// presentation), as "x,y,w,h" by tile id suffix.
+    var describeVisualFrames: String {
+        func text(_ r: CGRect) -> String { "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))" }
+        var parts = visualFrames().sorted { $0.key < $1.key }.map { id, r in "\(id.suffix(4))=\(text(r))" }
+        if !ring.isHidden { parts.append("ring=\(text(visual(ring)))") }
+        return parts.joined(separator: " ")
     }
 
     /// Where each on-screen tile appears right now: its presentation frame
@@ -791,7 +830,8 @@ extension LayoutNode {
     }
 }
 
-/// The accent border around the focused tile. A layer border, so moving and
+/// The border around the focused tile (`Design.Color.focus`, `Design.Border.focus`;
+/// pending designer confirmation, see docs/design/README.md). A layer border, so moving and
 /// resizing it is cheap and stays crisp.
 @MainActor
 final class FocusRingView: NSView {
@@ -801,8 +841,8 @@ final class FocusRingView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         isHidden = true
-        layer?.cornerRadius = 7
-        layer?.borderWidth = 2
+        layer?.cornerRadius = Design.Radius.tile + Design.Border.focus
+        layer?.borderWidth = Design.Border.focus
     }
 
     @available(*, unavailable)
@@ -811,7 +851,7 @@ final class FocusRingView: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.borderColor = (zoomed ? NSColor.systemOrange : NSColor.controlAccentColor).cgColor
+        layer?.borderColor = (zoomed ? Design.Color.zoom : Design.Color.focus).cgColor
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

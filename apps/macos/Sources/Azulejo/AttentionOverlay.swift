@@ -4,10 +4,10 @@ import AppKit
 /// and the picker. Calm on purpose: only "blocked" is loud.
 @MainActor
 enum AttentionStyle {
-    static let blocked = NSColor.systemRed
-    static let done = NSColor.systemGreen
-    static let working = NSColor.controlAccentColor
-    static let idle = NSColor.tertiaryLabelColor
+    static let blocked = Design.Status.blocked.color
+    static let done = Design.Status.done.color
+    static let working = Design.Status.working.color
+    static let idle = Design.Status.idle.color
 
     /// The dot for a tile, or nil when there's no agent worth showing.
     static func color(for tile: TileModel) -> NSColor? {
@@ -50,7 +50,7 @@ enum AttentionStyle {
             }
             return NSAttributedString(
                 string: count > 0 ? " ● \(count)" : " ●",
-                attributes: [.foregroundColor: color, .font: NSFont.systemFont(ofSize: 11, weight: .semibold)])
+                attributes: [.foregroundColor: color, .font: Design.Font.badge])
         }
     }
 }
@@ -109,8 +109,8 @@ final class AttentionOverlayView: NSView {
                 let border = borders[id] ?? {
                     let v = NSView()
                     v.wantsLayer = true
-                    v.layer?.cornerRadius = 7
-                    v.layer?.borderWidth = 2
+                    v.layer?.cornerRadius = Design.Radius.focus
+                    v.layer?.borderWidth = Design.Border.attention
                     addSubview(v, positioned: .below, relativeTo: nil)
                     borders[id] = v
                     return v
@@ -146,12 +146,12 @@ final class AgentBadgeView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 9
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        layer?.cornerRadius = Design.Radius.badge
+        layer?.backgroundColor = Design.Color.badge.cgColor
         dot.cornerRadius = 4
         layer?.addSublayer(dot)
-        label.font = .systemFont(ofSize: 11, weight: .medium)
-        label.textColor = .white
+        label.font = Design.Font.badgeLabel
+        label.textColor = Design.Color.textOnAccent
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([

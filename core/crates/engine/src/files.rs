@@ -6,7 +6,7 @@
 //! isn't saved: after a relaunch a tile shows its root, and shells expand
 //! again what they remember.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +14,7 @@ use std::time::Duration;
 use azulejo_files::{Change, DirWatcher, GitState, GitStatus};
 use azulejo_model::{Session, TileContent, TileId};
 use azulejo_protocol::{
-    Command, Error, ErrorCode, Event, FileEntry, FileGitState, FilesChanged, FilesGit,
+    Command, Created, Error, ErrorCode, Event, FileEntry, FileGitState, FilesChanged, FilesGit,
     FilesListing, FilesRevealed, Reply,
 };
 
@@ -63,6 +63,10 @@ pub(crate) struct Files {
     deliver: Deliver,
     log: LogFn,
     tiles: HashMap<TileId, TileState>,
+    /// Files panels (`files.panel`): trees outside the layout, such as the
+    /// sidebar's Files view. They live in `tiles` too but not in the session,
+    /// so `sync` leaves them alone.
+    panels: HashSet<TileId>,
 }
 
 /// Commands this module answers (the rest of `files.*` change the session
@@ -75,6 +79,8 @@ pub(crate) fn is_runtime(command: &Command) -> bool {
             | Command::FilesCollapse(_)
             | Command::FilesReveal(_)
             | Command::FilesToggleHidden(_)
+            | Command::FilesPanel(_)
+            | Command::FilesPanelClose(_)
     )
 }
 
@@ -107,7 +113,13 @@ impl Files {
             deliver,
             log,
             tiles: HashMap::new(),
+            panels: HashSet::new(),
         }
+    }
+
+    /// Whether `tile` names a files panel rather than a tile.
+    pub(crate) fn is_panel(&self, tile: Option<TileId>) -> bool {
+        tile.is_some_and(|t| self.panels.contains(&t))
     }
 
     /// Matches state to the session's files tiles: new tiles and new roots
@@ -123,37 +135,55 @@ impl Files {
         let stale: Vec<TileId> = self
             .tiles
             .iter()
-            .filter(|(id, st)| wanted.get(id) != Some(&st.configured))
+            .filter(|(id, st)| !self.panels.contains(id) && wanted.get(id) != Some(&st.configured))
             .map(|(id, _)| *id)
             .collect();
         for id in stale {
-            self.tiles.remove(&id);
-            if let Some(w) = &mut self.watcher {
-                w.unwatch_all(&id);
-            }
+            self.stop(id);
         }
         for (id, configured) in wanted {
-            if self.tiles.contains_key(&id) {
-                continue;
+            if !self.tiles.contains_key(&id) {
+                self.start(id, configured);
             }
-            let root = configured
-                .canonicalize()
-                .unwrap_or_else(|_| configured.clone());
-            self.tiles.insert(
-                id,
-                TileState {
-                    configured,
-                    root: root.clone(),
-                    show_hidden: false,
-                    expanded: BTreeSet::new(),
-                    signatures: HashMap::new(),
-                    git: None,
-                    git_running: false,
-                    git_again: false,
-                },
-            );
-            self.watch(id, &root);
-            self.refresh_git(id);
+        }
+    }
+
+    /// Starts showing `configured` for `id`: its root open and watched.
+    fn start(&mut self, id: TileId, configured: PathBuf) {
+        let root = configured
+            .canonicalize()
+            .unwrap_or_else(|_| configured.clone());
+        self.tiles.insert(
+            id,
+            TileState {
+                configured,
+                root: root.clone(),
+                show_hidden: false,
+                expanded: BTreeSet::new(),
+                signatures: HashMap::new(),
+                git: None,
+                git_running: false,
+                git_again: false,
+            },
+        );
+        self.watch(id, &root);
+        self.refresh_git(id);
+    }
+
+    /// Forgets `id` and stops watching its folders.
+    fn stop(&mut self, id: TileId) {
+        self.tiles.remove(&id);
+        if let Some(w) = &mut self.watcher {
+            w.unwatch_all(&id);
+        }
+    }
+
+    /// The files tile or panel a command is for: a panel by its id, else
+    /// the tile the engine resolves (the focused one when absent).
+    fn target(&self, engine: &Engine, tile: Option<TileId>) -> Result<TileId, Error> {
+        match tile {
+            Some(id) if self.panels.contains(&id) => Ok(id),
+            _ => Ok(engine.files_root(tile)?.0),
         }
     }
 
@@ -168,12 +198,12 @@ impl Files {
     fn handle_inner(&mut self, engine: &Engine, command: Command) -> Result<Handled, Error> {
         match command {
             Command::FilesList(p) => {
-                let (tile, _) = engine.files_root(p.tile)?;
+                let tile = self.target(engine, p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
                 Ok(Handled::Later(self.list_job(tile, dir)?))
             }
             Command::FilesExpand(p) => {
-                let (tile, _) = engine.files_root(p.tile)?;
+                let tile = self.target(engine, p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
                 if !dir.is_dir() {
                     return Err(Error::new(
@@ -185,13 +215,13 @@ impl Files {
                 Ok(Handled::Later(self.list_job(tile, dir)?))
             }
             Command::FilesCollapse(p) => {
-                let (tile, _) = engine.files_root(p.tile)?;
+                let tile = self.target(engine, p.tile)?;
                 let dir = self.resolve_lenient(tile, p.dir.as_deref())?;
                 self.collapse(tile, &dir);
                 Ok(done(Reply::Ok, Vec::new()))
             }
             Command::FilesReveal(p) => {
-                let (tile, _) = engine.files_root(p.tile)?;
+                let tile = self.target(engine, p.tile)?;
                 let path = self.resolve(tile, Some(&p.path))?;
                 let st = self.state(tile)?;
                 let root = st.root.clone();
@@ -223,12 +253,43 @@ impl Files {
                 Ok(done(Reply::Ok, vec![event]))
             }
             Command::FilesToggleHidden(p) => {
-                let (tile, _) = engine.files_root(p.tile)?;
+                let tile = self.target(engine, p.tile)?;
                 let st = self.state_mut(tile)?;
                 st.show_hidden = p.show.unwrap_or(!st.show_hidden);
                 let dirs = st.expanded.iter().map(|d| display(d)).collect();
                 let event = Event::FilesChanged(FilesChanged { tile, dirs });
                 Ok(done(Reply::Ok, vec![event]))
+            }
+            Command::FilesPanel(p) => {
+                let configured = configured_root(Some(&p.root));
+                if !configured.is_dir() {
+                    return Err(Error::new(
+                        ErrorCode::InvalidParams,
+                        format!("{} isn't a folder", configured.display()),
+                    ));
+                }
+                let id = p.panel.unwrap_or_else(TileId::new);
+                let same = self.panels.contains(&id)
+                    && self
+                        .tiles
+                        .get(&id)
+                        .is_some_and(|st| st.configured == configured);
+                if !same {
+                    self.stop(id);
+                    self.panels.insert(id);
+                    self.start(id, configured);
+                }
+                let created = Created {
+                    tile: Some(id),
+                    ..Created::default()
+                };
+                Ok(done(Reply::Created(created), Vec::new()))
+            }
+            Command::FilesPanelClose(p) => {
+                if self.panels.remove(&p.panel) {
+                    self.stop(p.panel);
+                }
+                Ok(done(Reply::Ok, Vec::new()))
             }
             other => Err(Error::new(
                 ErrorCode::Internal,

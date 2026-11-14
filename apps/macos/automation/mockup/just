@@ -1,0 +1,18 @@
+#!/usr/bin/perl
+# A stand-in for `just dogfood` in the mockup scene: prints test-run output and
+# idles, so the tile header shows a running command. It never builds anything.
+$0 = "just dogfood";
+$| = 1;
+my @lines = (
+  "   Compiling azulejo v0.4.0",
+  "    Finished dev in 6.21s",
+  "running 118 tests",
+  "test tiles::close_on_exit ... \e[32mok\e[0m",
+  "test tiles::keep_on_exit .... \e[32mok\e[0m",
+  "test preview::markdown ...... \e[32mok\e[0m",
+  "test browser::open_url ...... \e[32mok\e[0m",
+  "",
+  "test result: \e[32mok\e[0m. 118 passed; 0 failed",
+);
+for (@lines) { print "$_\n"; select(undef, undef, undef, 0.05); }
+sleep 3600;

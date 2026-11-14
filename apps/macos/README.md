@@ -73,6 +73,33 @@ The sidebar shows each workspace's branch from `workspace.git`.
 `apps/macos/automation/headers.sh` checks headers, a branch switch in a tile
 and the preview toggle across a relaunch, on dev instance `hdr`.
 
+## Window chrome (M2.5 D.2, D.4, D.8)
+
+No visible title bar: the traffic lights sit in the sidebar card's top band
+(`TrafficLights` makes the transparent title bar as tall as the toolbar row and
+places them), and the toolbar row holds the tab strip (`TabStrip.swift`: state
+icon + name per tab, "+") and the search field (`ToolbarSearch.swift`: opens
+⌘K as a dropdown under itself; its badge shows `quick_open`'s chord). Empty
+toolbar space drags the window; a double click there follows the system's
+title-bar setting. `apps/macos/automation/toolbar.sh` checks where clicks land
+under the title bar, the tab icons, "+", the dropdown and the hidden-sidebar
+row, and takes window captures for comparing with `docs/design/mockup-v1.png`.
+
+## Sidebar (M2.5 D.3)
+
+`Sidebar.swift` is what sits in that card below its top band: an Agents |
+Files switch (remembered per viewer), then either the workspace list or the
+Files view, and a footer counting workspaces by state. Agents: one group per
+herdr machine (connection dot, or a spinner and "Reconnecting…"), workspace
+rows with a status icon (blocked, then done-unseen, working, done, idle), the
+name and the git branch, and "+" per group. Files: a `files.panel` on the
+focused workspace's repository (else its cwd), the files tile's tree and keys
+without its card; Return opens a file beside the focused tile, Esc gives the
+keyboard back, and refreshes don't take it while the tree has it
+(`KeepsKeyboard` in `TileFocus.swift`). `apps/macos/automation/sidebar.sh`
+checks both views with fixture repositories (`sidebar mode|select|focus|files
+…` in scripts; `sidebar.*` state keys).
+
 ## Layout motion (F4, PLAN 2.1)
 
 Layout changes animate: split, close, move, swap, resize, zoom and the tall

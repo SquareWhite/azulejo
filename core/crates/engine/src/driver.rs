@@ -353,6 +353,15 @@ fn run<P: HerdrPort>(
     };
 
     while let Ok(msg) = rx.recv() {
+        // A files panel isn't in the session: its paths open beside the
+        // focused tile.
+        let msg = match msg {
+            Msg::Command(Command::FilesOpen(mut p), reply) if files.is_panel(p.tile) => {
+                p.tile = None;
+                Msg::Command(Command::FilesOpen(p), reply)
+            }
+            other => other,
+        };
         match msg {
             Msg::Command(command, reply) if terminal::is_io(&command) => {
                 // Resolve the pane here; talk to herdr off this thread.

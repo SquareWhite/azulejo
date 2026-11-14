@@ -136,6 +136,9 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "files.list",
     "files.expand",
     "files.collapse",
+    // The sidebar's Files view opens and closes its panel.
+    "files.panel",
+    "files.panel_close",
     "layout.get",
     "terminal.bind",
     "terminal.send_text",

@@ -1,0 +1,27 @@
+
+* Waiting for 4 background agents to finish
+
+● Agent "Drop F21 browser automation" finished · 42s
+
+● F21 is out of the docs, committed as 82194bd.
+
+  - PRD: it's a non-goal now. The F21 row stays in the table struck through, so the
+    numbering doesn't shift.
+  - PLAN: 2.9 is dropped.
+  - Security NFR: it passes outright, with no automation switch deferred.
+  - Unchanged: browser.open, now covered under F18.
+
+  Still running: animations, the file browser, and palette/banner/badges.
+
+* Waiting for 3 background agents to finish
+
+› when i ctrl+d a pane, I don't want to see this confirmation
+
+● Fair. In every terminal, ctrl+d closing the shell just closes the pane. Our rule
+  from ADR 0009 treats any process exit as "ended, respawnable", which is wrong
+  when you exited on purpose. New default: if the shell exits, the tile closes.
+
+● fork(Close tile when shell exits)
+  ⎿ Backgrounded agent
+
+* Waiting for 4 background agents to finish

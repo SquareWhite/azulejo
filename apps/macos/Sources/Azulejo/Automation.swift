@@ -133,9 +133,25 @@ final class Automation {
         case "delivery": directDelivery = arg == "direct"; record("delivery \(arg)"); delay = 0
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
+        case "sidebar":
+            if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
+                failures.append("line \(step): sidebar \(arg): \(problem)")
+            }
+            record("sidebar \(arg)")
         case "until": return until(arg)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
+        case "window-size":
+            // `window-size <width> <height>`: the focused window's content size
+            // in points (mockup comparisons capture at the mockup's size).
+            let bits = arg.split(separator: " ").compactMap { Double($0) }
+            if bits.count == 2, let window = app?.focusedController?.window {
+                window.setContentSize(NSSize(width: bits[0], height: bits[1]))
+                record("window-size \(Int(bits[0]))×\(Int(bits[1]))")
+            } else {
+                failures.append("line \(step): window-size \(arg): needs a width and a height")
+            }
+            delay = 0.3
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
@@ -211,9 +227,20 @@ final class Automation {
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
+        // Onto a plain bitmap with the traffic lights, which live outside
+        // the content view.
+        var output = rep
+        if let window = view.window, let image = rep.cgImage, let ctx = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            ctx.scaleBy(x: CGFloat(image.width) / view.bounds.width, y: CGFloat(image.height) / view.bounds.height)
+            Self.drawTitlebarButtons(of: window, in: ctx)
+            if let composed = ctx.makeImage() { output = NSBitmapImageRep(cgImage: composed) }
+        }
         let url = out.appendingPathComponent("\(name).png")
         do {
-            try rep.representation(using: .png, properties: [:])?.write(to: url)
+            try output.representation(using: .png, properties: [:])?.write(to: url)
             record("shot \(name) → \(url.lastPathComponent)")
         } catch {
             failures.append("line \(step): shot \(name): \(error)")
@@ -256,6 +283,10 @@ final class Automation {
     /// included). The app can't run `screencapture` itself (no Screen
     /// Recording permission), so it drops a request in `<out>/.capture/` for
     /// the harness to take (apps/macos/automation/anim.sh watches it).
+    /// `screencapture` gets nothing while the screen is locked, so the app
+    /// also renders the layer presentation tree itself to `<name>-app.png`:
+    /// tiles, headers and corner caps where the motion has them at that
+    /// instant (live Metal surfaces show as their background).
     private func capture(_ arg: String) {
         let parts = arg.split(separator: " ").map(String.init)
         guard let name = parts.first else { return }
@@ -264,8 +295,67 @@ final class Automation {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             try? Data().write(to: dir.appendingPathComponent(name), options: .atomic)
+            self.renderPresentation("\(name)-app")
         }
         record("capture \(name) +\(Int(delay * 1000)) ms")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, let tiles = self.app?.focusedController?.tiles else { return }
+            self.record("  frames \(name): \(tiles.describeVisualFrames)")
+        }
+    }
+
+    /// The window's content as Core Animation is showing it right now
+    /// (presentation values, so mid-motion frames come out mid-motion).
+    private func renderPresentation(_ name: String) {
+        guard let window = app?.focusedController?.window,
+              let view = window.contentView, let layer = view.layer else { return }
+        let scale = window.backingScaleFactor
+        let size = view.bounds.size
+        guard size.width > 0, size.height > 0,
+              let ctx = CGContext(
+                data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.setFillColor(Design.Color.window.cgColor)
+        ctx.fill(CGRect(origin: .zero, size: size))
+        ctx.saveGState()
+        if layer.isGeometryFlipped || view.isFlipped {
+            ctx.translateBy(x: 0, y: size.height)
+            ctx.scaleBy(x: 1, y: -1)
+        }
+        (layer.presentation() ?? layer).render(in: ctx)
+        ctx.restoreGState()
+        Self.drawTitlebarButtons(of: window, in: ctx)
+        guard let image = ctx.makeImage() else { return }
+        let rep = NSBitmapImageRep(cgImage: image)
+        let url = out.appendingPathComponent("\(name).png")
+        do {
+            try rep.representation(using: .png, properties: [:])?.write(to: url)
+        } catch {
+            notes.append("capture \(name): \(error)")
+        }
+    }
+
+    /// The traffic lights live in the window's title bar, outside the
+    /// content view, so neither render above has them: draw each where it
+    /// sits. `ctx` is in window points, bottom-up (the content view fills the
+    /// window). A background window's lights are grey, as on screen: AppKit
+    /// draws those to add light to what's under them, so they go on with
+    /// plus-lighter (that matches `screencapture` to a couple of levels).
+    private static func drawTitlebarButtons(of window: NSWindow, in ctx: CGContext) {
+        ctx.saveGState()
+        if !window.isKeyWindow { ctx.setBlendMode(.plusLighter) }
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(type), !button.isHiddenOrHasHiddenAncestor,
+                  let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds)
+            else { continue }
+            button.cacheDisplay(in: button.bounds, to: rep)
+            guard let image = rep.cgImage else { continue }
+            ctx.draw(image, in: button.convert(button.bounds, to: nil))
+        }
+        ctx.restoreGState()
     }
 
     private func expect(_ arg: String) {
@@ -385,6 +475,8 @@ final class Automation {
         }
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(SidebarAutomation.state(controller)) { $1 }
+        s.merge(controller.chromeState()) { $1 }
         return s
     }
 
