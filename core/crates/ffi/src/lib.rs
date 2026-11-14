@@ -28,6 +28,9 @@ use azulejo_herdr::Session as HerdrSession;
 use azulejo_protocol::{Command, Event, TileKind};
 use serde_json::{Value, json};
 
+mod terminal;
+pub use terminal::{azj_core_attach_exit, azj_core_terminal_command};
+
 /// Called once per event with a NUL-terminated JSON string, valid only for the call.
 /// Runs on a background thread; see the crate docs for the threading rules.
 pub type AzjEventCallback = extern "C" fn(context: *mut c_void, event_json: *const c_char);

@@ -3,16 +3,35 @@
 // The canonical project is project.yml (XcodeGen); both compile Sources/Azulejo.
 import PackageDescription
 
+let ghosttyLib = "../../vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64"
+
 let package = Package(
     name: "Azulejo",
     platforms: [.macOS(.v14)],
     targets: [
         .systemLibrary(name: "AzulejoCore", path: "AzulejoCore"),
+        .systemLibrary(name: "GhosttyKit", path: "GhosttyKit"),
         .executableTarget(
             name: "Azulejo",
-            dependencies: ["AzulejoCore"],
+            dependencies: ["AzulejoCore", "GhosttyKit"],
             path: "Sources/Azulejo",
-            linkerSettings: [.unsafeFlags(["-L../../target/debug"])]
+            linkerSettings: [
+                .unsafeFlags(["-L../../target/debug", "-L\(ghosttyLib)"]),
+                .linkedFramework("AppKit"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("QuartzCore"),
+                .linkedFramework("CoreText"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("CoreVideo"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("UniformTypeIdentifiers"),
+                .linkedFramework("UserNotifications"),
+            ]
         ),
+        // Decodes `herdr terminal session observe` frames for read-only tiles;
+        // bundled as Contents/MacOS/azj-observe.
+        .executableTarget(name: "AzjObserve", path: "Sources/AzjObserve"),
     ]
 )

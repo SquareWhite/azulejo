@@ -1,0 +1,38 @@
+# Preview tile (1.9) check, in-process. preview.sh fills in @DIR@ and edits
+# plan.md when the 01-markdown shot appears (no OS input, no raised window).
+
+log start
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until tile.kind preview 5000
+until tile.content markdown 5000
+until tile.mode load 5000
+tile js document.querySelector('h1').innerText
+until tile.js One 3000
+shot 01-markdown
+
+# preview.sh rewrites plan.md now; the tile swaps it in place.
+until tile.mode swap 5000
+tile js document.querySelector('h1').innerText
+until tile.js Two 3000
+shot 02-live-reload
+
+core {"method":"preview.open","params":{"path":"@DIR@/main.rs"}}
+until tile.content code 5000
+until tile.path @DIR@/main.rs 5000
+
+core {"method":"preview.open","params":{"path":"@DIR@/shot.png"}}
+until tile.mode native-image 5000
+# QuickLook draws out of process, so `shot` can't see it; preview.sh grabs a
+# window capture (03-image-window.png) while this waits.
+shot 03-image
+wait 2500
+
+core {"method":"preview.open","params":{"path":"@DIR@/doc.pdf"}}
+until tile.mode native-pdf 5000
+shot 04-pdf
+wait 2500
+
+core {"method":"preview.open","params":{"path":"@DIR@/gone.md"}}
+until tile.content missing 5000
+shot 05-missing
+quit

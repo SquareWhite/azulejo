@@ -30,6 +30,36 @@
       ],
       "type": "object"
     },
+    "BrowserState": {
+      "properties": {
+        "page_title": {
+          "description": "The page's `<title>`; absent or empty clears it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A browser tile; defaults to the focused tile."
+        },
+        "url": {
+          "description": "The page's current URL; absent leaves it unchanged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Command": {
       "description": "A request to the core.",
       "oneOf": [
@@ -443,6 +473,23 @@
             },
             "params": {
               "$ref": "#/$defs/BrowserOpen"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The shell reports where a browser tile's page is now (after a link,\na redirect, back or forward) and its `<title>`, so `tile.get` and\nrestore see the live page. Unlike `browser.open` it asks for no load.",
+          "properties": {
+            "method": {
+              "const": "browser.state",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/BrowserState"
             }
           },
           "required": [
@@ -2563,6 +2610,13 @@
               "const": "browser",
               "type": "string"
             },
+            "page_title": {
+              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "url": {
               "type": [
                 "string",
@@ -2701,6 +2755,13 @@
               "const": "browser",
               "type": "string"
             },
+            "page_title": {
+              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "url": {
               "type": [
                 "string",
@@ -2807,6 +2868,13 @@
             "kind": {
               "const": "browser",
               "type": "string"
+            },
+            "page_title": {
+              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "url": {
               "type": [
@@ -3341,6 +3409,7 @@
     "tile.focus",
     "tile.rename",
     "browser.open",
+    "browser.state",
     "preview.open",
     "preview.get",
     "layout.get",

@@ -78,7 +78,11 @@ final class TileContainerView: NSView {
     /// Where each visible tile sits, in this view's coordinates.
     func tileFrames() -> [String: CGRect] {
         guard let tab else { return [:] }
-        let bounds = self.bounds.insetBy(dx: Self.inset, dy: Self.inset)
+        // insetBy on a rect smaller than the inset gives CGRect.null, whose
+        // origin is infinite; AppKit clamps that to 2^44 and logs "constant
+        // exceeds internal limits". The first layout pass runs at zero size.
+        let dx = min(Self.inset, self.bounds.width / 2), dy = min(Self.inset, self.bounds.height / 2)
+        let bounds = self.bounds.insetBy(dx: dx, dy: dy)
         if let zoomed = tab.zoomed { return [zoomed: bounds] }
         return tab.root.frames(in: bounds, gap: Self.gap)
     }

@@ -17,6 +17,10 @@ import AppKit
 ///                            windows workspaces workspace tabs tab tiles
 ///                            focus zoomed sidebar axis ratio
 ///     log text               a note in the log
+///     core {json}            run a core command (`{"method": …, "params": …}`)
+///     tile verb [arg]        hand a verb to the focused tile (AutomatableTile)
+///     until key value [ms]   wait until `expect key value` holds (default 5000)
+///                            tile kinds add `tile.*` keys to expect/until
 ///     quit                   finish (implied at the end)
 ///
 /// Writes `<out>/automation.log` (every step with the layout after it) and
@@ -74,6 +78,9 @@ final class Automation {
         case "shot": shot(arg); delay = 0
         case "expect": expect(arg); delay = 0
         case "log": record("# \(arg)"); delay = 0
+        case "core": coreCommand(arg)
+        case "tile": tileCommand(arg)
+        case "until": return until(arg)
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
@@ -153,6 +160,58 @@ final class Automation {
         }
     }
 
+    private func coreCommand(_ json: String) {
+        guard let data = json.data(using: .utf8),
+              let command = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return failures.append("line \(step): core needs a JSON command") }
+        if case .failure(let error)? = app?.send(command) {
+            failures.append("line \(step): core \(command["method"] ?? "?"): \(error.message)")
+        }
+        record("core \(command["method"] ?? "?")")
+    }
+
+    private func tileCommand(_ arg: String) {
+        let parts = arg.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let tile = app?.focusedController?.tiles.focusedView as? AutomatableTile else {
+            return failures.append("line \(step): the focused tile takes no automation verbs")
+        }
+        var verb = parts.first ?? "", rest = parts.count > 1 ? parts[1] : ""
+        // `snapshot-into name.png` writes into the automation's out folder.
+        if verb == "snapshot-into" { verb = "snapshot"; rest = out.appendingPathComponent(rest).path }
+        if verb == "downloads-into" { verb = "downloads-dir"; rest = out.appendingPathComponent(rest).path }
+        if let problem = tile.automate(verb, rest) {
+            failures.append("line \(step): tile \(arg): \(problem)")
+        }
+        record("tile \(arg)")
+    }
+
+    /// Polls `expect key value` every 50 ms until it holds or times out.
+    private func until(_ arg: String) {
+        let parts = arg.split(separator: " ").map(String.init)
+        guard parts.count >= 2 else {
+            failures.append("line \(step): until needs a key and a value")
+            return next()
+        }
+        let timeout = parts.count > 2 ? (Double(parts.last!) ?? 5000) / 1000 : 5
+        let value = parts.count > 2 ? parts[1..<(parts.count - 1)].joined(separator: " ") : parts[1]
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            let actual = state()[parts[0]] ?? "?"
+            if actual == value {
+                record("until \(parts[0]) \(value) ✓")
+                return next()
+            }
+            if Date() > deadline {
+                let msg = "line \(step): timed out waiting for \(parts[0]) \(value), got \(actual)"
+                failures.append(msg)
+                record("until FAILED: \(msg)")
+                return next()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)
+        }
+        poll()
+    }
+
     // MARK: State
 
     private func state() -> [String: String] {
@@ -184,6 +243,9 @@ final class Automation {
                 return "\(mark)\(Short.id(id))"
             }
         }
+        if let tile = controller.tiles.focusedView as? AutomatableTile {
+            s.merge(tile.automationState()) { $1 }
+        }
         return s
     }
 
@@ -207,4 +269,13 @@ final class Automation {
         try? (result + "\n").write(to: out.appendingPathComponent("result"), atomically: true, encoding: .utf8)
         NSApp.terminate(nil)
     }
+}
+
+/// Tile views that automation scripts can drive (`tile …`, `tile.*` keys).
+@MainActor
+protocol AutomatableTile {
+    /// Runs a verb; returns a problem description, or nil when it went fine.
+    func automate(_ verb: String, _ arg: String) -> String?
+    /// Extra `expect` / `until` keys, prefixed `tile.`.
+    func automationState() -> [String: String]
 }

@@ -49,6 +49,11 @@ pub enum TileContent {
     Browser {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         url: Option<String>,
+        /// The loaded page's `<title>`, as the shell last reported it
+        /// (`browser.state`). Separate from the tile's own `title`, which is
+        /// the user's name for the tile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page_title: Option<String>,
     },
     Preview {
         #[serde(default, skip_serializing_if = "Option::is_none")]

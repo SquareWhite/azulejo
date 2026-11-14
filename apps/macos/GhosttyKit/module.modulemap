@@ -1,0 +1,9 @@
+// libghostty for the SwiftPM build (Command Line Tools only). The header and
+// static library come from scripts/build-ghostty.sh; Package.swift adds the
+// library search path. The Xcode build links the xcframework directly.
+module GhosttyKit {
+    header "../../../vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/Headers/ghostty.h"
+    link "ghostty"
+    link "c++"
+    export *
+}

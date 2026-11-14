@@ -24,4 +24,4 @@ Spike 0.5 measured 86–118 ms (median) from resize to SIGWINCH in the pane: Gho
 ## Evidence
 
 - `spikes/macos-anim/README.md`, findings table
-- Deferred: frame pacing with the window visible, and Instruments once Xcode is installed (PLAN "Deferred from M0")
+- Deferred: frame pacing with the window visible, and Instruments once Xcode is installed (PLAN "Deferred checks")

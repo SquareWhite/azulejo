@@ -297,7 +297,20 @@ impl Engine {
             Command::BrowserOpen(p) => {
                 let id = s.target(p.tile)?;
                 match &mut s.tile_mut(id)?.content {
-                    TileContent::Browser { url } => *url = Some(p.url),
+                    TileContent::Browser { url, .. } => *url = Some(p.url),
+                    other => return Err(wrong_kind(id, other, "browser")),
+                }
+                Reply::Ok
+            }
+            Command::BrowserState(p) => {
+                let id = s.target(p.tile)?;
+                match &mut s.tile_mut(id)?.content {
+                    TileContent::Browser { url, page_title } => {
+                        if let Some(new) = p.url {
+                            *url = Some(new);
+                        }
+                        *page_title = p.page_title.filter(|t| !t.is_empty());
+                    }
                     other => return Err(wrong_kind(id, other, "browser")),
                 }
                 Reply::Ok

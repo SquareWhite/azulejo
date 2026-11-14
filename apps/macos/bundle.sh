@@ -6,12 +6,19 @@ cd "$(dirname "$0")"
 root="$(cd ../.. && pwd)"
 out="$root/target/macos"
 
+# libghostty (terminal tiles). Built once from vendor/ghostty; rebuild with
+# scripts/build-ghostty.sh after bumping the submodule.
+if [[ ! -f "$root/vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty.a" ]]; then
+  "$root/scripts/build-ghostty.sh"
+fi
+
 if xcodebuild -version >/dev/null 2>&1; then
   xcodegen generate --quiet
   xcodebuild -project Azulejo.xcodeproj -scheme Azulejo -configuration Debug \
     -derivedDataPath "$out/DerivedData" build -quiet
   rm -rf "$out/Azulejo.app"
   cp -R "$out/DerivedData/Build/Products/Debug/Azulejo.app" "$out/Azulejo.app"
+  cp "$out/DerivedData/Build/Products/Debug/azj-observe" "$out/Azulejo.app/Contents/MacOS/azj-observe"
 else
   echo "Full Xcode not found; building with SwiftPM." >&2
   (cd "$root" && cargo build -p azulejo-ffi)
@@ -20,18 +27,20 @@ else
   # Drop the stale outputs so it has to.
   lib="$root/target/debug/libazulejo_ffi.a"
   header="$root/core/crates/ffi/include/azulejo.h"
+  ghostty="$root/vendor/ghostty/macos/GhosttyKit.xcframework/macos-arm64/libghostty.a"
   bindir="$(swift build --show-bin-path)"
   bin="$bindir/Azulejo"
   if [[ -f "$bin" && "$header" -nt "$bin" ]]; then
     rm -rf "$bindir/Azulejo.build" "$bindir/Modules" "$bindir/ModuleCache" "$bin"
-  elif [[ -f "$bin" && "$lib" -nt "$bin" ]]; then
+  elif [[ -f "$bin" && ( "$lib" -nt "$bin" || "$ghostty" -nt "$bin" ) ]]; then
     rm -f "$bin"
   fi
   swift build
   app="$out/Azulejo.app"
   rm -rf "$app"
   mkdir -p "$app/Contents/MacOS"
-  cp "$(swift build --show-bin-path)/Azulejo" "$app/Contents/MacOS/Azulejo"
+  cp "$bindir/Azulejo" "$app/Contents/MacOS/Azulejo"
+  cp "$bindir/AzjObserve" "$app/Contents/MacOS/azj-observe"
   cp Resources/Info.plist "$app/Contents/Info.plist"
   codesign --force --sign - "$app" >/dev/null 2>&1
 fi

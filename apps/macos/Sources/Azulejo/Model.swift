@@ -68,6 +68,7 @@ struct TabModel: Decodable, Equatable {
         if let name, !name.isEmpty { return name }
         let tile = tile(focused)
         if let title = tile?.title, !title.isEmpty { return title }
+        if let page = tile?.pageTitle, !page.isEmpty { return page }
         return tile?.kind.rawValue ?? "tab"
     }
 }
@@ -100,10 +101,16 @@ struct TileModel: Decodable, Equatable {
     var ended: Bool?
     // browser
     var url: String?
+    var pageTitle: String?
     // preview
     var path: String?
     // files
     var root: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title, cwd, command, herdr, ended, url, path, root
+        case pageTitle = "page_title"
+    }
 }
 
 indirect enum LayoutNode: Decodable, Equatable {
@@ -159,7 +166,7 @@ indirect enum LayoutNode: Decodable, Equatable {
                 let w = max(0, bounds.width - gap)
                 first.size.width = (w * r).rounded()
                 second.origin.x = bounds.minX + first.width + gap
-                second.size.width = bounds.maxX - second.minX
+                second.size.width = max(0, bounds.maxX - second.minX)
             case .vertical:
                 let h = max(0, bounds.height - gap)
                 let top = (h * r).rounded()

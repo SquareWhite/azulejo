@@ -56,6 +56,7 @@ fn sample_commands() -> Vec<Command> {
             name: Some("dev".into()),
             content: Some(TileContent::Browser {
                 url: Some("http://localhost:3000".into()),
+                page_title: None,
             }),
         }),
         Command::TabClose(TabTarget { tab: Some(tab) }),
@@ -152,6 +153,11 @@ fn sample_commands() -> Vec<Command> {
         Command::BrowserOpen(BrowserOpen {
             tile: None,
             url: "http://localhost:3000".into(),
+        }),
+        Command::BrowserState(BrowserState {
+            tile: Some(tile),
+            url: Some("http://localhost:3000/docs".into()),
+            page_title: Some("Docs".into()),
         }),
         Command::PreviewOpen(PreviewOpen {
             tile: Some(tile),
@@ -398,6 +404,7 @@ fn replies_round_trip() {
 fn tile_info_is_flat() {
     let tile = Tile::new(TileContent::Browser {
         url: Some("http://localhost".into()),
+        page_title: None,
     });
     let info = TileInfo {
         window: WindowId::new(),

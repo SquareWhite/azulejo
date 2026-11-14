@@ -90,7 +90,9 @@ dependencies = [
  "azulejo-herdr",
  "azulejo-protocol",
  "cbindgen",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

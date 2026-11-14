@@ -730,7 +730,10 @@ fn terminal_io_errors() {
         .execute(Command::LayoutSplit(LayoutSplit {
             tile: None,
             direction: Direction::Down,
-            content: Some(TileContent::Browser { url: None }),
+            content: Some(TileContent::Browser {
+                url: None,
+                page_title: None,
+            }),
         }))
         .unwrap()
         .reply

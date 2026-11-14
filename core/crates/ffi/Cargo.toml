@@ -16,7 +16,9 @@ azulejo-config.workspace = true
 azulejo-daemon.workspace = true
 azulejo-herdr.workspace = true
 azulejo-protocol.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+tokio = { version = "1", features = ["rt", "time"] }
 
 [build-dependencies]
 cbindgen = { version = "0.29", default-features = false }

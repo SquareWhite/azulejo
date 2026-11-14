@@ -145,6 +145,7 @@ fn bind_rejects_non_terminals() {
             name: Some("web".into()),
             content: Some(TileContent::Browser {
                 url: Some("http://localhost:3000".into()),
+                page_title: None,
             }),
         }))
         .unwrap();
@@ -278,7 +279,10 @@ fn lists_report_structure_and_focus() {
         .execute(Command::TabCreate(TabCreate {
             workspace: Some(web),
             name: None,
-            content: Some(TileContent::Browser { url: None }),
+            content: Some(TileContent::Browser {
+                url: None,
+                page_title: None,
+            }),
         }))
         .unwrap();
 
@@ -381,7 +385,13 @@ fn rename_and_open_update_tiles() {
         };
         c.tile.unwrap()
     };
-    let browser = split(&mut engine, TileContent::Browser { url: None });
+    let browser = split(
+        &mut engine,
+        TileContent::Browser {
+            url: None,
+            page_title: None,
+        },
+    );
     let out = engine
         .execute(Command::BrowserOpen(BrowserOpen {
             tile: Some(browser),
@@ -391,8 +401,47 @@ fn rename_and_open_update_tiles() {
     assert!(out.events.iter().any(|e| matches!(
         e,
         Event::TileUpdated { tile, .. }
-            if tile.content == TileContent::Browser { url: Some("http://localhost:3000".into()) }
+            if tile.content == TileContent::Browser { url: Some("http://localhost:3000".into()), page_title: None }
     )));
+
+    // The shell reports navigation: URL and page title change, and no
+    // separate load is asked for (that's browser.open's job).
+    engine
+        .execute(Command::BrowserState(BrowserState {
+            tile: Some(browser),
+            url: Some("http://localhost:3000/docs".into()),
+            page_title: Some("Docs".into()),
+        }))
+        .unwrap();
+    let state = |engine: &Engine| {
+        engine
+            .session()
+            .tile(browser)
+            .map(|t| t.content.clone())
+            .unwrap()
+    };
+    assert_eq!(
+        state(&engine),
+        TileContent::Browser {
+            url: Some("http://localhost:3000/docs".into()),
+            page_title: Some("Docs".into()),
+        }
+    );
+    // A title-only report keeps the URL; an empty title clears it.
+    engine
+        .execute(Command::BrowserState(BrowserState {
+            tile: Some(browser),
+            url: None,
+            page_title: Some(String::new()),
+        }))
+        .unwrap();
+    assert_eq!(
+        state(&engine),
+        TileContent::Browser {
+            url: Some("http://localhost:3000/docs".into()),
+            page_title: None,
+        }
+    );
 
     let preview = split(&mut engine, TileContent::Preview { path: None });
     engine

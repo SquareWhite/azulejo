@@ -1,0 +1,10 @@
+# Second half of the browser walkthrough: after a relaunch the browser tile
+# comes back on the page it was left on.
+log relaunch
+expect tiles 2
+expect focus 2
+until tile.title Page C 10000
+expect tile.url http://localhost:47831/c.html
+shot 03-relaunched
+tile snapshot-into 03-relaunched-web.png
+quit

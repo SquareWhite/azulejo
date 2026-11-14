@@ -71,6 +71,34 @@ and `<out>/result`.
 | `KeyRouter.swift` | Local keyDown monitor → `azj_core_key` → action, or pass through |
 | `MainMenu.swift` | Menus; shows each item's chord from the user's keymap |
 | `Automation.swift` | The `.azs` runner |
+| `TerminalTileView.swift` | Terminal tile: attach / read-only observe / ended / retrying, overlay, Respawn |
+| `TerminalSurfaceView.swift` | One libghostty surface: keys (doubled `ctrl+b`), mouse, Edit menu |
+| `TerminalRuntime.swift` | The process-wide `ghostty_app_t` and its callbacks (user's Ghostty config) |
+| `../AzjObserve` | `azj-observe`: decodes `herdr terminal session observe` frames for read-only tiles |
+
+## Terminal tiles
+
+Each terminal tile is a libghostty surface (`GhosttyKit`, built from
+`vendor/ghostty` by `scripts/build-ghostty.sh`; `bundle.sh` builds it when
+missing) whose child is `herdr terminal attach <terminal-id>`. The core builds
+that command (`azj_core_terminal_command`) with the inherited `HERDR_*`,
+`CLAUDE*`, `AZULEJO_*` and `AZJ_*` variables removed. libghostty loses exit
+codes on macOS, so the command writes its status and herdr's stderr to
+`$TMPDIR/azulejo-term/<tile>/`, and `azj_core_attach_exit` reads them back
+(ADR 0003):
+
+| Attach ended because | Tile shows |
+| --- | --- |
+| another client took over | read-only (`observe`) + **Take back** |
+| another client already had it | read-only + **Take over** |
+| the pane is gone | **Session ended**: Respawn (new pane in the same slot) / Close |
+| herdr unreachable / other failure | "herdr isn't answering", retries after 1, 2, 4 … 30 s |
+| `ctrl+b q` (detach) | reattaches at once (3 in 10 s → retry backoff) |
+
+Never retakes on its own. On the dev profile, overlay buttons can be pressed
+without OS input by posting the distributed notification
+`dev.azulejo.debug.terminal` with object `"takeover|respawn|close|retry <tile-id>"`.
+
 
 ### Key routing
 

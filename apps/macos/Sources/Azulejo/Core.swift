@@ -103,6 +103,16 @@ final class Core {
         return take(azj_core_info(handle)) ?? [:]
     }
 
+    /// Calls a JSON-in, JSON-out C function (`azj_core_terminal_command`, …)
+    /// and parses its reply; `[:]` once the core is stopped.
+    func callJSON(
+        _ request: [String: Any],
+        _ call: (OpaquePointer, String) -> UnsafeMutablePointer<CChar>?
+    ) -> [String: Any] {
+        guard !freed, let json = Self.encode(request) else { return [:] }
+        return take(call(handle, json)) ?? [:]
+    }
+
     /// Takes ownership of a string from the core and parses it.
     private func take(_ pointer: UnsafeMutablePointer<CChar>?) -> [String: Any]? {
         guard let pointer else { return nil }
