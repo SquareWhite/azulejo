@@ -106,3 +106,108 @@ Machine: macOS test environment, debug build, 2026-11-03. Method: `apps/macos/au
 - **herdr restarts lose processes.** That's herdr's own behaviour (ADR 0008): it restores workspaces, tabs and panes, but with fresh shells under new terminal IDs. Tiles rebind and reattach to them; whatever ran before is gone.
 - **"Attached" means the attach process runs and holds**, not first paint. The extra herdr hop is ~1.6 ms (0.4 above).
 - **Wake is simulated** through the dev debug hook (`dev.azulejo.debug.terminal "wake all"`), which runs the same health check as `NSWorkspace.didWakeNotification`. A real sleep/wake cycle isn't measured.
+
+## 1.13 NFR pass (macOS)
+
+**Date:** Nov 3, 2026
+**Machine:** macOS test environment, 120 Hz display
+**Builds:** debug (`just mac`, HEAD `9076e4e` + the 1.13 instrumentation) and release (`just release-mac`, ad-hoc signed). GhosttyKit is ReleaseFast in both.
+**Where:** dev instance `nfr` (herdr session `azj-dev-nfr`). Apps launched in the background, no OS input, no window raised. Scripts in `scripts/nfr/`, output in `scripts/nfr/build/` (gitignored).
+
+### Summary
+
+| NFR | Target | Measured | Verdict |
+| --- | --- | --- | --- |
+| Platform | macOS 14+, Apple Silicon | Builds and runs on macOS 26 on Apple Silicon; deployment target is macOS 14 (`Package.swift`, `LSMinimumSystemVersion`), never run on 14 | Pass (on this machine); macOS 14 untested |
+| Stack | Rust core, Swift/AppKit, no Electron, no webview terminal | As built | Pass |
+| Cold start | < 500 ms to a usable window with restored layout | Release, 2 workspaces / 8 tiles restored: first frame **248 ms** median, 265 ms p95. Empty state: 148 ms median | **Pass** |
+| Input latency | Within 1 frame of standalone Ghostty | App tile vs the 0.4 libghostty spike on the same herdr pane, same conditions: **18.8 vs 18.9 ms** median (−0.1 ms) | **Pass** against the spike; standalone Ghostty.app still deferred |
+| Animation | 120 Hz, 150–250 ms transitions | Not in the app yet (F4 is P1, step 2.1). The 0.5 spike: 0 dropped frames at 120 Hz | Deferred to M2 |
+| Memory | < 150 MB, one window, 4 terminal tiles | **195 MB** (debug and release alike) | **Fail**: see below |
+| herdr reconnect | ≤ 2 s after restart or sleep | Re-run at HEAD: relaunch 276 ms, kill -9 + relaunch 272 ms, wake 65 ms, herdr restart 726 ms | **Pass** |
+| Stability | Browser or preview crash never takes down terminals | WebContent and QuickLookUIService SIGKILLed: app, attach processes and ticker unaffected | **Pass** |
+| API | Every user action via the socket API; versioned JSON | Shell actions go through core commands (`azj_core_key` → command); `schema/api.v1.json`, CLI coverage test per method; `core.version` reports v1 | Pass (by construction) |
+| Security | Socket readable only by the user; per-workspace automation switch | Socket 0600, dir 0700, owned by the user. The automation switch belongs to F21 (M2) | Pass for the socket; switch deferred to M2 |
+
+### Cold start
+
+`scripts/nfr/coldstart.sh [runs]` (`NFR_APP=…` for the release bundle). In-app marks (`Startup.swift`, logged with `AZULEJO_TIMING_OUT`) are measured from the **kernel's process start time**, so dyld and Swift runtime start-up count. `first_frame` is the first display-link tick after the launch layout is drawn and committed. Every launch goes through `open` (LaunchServices adds another 33–45 ms before the process exists, reported separately). The herdr server is already running; the empty-state runs start from a fresh, empty herdr session each time.
+
+Restored state: window 1 has 4 terminals in a tall layout; workspace 2 has 2 terminals, a browser and a preview. 10 runs each, ms:
+
+| Build | State | main | core booted | layout built | first frame median | p95 | max | visible terminals attached (median / p95) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| debug | empty (1 tile) | 33 | 70 | 137 | 163 | 181 | 181 | – |
+| debug | restored (8 tiles) | 32 | 72 | 228 | 267 | 299 | 299 | 216 / 246 (4 tiles) |
+| release | empty (1 tile) | 27 | 55 | 121 | 148 | 563* | 563* | – |
+| release | restored (8 tiles) | 28 | 60 | 215 | 248 | 265 | 265 | 202 / 221 (4 tiles) |
+
+\* The first launch after `just release-mac` re-signs the bundle reached `main` at 427 ms: macOS checks a freshly signed binary once. Without that run, the release empty-state max is 150 ms. Expect it once after each install or update.
+
+Most of the time between "core booted" and "layout built" goes to building tile views: terminal surfaces, a WKWebView and the preview webview. Terminals attach before the first frame is on screen.
+
+### Memory
+
+`scripts/nfr/memory.sh` reports `footprint`'s phys_footprint, which is what Activity Monitor shows as Memory. It takes the median of 5 samples, 2 s apart, starting from a fresh herdr session. The 4 terminal tiles sit in a tall layout in an 1100×732 pt window, running idle zsh.
+
+| Build | App, 4 terminals | Attach chains (4 × sh + herdr attach) | azj-observe | herdr server |
+| --- | --- | --- | --- | --- |
+| debug | 195 MB (180–195) | 17 MB | none running | 14 MB |
+| release | 196 MB (180–197) | 17 MB | none running | 13 MB |
+
+**Where it goes.** One live terminal tile costs 154 MB, and each extra one adds 10–17 MB (1/2/3/4 tiles: 154/172/179/189 MB). The app with no live terminal is about 60 MB. `footprint` puts about 140 MB of the 4-terminal total in Metal and graphics memory: 95 MB "owned physical footprint (graphics)", 25 MB IOAccelerator and 21 MB IOSurface. The rest is mostly malloc (45 MB). The 0.4 latency harness, a bare libghostty surface with no Azulejo code, is **150 MB with one surface**, including 90 MB of graphics. So libghostty's renderer, not Azulejo's shell or core, sets the floor, and a 4-tile window can't get under 150 MB without changing that.
+
+Footprint also moves with tile sizes:
+- Zooming one tile: 218 MB.
+- Adding a browser tile: the app drops to 108–118 MB, while 4 new WebKit processes take 44–49 MB. Closing the browser tile brings it back to 195 MB.
+
+These swings come from surface sizes and from how macOS attributes GPU memory between processes. We didn't dig further.
+
+**Follow-ups.** None of these is a small, clearly scoped fix, so none landed in this step.
+1. Measure Ghostty.app with 4 splits on this machine. That gives the comparable number, and the target may need to become "Ghostty + N MB".
+2. With Xcode installed, compare the precompiled metallib build against our runtime-compiled shaders (no-Xcode patch), in case runtime compilation keeps extra memory.
+3. Ask upstream about libghostty's per-app and per-surface GPU allocations.
+
+### Input latency
+
+`scripts/nfr/latency.sh [samples] [rounds]` reuses the 0.4 method inside the real app (`LatencyBench.swift`, off unless `AZULEJO_LATENCY_BENCH` is set):
+- It calls `ghostty_surface_key` on the main thread for the app's terminal tile, which is attached through herdr to a pane running `/bin/cat`.
+- A window-only ScreenCaptureKit stream at 120 Hz detects the glyph.
+- The app gives the surface libghostty focus, as a key window would, because these runs never activate it.
+- The Ghostty settings are the same as in 0.4: no cursor blink, no shell integration.
+
+Each round then runs the 0.4 spike harness (config c) on **the same herdr pane**, so both are measured under the same WindowServer conditions. Debug build: 3 rounds × 100 samples each, no misses.
+
+| | n | median | p95 |
+| --- | --- | --- | --- |
+| App tile, all samples | 300 | 20.0 | 340 |
+| Spike (0.4 config c), all samples | 300 | 21.1 | 350 |
+| App tile, unthrottled samples (< 100 ms) | 248 | **18.8** | 24.8 |
+| Spike, unthrottled samples (< 100 ms) | 205 | **18.9** | 25.0 |
+
+- **The app tile adds nothing measurable** over the bare libghostty surface: −0.1 ms median, against a budget of 8.3 ms (one frame).
+- **The samples are bimodal, and it's the compositor, not Azulejo.** Whole rounds of both the app and the spike sat at about 320 ms: app-r1 and app-r3 tails, and spike-r3 with a median of 319 ms. At those times the background window was fully covered (Slack in front), and WindowServer updates covered windows slowly. A spike-only check earlier in the session also gave 317 ms. Unthrottled rounds match 0.4's 22–24 ms.
+- **Still deferred:** comparing against standalone Ghostty.app through real OS input (`scripts/latency/run-os-input.sh`), and the release build. libghostty is ReleaseFast in both builds; only the Swift and Rust around it differ.
+
+### herdr reconnect
+
+`apps/macos/automation/restore.sh` re-run at HEAD (6 terminals, ticker, browser, zoomed preview):
+
+| Step | 1.12 (3 runs) | 1.13 re-run |
+| --- | --- | --- |
+| Quit → relaunch, all attached and holding | 280–296 ms | 276 ms |
+| kill -9 → relaunch | 286–307 ms | 272 ms |
+| Attach processes SIGKILLed, then wake | 62–259 ms | 65 ms |
+| Same, no wake (backs off 1 s) | ~1.1 s | 1114 ms |
+| herdr server restart | ~755 ms | 726 ms |
+| Launch with herdr stopped | 460–490 ms | 463 ms |
+
+Each step left the session identical, kept the same herdr terminals and the ticker kept counting (except across the herdr restart, which loses processes by herdr's design).
+
+### Stability and security
+
+`scripts/nfr/stability.sh`:
+- **Setup:** two terminals (one running a ticker), a browser tile on a local page and a preview tile on a PDF, which spawned a `QuickLookUIService` XPC process.
+- **Test:** SIGKILLed the browser tile's `com.apple.WebKit.WebContent` process, then the new QuickLookUIService process. Only processes that appeared for these tiles were killed.
+- **Result:** the app kept running, the attach processes were the same PIDs, and the ticker went from 23 to 42.
+- **Socket:** the API socket is 0600 and its directory 0700, both owned by the user.

@@ -57,6 +57,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         focused?.show(activate: !env.background)
         if !env.background { NSApp.activate() }
         launched = true
+        let tileCount = session?.windows.reduce(0) { n, w in
+            n + w.workspaces.reduce(0) { m, ws in m + ws.tabs.reduce(0) { $0 + $1.tiles.count } }
+        } ?? 0
+        Startup.launched(window: focused?.window, tileCount: tileCount) { [weak self] in self?.log($0) }
+        LatencyBench.startIfRequested(log: { [weak self] in self?.log($0) })
 
         if let script = env.automation {
             automation = Automation(app: self, script: script, out: env.automationOut)
