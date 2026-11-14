@@ -207,6 +207,7 @@ fn is_pristine(session: &Session, id: WorkspaceId) -> bool {
                     command: None,
                     herdr: None,
                     ended: false,
+                    ..
                 },
                 ..
             }
@@ -228,6 +229,7 @@ pub fn build_tab(
             content: TileContent::Terminal {
                 cwd: p.cwd.clone(),
                 command: None,
+                env: Default::default(),
                 herdr: Some(HerdrRef {
                     pane_id: p.pane_id.0.clone(),
                     terminal_id: p.terminal_id.0.clone(),

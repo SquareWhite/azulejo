@@ -69,6 +69,32 @@ pub fn human(result: &Value) -> String {
                 out.push('\n');
             }
         }
+        Some("layout_file") => match result["path"].as_str() {
+            Some(path) => {
+                let _ = writeln!(out, "wrote {path}");
+            }
+            None => out.push_str(result["toml"].as_str().unwrap_or("")),
+        },
+        Some("commands") => {
+            for c in result["commands"].as_array().into_iter().flatten() {
+                let chords = c["chords"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
+                let _ = writeln!(
+                    out,
+                    "{:<24} {:<32} {}",
+                    scalar(&c["id"]),
+                    scalar(&c["title"]),
+                    chords
+                );
+            }
+        }
         Some("layout") => {
             let _ = writeln!(
                 out,

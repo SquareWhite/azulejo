@@ -181,6 +181,10 @@ pub enum Effect {
         workspace_name: String,
         cwd: Option<String>,
         label: Option<String>,
+        /// Extra environment from the tile, on top of `AZULEJO_*`.
+        env: Vec<(String, String)>,
+        /// A line typed into the new pane's shell (a layout file's `command`).
+        command: Option<String>,
     },
     /// Kill a closed tile's pane (F14: only when the user asked to).
     KillTerminal { pane_id: String },
@@ -332,6 +336,8 @@ pub fn respawn_effect(session: &Session, tile: TileId) -> Option<Effect> {
 fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
     let TileContent::Terminal {
         cwd,
+        command,
+        env,
         herdr: None,
         ended: false,
         ..
@@ -349,6 +355,10 @@ fn create_effect(session: &Session, tile: &Tile) -> Option<Effect> {
         workspace_name: workspace.name.clone(),
         cwd: cwd.clone().or_else(|| workspace.cwd.clone()),
         label: tile.title.clone(),
+        env: env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        command: command
+            .as_deref()
+            .and_then(crate::layout_file::command_line),
     })
 }
 
@@ -465,13 +475,18 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                 workspace_name,
                 cwd,
                 label,
+                env: extra_env,
+                command,
             } => {
-                let env = herdr::TileEnv {
-                    socket: api_socket.clone(),
-                    tile_id: tile.to_string(),
-                    workspace_id: workspace.to_string(),
-                }
-                .to_pairs();
+                let mut env = extra_env;
+                env.extend(
+                    herdr::TileEnv {
+                        socket: api_socket.clone(),
+                        tile_id: tile.to_string(),
+                        workspace_id: workspace.to_string(),
+                    }
+                    .to_pairs(),
+                );
                 let known = workspaces.get(&workspace).cloned().or(herdr_workspace);
                 let ensured = match port
                     .ensure_workspace(
@@ -513,10 +528,24 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     }
                 };
                 match terminal {
-                    Ok(t) => out(Internal::BindTerminal {
-                        tile,
-                        herdr: to_ref(&t),
-                    }),
+                    Ok(t) => {
+                        // herdr can't replace the shell, so the command is
+                        // typed in; the PTY holds it until the shell reads.
+                        if let Some(line) = command {
+                            let pane = t.pane_id.0.clone();
+                            let typed = match port.send_text(pane.clone(), line).await {
+                                Ok(()) => port.send_keys(pane, vec!["enter".into()]).await,
+                                Err(e) => Err(e),
+                            };
+                            if let Err(e) = typed {
+                                log(format!("herdr: running tile {tile}'s command: {e}"));
+                            }
+                        }
+                        out(Internal::BindTerminal {
+                            tile,
+                            herdr: to_ref(&t),
+                        })
+                    }
                     Err(e) => {
                         log(format!("herdr: no pane for tile {tile}: {e}"));
                         out(Internal::MarkEnded { tile });

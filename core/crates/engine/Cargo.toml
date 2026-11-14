@@ -12,7 +12,9 @@ azulejo-model.workspace = true
 azulejo-protocol.workspace = true
 azulejo-herdr.workspace = true
 azulejo-preview.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+toml = { version = "1", default-features = false, features = ["std", "parse", "display", "serde"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]

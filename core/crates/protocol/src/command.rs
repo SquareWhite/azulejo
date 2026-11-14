@@ -183,6 +183,19 @@ pub enum Command {
     /// Ends a subscription made on this connection.
     #[serde(rename = "events.unsubscribe")]
     EventsUnsubscribe(crate::stream::EventsUnsubscribe),
+
+    // ----- project layout files, palette (F5, F6) -----
+    /// Opens a project layout file's tabs and tiles; replies `created` with
+    /// the workspace and first tab.
+    #[serde(rename = "layout.apply")]
+    LayoutApply(crate::project::LayoutApply),
+    /// A tab or workspace as layout-file TOML; replies `layout_file`.
+    #[serde(rename = "layout.export")]
+    LayoutExport(crate::project::LayoutExport),
+    /// Every action the palette offers, with its current key chords;
+    /// replies `commands`.
+    #[serde(rename = "commands.list")]
+    CommandsList,
 }
 
 /// Every method name, in declaration order.
@@ -237,6 +250,9 @@ pub const METHODS: &[&str] = &[
     "terminal.search",
     "events.subscribe",
     "events.unsubscribe",
+    "layout.apply",
+    "layout.export",
+    "commands.list",
 ];
 
 impl Command {

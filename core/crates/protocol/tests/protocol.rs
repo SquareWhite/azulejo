@@ -175,6 +175,24 @@ fn sample_commands() -> Vec<Command> {
             path: "plan.md".into(),
         }),
         Command::PreviewGet(TileTarget { tile: Some(tile) }),
+        Command::LayoutApply(LayoutApply {
+            path: Some("/src/shop/.azulejo.toml".into()),
+            mode: ApplyMode::ReplaceTab,
+            ..LayoutApply::default()
+        }),
+        Command::LayoutApply(LayoutApply {
+            toml: Some("[[tile]]\n".into()),
+            base_dir: Some("/src/shop".into()),
+            workspace: Some(workspace),
+            mode: ApplyMode::NewTab,
+            ..LayoutApply::default()
+        }),
+        Command::LayoutExport(LayoutExport {
+            tab: None,
+            workspace: Some(workspace),
+            path: Some("/src/shop/.azulejo.toml".into()),
+        }),
+        Command::CommandsList,
     ]
 }
 
@@ -197,6 +215,7 @@ fn sample_events() -> Vec<Event> {
     let tile = Tile::new(TileContent::Terminal {
         cwd: Some("~/src".into()),
         command: Some(vec!["claude".into()]),
+        env: [("RUST_LOG".to_owned(), "debug".to_owned())].into(),
         herdr: Some(HerdrRef {
             pane_id: "w1:p2".into(),
             terminal_id: "term_x".into(),
@@ -287,6 +306,17 @@ fn sample_events() -> Vec<Event> {
             state: AgentState::Blocked,
             previous: Some(AgentState::Working),
             agent: Some("claude".into()),
+        }),
+        Event::ConfigReloaded(ConfigReloaded {
+            applied: false,
+            path: Some("/home/me/.config/azulejo/config.toml".into()),
+            diagnostics: vec![ConfigDiagnostic {
+                severity: "error".into(),
+                message: "not valid TOML".into(),
+                file: Some("/home/me/.config/azulejo/config.toml".into()),
+                line: Some(3),
+                column: Some(7),
+            }],
         }),
     ]
 }
@@ -416,6 +446,24 @@ fn replies_round_trip() {
             html: None,
             ..sample_preview(tile.id)
         }),
+        Reply::LayoutFile {
+            toml: "[[tile]]\n".into(),
+            path: None,
+        },
+        Reply::Commands {
+            commands: vec![CommandEntry {
+                id: "split_right".into(),
+                title: "Split right".into(),
+                category: "layout".into(),
+                method: Some("layout.split".into()),
+                action: Some("split_right".into()),
+                index: None,
+                chords: vec!["ctrl+cmd+v".into()],
+                needs_tile: true,
+                prompt: None,
+                planned: false,
+            }],
+        },
     ];
     for reply in replies {
         let json = serde_json::to_string(&reply).unwrap();

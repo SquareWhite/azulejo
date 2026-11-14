@@ -24,6 +24,10 @@ use crate::{Engine, Outcome, terminal};
 /// Called with a log line. Defaults to stderr.
 pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
 
+/// Builds the command palette's entries from the current config
+/// (`commands.list`); see [`Core::set_commands`].
+pub type CommandsFn = Arc<dyn Fn() -> Vec<azulejo_protocol::CommandEntry> + Send + Sync>;
+
 pub struct CoreOptions {
     /// Where to load and save the session; `None` keeps it in memory only.
     pub state_path: Option<PathBuf>,
@@ -53,6 +57,9 @@ enum Msg {
         Box<azulejo_preview::Rendered>,
     ),
     Subscribe(mpsc::Sender<Event>),
+    /// An event from outside the engine (a config reload) for every listener.
+    Broadcast(Event),
+    SetCommands(CommandsFn),
     Shutdown(mpsc::Sender<()>),
 }
 
@@ -121,6 +128,18 @@ impl Core {
         let (tx, rx) = mpsc::channel();
         let _ = self.tx.send(Msg::Subscribe(tx));
         rx
+    }
+
+    /// Sends `event` to every [`Core::subscribe`] listener, like the core's
+    /// own events. For things the engine doesn't own, such as config reloads.
+    pub fn broadcast(&self, event: Event) {
+        let _ = self.tx.send(Msg::Broadcast(event));
+    }
+
+    /// Where `commands.list` gets its entries. Until this is called it
+    /// answers `unavailable`.
+    pub fn set_commands(&self, commands: CommandsFn) {
+        let _ = self.tx.send(Msg::SetCommands(commands));
     }
 
     /// Saves pending state and stops the core.
@@ -255,6 +274,7 @@ fn run<P: HerdrPort>(
     drop(self_tx);
 
     let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
+    let mut commands: Option<CommandsFn> = None;
     let publish = |engine: &Engine,
                    events: &[Event],
                    herdr: &Option<Herdr<P>>,
@@ -337,6 +357,41 @@ fn run<P: HerdrPort>(
                     },
                 }
             }
+            Msg::Command(Command::CommandsList, reply) => {
+                let result = match &commands {
+                    Some(list) => Ok(Outcome {
+                        reply: Reply::Commands { commands: list() },
+                        events: Vec::new(),
+                    }),
+                    None => Err(Error::new(
+                        ErrorCode::Unavailable,
+                        "this core has no config to list commands from",
+                    )),
+                };
+                let _ = reply.send(result);
+            }
+            // Layout files: read or write on this thread (small files), then
+            // let the engine do the rest.
+            Msg::Command(Command::LayoutApply(p), reply) if p.path.is_some() => {
+                let result = layout_file_io::read(p).and_then(|p| {
+                    let outcome = engine.execute(Command::LayoutApply(p))?;
+                    publish(
+                        &engine,
+                        &outcome.events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                    );
+                    Ok(outcome)
+                });
+                let _ = reply.send(result);
+            }
+            Msg::Command(Command::LayoutExport(p), reply) if p.path.is_some() => {
+                let result = engine
+                    .execute(Command::LayoutExport(p))
+                    .and_then(layout_file_io::write);
+                let _ = reply.send(result);
+            }
             Msg::Command(Command::TerminalRespawn(_), reply) if herdr.is_none() => {
                 let _ = reply.send(Err(Error::new(
                     ErrorCode::Unavailable,
@@ -408,6 +463,8 @@ fn run<P: HerdrPort>(
                 }
             }
             Msg::Subscribe(listener) => listeners.push(listener),
+            Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
+            Msg::SetCommands(list) => commands = Some(list),
             Msg::Shutdown(done) => {
                 if let Some(saver) = &saver {
                     saver.flush();
@@ -467,6 +524,74 @@ impl<P> Herdr<P> {
         if again {
             self.request_survey();
         }
+    }
+}
+
+/// File I/O for `layout.apply` and `layout.export` with a `path`.
+mod layout_file_io {
+    use std::path::Path;
+
+    use azulejo_protocol::{Error, ErrorCode, LayoutApply, Reply};
+
+    use crate::Outcome;
+
+    /// Turns `path` into `toml` + `base_dir` (the file's directory).
+    pub fn read(mut p: LayoutApply) -> Result<LayoutApply, Error> {
+        let path = p.path.take().unwrap_or_default();
+        let path = Path::new(&path);
+        if path.is_relative() {
+            return Err(Error::new(
+                ErrorCode::InvalidParams,
+                format!("`path` must be absolute, not {}", path.display()),
+            ));
+        }
+        if p.toml.is_some() {
+            return Err(Error::new(
+                ErrorCode::InvalidParams,
+                "give exactly one of `path` and `toml`",
+            ));
+        }
+        // A directory means its `.azulejo.toml`.
+        let file = if path.is_dir() {
+            path.join(".azulejo.toml")
+        } else {
+            path.to_path_buf()
+        };
+        let text = std::fs::read_to_string(&file).map_err(|e| {
+            Error::new(
+                ErrorCode::InvalidParams,
+                format!("can't read {}: {e}", file.display()),
+            )
+        })?;
+        p.toml = Some(text);
+        if p.base_dir.is_none() {
+            p.base_dir = file.parent().map(|d| d.display().to_string());
+        }
+        Ok(p)
+    }
+
+    /// Writes an exported layout where it was asked to go.
+    pub fn write(outcome: Outcome) -> Result<Outcome, Error> {
+        if let Reply::LayoutFile {
+            toml,
+            path: Some(path),
+        } = &outcome.reply
+        {
+            let path = Path::new(path);
+            if path.is_relative() {
+                return Err(Error::new(
+                    ErrorCode::InvalidParams,
+                    format!("`path` must be absolute, not {}", path.display()),
+                ));
+            }
+            std::fs::write(path, toml).map_err(|e| {
+                Error::new(
+                    ErrorCode::InvalidParams,
+                    format!("can't write {}: {e}", path.display()),
+                )
+            })?;
+        }
+        Ok(outcome)
     }
 }
 

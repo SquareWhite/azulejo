@@ -1,0 +1,24 @@
+# The PRD's "scripted layouts" use case: one command opens an editor, a test
+# watcher, the dev server and a browser on it. Copy this to your project as
+# `.azulejo.toml` and run `azj layout apply` there.
+
+name = "shop"            # workspace name; defaults to the folder's name
+layout = "tall"          # master left, the rest stacked evenly on the right
+
+[[tile]]
+title = "editor"
+command = "nvim ."
+focus = true
+
+[[tile]]
+title = "tests"
+command = ["cargo", "watch", "-x", "test"]
+env = { RUST_LOG = "info" }
+
+[[tile]]
+title = "dev server"
+cwd = "web"
+command = "npm run dev"
+
+[[tile]]
+url = "http://localhost:3000"
