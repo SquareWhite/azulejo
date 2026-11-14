@@ -49,6 +49,10 @@ pub enum Reply {
         #[serde(default)]
         truncated: bool,
     },
+    /// An event stream started; notifications carry this `subscription`.
+    Subscribed {
+        subscription: u64,
+    },
 }
 
 /// A window without its workspaces' contents.

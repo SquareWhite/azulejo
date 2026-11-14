@@ -1,5 +1,62 @@
 {
   "$defs": {
+    "AgentState": {
+      "description": "What the agent in a terminal tile is doing, per herdr.",
+      "oneOf": [
+        {
+          "enum": [
+            "idle",
+            "working",
+            "done"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Waiting for the user, e.g. a permission prompt.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "herdr doesn't know, or no agent runs in the pane.",
+          "type": "string"
+        }
+      ]
+    },
+    "AgentStateChange": {
+      "description": "Payload of `agent.state_changed`.",
+      "properties": {
+        "agent": {
+          "description": "The agent herdr detected, e.g. `claude` or `codex`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The state before this change, when known."
+        },
+        "state": {
+          "$ref": "#/$defs/AgentState"
+        },
+        "tile": {
+          "$ref": "#/$defs/TileId"
+        }
+      },
+      "required": [
+        "tile",
+        "state"
+      ],
+      "type": "object"
+    },
     "Axis": {
       "description": "How a split lays out its two children: `horizontal` puts them side by side,\n`vertical` stacks them.",
       "enum": [
@@ -848,6 +905,40 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "description": "Streams events on this connection as `events.event` notifications;\nreplies `subscribed`. Answered by the API server, not the engine.",
+          "properties": {
+            "method": {
+              "const": "events.subscribe",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/EventsSubscribe"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Ends a subscription made on this connection.",
+          "properties": {
+            "method": {
+              "const": "events.unsubscribe",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/EventsUnsubscribe"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1460,8 +1551,96 @@
             "data"
           ],
           "type": "object"
+        },
+        {
+          "description": "The agent in a terminal tile changed state, as herdr reports it (F16).\nNot saved.",
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/AgentStateChange"
+            },
+            "event": {
+              "const": "agent.state_changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "EventNotification": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Event"
+        },
+        {
+          "properties": {
+            "subscription": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "subscription"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "An event plus the subscription it's for: the event's own `event` and `data` fields, and `subscription`."
+    },
+    "EventsSubscribe": {
+      "description": "Parameters of `events.subscribe`. Every filter is optional; together they\nnarrow the stream (an event must pass all of them).",
+      "properties": {
+        "filter": {
+          "description": "Event names or prefixes. `tile.created` matches that event only;\n`tile.`, `tile.*` and `tile` match every `tile.…` event. Empty or absent\nmeans every event.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only events about this tile: its own `tile.*`, `preview.updated` and\n`agent.state_changed` events, layout changes of its tab, and focus\nchanges to or from it."
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only events about this workspace: its own events, its tabs' and its\ntiles', and `focus.changed` when focus lands in it. Events about no\nparticular workspace (`herdr.status`, window events) are left out."
+        }
+      },
+      "type": "object"
+    },
+    "EventsUnsubscribe": {
+      "description": "Parameters of `events.unsubscribe`.",
+      "properties": {
+        "subscription": {
+          "description": "The `subscription` from `events.subscribe`'s reply.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "subscription"
+      ],
+      "type": "object"
     },
     "Focus": {
       "description": "Where the user's focus is. Inner fields are `None` when that level is empty.",
@@ -1554,6 +1733,25 @@
         "pane_id",
         "terminal_id",
         "tab_id"
+      ],
+      "type": "object"
+    },
+    "LaggedNotification": {
+      "properties": {
+        "dropped": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "subscription": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "subscription",
+        "dropped"
       ],
       "type": "object"
     },
@@ -1820,6 +2018,45 @@
           "required": [
             "type",
             "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Notification": {
+      "description": "A message the server sends without being asked, on a connection with a\nsubscription. On the wire it's a JSON-RPC notification: `method` plus\n`params`.",
+      "oneOf": [
+        {
+          "description": "One event. `event` and `data` are exactly the event's own fields.",
+          "properties": {
+            "method": {
+              "const": "events.event",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/EventNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The subscriber fell behind and `dropped` events were skipped just\nbefore the next one it receives.",
+          "properties": {
+            "method": {
+              "const": "events.lagged",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/LaggedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
           ],
           "type": "object"
         }
@@ -2173,6 +2410,25 @@
           "required": [
             "type",
             "matches"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An event stream started; notifications carry this `subscription`.",
+          "properties": {
+            "subscription": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "subscribed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "subscription"
           ],
           "type": "object"
         }
@@ -3519,7 +3775,9 @@
     "terminal.send_keys",
     "terminal.read",
     "terminal.scroll",
-    "terminal.search"
+    "terminal.search",
+    "events.subscribe",
+    "events.unsubscribe"
   ],
   "title": "Azulejo API",
   "version": 1

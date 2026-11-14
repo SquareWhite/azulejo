@@ -174,6 +174,15 @@ pub enum Command {
     /// `matches`. Runs over `recent_unwrapped` output in the core.
     #[serde(rename = "terminal.search")]
     TerminalSearch(TerminalSearch),
+
+    // ----- event streams (F22) -----
+    /// Streams events on this connection as `events.event` notifications;
+    /// replies `subscribed`. Answered by the API server, not the engine.
+    #[serde(rename = "events.subscribe")]
+    EventsSubscribe(crate::stream::EventsSubscribe),
+    /// Ends a subscription made on this connection.
+    #[serde(rename = "events.unsubscribe")]
+    EventsUnsubscribe(crate::stream::EventsUnsubscribe),
 }
 
 /// Every method name, in declaration order.
@@ -226,6 +235,8 @@ pub const METHODS: &[&str] = &[
     "terminal.read",
     "terminal.scroll",
     "terminal.search",
+    "events.subscribe",
+    "events.unsubscribe",
 ];
 
 impl Command {

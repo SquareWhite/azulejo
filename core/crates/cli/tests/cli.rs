@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use azulejo_api::{Client, Server, ServerHandle, WithInfo, spawn_engine};
+use azulejo_api::{Client, EventFeed, Server, ServerHandle, WithEvents, WithInfo, spawn_engine};
 use azulejo_engine::Engine;
 use serde_json::{Value, json};
 
@@ -32,12 +32,13 @@ fn start() -> App {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     let socket = dir.join("azulejo.sock");
-    let (tx, _engine) = spawn_engine(Engine::new(), |_| {});
+    let feed = EventFeed::new();
+    let (tx, _engine) = spawn_engine(Engine::new(), feed.sink());
     // Pretend the core's herdr session lives at HERDR_SOCKET.
     let info = serde_json::Map::from_iter([("herdr_socket".to_owned(), json!(HERDR_SOCKET))]);
     let server = Server::bind(&socket)
         .unwrap()
-        .spawn(Arc::new(WithInfo::new(tx, info)))
+        .spawn(Arc::new(WithEvents::new(WithInfo::new(tx, info), feed)))
         .unwrap();
     App {
         _server: server,
@@ -301,4 +302,97 @@ fn raw_call_and_help() {
 
     let methods = stdout(&azj(&app.socket, &[], &["methods"]));
     assert!(methods.lines().any(|l| l == "terminal.send_keys"));
+}
+
+/// `azj events` prints events until `--count` of them arrived. Run inside a
+/// tile, it still streams everything: the caller's IDs aren't filters.
+#[test]
+fn events_follow_prints_each_event() {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let app = start();
+    let mut c = Client::connect(&app.socket).unwrap();
+    let session = c.call("session.get", None).unwrap();
+    let ws = &session["session"]["windows"][0]["workspaces"][0];
+    let tile = ws["tabs"][0]["focused"].as_str().unwrap().to_owned();
+
+    let spawn = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_azj"))
+            .env_clear()
+            .env("AZULEJO_SOCKET", &app.socket)
+            .env("AZULEJO_TILE_ID", &tile)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    let mut json = spawn(&[
+        "events",
+        "--follow",
+        "--filter",
+        "tile.created",
+        "--count",
+        "2",
+        "--json",
+    ]);
+    let mut human = spawn(&["events", "subscribe", "--filter", "tile.", "-n", "2"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app._server.subscriptions() < 2 {
+        assert!(Instant::now() < deadline, "azj never subscribed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut created = Vec::new();
+    for _ in 0..2 {
+        let r = c
+            .call("layout.split", Some(json!({"direction": "right"})))
+            .unwrap();
+        created.push(r["tile"].clone());
+    }
+    let read = |child: &mut std::process::Child| {
+        let status = child.wait().unwrap();
+        let mut out = String::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        let mut err = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut err)
+            .unwrap();
+        assert!(status.success(), "{err}");
+        out
+    };
+    let out = read(&mut json);
+    let lines: Vec<Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    for (line, id) in lines.iter().zip(&created) {
+        assert_eq!(line["method"], "events.event");
+        assert_eq!(line["params"]["event"], "tile.created");
+        assert_eq!(&line["params"]["data"]["tile"]["id"], id);
+    }
+    let out = read(&mut human);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 2, "{out}");
+    assert!(lines[0].starts_with("tile.created tile="), "{out}");
+    assert!(lines[0].contains("kind=terminal"), "{out}");
+}
+
+#[test]
+fn events_flags_are_checked() {
+    let app = start();
+    let o = azj(&app.socket, &[], &["events", "--count", "lots"]);
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+    let o = azj(&app.socket, &[], &["events", "--workspace", "nope"]);
+    assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
 }

@@ -246,6 +246,70 @@ fn render_session(session: &Value, out: &mut String) {
     }
 }
 
+/// One event notification as a line for people: the event's name, then the
+/// IDs and values that say what it's about. Lag notices say how many events
+/// were skipped.
+pub fn event_line(message: &Value) -> String {
+    let params = &message["params"];
+    if message["method"] == "events.lagged" {
+        return format!("(skipped {} events: reading too slowly)", params["dropped"]);
+    }
+    let name = params["event"].as_str().unwrap_or("?");
+    let data = &params["data"];
+    let mut parts: Vec<String> = Vec::new();
+    let mut push = |key: &str, v: &Value| {
+        if !v.is_null() {
+            parts.push(format!("{key}={}", scalar(v)));
+        }
+    };
+    match name {
+        "tile.created" | "tile.updated" | "tile.closed" => {
+            push("tile", &data["tile"]["id"]);
+            push("kind", &data["tile"]["kind"]);
+            push("title", &data["tile"]["title"]);
+            push("tab", &data["tab"]);
+            if data["kill"] == true {
+                parts.push("kill".into());
+            }
+        }
+        "layout.changed" => {
+            push("tab", &data["tab"]);
+            push("workspace", &data["workspace"]);
+            push("focused", &data["focused"]);
+            push("zoomed", &data["zoomed"]);
+        }
+        "agent.state_changed" => {
+            push("tile", &data["tile"]);
+            push("state", &data["state"]);
+            push("previous", &data["previous"]);
+            push("agent", &data["agent"]);
+        }
+        "preview.updated" => {
+            push("tile", &data["tile"]);
+            push("kind", &data["kind"]);
+            push("path", &data["path"]);
+        }
+        _ => {
+            for (key, v) in data.as_object().into_iter().flatten() {
+                match v {
+                    Value::Object(inner) => {
+                        if let Some(id) = inner.get("id") {
+                            push(key, id);
+                        }
+                    }
+                    Value::Array(_) => {}
+                    other => push(key, other),
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{name} {}", parts.join(" "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

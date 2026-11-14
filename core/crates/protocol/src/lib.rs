@@ -14,6 +14,7 @@ mod error;
 mod event;
 mod reply;
 mod schema;
+mod stream;
 
 pub use azulejo_model::{
     Axis, Direction, Focus, Frame, HerdrRef, Node, Session, TabId, Tile, TileContent, TileId,
@@ -24,6 +25,7 @@ pub use error::{Error, ErrorCode};
 pub use event::*;
 pub use reply::*;
 pub use schema::{api_schema, api_schema_text};
+pub use stream::*;
 
 /// Version of the public API schema. Breaking changes bump it.
 pub const API_VERSION: u32 = 1;

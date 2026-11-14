@@ -2,9 +2,10 @@
 
 use schemars::generate::SchemaSettings;
 
-use crate::{API_VERSION, Command, Error, Event, METHODS, Reply};
+use crate::{API_VERSION, Command, Error, Event, METHODS, Notification, Reply};
 
-/// The API schema: `Command`, `Event`, `Reply` and `Error` plus everything they
+/// The API schema: `Command`, `Event`, `Reply`, `Error` and `Notification`
+/// (event-stream messages) plus everything they
 /// reference, under `$defs`.
 pub fn api_schema() -> serde_json::Value {
     let mut generator = SchemaSettings::draft2020_12().into_generator();
@@ -12,6 +13,7 @@ pub fn api_schema() -> serde_json::Value {
     generator.subschema_for::<Event>();
     generator.subschema_for::<Reply>();
     generator.subschema_for::<Error>();
+    generator.subschema_for::<Notification>();
     let defs: serde_json::Map<String, serde_json::Value> = generator
         .take_definitions(true)
         .into_iter()

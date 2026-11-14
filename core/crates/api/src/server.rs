@@ -15,9 +15,15 @@ use std::thread::JoinHandle;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
-use crate::{Dispatcher, default_socket_path, handle_text};
+use crate::events::{Connection, DEFAULT_EVENT_BUFFER, Hub};
+use crate::rpc::handle_line;
+use crate::{Dispatcher, default_socket_path};
+
+/// Lines waiting to be written to one connection. A reader that stops reading
+/// fills this, then its subscriptions' buffers, then starts lagging.
+const OUT_QUEUE: usize = 64;
 
 /// Longest request line accepted, in bytes. Longer lines close the connection.
 const MAX_LINE: usize = 8 * 1024 * 1024;
@@ -27,6 +33,7 @@ const MAX_LINE: usize = 8 * 1024 * 1024;
 pub struct Server {
     listener: StdUnixListener,
     guard: SocketGuard,
+    event_buffer: usize,
 }
 
 /// Removes the socket file on drop, unless something else has replaced it.
@@ -72,7 +79,15 @@ impl Server {
                 dev: meta.dev(),
                 ino: meta.ino(),
             },
+            event_buffer: DEFAULT_EVENT_BUFFER,
         })
+    }
+
+    /// How many events each subscription may hold before it lags
+    /// ([`DEFAULT_EVENT_BUFFER`] unless set).
+    pub fn event_buffer(mut self, events: usize) -> Server {
+        self.event_buffer = events.max(1);
+        self
     }
 
     pub fn path(&self) -> &Path {
@@ -85,7 +100,28 @@ impl Server {
         dispatcher: Arc<dyn Dispatcher>,
         shutdown: impl std::future::Future<Output = ()>,
     ) -> io::Result<()> {
-        let Server { listener, guard } = self;
+        let hub = self.hub_for(dispatcher.as_ref());
+        self.serve(dispatcher, hub, shutdown).await
+    }
+
+    /// The event hub for `dispatcher`, already fed, if it has events.
+    fn hub_for(&self, dispatcher: &dyn Dispatcher) -> Option<Hub> {
+        dispatcher.events().map(|events| {
+            let hub = Hub::new(self.event_buffer);
+            hub.pump(events);
+            hub
+        })
+    }
+
+    async fn serve(
+        self,
+        dispatcher: Arc<dyn Dispatcher>,
+        hub: Option<Hub>,
+        shutdown: impl std::future::Future<Output = ()>,
+    ) -> io::Result<()> {
+        let Server {
+            listener, guard, ..
+        } = self;
         listener.set_nonblocking(true)?;
         let listener = UnixListener::from_std(listener)?;
         tokio::pin!(shutdown);
@@ -94,13 +130,16 @@ impl Server {
                 _ = &mut shutdown => break,
                 accepted = listener.accept() => match accepted {
                     Ok((stream, _)) => {
-                        tokio::spawn(serve_connection(stream, dispatcher.clone()));
+                        tokio::spawn(serve_connection(stream, dispatcher.clone(), hub.clone()));
                     }
                     // A failed accept (e.g. out of file descriptors) shouldn't
                     // take the server down.
                     Err(_) => tokio::task::yield_now().await,
                 },
             }
+        }
+        if let Some(hub) = hub {
+            hub.close();
         }
         drop(guard);
         Ok(())
@@ -110,16 +149,18 @@ impl Server {
     /// stops, and the socket file goes, when the handle is dropped.
     pub fn spawn(self, dispatcher: Arc<dyn Dispatcher>) -> io::Result<ServerHandle> {
         let path = self.path().to_owned();
+        let hub = self.hub_for(dispatcher.as_ref());
         let (stop, stopped) = oneshot::channel::<()>();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
+        let serve_hub = hub.clone();
         let thread = std::thread::Builder::new()
             .name("azulejo-api".into())
             .spawn(move || {
                 runtime.block_on(async move {
                     let _ = self
-                        .serve_until(dispatcher, async {
+                        .serve(dispatcher, serve_hub, async {
                             let _ = stopped.await;
                         })
                         .await;
@@ -127,6 +168,7 @@ impl Server {
             })?;
         Ok(ServerHandle {
             path,
+            hub,
             stop: Some(stop),
             thread: Some(thread),
         })
@@ -137,6 +179,7 @@ impl Server {
 #[derive(Debug)]
 pub struct ServerHandle {
     path: PathBuf,
+    hub: Option<Hub>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -144,6 +187,11 @@ pub struct ServerHandle {
 impl ServerHandle {
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Live event subscriptions across all connections.
+    pub fn subscriptions(&self) -> usize {
+        self.hub.as_ref().map_or(0, Hub::len)
     }
 
     /// Stops the server and waits for it to finish.
@@ -222,8 +270,19 @@ fn clear_stale(path: &Path) -> io::Result<()> {
     }
 }
 
-async fn serve_connection(stream: UnixStream, dispatcher: Arc<dyn Dispatcher>) {
+async fn serve_connection(stream: UnixStream, dispatcher: Arc<dyn Dispatcher>, hub: Option<Hub>) {
     let (read, mut write) = stream.into_split();
+    // One writer per connection: responses and event notifications share it,
+    // each line written whole.
+    let (out, mut lines) = mpsc::channel::<Vec<u8>>(OUT_QUEUE);
+    let writer = tokio::spawn(async move {
+        while let Some(line) = lines.recv().await {
+            if write.write_all(&line).await.is_err() {
+                return;
+            }
+        }
+    });
+    let mut conn = Connection::new(hub, out.clone());
     let mut reader = BufReader::new(read);
     let mut line = Vec::new();
     loop {
@@ -233,7 +292,7 @@ async fn serve_connection(stream: UnixStream, dispatcher: Arc<dyn Dispatcher>) {
             .read_until(b'\n', &mut line)
             .await;
         match read {
-            Ok(0) | Err(_) => return,
+            Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
         if line.len() > MAX_LINE {
@@ -246,20 +305,25 @@ async fn serve_connection(stream: UnixStream, dispatcher: Arc<dyn Dispatcher>) {
                     "data": {"code": "invalid_request"},
                 },
             });
-            let _ = write.write_all(format!("{response}\n").as_bytes()).await;
-            return;
+            let _ = out.send(format!("{response}\n").into_bytes()).await;
+            break;
         }
         let text = String::from_utf8_lossy(&line);
         let text = text.trim();
         if text.is_empty() {
             continue;
         }
-        if let Some(response) = handle_text(text, dispatcher.as_ref()).await {
+        if let Some(response) = handle_line(text, dispatcher.as_ref(), Some(&mut conn)).await {
             let mut response = response.into_bytes();
             response.push(b'\n');
-            if write.write_all(&response).await.is_err() {
-                return;
+            if out.send(response).await.is_err() {
+                break;
             }
         }
+        conn.start_pending();
     }
+    // Closing the read side ends the connection and its subscriptions.
+    drop(conn);
+    drop(out);
+    let _ = writer.await;
 }

@@ -96,6 +96,39 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
+
+    /// The agent in a terminal tile changed state, as herdr reports it (F16).
+    /// Not saved.
+    #[serde(rename = "agent.state_changed")]
+    AgentStateChanged(AgentStateChange),
+}
+
+/// What the agent in a terminal tile is doing, per herdr.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentState {
+    Idle,
+    Working,
+    /// Waiting for the user, e.g. a permission prompt.
+    Blocked,
+    Done,
+    /// herdr doesn't know, or no agent runs in the pane.
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+/// Payload of `agent.state_changed`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentStateChange {
+    pub tile: TileId,
+    pub state: AgentState,
+    /// The state before this change, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<AgentState>,
+    /// The agent herdr detected, e.g. `claude` or `codex`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 /// What a preview tile shows.

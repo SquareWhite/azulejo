@@ -21,6 +21,7 @@
 
 mod client;
 mod dispatch;
+mod events;
 mod rpc;
 mod server;
 
@@ -28,9 +29,10 @@ use std::path::PathBuf;
 
 pub use client::{Client, ClientError, RpcError};
 pub use dispatch::{
-    CommandReceiver, CommandSender, CoreDispatcher, DispatchFuture, Dispatcher, Request, WithInfo,
-    command_channel, spawn_engine,
+    CommandReceiver, CommandSender, CoreDispatcher, DispatchFuture, Dispatcher, EventFeed, Request,
+    WithEvents, WithInfo, command_channel, spawn_engine,
 };
+pub use events::DEFAULT_EVENT_BUFFER;
 pub use rpc::{SERVER_METHODS, handle_text};
 pub use server::{Server, ServerHandle};
 
