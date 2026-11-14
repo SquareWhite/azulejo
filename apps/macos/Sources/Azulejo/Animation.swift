@@ -201,6 +201,13 @@ protocol MotionAware: AnyObject {
     func motionCancelled()
     /// How many times the PTY has been resized (stats: one per motion).
     var surfaceResizes: Int { get }
+    /// Height of a strip above the content (a tile header, F28) that 1:1
+    /// snapshots sit below.
+    var headerInset: CGFloat { get }
+}
+
+extension MotionAware {
+    var headerInset: CGFloat { 0 }
 }
 
 /// One per-frame callback list, driven by the container's display link.

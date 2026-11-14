@@ -29,6 +29,20 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
         true,
     ),
     (
+        "preview.set_mode",
+        "Toggle preview source",
+        "preview",
+        None,
+        true,
+    ),
+    (
+        "workspace.set_repo",
+        "Set workspace repository folder…",
+        "workspace",
+        Some("path"),
+        false,
+    ),
+    (
         "files.open",
         "Open path from file browser…",
         "files",

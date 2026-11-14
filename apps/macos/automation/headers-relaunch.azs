@@ -1,0 +1,21 @@
+# Second half of the headers walkthrough: after a relaunch the preview tile
+# still shows its source (F29: the choice is saved per tile).
+log relaunch
+expect tiles 2
+until tile.header.title plan.md 10000
+until tile.source source 10000
+until tile.toggle source 3000
+until tile.mode load 5000
+wait 800
+tile js (document.querySelector('[data-language]') || {dataset:{}}).dataset.language
+until tile.js Markdown 3000
+shot 06-relaunched-source
+
+# Back to rendered.
+tile mode rendered
+until tile.source rendered 5000
+wait 800
+tile js document.querySelector('h1') ? 'h1' : 'none'
+until tile.js h1 3000
+shot 07-rendered-again
+quit

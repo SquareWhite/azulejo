@@ -91,6 +91,16 @@ pub trait HerdrPort: Send + Sync + 'static {
         offset_from_bottom: u64,
     ) -> impl Future<Output = Result<herdr::ScrollInfo, String>> + Send;
 
+    /// What runs in a pane's foreground (F28). herdr has no event for it, so
+    /// the core polls. A port without it answers [`crate::meta::UNSUPPORTED`].
+    fn process_info(
+        &self,
+        pane_id: String,
+    ) -> impl Future<Output = Result<herdr::ProcessInfo, String>> + Send {
+        let _ = pane_id;
+        async { Err(crate::meta::UNSUPPORTED.to_owned()) }
+    }
+
     /// The herdr session socket this port talks to, if it has one.
     fn socket(&self) -> Option<std::path::PathBuf> {
         None
@@ -165,6 +175,12 @@ impl HerdrPort for herdr::Client {
         herdr::Client::scroll(self, &herdr::PaneId(pane_id), offset_from_bottom)
             .await
             .map(|pane| pane.scroll.unwrap_or_default())
+            .map_err(|e| e.to_string())
+    }
+
+    async fn process_info(&self, pane_id: String) -> Result<herdr::ProcessInfo, String> {
+        herdr::Client::process_info(self, &herdr::PaneId(pane_id))
+            .await
             .map_err(|e| e.to_string())
     }
 
@@ -270,6 +286,28 @@ pub enum Internal {
     },
     /// What a machine's herdr runs; adopt what's new.
     Surveyed(Machine, Box<herdr::Survey>),
+    /// herdr's title and working directory for a pane (F28).
+    PaneInfo {
+        machine: Machine,
+        pane_id: String,
+        title: Option<String>,
+        cwd: Option<String>,
+    },
+    /// What runs in a pane's foreground (F28): `command` is `None` when the
+    /// shell is; `shell` is `None` when it isn't known.
+    PaneProcess {
+        machine: Machine,
+        pane_id: String,
+        shell: Option<String>,
+        command: Option<String>,
+        /// The foreground process's working directory, when herdr knows it.
+        cwd: Option<String>,
+    },
+    /// What the core read about a workspace's repository (F26).
+    WorkspaceGit {
+        workspace: WorkspaceId,
+        git: Option<azulejo_model::GitInfo>,
+    },
     /// The survey failed (logged); nothing to adopt this time.
     SurveyFailed(Machine),
 }
@@ -304,20 +342,20 @@ impl Engine {
                     Ok(TileContent::Terminal { ended, .. }) if !*ended => *ended = true,
                     _ => return Vec::new(),
                 }
-                diff(&before, &self.session, false)
+                self.changes_since(&before)
             }
             Internal::ClosedElsewhere { tile } => {
                 let before = self.session.clone();
                 if self.session.close_tile(tile).is_err() {
                     return Vec::new();
                 }
-                diff(&before, &self.session, false)
+                self.changes_since(&before)
             }
             Internal::HerdrWorkspaceClosed { machine, herdr } => {
                 let before = self.session.clone();
                 close_herdr_workspace(&mut self.session, &machine, &herdr);
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
-                diff(&before, &self.session, false)
+                self.changes_since(&before)
             }
             Internal::AgentStatus {
                 machine,
@@ -340,7 +378,7 @@ impl Engine {
                 if !changed {
                     return Vec::new();
                 }
-                diff(&before, &self.session, false)
+                self.changes_since(&before)
             }
             Internal::Surveyed(machine, survey) => {
                 let before = self.session.clone();
@@ -353,11 +391,12 @@ impl Engine {
                 };
                 let mut changed = adopt::adopt(&mut self.session, &machine, &survey, placeholder);
                 changed |= agent::refresh(&mut self.session, &machine, &survey, agent::now_ms());
+                changed |= crate::meta::refresh_from_survey(&mut self.session, &machine, &survey);
                 if !changed {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
-                diff(&before, &self.session, false)
+                self.changes_since(&before)
             }
             Internal::SurveyFailed(machine) => {
                 if machine.is_none() {
@@ -365,7 +404,59 @@ impl Engine {
                 }
                 Vec::new()
             }
+            Internal::PaneInfo {
+                machine,
+                pane_id,
+                title,
+                cwd,
+            } => {
+                let before = self.session.clone();
+                if !crate::meta::apply_info(&mut self.session, &machine, &pane_id, title, cwd) {
+                    return Vec::new();
+                }
+                self.changes_since(&before)
+            }
+            Internal::PaneProcess {
+                machine,
+                pane_id,
+                shell,
+                command,
+                cwd,
+            } => {
+                let before = self.session.clone();
+                if !crate::meta::apply_process(
+                    &mut self.session,
+                    &machine,
+                    &pane_id,
+                    shell,
+                    command,
+                    cwd,
+                ) {
+                    return Vec::new();
+                }
+                self.changes_since(&before)
+            }
+            Internal::WorkspaceGit { workspace, git } => {
+                let unchanged = self
+                    .session
+                    .workspace(workspace)
+                    .map(|w| w.git == git)
+                    .unwrap_or(true);
+                if unchanged {
+                    return Vec::new();
+                }
+                let before = self.session.clone();
+                let _ = self.session.set_workspace_git(workspace, git);
+                self.changes_since(&before)
+            }
         }
+    }
+
+    /// Events for what changed since `before`, with headers brought up to
+    /// date first (F28).
+    pub(crate) fn changes_since(&mut self, before: &Session) -> Vec<Event> {
+        crate::meta::refresh_headers(&mut self.session);
+        diff(before, &self.session, false)
     }
 }
 
@@ -528,6 +619,13 @@ pub fn reconcile(
                     h.terminal_id == pane.terminal_id.as_str()
                         || (h.pane_id == pane.pane_id.as_str() && h.tab_id == pane.tab_id.as_str())
                 });
+                reaction.internals.push(pane_info(machine, pane));
+            }
+            // Title or cwd changed (F28); agent status comes per pane.
+            E::PaneUpdated(pane) => {
+                if bound().any(|(_, _, h)| h.pane_id == pane.pane_id.as_str()) {
+                    reaction.internals.push(pane_info(machine, pane));
+                }
             }
             // The process ended (`exit`, ctrl+d, a crash): herdr drops the
             // pane (and its tab, if it was the only one) and says
@@ -598,6 +696,16 @@ pub fn reconcile(
         _ => {}
     }
     reaction
+}
+
+/// A pane's title and working directory, for its tiles' headers (F28).
+fn pane_info(machine: &Machine, pane: &herdr::PaneInfo) -> Internal {
+    Internal::PaneInfo {
+        machine: machine.clone(),
+        pane_id: pane.pane_id.0.clone(),
+        title: pane.terminal_title.clone(),
+        cwd: pane.foreground_cwd.clone().or_else(|| pane.cwd.clone()),
+    }
 }
 
 /// Terminal tiles bound to a live pane on `machine`: path, tile and pane.

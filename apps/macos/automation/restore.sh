@@ -81,7 +81,8 @@ settled() {
 }
 
 # The session as saved, minus what may legitimately move between runs.
-snapshot() { azj --json session get | jq -S 'del(.. | .frame?)'; }
+# Live fields (pane title/cwd/command, headers, branches) aren't layout.
+snapshot() { azj --json session get | jq -S 'del(.. | .frame?, .pane?, .header?, .git?)'; }
 terminal_ids() { hd pane list 2>/dev/null | grep -oE 'term_[A-Za-z0-9]+' | sort -u; }
 tick() { azj --json terminal read --tile "$1" --source recent --lines 5 | jq -r '.text' | { grep -oE 'tick [0-9]+' || true; } | tail -1 | cut -d' ' -f2; }
 

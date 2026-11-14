@@ -99,7 +99,9 @@ final class AttentionOverlayView: NSView {
             }()
             badge.apply(tile)
             let size = badge.fittingSize
-            badge.frame = NSRect(x: frame.maxX - size.width - 8, y: frame.maxY - size.height - 6,
+            // Just below the tile's header strip (F28), clear of its controls.
+            let top = frame.maxY - min(TileFrame.headerHeight, frame.height)
+            badge.frame = NSRect(x: frame.maxX - size.width - 8, y: top - size.height - 6,
                                  width: size.width, height: size.height)
 
             let focused = tab?.focused == id

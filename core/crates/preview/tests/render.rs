@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use azulejo_preview::{Kind, MAX_TEXT_BYTES, classify, code_body, markdown_body, render};
+use azulejo_preview::{
+    Kind, MAX_TEXT_BYTES, classify, code_body, markdown_body, render, render_source,
+};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -141,6 +143,38 @@ fn full_page_wraps_the_body() {
     assert!(html.contains("<main id=\"azj-content\"><h1"));
     assert!(html.contains("azulejoPreview"));
     assert!(!r.truncated);
+}
+
+#[test]
+fn source_mode_shows_markdown_as_highlighted_text() {
+    let r = render_source(&fixture("doc.md"));
+    assert_eq!(r.kind, Kind::Markdown);
+    assert!(r.source);
+    assert_eq!(r.language.as_deref(), Some("Markdown"));
+    let html = r.html.unwrap();
+    // Laid out as code, with a gutter, not as a document.
+    assert!(html.contains("class=\"azj-kind-code\""), "{html}");
+    assert!(html.contains("data-language=\"Markdown\""));
+    assert!(!html.contains("<h1 id=\"plan-preview-tiles\">"));
+    // The markdown syntax highlighter marked headings up.
+    assert!(
+        html.contains("syn-markdown") || html.contains("syn-heading"),
+        "{html}"
+    );
+
+    // Code is the same either way; images have no source view.
+    let code = render_source(&fixture("sample.rs"));
+    assert!(code.source);
+    assert_eq!(code.kind, Kind::Code);
+    let dir = tempfile::tempdir().unwrap();
+    let png = dir.path().join("a.png");
+    std::fs::write(&png, b"\x89PNG\r\n\x1a\n").unwrap();
+    let image = render_source(&png);
+    assert!(!image.source);
+    assert!(image.html.is_none());
+
+    // The rendered view says it isn't source.
+    assert!(!render(&fixture("doc.md")).source);
 }
 
 #[test]

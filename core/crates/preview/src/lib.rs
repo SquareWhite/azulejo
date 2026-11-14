@@ -84,6 +84,9 @@ pub struct Rendered {
     /// The file as it was just before it was read; `None` when it couldn't be
     /// examined (missing, no permission).
     pub stamp: Option<Stamp>,
+    /// Rendered as source ([`render_source`]): markdown shows as highlighted
+    /// markdown text rather than a document.
+    pub source: bool,
 }
 
 /// What a file looked like when it was rendered: enough to tell a real change
@@ -112,6 +115,17 @@ impl Stamp {
 /// Classifies and renders `path`. Never fails: problems become a page that
 /// explains them.
 pub fn render(path: &Path) -> Rendered {
+    render_as(path, false)
+}
+
+/// Like [`render`], but text files show as their source highlighted as code
+/// (F29): markdown as markdown text, not as a document. Other kinds render
+/// as usual.
+pub fn render_source(path: &Path) -> Rendered {
+    render_as(path, true)
+}
+
+fn render_as(path: &Path, source: bool) -> Rendered {
     // Taken before reading, so a write that races the read gives the next
     // render a different stamp and can't be mistaken for a repeat.
     let stamp = Stamp::of(path);
@@ -128,7 +142,14 @@ pub fn render(path: &Path) -> Rendered {
         )
     });
     let kind = classified.kind;
+    // Source of a markdown file: highlighted as markdown, laid out as code.
+    let markdown_source = source && kind == Kind::Markdown;
+    let page_kind = if markdown_source { Kind::Code } else { kind };
     let body = match kind {
+        Kind::Markdown if markdown_source => Some(with_notice(
+            notice.as_deref(),
+            code::render_body(classified.text.as_deref().unwrap_or(""), Some("Markdown")),
+        )),
         Kind::Markdown => Some(with_notice(
             notice.as_deref(),
             markdown::render_body(classified.text.as_deref().unwrap_or(""), &path),
@@ -163,12 +184,17 @@ pub fn render(path: &Path) -> Rendered {
         )),
     };
     Rendered {
-        html: body.map(|body| page::document(&title, kind, &body)),
+        html: body.map(|body| page::document(&title, page_kind, &body)),
         path,
         kind,
-        language: classified.language,
+        language: if markdown_source {
+            Some("Markdown".into())
+        } else {
+            classified.language
+        },
         truncated: classified.truncated,
         stamp,
+        source: source && matches!(kind, Kind::Markdown | Kind::Code | Kind::Text),
     }
 }
 

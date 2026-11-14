@@ -18,7 +18,10 @@ pub use error::ModelError;
 pub use ids::{ParseIdError, TabId, TileId, WindowId, WorkspaceId};
 pub use layout::{Axis, Direction, MAX_RATIO, MIN_RATIO, Node, Rect, Tall};
 pub use session::{
-    ClosedTile, ClosedWorkspace, Focus, Frame, LayoutPrefs, Session, Tab, TilePath, Window,
-    Workspace,
+    ClosedTile, ClosedWorkspace, Focus, Frame, GitInfo, LayoutPrefs, Session, Tab, TilePath,
+    Window, Workspace,
 };
-pub use tile::{AgentInfo, AgentStatus, HerdrRef, OnExit, Tile, TileContent, TileKind};
+pub use tile::{
+    AgentInfo, AgentStatus, HerdrRef, OnExit, PaneMeta, PreviewMode, Tile, TileContent, TileHeader,
+    TileKind, tilde,
+};

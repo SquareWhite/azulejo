@@ -1,0 +1,43 @@
+# Tile headers and branches (2.14, 2.15) check, in-process. headers.sh fills
+# in @DIR@ (a fresh git repository, as given) and @REAL@ (the same folder
+# with symlinks resolved, as herdr reports a shell's cwd).
+
+log start
+expect tiles 1
+
+# cd into the repository: the header shows the folder, the sidebar the branch.
+core {"method":"terminal.send_text","params":{"text":"cd @DIR@\n"}}
+until tile.header.subtitle @REAL@ 5000
+until sidebar.branches main 5000
+shot 01-terminal-header
+
+# A running command replaces the folder; the prompt brings it back.
+core {"method":"terminal.send_text","params":{"text":"sleep 3\n"}}
+until tile.header.subtitle sleep 3 3000
+shot 02-command
+until tile.header.subtitle @REAL@ 6000
+
+# Switching branch in the tile updates the sidebar.
+core {"method":"terminal.send_text","params":{"text":"git checkout -q -b feature/headers\n"}}
+until sidebar.branches feature/headers 3000
+shot 03-branch
+
+# A markdown preview: file name and folder in its header, then Source.
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until tile.header.title plan.md 5000
+until tile.content markdown 5000
+until tile.toggle rendered 3000
+until tile.mode load 5000
+wait 500
+tile js document.querySelector('h1') ? 'h1' : 'none'
+until tile.js h1 3000
+shot 04-preview
+
+tile mode source
+until tile.source source 5000
+until tile.toggle source 3000
+wait 800
+tile js (document.querySelector('[data-language]') || {dataset:{}}).dataset.language
+until tile.js Markdown 3000
+shot 05-source
+quit

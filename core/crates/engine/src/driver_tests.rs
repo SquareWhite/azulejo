@@ -39,6 +39,9 @@ struct FakeState {
     /// latest subscription's sender.
     agent_subs: Vec<Vec<String>>,
     agent_tx: Option<tmpsc::Sender<herdr::StreamItem>>,
+    /// What runs in each pane, by pane ID. `None`: process info isn't
+    /// supported (the poller stops).
+    processes: Option<HashMap<String, herdr::ProcessInfo>>,
 }
 
 #[derive(Clone, Default)]
@@ -294,6 +297,14 @@ impl HerdrPort for Fake {
             max_offset_from_bottom: 100,
             viewport_rows: 40,
         })
+    }
+
+    async fn process_info(&self, pane_id: String) -> Result<herdr::ProcessInfo, String> {
+        let s = self.state();
+        match &s.processes {
+            None => Err(crate::meta::UNSUPPORTED.into()),
+            Some(map) => Ok(map.get(&pane_id).cloned().unwrap_or_default()),
+        }
     }
 }
 
@@ -1585,4 +1596,119 @@ fn each_machine_has_its_own_connection_state() {
         .unwrap_err();
     assert_eq!(err.code, azulejo_protocol::ErrorCode::Unavailable);
     core.shutdown();
+}
+
+fn process(shell_pid: u32, fg: (u32, &str, &str), cwd: &str) -> herdr::ProcessInfo {
+    herdr::ProcessInfo {
+        shell_pid: Some(shell_pid),
+        foreground_process_group_id: Some(fg.0),
+        foreground_processes: vec![herdr::ProcessEntry {
+            pid: fg.0,
+            name: fg.1.into(),
+            cmdline: fg.2.into(),
+            cwd: Some(cwd.into()),
+        }],
+    }
+}
+
+fn header(session: &Session, tile: TileId) -> (String, Option<String>) {
+    let h = session.tile(tile).unwrap().header.clone().unwrap();
+    (h.title, h.subtitle)
+}
+
+#[test]
+fn terminal_headers_follow_herdr_titles_and_processes() {
+    let fake = Fake::default();
+    fake.state().processes = Some(HashMap::new());
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let session = wait_until(&core, all_bound);
+    let (tile, pane) = match &terminals(&session)[0] {
+        (id, Some(h), _) => (*id, h.pane_id.clone()),
+        other => panic!("unbound {other:?}"),
+    };
+    let events = core.subscribe();
+
+    // The shell at its prompt: its name and where it is.
+    fake.state()
+        .processes
+        .as_mut()
+        .unwrap()
+        .insert(pane.clone(), process(10, (10, "zsh", "-zsh"), "/srv/shop"));
+    wait_until(&core, |s| {
+        header(s, tile) == ("zsh".into(), Some("/srv/shop".into()))
+    });
+
+    // A command in the foreground replaces the folder.
+    fake.state().processes.as_mut().unwrap().insert(
+        pane.clone(),
+        process(
+            10,
+            (20, "just", "/opt/homebrew/bin/just dogfood"),
+            "/srv/shop",
+        ),
+    );
+    let started = Instant::now();
+    let s = wait_until(&core, |s| {
+        header(s, tile).1.as_deref() == Some("just dogfood")
+    });
+    assert_eq!(header(&s, tile).0, "zsh", "keeps the shell it saw");
+    assert!(started.elapsed() < meta::PROCESS_POLL * 3);
+
+    // herdr's title for the pane (OSC 2) lands on the tile too.
+    let mut info = s
+        .tile(tile)
+        .ok()
+        .and_then(|t| match &t.content {
+            TileContent::Terminal { herdr: Some(h), .. } => Some(h.clone()),
+            _ => None,
+        })
+        .map(|h| {
+            pane_info(&herdr::TerminalRef {
+                workspace_id: herdr::WorkspaceId("w1".into()),
+                tab_id: herdr::TabId(h.tab_id),
+                pane_id: herdr::PaneId(h.pane_id),
+                terminal_id: herdr::TerminalId(h.terminal_id),
+            })
+        })
+        .unwrap();
+    info.terminal_title = Some("building…".into());
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneUpdated(
+        info,
+    )));
+    let s = wait_until(&core, |s| {
+        s.tile(tile)
+            .ok()
+            .and_then(|t| t.pane.as_ref())
+            .and_then(|m| m.title.clone())
+            .as_deref()
+            == Some("building…")
+    });
+    assert_eq!(header(&s, tile).1.as_deref(), Some("just dogfood"));
+
+    // Shells hear of it as tile updates with the new header.
+    let saw_header = events.try_iter().any(|e| {
+        matches!(e, Event::TileUpdated { tile: t, .. }
+            if t.id == tile && t.header.as_ref().and_then(|h| h.subtitle.as_deref()) == Some("just dogfood"))
+    });
+    assert!(saw_header);
+
+    // Back at the prompt.
+    fake.state()
+        .processes
+        .as_mut()
+        .unwrap()
+        .insert(pane, process(10, (10, "zsh", "-zsh"), "/srv/shop/web"));
+    wait_until(&core, |s| {
+        header(s, tile) == ("zsh".into(), Some("/srv/shop/web".into()))
+    });
+}
+
+#[test]
+fn a_port_without_process_info_stops_polling() {
+    // The default fake has no process info: headers fall back, nothing hangs.
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let session = wait_until(&core, all_bound);
+    let tile = terminals(&session)[0].0;
+    assert_eq!(header(&session, tile).0, "terminal");
 }

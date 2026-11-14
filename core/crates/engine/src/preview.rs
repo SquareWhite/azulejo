@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use azulejo_model::{Session, TileContent, TileId};
+use azulejo_model::{PreviewMode, Session, TileContent, TileId};
 use azulejo_preview::{Kind, Rendered, Stamp, Watcher};
 use azulejo_protocol::{Event, PreviewContent, PreviewKind};
 
@@ -21,12 +21,27 @@ pub(crate) const DEBOUNCE: Duration = Duration::from_millis(50);
 /// Receives a finished render, on whichever thread produced it.
 pub(crate) type Deliver = Arc<dyn Fn(TileId, PathBuf, Rendered) + Send + Sync>;
 
+/// Renders `path` the way a tile in `mode` shows it (F29).
+pub(crate) fn render(path: &Path, mode: PreviewMode) -> Rendered {
+    match mode {
+        PreviewMode::Rendered => azulejo_preview::render(path),
+        PreviewMode::Source => azulejo_preview::render_source(path),
+    }
+}
+
+/// Whether a tile in `mode` showing a file of `kind` wants its source.
+fn wants_source(mode: PreviewMode, kind: Kind) -> bool {
+    mode == PreviewMode::Source && matches!(kind, Kind::Markdown | Kind::Code | Kind::Text)
+}
+
 pub(crate) struct Previews {
     watcher: Option<Watcher<TileId>>,
     deliver: Deliver,
     log: LogFn,
-    /// The file each preview tile shows, as the tile stores it.
-    shown: HashMap<TileId, PathBuf>,
+    /// The file each preview tile shows, as the tile stores it, and how.
+    shown: HashMap<TileId, (PathBuf, PreviewMode)>,
+    /// Each tile's mode, for renders after a change on disk.
+    modes: Arc<Mutex<HashMap<TileId, PreviewMode>>>,
     latest: HashMap<TileId, PreviewContent>,
     /// The file stamp behind each tile's latest render.
     stamps: HashMap<TileId, Option<Stamp>>,
@@ -35,10 +50,17 @@ pub(crate) struct Previews {
 
 impl Previews {
     pub(crate) fn new(deliver: Deliver, log: LogFn) -> Self {
+        let modes: Arc<Mutex<HashMap<TileId, PreviewMode>>> = Arc::default();
         let watcher = {
             let deliver = deliver.clone();
+            let modes = modes.clone();
             Watcher::new(DEBOUNCE, move |tile, path: PathBuf| {
-                let rendered = azulejo_preview::render(&path);
+                let mode = modes
+                    .lock()
+                    .ok()
+                    .and_then(|m| m.get(&tile).copied())
+                    .unwrap_or_default();
+                let rendered = render(&path, mode);
                 deliver(tile, path, rendered);
             })
         };
@@ -56,6 +78,7 @@ impl Previews {
             deliver,
             log,
             shown: HashMap::new(),
+            modes,
             latest: HashMap::new(),
             stamps: HashMap::new(),
             revision: 0,
@@ -65,30 +88,38 @@ impl Previews {
     /// Matches watches to the session's preview tiles: starts watching new
     /// files (and renders them), stops for closed tiles and changed paths.
     pub(crate) fn sync(&mut self, session: &Session) {
-        let wanted: HashMap<TileId, PathBuf> = session
+        let wanted: HashMap<TileId, (PathBuf, PreviewMode)> = session
             .tiles()
             .filter_map(|(_, tile)| match &tile.content {
-                TileContent::Preview { path: Some(path) } => Some((tile.id, PathBuf::from(path))),
+                TileContent::Preview { path: Some(path) } => {
+                    Some((tile.id, (PathBuf::from(path), tile.preview_mode)))
+                }
                 _ => None,
             })
             .collect();
         let stale: Vec<TileId> = self
             .shown
             .iter()
-            .filter(|(id, path)| wanted.get(id) != Some(*path))
+            .filter(|(id, shown)| wanted.get(id) != Some(*shown))
             .map(|(id, _)| *id)
             .collect();
         for id in stale {
             self.shown.remove(&id);
             self.latest.remove(&id);
             self.stamps.remove(&id);
+            if let Ok(mut modes) = self.modes.lock() {
+                modes.remove(&id);
+            }
             if let Some(w) = &mut self.watcher {
                 w.unwatch(&id);
             }
         }
-        for (id, path) in wanted {
+        for (id, (path, mode)) in wanted {
             if self.shown.contains_key(&id) {
                 continue;
+            }
+            if let Ok(mut modes) = self.modes.lock() {
+                modes.insert(id, mode);
             }
             if let Some(w) = &mut self.watcher
                 && let Err(e) = w.watch(id, &path)
@@ -98,8 +129,8 @@ impl Previews {
                     path.display()
                 ));
             }
-            self.shown.insert(id, path.clone());
-            render_in_background(id, path, self.deliver.clone());
+            self.shown.insert(id, (path.clone(), mode));
+            render_in_background(id, path, mode, self.deliver.clone());
         }
     }
 
@@ -112,7 +143,9 @@ impl Previews {
         path: &Path,
         rendered: Rendered,
     ) -> Option<Event> {
-        if self.shown.get(&tile).map(PathBuf::as_path) != Some(path) {
+        let (shown, mode) = self.shown.get(&tile)?;
+        // Another file, or a render from before the mode changed.
+        if shown != path || rendered.source != wants_source(*mode, rendered.kind) {
             return None;
         }
         if self.latest(tile, path).is_some() && self.stamps.get(&tile) == Some(&rendered.stamp) {
@@ -137,19 +170,19 @@ impl Previews {
     }
 }
 
-fn render_in_background(tile: TileId, path: PathBuf, deliver: Deliver) {
+fn render_in_background(tile: TileId, path: PathBuf, mode: PreviewMode, deliver: Deliver) {
     let spawned = std::thread::Builder::new()
         .name("azulejo-preview-render".into())
         .spawn({
             let path = path.clone();
             let deliver = deliver.clone();
             move || {
-                let rendered = azulejo_preview::render(&path);
+                let rendered = render(&path, mode);
                 deliver(tile, path, rendered);
             }
         });
     if spawned.is_err() {
-        let rendered = azulejo_preview::render(&path);
+        let rendered = render(&path, mode);
         deliver(tile, path, rendered);
     }
 }
@@ -168,6 +201,11 @@ pub(crate) fn content(
         html: rendered.html,
         language: rendered.language,
         truncated: rendered.truncated,
+        mode: if rendered.source {
+            PreviewMode::Source
+        } else {
+            PreviewMode::Rendered
+        },
         revision,
     }
 }

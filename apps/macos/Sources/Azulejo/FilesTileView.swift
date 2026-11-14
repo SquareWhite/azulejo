@@ -86,7 +86,7 @@ final class FilesTileView: NSView, TileView {
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
 
-        header.translatesAutoresizingMaskIntoConstraints = false
+        // The root and the buttons live in the tile's header strip (TileFrame).
         header.onToggleHidden = { [weak self] in self?.toggleHidden() }
         header.onFilter = { [weak self] in self?.showFilter() }
 
@@ -124,16 +124,11 @@ final class FilesTileView: NSView, TileView {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
 
-        addSubview(header)
         addSubview(filter)
         addSubview(scroll)
         filterHeight = filter.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor),
-            header.leadingAnchor.constraint(equalTo: leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 26),
-            filter.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 2),
+            filter.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             filter.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             filter.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             filterHeight,
@@ -843,10 +838,10 @@ private final class FilesHeader: NSView {
         }
         hiddenButton.action = #selector(hiddenClicked)
         find.action = #selector(findClicked)
-        let stack = NSStackView(views: [label, detail, NSView(), find, hiddenButton])
+        // The root itself is the tile header's title and subtitle.
+        stack = NSStackView(views: [detail, find, hiddenButton])
         stack.orientation = .horizontal
         stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -855,11 +850,14 @@ private final class FilesHeader: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        updateColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    private var stack = NSStackView()
+
+    override var fittingSize: NSSize { stack.fittingSize }
 
     func setRoot(_ path: String?, detail text: String?) {
         label.stringValue = path.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "files"
@@ -875,15 +873,8 @@ private final class FilesHeader: NSView {
 
     @objc private func hiddenClicked() { onToggleHidden() }
     @objc private func findClicked() { onFilter() }
+}
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateColors()
-    }
-
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
-    }
+extension FilesTileView: TileHeaderAccessory {
+    var headerAccessory: NSView? { header }
 }

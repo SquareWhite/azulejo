@@ -138,6 +138,7 @@ enum ShellAutomation {
         if let ws = app.session?.window(controller.windowID)?.workspace {
             s["workspace.machine"] = app.machines.first { $0.id == ws.machineID }?.label ?? ws.machineID
         }
+        s["sidebar.branches"] = controller.sidebarBranches.map { $0.isEmpty ? "-" : $0 }.joined(separator: "|")
         s["tab.markers"] = compact(controller.tabMarkers)
         s["dock"] = NSApp.dockTile.badgeLabel ?? "none"
         // Which tile the badges belong to: the focused tile's short id.

@@ -35,6 +35,8 @@ final class PreviewTileView: NSView, TileView {
 
     /// What's on screen: the file and how it's shown.
     private var shownPath: String?
+    /// The content on screen is the file's source (F29).
+    private var shownSource = false
     private var shownMode: Mode = .none
     /// The newest revision applied (or being applied); older events are dropped.
     private var revision: UInt64 = 0
@@ -77,18 +79,15 @@ final class PreviewTileView: NSView, TileView {
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
 
-        header.translatesAutoresizingMaskIntoConstraints = false
+        // The controls live in the tile's header strip (TileFrame, F28/F29).
         header.onOpen = { [weak self] in self?.openInDefaultApp() }
         header.onReveal = { [weak self] in self?.revealInFinder() }
+        header.onMode = { [weak self] source in self?.setSource(source) }
+        header.setSource(tile.showsSource)
         body.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(header)
         addSubview(body)
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: topAnchor),
-            header.leadingAnchor.constraint(equalTo: leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 26),
-            body.topAnchor.constraint(equalTo: header.bottomAnchor),
+            body.topAnchor.constraint(equalTo: topAnchor),
             body.leadingAnchor.constraint(equalTo: leadingAnchor),
             body.trailingAnchor.constraint(equalTo: trailingAnchor),
             body.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -123,6 +122,7 @@ final class PreviewTileView: NSView, TileView {
         let pathChanged = tile.path != model.path
         model = tile
         header.setPath(tile.path)
+        header.setSource(tile.showsSource)
         guard pathChanged else { return }
         if tile.path == nil {
             showEmpty()
@@ -171,7 +171,12 @@ final class PreviewTileView: NSView, TileView {
             return
         }
         revision = content.revision
+        // Rendered ↔ source is a different page, not an edit: load it afresh.
+        let switchedMode = (content.mode == "source") != shownSource
+        shownSource = content.mode == "source"
+        if switchedMode, shownMode == .html { loading = nil; shownPath = nil }
         header.setPath(content.path, detail: content.detail, exists: content.kind != "missing")
+        header.setSourceAvailable(!content.isNative)
         if content.isNative {
             showNative(content)
         } else if let html = content.html {
@@ -377,6 +382,18 @@ final class PreviewTileView: NSView, TileView {
 
     // MARK: Header actions
 
+    /// Preview | Source (F29): the core re-renders and saves the choice.
+    private func setSource(_ source: Bool) {
+        guard source != model.showsSource || source != shownSource else { return }
+        let mode = source ? "source" : "rendered"
+        if case .failure(let error)? = Self.core?.execute([
+            "method": "preview.set_mode", "params": ["tile": tileID, "mode": mode],
+        ]) {
+            Self.log("preview \(Short.id(tileID)): preview.set_mode failed: \(error)")
+            header.setSource(model.showsSource)
+        }
+    }
+
     private func openInDefaultApp() {
         guard let path = shownPath ?? model.path else { return }
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -440,39 +457,48 @@ private final class PreviewNavigation: NSObject, WKNavigationDelegate {
     }
 }
 
-/// The strip above the content: the file's path and two actions.
+/// The preview's controls in its tile header (TileFrame): the syntax,
+/// Preview | Source (F29), and two actions. The file's name and folder are
+/// the header's own title and subtitle.
 @MainActor
 private final class PreviewHeader: NSView {
     var onOpen: () -> Void = {}
     var onReveal: () -> Void = {}
-    private let label = NSTextField(labelWithString: "")
+    var onMode: (Bool) -> Void = { _ in }
     private let detail = NSTextField(labelWithString: "")
-    private let open = NSButton(title: "Open", target: nil, action: nil)
-    private let reveal = NSButton(title: "Reveal", target: nil, action: nil)
+    private let mode = NSSegmentedControl(
+        labels: ["Preview", "Source"], trackingMode: .selectOne, target: nil, action: nil)
+    private let open = NSButton()
+    private let reveal = NSButton()
+    private let stack: NSStackView
 
     init() {
+        stack = NSStackView(views: [detail, mode, open, reveal])
         super.init(frame: .zero)
-        wantsLayer = true
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = .secondaryLabelColor
-        label.lineBreakMode = .byTruncatingMiddle
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.font = .systemFont(ofSize: 10)
         detail.textColor = .tertiaryLabelColor
-        for button in [open, reveal] {
+        detail.lineBreakMode = .byTruncatingTail
+        mode.controlSize = .mini
+        mode.font = .systemFont(ofSize: 10)
+        mode.selectedSegment = 0
+        mode.target = self
+        mode.action = #selector(modeChanged)
+        mode.toolTip = "Show the file rendered, or its source"
+        for (button, symbol, tip) in [
+            (open, "arrow.up.forward.app", "Open in the default app"),
+            (reveal, "folder", "Reveal in Finder"),
+        ] {
             button.bezelStyle = .accessoryBarAction
+            button.isBordered = false
             button.controlSize = .small
-            button.font = .systemFont(ofSize: 11)
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+            button.toolTip = tip
             button.target = self
         }
         open.action = #selector(openClicked)
-        open.toolTip = "Open in the default app"
         reveal.action = #selector(revealClicked)
-        reveal.toolTip = "Reveal in Finder"
-        let stack = NSStackView(views: [label, detail, NSView(), open, reveal])
         stack.orientation = .horizontal
         stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -481,33 +507,45 @@ private final class PreviewHeader: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
-        updateColors()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override var fittingSize: NSSize { stack.fittingSize }
+
     func setPath(_ path: String?, detail text: String? = nil, exists: Bool = true) {
-        label.stringValue = path.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "preview"
-        label.toolTip = path
         if let text { detail.stringValue = text }
         open.isEnabled = path != nil && exists
         reveal.isEnabled = path != nil && exists
     }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateColors()
+    /// Which segment shows as selected.
+    func setSource(_ source: Bool) {
+        mode.selectedSegment = source ? 1 : 0
     }
 
-    private func updateColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
+    /// Images, video and PDF have no source to show.
+    func setSourceAvailable(_ available: Bool) {
+        mode.isHidden = !available
     }
 
+    /// Automation: what the toggle shows.
+    var selectedMode: String { mode.isHidden ? "none" : (mode.selectedSegment == 1 ? "source" : "rendered") }
+
+    /// Automation: what a click on a segment does.
+    func choose(source: Bool) {
+        mode.selectedSegment = source ? 1 : 0
+        modeChanged()
+    }
+
+    @objc private func modeChanged() { onMode(mode.selectedSegment == 1) }
     @objc private func openClicked() { onOpen() }
     @objc private func revealClicked() { onReveal() }
+}
+
+extension PreviewTileView: TileHeaderAccessory {
+    var headerAccessory: NSView? { header }
 }
 
 /// `preview.updated` / `preview.get`, as the core sends them
@@ -519,6 +557,8 @@ struct PreviewContent: Decodable {
     var html: String?
     var language: String?
     var truncated: Bool?
+    /// `source` when the file shows as highlighted source (F29).
+    var mode: String?
     var revision: UInt64
 
     var isNative: Bool { ["image", "video", "audio", "pdf"].contains(kind) }
@@ -547,6 +587,11 @@ extension PreviewTileView: AutomatableTile {
                 }
             }
             return nil
+        case "mode":
+            // `tile mode source|rendered`: clicks the header's toggle.
+            guard arg == "source" || arg == "rendered" else { return "mode takes source or rendered" }
+            header.choose(source: arg == "source")
+            return nil
         default:
             return "unknown preview verb \(verb)"
         }
@@ -560,6 +605,8 @@ extension PreviewTileView: AutomatableTile {
             "tile.content": appliedKind,
             "tile.path": shownPath ?? "-",
             "tile.js": lastScriptResult,
+            "tile.source": shownSource ? "source" : "rendered",
+            "tile.toggle": header.selectedMode,
         ]
     }
 }

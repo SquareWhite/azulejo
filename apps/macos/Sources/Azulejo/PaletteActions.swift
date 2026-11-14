@@ -220,11 +220,14 @@ extension AppController {
                             searchExtra: host ?? ""))
                     }
                     for tile in tab.tiles {
+                        // The header's subtitle (F28): what runs there, or where.
+                        let doing = tile.header?.subtitle.flatMap { $0.isEmpty ? nil : $0 }
                         items.append(PaletteItem(
                             id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),
-                            detail: "\(where1)in \(ws.name)",
+                            detail: "\(where1)" + (doing.map { "\($0) · " } ?? "") + "in \(ws.name)",
                             searchExtra: [tile.cwd, tile.url, tile.path, tile.root, tile.agent?.name,
-                                          tile.command?.joined(separator: " "), host]
+                                          tile.command?.joined(separator: " "), tile.header?.title,
+                                          doing, host]
                                 .compactMap { $0 }.joined(separator: " "),
                             dot: AttentionStyle.color(for: tile)))
                     }

@@ -69,6 +69,62 @@ fn get(core: &Core, tile: TileId) -> Result<PreviewContent, azulejo_protocol::Er
 }
 
 #[test]
+fn source_mode_toggles_survives_edits_and_relaunch() {
+    use azulejo_protocol::{PreviewMode, PreviewSetMode};
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    let plan = dir.path().join("plan.md");
+    std::fs::write(&plan, "# One\n\nSome *text*.\n").unwrap();
+    let core = core(Some(&state));
+    let events = core.subscribe();
+    let tile = split_preview(&core, Some(&plan));
+    let rendered = next_preview(&events, tile);
+    assert_eq!(rendered.mode, PreviewMode::Rendered);
+    assert!(rendered.html.as_deref().unwrap().contains(">One<"));
+
+    // Toggle: the markdown's source, highlighted as markdown.
+    core.execute(Command::PreviewSetMode(PreviewSetMode {
+        tile: Some(tile),
+        mode: None,
+    }))
+    .unwrap();
+    let source = next_preview(&events, tile);
+    assert_eq!(source.mode, PreviewMode::Source);
+    assert_eq!(source.language.as_deref(), Some("Markdown"));
+    let html = source.html.as_deref().unwrap();
+    assert!(html.contains("data-language=\"Markdown\""));
+    assert!(!html.contains("<h1"));
+    assert_eq!(get(&core, tile).unwrap().mode, PreviewMode::Source);
+
+    // Edits keep the mode.
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&plan, "# Two\n").unwrap();
+    let edited = next_preview(&events, tile);
+    assert_eq!(edited.mode, PreviewMode::Source);
+    assert!(edited.html.as_deref().unwrap().contains("Two"));
+
+    // The mode is saved with the tile.
+    drop(events);
+    core.shutdown();
+    let core = self::core(Some(&state));
+    let session = core.session().unwrap();
+    assert_eq!(
+        session.tile(tile).unwrap().preview_mode,
+        PreviewMode::Source
+    );
+    assert_eq!(get(&core, tile).unwrap().mode, PreviewMode::Source);
+
+    // Only preview tiles have a mode.
+    let err = core
+        .execute(Command::PreviewSetMode(PreviewSetMode {
+            tile: Some(session.windows[0].workspaces[0].tabs[0].tiles[0].id),
+            mode: Some(PreviewMode::Source),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+}
+
+#[test]
 fn renders_on_open_and_on_change_and_stops_on_close() {
     let dir = tempfile::tempdir().unwrap();
     let plan = dir.path().join("plan.md");
