@@ -9,10 +9,17 @@ import AppKit
 /// Script (`.azs`), one command per line, `#` comments:
 ///
 ///     key alt+h              post a keyDown for the chord
+///     type some text         a keyDown per character (letters, digits, space,
+///                            `- = , . / ; ' [ ]`)
+///     delivery direct|post   how keys arrive: `post` (default) queues an
+///                            NSEvent; `direct` routes it as a key window
+///                            would, menu key equivalents included (posted
+///                            events lose those in a background run)
 ///     action move_tile_left  run a keymap action by name (menu path), for
 ///                            actions with no default chord
 ///     wait 300               milliseconds
 ///     palette … / seen-visible … / sh …   see `ShellAutomation`
+///     ime … / clip … / surface … / responder …   see `FocusAutomation`
 ///     shot name              PNG of the window's content → <out>/name.png
 ///     expect tiles 3         assert on the focused window's state; keys:
 ///                            windows workspaces workspace tabs tab tiles
@@ -48,6 +55,8 @@ final class Automation {
     private var failures: [String] = []
     private var notes: [String] = []
     private var remembered: [String: String] = [:]
+    /// `delivery direct`: keys skip the event queue (see `press`).
+    private var directDelivery = false
 
     init(app: AppController, script: String, out: String) {
         self.app = app
@@ -85,8 +94,20 @@ final class Automation {
         notes.removeAll()
         switch parts[0] {
         case "key": press(arg)
+        case "type":
+            // One keyDown per character, through the same path as `key`.
+            for ch in arg {
+                let s = String(ch)
+                press(s == " " ? "space" : (s != s.lowercased() ? "shift+\(s.lowercased())" : s))
+            }
+            record("type \(arg)")
         case "palette", "seen-visible", "sh", "machine-add":
             if let problem = ShellAutomation.run(parts[0], arg, app: app) {
+                failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
+            }
+            record("\(parts[0]) \(arg)")
+        case "ime", "clip", "surface", "responder", "terminal":
+            if let problem = FocusAutomation.run(parts[0], arg, app: app) {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }
             record("\(parts[0]) \(arg)")
@@ -109,6 +130,7 @@ final class Automation {
             }
             delay = 0
         case "log": record("# \(arg)"); delay = 0
+        case "delivery": directDelivery = arg == "direct"; record("delivery \(arg)"); delay = 0
         case "core": coreCommand(arg)
         case "tile": tileCommand(arg)
         case "until": return until(arg)
@@ -148,14 +170,30 @@ final class Automation {
             default: return failures.append("line \(step): bad modifier \(part)")
             }
         }
-        let chars = raw.count == 1 ? raw : ""
+        // The characters a real keypress carries: shifted letters upper case,
+        // ctrl+letter its control character, named keys their codes.
+        let named = ["space": " ", "enter": "\r", "tab": "\t", "escape": "\u{1b}", "backspace": "\u{7f}"]
+        var ignoring = raw.count == 1 ? raw : named[aliases[raw] ?? raw] ?? ""
+        if flags.contains(.shift) { ignoring = ignoring.uppercased() }
+        var chars = ignoring
+        if flags.contains(.control), let scalar = ignoring.lowercased().unicodeScalars.first,
+           ignoring.count == 1, ("a"..."z").contains(Character(scalar)) {
+            chars = String(UnicodeScalar(UInt8(scalar.value & 0x1f)))
+        }
         guard let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: flags,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: controller.window.windowNumber, context: nil,
-            characters: chars, charactersIgnoringModifiers: chars,
+            characters: chars, charactersIgnoringModifiers: ignoring,
             isARepeat: false, keyCode: code)
         else { return failures.append("line \(step): couldn't make an event for \(chord)") }
+        if directDelivery {
+            // As a key window would: the router, then key equivalents, the
+            // menus and the first responder (KeyDelivery). Posted events in a
+            // background run lose menu key equivalents (no key window).
+            app.routeDirectly(event)
+            return
+        }
         let before = app.keysSeen
         NSApp.postEvent(event, atStart: false)
         // If the local monitor didn't see it (no key window in a background
@@ -346,6 +384,7 @@ final class Automation {
             s.merge(tile.automationState()) { $1 }
         }
         s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
+        s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
         return s
     }
 

@@ -293,10 +293,12 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Automation: keyDowns the monitor has seen, and a way in when it can't.
     var keysSeen: Int { keys.seen }
+    var lastKeyOutcome: String { keys.lastOutcome }
     func routeDirectly(_ event: NSEvent) {
         keys.markRoutedDirectly(event)
-        // Unbound chords go on to the focused tile, as AppKit would deliver them.
-        if !keys.handle(event) { event.window?.firstResponder?.keyDown(with: event) }
+        // Unbound chords go on as AppKit would deliver them: key equivalents,
+        // the menus, then the first responder (KeyDelivery).
+        if !keys.handle(event) { KeyDelivery.deliver(event, window: event.window ?? focusedController?.window) }
     }
 
     /// The controller for a session window, for automation.
@@ -331,8 +333,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Runs a resolved keymap action (`azj_core_key` / `azj_core_action` JSON).
     func perform(_ outcome: [String: Any], in controller: WindowController) {
         if let command = outcome["command"] as? [String: Any] {
-            if case .failure(let error) = send(command) {
+            switch send(command) {
+            case .failure(let error):
                 controller.flash(error.message)
+            case .success(let reply):
+                // A new workspace from the keyboard gets a first terminal, as
+                // "+" in the sidebar does: an empty one has nothing to type into.
+                if command["method"] as? String == "workspace.create",
+                   let workspace = reply["workspace"] as? String {
+                    send(["method": "tab.create", "params": ["workspace": workspace]])
+                }
             }
             return
         }

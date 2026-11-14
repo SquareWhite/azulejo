@@ -134,7 +134,7 @@ final class PreviewTileView: NSView, TileView {
     }
 
     func setFocused(_ focused: Bool) {
-        guard focused, let window else { return }
+        guard focused, let window, TileFocus.canTake(in: window) else { return }
         let target: NSView = webView ?? nativeView ?? self
         if window.firstResponder !== target { window.makeFirstResponder(target) }
     }

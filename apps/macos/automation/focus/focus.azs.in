@@ -1,0 +1,393 @@
+# Key and focus suite (PLAN 2.11): every scenario checks what a chord
+# resolved to (`key.last`) and where first responder ended up (`responder`,
+# `responder.focused`), plus the focused tile. Run with focus.sh.
+# @URL@ (a page with an input), @DIR@ (fixtures), @HERE@ (this folder).
+
+log setup
+# Keys go the way a key window routes them (router, key equivalents, Edit
+# menu, first responder); a posted event in a background run would lose the
+# menu's key equivalents.
+delivery direct
+until responder terminal 10000
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+expect kind manual
+
+log === S01 the first terminal holds first responder at launch
+expect responder terminal
+expect responder.focused yes
+expect tiles 1
+
+log === S02 plain typing reaches the PTY, not the router
+type echo azjfocus
+key 1
+expect key.last passed
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjfocus1
+expect responder terminal
+
+log === S03 an app chord in a terminal runs its action (split_auto) and focus follows the new tile
+key ctrl+cmd+t
+expect key.last action:split_auto
+until tiles 2
+expect focus 2
+until responder.focused yes
+# The new pane binds after the split's motion; the surface then takes the keyboard.
+until terminal.phase attached 10000
+until responder terminal 5000
+
+log === S04 focus by direction moves first responder with it
+key alt+h
+expect key.last action:focus_tile_left
+expect focus 1
+until responder.focused yes
+expect responder terminal
+key alt+l
+expect focus 2
+until responder.focused yes
+
+log === S05 ctrl+letters go to the PTY (cat -v shows them)
+type cat -v
+key enter
+wait 400
+key ctrl+g
+expect key.last passed
+sh @HERE@/pane-has.sh {herdr} {session} {pane} ^G
+
+log === S06 a typed ctrl+b reaches the PTY once and never starts herdr's detach chord
+key ctrl+b
+key q
+sh @HERE@/pane-has.sh {herdr} {session} {pane} ^Bq
+wait 500
+expect terminal.phase attached
+expect responder terminal
+
+log === S07 ctrl+c reaches the PTY (ends cat)
+key ctrl+c
+type echo azjfocus
+key 7
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjfocus7
+
+log === S08 cmd+v pastes through the Edit menu (private pasteboard)
+clip set azjpaste42
+key cmd+v
+expect key.last passed
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjpaste42
+key ctrl+u
+
+log === S09 cmd+c copies the terminal selection through the Edit menu
+clip clear
+surface select-all
+expect terminal.selection yes
+key cmd+c
+expect key.last passed
+wait 500
+clip has azjfocus7
+
+log === S10 cmd+a is the sidebar in a terminal (context chord); first responder stays
+expect sidebar visible
+key cmd+a
+expect key.last action:toggle_sidebar
+expect sidebar hidden
+expect responder terminal
+key cmd+a
+expect sidebar visible
+
+log === S11 mid-composition, app chords don't fire
+ime mark か
+expect ime.marked か
+key ctrl+cmd+t
+expect key.last composing
+expect tiles 2
+key cmd+k
+expect key.last composing
+expect palette closed
+expect responder terminal
+
+log === S12 the committed composition reaches the PTY as typed text
+sh @HERE@/pane-has.sh --not {herdr} {session} {pane} かな
+ime commit かな
+expect ime.marked -
+sh @HERE@/pane-has.sh {herdr} {session} {pane} かな
+key ctrl+u
+key alt+h
+expect key.last action:focus_tile_left
+expect focus 1
+
+log === S13 cmd+k over a terminal: typing goes to the menu's field
+key cmd+k
+expect key.last action:quick_open
+expect palette all
+expect responder palette
+type spl
+expect palette.query spl
+shot s13-quickopen-over-terminal
+sh @HERE@/pane-has.sh --not {herdr} {session} {pane} spl
+
+log === S14 a refresh while the menu is open doesn't take its field away
+seen-visible on
+wait 300
+seen-visible off
+wait 300
+expect responder palette
+type i
+expect palette.query spli
+
+log === S15 escape closes the menu and gives first responder back to the terminal
+key escape
+expect palette closed
+expect responder terminal
+expect responder.focused yes
+expect focus 1
+
+# --- other tile kinds, in a tab of their own: T | V(B / H(P | F)) ---
+key cmd+shift+t
+expect key.last action:new_tab
+until tab 2
+until responder terminal 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+
+log === S16 a browser tile takes first responder in its page
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
+until tile.title focus page 10000
+until responder browser-page
+expect responder.focused yes
+
+log === S17 typing in a page input reaches the page, not the router
+tile js document.getElementById('q').focus()
+wait 200
+type azj
+expect key.last passed
+tile js document.getElementById('q').value
+until tile.js azj
+expect responder browser-page
+
+log === S18 app chords still work from inside the page input
+key alt+h
+expect key.last action:focus_tile_left
+until responder terminal
+expect responder.focused yes
+key alt+l
+expect key.last action:focus_tile_right
+until responder browser-page
+expect responder.focused yes
+
+log === S19 cmd+l (a browser chord the keymap leaves alone) focuses the address bar
+key cmd+l
+expect key.last passed
+expect responder browser-address
+expect tile.address_focused yes
+
+log === S20 escape in the address bar returns first responder to the page
+key escape
+expect responder browser-page
+expect tile.address_focused no
+expect responder.focused yes
+
+log === S21 cmd+k over a browser: typing goes to the field; escape gives the page back
+key cmd+k
+expect palette all
+expect responder palette
+type zoo
+expect palette.query zoo
+shot s21-quickopen-over-browser
+key escape
+expect palette closed
+expect responder browser-page
+expect responder.focused yes
+
+log === S22 a preview tile holds first responder in its page; alt+k / alt+j move between it and the browser
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until responder preview-page 10000
+expect responder.focused yes
+key alt+k
+expect key.last action:focus_tile_up
+until responder browser-page
+key alt+j
+expect key.last action:focus_tile_down
+until responder preview-page
+
+log === S23 cmd+k over a preview, then escape, gives the preview its page back
+key cmd+k
+expect responder palette
+key escape
+expect responder preview-page
+expect responder.focused yes
+
+log === S24 a files tile takes first responder in its tree; j / k move the selection there
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
+until responder files-tree 10000
+until tile.rows 4
+expect tile.selected sub
+key j
+expect key.last passed
+expect tile.selected alpha.txt
+key j
+expect tile.selected beta.txt
+key k
+expect tile.selected alpha.txt
+expect responder files-tree
+
+log === S25 alt+h / alt+l are still app chords from the tree
+key alt+h
+expect key.last action:focus_tile_left
+until responder preview-page
+key alt+l
+until responder files-tree
+expect responder.focused yes
+expect tile.selected alpha.txt
+
+log === S26 / opens the files filter; typing filters; escape goes back to the tree
+key /
+expect key.last passed
+expect responder files-filter
+type gam
+until tile.rows 1
+shot s26-files-filter
+key escape
+until responder files-tree
+expect responder.focused yes
+
+# --- focus after layout changes ---
+log === S27 closing a tile (manual) hands focus and first responder to its neighbour
+expect tiles 4
+key alt+w
+expect key.last action:close_tile
+until tiles 3
+until responder preview-page
+expect responder.focused yes
+
+log === S28 closing in a dynamic Tile layout focuses a tile in the layout, with first responder
+core {"method":"layout.set","params":{"kind":"tile"}}
+expect kind tile
+until responder.focused yes
+key alt+w
+until tiles 2
+until responder.focused yes
+remember focused.id
+
+log === S29 in Monocle, focus switches restack without resizes and first responder follows
+key alt+z
+expect key.last action:toggle_layout_monocle
+expect kind monocle
+expect visible 1
+until responder.focused yes
+remember resizes
+key alt+l
+until responder.focused yes
+expect visible 1
+unchanged resizes
+key alt+l
+until responder.focused yes
+unchanged focused.id
+
+log === S30 closing in Monocle shows the next tile with first responder
+key alt+w
+until tiles 1
+expect visible 1
+until responder.focused yes
+key alt+z
+expect kind tile
+
+log === S31 zoom and unzoom keep first responder in the focused tile
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+until tiles 2
+until responder preview-page 10000
+remember responder.tile
+key alt+shift+m
+expect key.last action:zoom_tile
+expect zoomed yes
+expect visible 1
+expect responder preview-page
+unchanged responder.tile
+key alt+shift+m
+expect zoomed no
+expect responder preview-page
+unchanged responder.tile
+
+log === S32 switching tabs and back restores each tab's focused tile and first responder
+remember focused.id
+key ctrl+1
+expect key.last action:switch_tab(1)
+expect tab 1
+until responder terminal
+expect responder.focused yes
+expect focus 1
+key ctrl+2
+expect tab 2
+until responder preview-page
+unchanged focused.id
+expect responder.focused yes
+
+log === S33 switching workspaces and back does the same
+key cmd+t
+expect key.last action:new_workspace
+until workspaces 2
+until responder terminal 10000
+expect responder.focused yes
+key cmd+1
+expect key.last action:switch_workspace(1)
+expect workspace 1
+until responder preview-page
+unchanged focused.id
+expect responder.focused yes
+
+# --- focus and herdr ---
+log === S34 a pane split in herdr (phone, CLI) arrives as a tile without taking focus
+key ctrl+1
+until responder terminal
+until terminal.phase attached 10000
+remember focused.id
+remember responder.tile
+expect tiles 2
+sh {herdr} --session {session} pane split {pane} --direction right >/dev/null
+until tiles 3 5000
+wait 500
+unchanged focused.id
+unchanged responder.tile
+expect responder terminal
+
+log === S35 a shell that exits closes its tile; the neighbour gets focus and first responder
+type exit
+key enter
+until tiles 2 5000
+until responder.focused yes
+expect responder terminal
+
+log === S36 taken over by another client: read-only, app chords still work, first responder stays on the tile
+until terminal.phase attached 10000
+remember focused.id
+sh python3 @HERE@/takeover.py {herdr} {session} {pane} 6 >/dev/null 2>&1 &
+until terminal.phase observing-taken-over 8000
+expect responder terminal-ro
+shot s36-taken-over
+expect responder.focused yes
+type xyz
+expect key.last passed
+key alt+l
+expect key.last action:focus_tile_right
+until responder.focused yes
+key alt+h
+until responder terminal-ro
+unchanged focused.id
+
+log === S37 take back: the tile is writable again and holds first responder
+terminal takeover
+until terminal.phase attached 8000
+until responder terminal
+expect responder.focused yes
+
+log === S38 a config error banner doesn't take first responder
+remember responder.tile
+sh printf 'this line = = is broken\n' >> '{config}'
+until banner.shown yes 5000
+expect responder terminal
+unchanged responder.tile
+type echo azjbanner
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} azjbanner
+sh sed -i '' '$d' '{config}'
+until banner.shown no 5000
+expect responder terminal
+quit

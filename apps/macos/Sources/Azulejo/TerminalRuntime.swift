@@ -13,6 +13,12 @@ import GhosttyKit
 final class TerminalRuntime {
     static var shared: TerminalRuntime?
 
+    /// Where terminal copy and paste go: the system clipboard, or a private
+    /// pasteboard in automation runs, so tests never touch the user's.
+    nonisolated(unsafe) static let pasteboard: NSPasteboard =
+        ProcessInfo.processInfo.environment["AZULEJO_AUTOMATION"].map { $0.isEmpty } == false
+            ? NSPasteboard(name: NSPasteboard.Name("dev.azulejo.automation")) : .general
+
     private(set) var app: ghostty_app_t?
     private(set) var config: ghostty_config_t?
     private var surfaces: [UInt: WeakSurface] = [:]
@@ -170,7 +176,7 @@ private func ghosttyReadClipboard(
     let token = UInt(bitPattern: userdata)
     let address = UInt(bitPattern: state)
     onMain(token) { view in
-        view.completeClipboardRead(text: NSPasteboard.general.string(forType: .string) ?? "",
+        view.completeClipboardRead(text: TerminalRuntime.pasteboard.string(forType: .string) ?? "",
                                    state: UnsafeMutableRawPointer(bitPattern: address))
     }
     return GHOSTTY_CLIPBOARD_READ_STARTED
@@ -191,8 +197,8 @@ private func ghosttyWriteClipboard(
               let data = content[i].data else { continue }
         let text = String(decoding: Data(bytes: data, count: content[i].len), as: UTF8.self)
         DispatchQueue.main.async {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            TerminalRuntime.pasteboard.clearContents()
+            TerminalRuntime.pasteboard.setString(text, forType: .string)
         }
         return
     }
