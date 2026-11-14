@@ -49,7 +49,10 @@ pub unsafe extern "C" fn azj_core_set_event_callback(
     core.context = context;
 }
 
-/// Sends a JSON command. Returns 0 on success, -1 on a bad handle or invalid JSON.
+/// Sends a JSON command; its events arrive through the callback. Returns 0 on
+/// success, -1 on a bad handle or a command that doesn't parse, and -2 when the
+/// core refuses the command (nothing changes and no events fire). Replies don't
+/// cross the C ABI yet (PLAN step 1.6).
 ///
 /// # Safety
 /// `core` must come from `azj_core_new`; `command_json` must be a valid C string.
@@ -64,10 +67,13 @@ pub unsafe extern "C" fn azj_core_send(core: *mut AzjCore, command_json: *const 
     let Ok(text) = (unsafe { CStr::from_ptr(command_json) }).to_str() else {
         return -1;
     };
-    let Ok(command) = serde_json::from_str::<Command>(text) else {
+    let Ok(command) = Command::from_json(text) else {
         return -1;
     };
-    for event in core.engine.handle(command) {
+    let Ok(outcome) = core.engine.execute(command) else {
+        return -2;
+    };
+    for event in outcome.events {
         if let (Some(callback), Ok(json)) = (core.callback, serde_json::to_string(&event)) {
             let json = CString::new(json).expect("JSON never contains NUL");
             callback(core.context, json.as_ptr());
@@ -100,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn ping_round_trips_through_the_c_abi() {
+    fn commands_and_events_cross_the_c_abi() {
         unsafe {
             let core = azj_core_new();
             azj_core_set_event_callback(core, record, std::ptr::null_mut());
@@ -109,6 +115,18 @@ mod tests {
                 0
             );
             assert_eq!(azj_core_send(core, c"not json".as_ptr()), -1);
+            assert_eq!(
+                azj_core_send(core, c"{\"method\":\"tile.explode\"}".as_ptr()),
+                -1
+            );
+            // A lone tile has no neighbour to the left: refused.
+            assert_eq!(
+                azj_core_send(
+                    core,
+                    c"{\"method\":\"layout.focus\",\"params\":{\"direction\":\"left\"}}".as_ptr()
+                ),
+                -2
+            );
             assert_eq!(
                 azj_core_send(
                     core,
@@ -119,13 +137,19 @@ mod tests {
             azj_core_free(core);
         }
         let received = RECEIVED.lock().unwrap();
-        assert_eq!(
-            received[0],
-            r#"{"event":"core.pong","data":{"api_version":1}}"#
-        );
-        assert_eq!(
-            received[1],
-            r#"{"event":"layout.changed","data":{"tree":{"type":"split","axis":"horizontal","ratio":0.5,"a":{"type":"leaf","id":"t1"},"b":{"type":"leaf","id":"t2"}},"focused":"t2"}}"#
-        );
+        let events: Vec<serde_json::Value> = received
+            .iter()
+            .map(|json| serde_json::from_str(json).unwrap())
+            .collect();
+        // Ping and the refused commands emit nothing; the split emits three events.
+        let names: Vec<&str> = events
+            .iter()
+            .map(|e| e["event"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["tile.created", "layout.changed", "focus.changed"]);
+        let tree = &events[1]["data"]["tree"];
+        assert_eq!(tree["type"], "split");
+        assert_eq!(tree["axis"], "horizontal");
+        assert_eq!(tree["b"]["id"], events[1]["data"]["focused"]);
     }
 }
