@@ -13,6 +13,7 @@ Three findings from the spikes:
 ## Decision
 
 - When Azulejo starts a herdr server (or a named session), it spawns it with a clean environment: a login-shell environment for the user, minus `HERDR_*`, `CLAUDE_*` and anything from the app's own process that panes shouldn't see.
+- Terminal variables: only `TERM` and `COLORTERM` pass through to a herdr server we start. `TERMINFO` and `TERMINFO_DIRS` never do: they point at the launching terminal's database (bundling the Ghostty resources showed kitty's `TERMINFO` in every pane of a dev session). The attach client drops both too, and gets `TERMINFO` set to the bundle's own `Contents/Resources/terminfo` when the app ships one (`xterm-ghostty`). Amended Nov 3, 2026; enforced in `core/crates/herdr/src/env.rs` and `core/crates/ffi/src/terminal.rs`, with tests.
 - Every herdr call from the core pins the socket path explicitly and never relies on an inherited `HERDR_SOCKET_PATH`.
 - Shells set the PTY size from the tile's frame before spawning the attach process.
 - Shells never write EOF to the attach PTY. Detach means closing the PTY master or killing the attach process.
