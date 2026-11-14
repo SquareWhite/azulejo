@@ -13,11 +13,14 @@ pub enum Event {
     WindowCreated { window: WindowId },
     #[serde(rename = "window.closed")]
     WindowClosed { window: WindowId },
+    /// Frame or sidebar changed.
     #[serde(rename = "window.updated")]
     WindowUpdated {
         window: WindowId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frame: Option<Frame>,
+        #[serde(default)]
+        sidebar_hidden: bool,
     },
 
     #[serde(rename = "workspace.created")]
@@ -84,6 +87,15 @@ pub enum Event {
     /// every change on disk. Not saved; `preview.get` returns the latest.
     #[serde(rename = "preview.updated")]
     PreviewUpdated(PreviewContent),
+
+    /// The core's link to herdr came up or dropped. After `connected: true`,
+    /// shells reattach terminal tiles that gave up waiting. Not saved.
+    #[serde(rename = "herdr.status")]
+    HerdrStatus {
+        connected: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
 }
 
 /// What a preview tile shows.

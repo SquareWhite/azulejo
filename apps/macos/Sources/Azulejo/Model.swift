@@ -24,10 +24,12 @@ struct WindowModel: Decodable, Equatable {
     var workspaces: [WorkspaceModel]
     var activeWorkspace: String
     var frame: FrameModel?
+    var sidebarHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, workspaces, frame
         case activeWorkspace = "active_workspace"
+        case sidebarHidden = "sidebar_hidden"
     }
 
     var workspace: WorkspaceModel? { workspaces.first { $0.id == activeWorkspace } }

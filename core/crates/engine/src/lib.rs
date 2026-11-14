@@ -146,6 +146,10 @@ impl Engine {
                 s.set_window_frame(p.window, p.frame)?;
                 Reply::Ok
             }
+            Command::WindowSetSidebar(p) => {
+                s.set_window_sidebar(p.window, p.visible)?;
+                Reply::Ok
+            }
             Command::WindowList => Reply::Windows {
                 windows: s
                     .windows
@@ -409,6 +413,25 @@ impl Engine {
                         *ended = false;
                     }
                     other => return Err(wrong_kind(p.tile, other, "terminal")),
+                }
+                Reply::Ok
+            }
+            // Unbinds the ended pane; `Core` then creates a fresh one for the
+            // same tile (link::create_effect).
+            Command::TerminalRespawn(p) => {
+                let id = s.target(p.tile)?;
+                match &mut s.tile_mut(id)?.content {
+                    TileContent::Terminal { herdr, ended, .. } => {
+                        if !*ended {
+                            return Err(Error::new(
+                                ErrorCode::InvalidState,
+                                format!("{id}'s herdr pane is still running"),
+                            ));
+                        }
+                        *herdr = None;
+                        *ended = false;
+                    }
+                    other => return Err(wrong_kind(id, other, "terminal")),
                 }
                 Reply::Ok
             }

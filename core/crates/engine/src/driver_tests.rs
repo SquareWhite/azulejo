@@ -902,3 +902,112 @@ fn new_herdr_tabs_are_adopted_and_detached_ones_stay_out() {
     assert_eq!(adopted(&core.session().unwrap()), 6);
     assert_eq!(fake.mutations(), Vec::<&str>::new());
 }
+
+#[test]
+fn respawn_gives_an_ended_tile_a_fresh_pane_in_place() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let second = split(&core);
+    let session = wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
+    let tree_before = session
+        .tab(session.focus().tab.unwrap())
+        .unwrap()
+        .root
+        .clone();
+    let old = terminals(&session)[1].1.clone().unwrap();
+
+    // A running tile can't be respawned.
+    let err = reply(
+        &core,
+        Command::TerminalRespawn(azulejo_protocol::TileTarget { tile: Some(second) }),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, azulejo_protocol::ErrorCode::InvalidState);
+
+    // Its pane ends outside Azulejo.
+    fake.state().panes.retain(|p| p.pane_id.0 != old.pane_id);
+    fake.send(herdr::StreamItem::Event(herdr::HerdrEvent::PaneClosed {
+        pane_id: herdr::PaneId(old.pane_id.clone()),
+        workspace_id: herdr::WorkspaceId("w1".into()),
+    }));
+    wait_until(&core, |s| terminals(s)[1].2);
+    let created_before = fake.state().created_terminals.len();
+
+    reply(
+        &core,
+        Command::TerminalRespawn(azulejo_protocol::TileTarget { tile: Some(second) }),
+    )
+    .unwrap();
+    let after = wait_until(&core, |s| {
+        let t = terminals(s);
+        t[1].0 == second && t[1].1.as_ref().is_some_and(|h| *h != old) && !t[1].2
+    });
+    // Same tile, same place; one new pane in its own tab, with the tile's env.
+    assert_eq!(
+        after.tab(after.focus().tab.unwrap()).unwrap().root,
+        tree_before
+    );
+    let s = fake.state();
+    assert_eq!(s.created_terminals.len(), created_before + 1);
+    let spec = s.created_terminals.last().unwrap();
+    assert!(
+        spec.env
+            .iter()
+            .any(|(k, v)| k == "AZULEJO_TILE_ID" && *v == second.to_string())
+    );
+    assert!(s.killed.is_empty());
+}
+
+#[test]
+fn respawn_needs_herdr_and_a_terminal() {
+    let core = Core::start(opts(None));
+    let err = reply(
+        &core,
+        Command::TerminalRespawn(azulejo_protocol::TileTarget { tile: None }),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, azulejo_protocol::ErrorCode::Unavailable);
+
+    let mut engine = Engine::new();
+    let browser = engine
+        .execute(Command::LayoutSplit(LayoutSplit {
+            tile: None,
+            direction: Direction::Right,
+            content: Some(TileContent::Browser {
+                url: None,
+                page_title: None,
+            }),
+        }))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(c) = browser.reply else {
+        panic!()
+    };
+    let err = engine
+        .execute(Command::TerminalRespawn(azulejo_protocol::TileTarget {
+            tile: c.tile,
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, azulejo_protocol::ErrorCode::InvalidState);
+}
+
+#[test]
+fn herdr_link_changes_reach_listeners() {
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    wait_until(&core, all_bound);
+    let events = core.subscribe();
+    // Make sure the subscription is registered before herdr talks.
+    core.session().unwrap();
+    fake.send(herdr::StreamItem::Disconnected("connection refused".into()));
+    fake.send(herdr::StreamItem::Resync);
+    let mut seen = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while seen.len() < 2 && Instant::now() < deadline {
+        if let Ok(Event::HerdrStatus { connected, .. }) =
+            events.recv_timeout(Duration::from_millis(50))
+        {
+            seen.push(connected);
+        }
+    }
+    assert_eq!(seen, vec![false, true]);
+}
