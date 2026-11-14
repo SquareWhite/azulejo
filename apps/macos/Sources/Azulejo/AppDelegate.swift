@@ -49,6 +49,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             self?.routeConfigReload(json)
             self?.scheduleRefresh()
         }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.scheduleRefresh() } }
         installWakeObservers()
         refresh()
         if session?.windows.isEmpty ?? true {
@@ -128,7 +131,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         return result
     }
 
-    private func scheduleRefresh() {
+    func scheduleRefresh() {
         guard !refreshScheduled else { return }
         refreshScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -163,6 +166,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        AttentionTracker.updateDock(new)
+        AttentionTracker.markSeen(new, controllers: Array(controllers.values)) { send($0) }
     }
 
     /// `config.reloaded` (F25b): problems go in every window's banner; a clean
@@ -231,6 +236,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if session?.focusedWindow != controller.windowID {
             send(["method": "window.focus", "params": ["window": controller.windowID]])
         }
+        scheduleRefresh()
     }
 
     func windowResignedKey(_ controller: WindowController) {

@@ -11,6 +11,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     private let tabBar = TabBarView()
     private let hud = HUDView()
     let banner = BannerView()
+    let attention = AttentionOverlayView()
     private let content = ChromeLayoutView()
     private weak var app: AppController?
     private(set) var model: WindowModel?
@@ -42,8 +43,9 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.tabBar = tabBar
         content.tiles = tiles
         content.hud = hud
+        content.attention = attention
         content.banner = banner
-        [sidebar, tabBar, tiles, banner, hud].forEach(content.addSubview)
+        [sidebar, tabBar, tiles, attention, banner, hud].forEach(content.addSubview)
         window.contentView = content
         window.delegate = self
 
@@ -64,6 +66,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         sidebar.apply(model)
         tabBar.apply(model.workspace)
         tiles.apply(model)
+        attention.apply(model.workspace?.tab, frames: tiles.tileFrames())
         let ws = model.workspace
         window.title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
     }
@@ -91,6 +94,10 @@ final class WindowController: NSObject, NSWindowDelegate {
             window.orderBack(nil)
         }
     }
+
+    /// Automation: the sidebar's and tab bar's attention markers.
+    var sidebarMarkers: [String] { sidebar.markers }
+    var tabMarkers: [String] { tabBar.markers }
 
     /// Re-lays out the chrome (the banner changed size).
     func layoutChrome() {
@@ -146,6 +153,7 @@ final class ChromeLayoutView: NSView {
     weak var tabBar: NSView?
     weak var tiles: NSView?
     weak var hud: NSView?
+    weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
 
     override func layout() {
@@ -160,6 +168,10 @@ final class ChromeLayoutView: NSView {
             x: rest.minX, y: rest.maxY - TabBarView.height, width: rest.width, height: TabBarView.height)
         rest.size.height -= TabBarView.height
         tiles?.frame = rest
+        if let attention, let container = tiles as? TileContainerView {
+            attention.frame = rest
+            attention.relayout(frames: container.tileFrames())
+        }
         if let banner, !banner.isHidden {
             let width = min(rest.width - 24, 760)
             let height = banner.preferredHeight(width: width)
