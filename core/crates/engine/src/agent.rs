@@ -74,11 +74,16 @@ pub fn update(tile: &mut Tile, name: Option<String>, status: AgentStatus, at_ms:
 
 /// Brings every bound tile's agent in line with a survey: on connect, after a
 /// resync, and when panes appear. Returns whether anything changed.
+///
+/// `fresher(pane)`: herdr's stream reported that pane's status after the
+/// survey was requested, so the survey's snapshot may predate it; such panes
+/// keep what the stream said.
 pub fn refresh(
     session: &mut Session,
     machine: &crate::link::Machine,
     survey: &herdr::Survey,
     at_ms: u64,
+    fresher: impl Fn(&str) -> bool,
 ) -> bool {
     let updates: Vec<(TileId, Option<String>, AgentStatus)> = session
         .tiles()
@@ -87,7 +92,7 @@ pub fn refresh(
                 herdr: Some(h),
                 ended: false,
                 ..
-            } if h.machine == *machine => survey
+            } if h.machine == *machine && !fresher(&h.pane_id) => survey
                 .panes
                 .iter()
                 .find(|p| same_pane(p, h))

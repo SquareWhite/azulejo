@@ -124,13 +124,18 @@ pub(crate) fn apply_process(
 }
 
 /// Title and cwd of every bound pane in a survey.
+///
+/// `fresher(pane)`: that pane's title or cwd came in (herdr's stream, the
+/// process poller) after the survey was requested, so the survey's snapshot
+/// may predate it; such panes keep what they have.
 pub(crate) fn refresh_from_survey(
     session: &mut Session,
     machine: &Machine,
     survey: &herdr::Survey,
+    fresher: impl Fn(&str) -> bool,
 ) -> bool {
     let mut changed = false;
-    for pane in &survey.panes {
+    for pane in survey.panes.iter().filter(|p| !fresher(p.pane_id.as_str())) {
         changed |= apply_info(
             session,
             machine,

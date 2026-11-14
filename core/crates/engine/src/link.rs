@@ -28,6 +28,9 @@ use tokio::sync::mpsc;
 
 use crate::{Engine, adopt, agent, diff};
 
+/// How many closed-in-herdr panes the stale-survey check remembers.
+const MAX_CLOSED_REPORTED: usize = 1024;
+
 /// What the engine needs from herdr. [`herdr::Client`] implements it; tests
 /// use a fake.
 pub trait HerdrPort: Send + Sync + 'static {
@@ -248,6 +251,10 @@ pub enum Effect {
     },
     /// Read what herdr runs, to adopt tabs nobody here knows (ADR 0008).
     Survey,
+    /// Read every pane's agent status, and nothing else: herdr's agent
+    /// subscription just went live, and statuses that changed before herdr
+    /// accepted it never streamed.
+    AgentStatuses,
 }
 
 /// Results fed back to the engine. Not part of the public API.
@@ -284,8 +291,13 @@ pub enum Internal {
         status: AgentStatus,
         at_ms: u64,
     },
-    /// What a machine's herdr runs; adopt what's new.
-    Surveyed(Machine, Box<herdr::Survey>),
+    /// What a machine's herdr runs; adopt what's new. The `u64` is when the
+    /// survey was requested (ms since the epoch): streamed agent statuses
+    /// that arrived after that are newer than whatever the survey says.
+    Surveyed(Machine, Box<herdr::Survey>, u64),
+    /// A survey read only for its agent statuses ([`Effect::AgentStatuses`]):
+    /// adopts nothing, closes nothing. The `u64` is as for `Surveyed`.
+    AgentStatuses(Machine, Box<herdr::Survey>, u64),
     /// herdr's title and working directory for a pane (F28).
     PaneInfo {
         machine: Machine,
@@ -349,13 +361,17 @@ impl Engine {
                 if self.session.close_tile(tile).is_err() {
                     return Vec::new();
                 }
-                self.changes_since(&before)
+                let events = self.changes_since(&before);
+                self.remember_closed_in_herdr(&events);
+                events
             }
             Internal::HerdrWorkspaceClosed { machine, herdr } => {
                 let before = self.session.clone();
                 close_herdr_workspace(&mut self.session, &machine, &herdr);
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
-                self.changes_since(&before)
+                let events = self.changes_since(&before);
+                self.remember_closed_in_herdr(&events);
+                events
             }
             Internal::AgentStatus {
                 machine,
@@ -369,6 +385,8 @@ impl Engine {
                     .filter(|(_, _, h)| h.pane_id == pane_id)
                     .map(|(_, id, _)| id)
                     .collect();
+                self.agent_reported
+                    .insert((machine.clone(), pane_id.clone()), at_ms);
                 let mut changed = false;
                 for id in tiles {
                     if let Ok(tile) = self.session.tile_mut(id) {
@@ -380,7 +398,7 @@ impl Engine {
                 }
                 self.changes_since(&before)
             }
-            Internal::Surveyed(machine, survey) => {
+            Internal::Surveyed(machine, survey, requested) => {
                 let before = self.session.clone();
                 // Only Local's survey may drop the first-launch placeholder
                 // (ADR 0008).
@@ -389,13 +407,45 @@ impl Engine {
                 } else {
                     None
                 };
-                let mut changed = adopt::adopt(&mut self.session, &machine, &survey, placeholder);
-                changed |= agent::refresh(&mut self.session, &machine, &survey, agent::now_ms());
-                changed |= crate::meta::refresh_from_survey(&mut self.session, &machine, &survey);
+                // A survey requested after a close reflects it; one requested
+                // before still lists the pane and mustn't bring it back.
+                self.closed_reported
+                    .retain(|(r, at)| r.machine != machine || *at >= requested);
+                let closed: Vec<HerdrRef> = self
+                    .closed_reported
+                    .iter()
+                    .filter(|(r, _)| r.machine == machine)
+                    .map(|(r, _)| r.clone())
+                    .collect();
+                let mut changed =
+                    adopt::adopt(&mut self.session, &machine, &survey, placeholder, &closed);
+                changed |= self.refresh_agents(&machine, &survey, requested);
+                // Likewise for titles and working directories.
+                let info = &mut self.info_reported;
+                info.retain(|(m, pane), _| {
+                    *m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
+                });
+                let fresher_info = |pane: &str| {
+                    info.get(&(machine.clone(), pane.to_string()))
+                        .is_some_and(|&at| at >= requested)
+                };
+                changed |= crate::meta::refresh_from_survey(
+                    &mut self.session,
+                    &machine,
+                    &survey,
+                    fresher_info,
+                );
                 if !changed {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                self.changes_since(&before)
+            }
+            Internal::AgentStatuses(machine, survey, requested) => {
+                let before = self.session.clone();
+                if !self.refresh_agents(&machine, &survey, requested) {
+                    return Vec::new();
+                }
                 self.changes_since(&before)
             }
             Internal::SurveyFailed(machine) => {
@@ -410,6 +460,8 @@ impl Engine {
                 title,
                 cwd,
             } => {
+                self.info_reported
+                    .insert((machine.clone(), pane_id.clone()), agent::now_ms());
                 let before = self.session.clone();
                 if !crate::meta::apply_info(&mut self.session, &machine, &pane_id, title, cwd) {
                     return Vec::new();
@@ -423,6 +475,12 @@ impl Engine {
                 command,
                 cwd,
             } => {
+                // The survey only touches title and cwd; a polled cwd is
+                // newer than a survey requested before it.
+                if cwd.is_some() {
+                    self.info_reported
+                        .insert((machine.clone(), pane_id.clone()), agent::now_ms());
+                }
                 let before = self.session.clone();
                 if !crate::meta::apply_process(
                     &mut self.session,
@@ -454,6 +512,24 @@ impl Engine {
 
     /// Events for what changed since `before`, with headers brought up to
     /// date first (F28).
+    /// Notes the herdr panes of tiles that closed because herdr closed them,
+    /// for [`Internal::Surveyed`]'s stale-survey check.
+    fn remember_closed_in_herdr(&mut self, events: &[Event]) {
+        let now = agent::now_ms();
+        for event in events {
+            if let Event::TileClosed { tile, .. } = event
+                && let TileContent::Terminal { herdr: Some(h), .. } = &tile.content
+            {
+                self.closed_reported.retain(|(r, _)| r != h);
+                self.closed_reported.push((h.clone(), now));
+            }
+        }
+        let len = self.closed_reported.len();
+        if len > MAX_CLOSED_REPORTED {
+            self.closed_reported.drain(..len - MAX_CLOSED_REPORTED);
+        }
+    }
+
     pub(crate) fn changes_since(&mut self, before: &Session) -> Vec<Event> {
         crate::meta::refresh_headers(&mut self.session);
         diff(before, &self.session, false)
@@ -780,6 +856,29 @@ fn to_ref(machine: &Machine, t: &herdr::TerminalRef) -> HerdrRef {
     }
 }
 
+impl Engine {
+    /// Brings bound tiles' agent statuses in line with a survey requested at
+    /// `requested` (ms since the epoch). A status streamed in after that is
+    /// newer than the survey's, so those panes keep it.
+    fn refresh_agents(
+        &mut self,
+        machine: &Machine,
+        survey: &herdr::Survey,
+        requested: u64,
+    ) -> bool {
+        let reported = &mut self.agent_reported;
+        reported.retain(|(m, pane), _| {
+            m != machine || survey.panes.iter().any(|p| p.pane_id.as_str() == pane)
+        });
+        let fresher = |pane: &str| {
+            reported
+                .get(&(machine.clone(), pane.to_string()))
+                .is_some_and(|&at| at >= requested)
+        };
+        agent::refresh(&mut self.session, machine, survey, agent::now_ms(), fresher)
+    }
+}
+
 /// Runs effects one at a time, so a terminal never races its workspace's
 /// creation. `out` delivers results to the engine's thread; `log` reports
 /// herdr failures.
@@ -909,13 +1008,31 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     Err(e) => log(format!("herdr: checking tile {tile}: {e}")),
                 }
             }
-            Effect::Survey => match port.survey().await {
-                Ok(survey) => out(Internal::Surveyed(machine.clone(), Box::new(survey))),
-                Err(e) => {
-                    log(format!("herdr: reading its workspaces: {e}"));
-                    out(Internal::SurveyFailed(machine.clone()));
+            Effect::Survey => {
+                let requested = agent::now_ms();
+                match port.survey().await {
+                    Ok(survey) => out(Internal::Surveyed(
+                        machine.clone(),
+                        Box::new(survey),
+                        requested,
+                    )),
+                    Err(e) => {
+                        log(format!("herdr: reading its workspaces: {e}"));
+                        out(Internal::SurveyFailed(machine.clone()));
+                    }
                 }
-            },
+            }
+            Effect::AgentStatuses => {
+                let requested = agent::now_ms();
+                match port.survey().await {
+                    Ok(survey) => out(Internal::AgentStatuses(
+                        machine.clone(),
+                        Box::new(survey),
+                        requested,
+                    )),
+                    Err(e) => log(format!("herdr: reading agent statuses: {e}")),
+                }
+            }
         }
     }
 }

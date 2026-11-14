@@ -27,12 +27,15 @@ use crate::link::Machine;
 /// Mirrors herdr tabs nobody here knows about into `session`. `placeholder` is
 /// the empty workspace a fresh session starts with: it's dropped when adoption
 /// brought in anything, so a first launch shows the user's herdr workspaces
-/// instead of an extra empty one. Returns whether anything changed.
+/// instead of an extra empty one. `closed` are panes herdr reported closed
+/// after this survey was requested: the survey still lists them, so they
+/// count as known and aren't adopted again. Returns whether anything changed.
 pub fn adopt(
     session: &mut Session,
     machine: &Machine,
     survey: &herdr::Survey,
     placeholder: Option<WorkspaceId>,
+    closed: &[HerdrRef],
 ) -> bool {
     let detached_before = session.detached_herdr.len();
     session
@@ -47,6 +50,7 @@ pub fn adopt(
             _ => None,
         })
         .chain(session.detached_herdr.iter().cloned())
+        .chain(closed.iter().cloned())
         .filter(|r| r.machine == *machine)
         .collect();
     let is_known = |p: &herdr::PaneInfo| known.iter().any(|r| same_pane(p, r));

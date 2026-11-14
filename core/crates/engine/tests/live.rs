@@ -191,6 +191,34 @@ fn wait_for_event(events: &Receiver<Event>, want: impl Fn(&Event) -> bool) -> Ev
     }
 }
 
+/// Waits until a terminal tile's shell has drawn something (its prompt), so
+/// text typed next reaches a shell that's reading. Under load a user's shell
+/// config can take seconds to start.
+fn wait_for_prompt(core: &Core, tile: TileId) {
+    use azulejo_protocol::{ReadSource, Reply, TerminalRead};
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let text = match core.execute(Command::TerminalRead(TerminalRead {
+            tile: Some(tile),
+            source: ReadSource::Visible,
+            lines: None,
+        })) {
+            Ok(o) => match o.reply {
+                Reply::Text { text, .. } => text,
+                other => panic!("{other:?}"),
+            },
+            Err(_) => String::new(),
+        };
+        if !text.trim().is_empty() {
+            // Let the prompt finish drawing (and retitling).
+            std::thread::sleep(Duration::from_millis(300));
+            return;
+        }
+        assert!(Instant::now() < deadline, "no prompt in {tile}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
 fn terminals_get_panes_survive_restart_and_follow_herdr() {
@@ -671,7 +699,7 @@ fn agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second() {
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
 fn a_shell_that_exits_closes_its_tile_and_leaves_nothing_in_herdr() {
-    use azulejo_protocol::{ReadSource, Reply, TerminalRead, TerminalSendKeys};
+    use azulejo_protocol::TerminalSendKeys;
     let h = TempHerdr::start();
     let dir = tempfile::tempdir().unwrap();
     let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
@@ -688,28 +716,7 @@ fn a_shell_that_exits_closes_its_tile_and_leaves_nothing_in_herdr() {
     });
     let tiles = bound_terminals(&session);
     // Wait for a shell to draw its prompt, so ctrl+d reaches a reading shell.
-    let ready = |tile: TileId| {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let text = match core.execute(Command::TerminalRead(TerminalRead {
-                tile: Some(tile),
-                source: ReadSource::Visible,
-                lines: None,
-            })) {
-                Ok(o) => match o.reply {
-                    Reply::Text { text, .. } => text,
-                    other => panic!("{other:?}"),
-                },
-                Err(_) => String::new(),
-            };
-            if !text.trim().is_empty() {
-                std::thread::sleep(Duration::from_millis(300));
-                return;
-            }
-            assert!(Instant::now() < deadline, "no prompt in {tile}");
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    };
+    let ready = |tile: TileId| wait_for_prompt(&core, tile);
     let ctrl_d = |tile: TileId| {
         core.execute(Command::TerminalSendKeys(TerminalSendKeys {
             tile: Some(tile),
@@ -980,6 +987,9 @@ fn terminal_headers_follow_titles_and_running_commands() {
     let core = Core::start_with_herdr(opts(&dir.path().join("state.json")), h.client.clone());
     let session = wait_until(&core, Duration::from_secs(10), all_bound);
     let tile = session.focused_tile().unwrap();
+    // Type only once the shell reads: under load a shell config can still be
+    // starting, and the command (and its title) would run late.
+    wait_for_prompt(&core, tile);
     let events = core.subscribe();
     let send = |text: &str| {
         core.execute(Command::TerminalSendText(TerminalSendText {
@@ -990,10 +1000,10 @@ fn terminal_headers_follow_titles_and_running_commands() {
     };
 
     // An OSC 2 title from the shell reaches the tile (herdr's pane_updated).
-    // Hold it for a moment: shells like fish retitle at the next prompt, and
+    // Hold it while we wait: shells like fish retitle at the next prompt, and
     // herdr may report only the latest title.
     send(&format!(
-        "cd {} && printf '\\033]2;azj-title-7\\007' && sleep 1.5\n",
+        "cd {} && printf '\\033]2;azj-title-7\\007' && sleep 4\n",
         work_path.display()
     ));
     let started = Instant::now();
@@ -1003,9 +1013,9 @@ fn terminal_headers_follow_titles_and_running_commands() {
     });
     eprintln!("OSC 2 title → tile.updated: {:?}", started.elapsed());
 
-    // At the prompt, the subtitle is where the shell is.
+    // At the prompt (after `sleep 4`), the subtitle is where the shell is.
     // The title is the shell's name once the poller has seen it.
-    let s = wait_until(&core, Duration::from_secs(5), |s| {
+    let s = wait_until(&core, Duration::from_secs(10), |s| {
         let (title, sub) = header_of(s, tile);
         title != "terminal"
             && sub.as_deref().is_some_and(|sub| {

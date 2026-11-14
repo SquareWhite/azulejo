@@ -39,6 +39,11 @@ struct FakeState {
     /// latest subscription's sender.
     agent_subs: Vec<Vec<String>>,
     agent_tx: Option<tmpsc::Sender<herdr::StreamItem>>,
+    /// Agent subscriptions stay unconfirmed until the test sends
+    /// `Connected` on `agent_tx`, as when herdr is slow to accept them.
+    agent_unconfirmed: bool,
+    /// Agent statuses herdr holds (and surveys report), by pane ID.
+    agent_statuses: HashMap<String, herdr::AgentStatus>,
     /// What runs in each pane, by pane ID. `None`: process info isn't
     /// supported (the poller stops).
     processes: Option<HashMap<String, herdr::ProcessInfo>>,
@@ -228,6 +233,12 @@ impl HerdrPort for Fake {
         survey
             .tabs
             .retain(|tab| survey.panes.iter().any(|p| p.tab_id == tab.tab_id));
+        for p in &mut survey.panes {
+            if let Some(status) = s.agent_statuses.get(p.pane_id.as_str()) {
+                p.agent = Some("claude".into());
+                p.agent_status = *status;
+            }
+        }
         Ok(survey)
     }
 
@@ -239,8 +250,10 @@ impl HerdrPort for Fake {
 
     fn agent_events(&self, panes: Vec<String>) -> tmpsc::Receiver<herdr::StreamItem> {
         let (tx, rx) = tmpsc::channel(16);
-        tx.try_send(herdr::StreamItem::Connected).unwrap();
         let mut s = self.state();
+        if !s.agent_unconfirmed {
+            tx.try_send(herdr::StreamItem::Connected).unwrap();
+        }
         s.agent_subs.push(panes);
         s.agent_tx = Some(tx);
         rx
@@ -1711,4 +1724,38 @@ fn a_port_without_process_info_stops_polling() {
     let session = wait_until(&core, all_bound);
     let tile = terminals(&session)[0].0;
     assert_eq!(header(&session, tile).0, "terminal");
+}
+
+/// herdr streams agent statuses only once it accepts the subscription: a
+/// status that changed before then (here: blocked, never streamed) still
+/// reaches the tile when the subscription goes live, without adopting or
+/// changing anything in herdr.
+#[test]
+fn a_status_from_before_the_agent_subscription_went_live_still_arrives() {
+    use azulejo_model::AgentStatus;
+    let fake = Fake::default();
+    fake.state().agent_unconfirmed = true;
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let s = wait_until(&core, all_bound);
+    let tile = s.focused_tile().unwrap();
+    let pane = terminals(&s)[0].1.clone().unwrap().pane_id;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while fake.state().agent_subs.last() != Some(&vec![pane.clone()]) {
+        assert!(Instant::now() < deadline, "{:?}", fake.state().agent_subs);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let before = fake.mutations();
+    // The agent blocks while herdr is still accepting the subscription.
+    fake.state()
+        .agent_statuses
+        .insert(pane.clone(), herdr::AgentStatus::Blocked);
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(agent_of(&core.session().unwrap(), tile).is_none());
+    // herdr accepts it.
+    let tx = fake.state().agent_tx.clone().unwrap();
+    tx.blocking_send(herdr::StreamItem::Connected).unwrap();
+    let s = wait_until(&core, |s| agent_of(s, tile).is_some_and(|a| a.attention));
+    assert_eq!(agent_of(&s, tile).unwrap().status, AgentStatus::Blocked);
+    assert_eq!(fake.mutations(), before, "reading statuses changes nothing");
+    assert_eq!(terminals(&s).len(), 1, "and adopts nothing");
 }

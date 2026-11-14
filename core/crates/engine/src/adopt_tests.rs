@@ -74,7 +74,7 @@ pub(crate) fn fixture() -> herdr::Survey {
 }
 
 fn survey(engine: &mut Engine, s: &herdr::Survey) -> Vec<Event> {
-    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone())))
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 0))
 }
 
 fn pane_of(session: &Session, tile: azulejo_model::TileId) -> String {
@@ -359,4 +359,165 @@ fn a_layout_that_disagrees_with_the_panes_falls_back() {
         shape(session, &session.windows[0].workspaces[0].tabs[0].root),
         "(w1:p1 | 0.50 w1:p2)"
     );
+}
+
+/// A survey requested before herdr streamed a pane's newer agent status
+/// can't put the older status back (or clear attention). A later survey can.
+#[test]
+fn a_survey_older_than_a_streamed_agent_status_keeps_the_streamed_one() {
+    use azulejo_model::AgentStatus;
+    let mut engine = Engine::new();
+    let mut s = fixture();
+    let set = |s: &mut herdr::Survey, status: herdr::AgentStatus| {
+        let p = s
+            .panes
+            .iter_mut()
+            .find(|p| p.pane_id.as_str() == "w1:p1")
+            .unwrap();
+        p.agent = Some("claude".into());
+        p.agent_status = status;
+    };
+    set(&mut s, herdr::AgentStatus::Working);
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_000));
+    let agent = |e: &Engine| {
+        e.session()
+            .tiles()
+            .find(|(_, t)| pane_of_tile(t) == Some("w1:p1"))
+            .and_then(|(_, t)| t.agent.clone())
+            .unwrap()
+    };
+    assert_eq!(agent(&engine).status, AgentStatus::Working);
+
+    // herdr streams "blocked" at 2,000 ms.
+    engine.apply_internal(Internal::AgentStatus {
+        machine: None,
+        pane_id: "w1:p1".into(),
+        agent: Some("claude".into()),
+        status: AgentStatus::Blocked,
+        at_ms: 2_000,
+    });
+    let a = agent(&engine);
+    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, true));
+
+    // A survey requested at 1,500 (its snapshot still says working) lands late.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_500));
+    let a = agent(&engine);
+    assert_eq!(
+        (a.status, a.attention),
+        (AgentStatus::Blocked, true),
+        "stale survey won"
+    );
+
+    // One requested after the stream's report is believed.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s), 2_500));
+    let a = agent(&engine);
+    assert_eq!((a.status, a.attention), (AgentStatus::Working, false));
+}
+
+fn pane_of_tile(t: &azulejo_model::Tile) -> Option<&str> {
+    match &t.content {
+        TileContent::Terminal { herdr: Some(h), .. } => Some(h.pane_id.as_str()),
+        _ => None,
+    }
+}
+
+/// A survey requested before herdr streamed a pane's new title and cwd can't
+/// put the older ones back in the header. A later survey can.
+#[test]
+fn a_survey_older_than_streamed_pane_info_keeps_the_streamed_info() {
+    let mut engine = Engine::new();
+    let mut s = fixture();
+    let set = |s: &mut herdr::Survey, title: &str, cwd: &str| {
+        let p = s
+            .panes
+            .iter_mut()
+            .find(|p| p.pane_id.as_str() == "w1:p1")
+            .unwrap();
+        p.terminal_title = Some(title.into());
+        p.foreground_cwd = Some(cwd.into());
+    };
+    set(&mut s, "old title", "/old");
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_000));
+    let meta = |e: &Engine| {
+        e.session()
+            .tiles()
+            .find(|(_, t)| pane_of_tile(t) == Some("w1:p1"))
+            .and_then(|(_, t)| t.pane.clone())
+            .unwrap()
+    };
+    assert_eq!(meta(&engine).title.as_deref(), Some("old title"));
+
+    // herdr streams the new title and cwd (stamped with the real clock, so
+    // after any survey requested at the fixed times below).
+    engine.apply_internal(Internal::PaneInfo {
+        machine: None,
+        pane_id: "w1:p1".into(),
+        title: Some("vim plan.md".into()),
+        cwd: Some("/new".into()),
+    });
+    assert_eq!(meta(&engine).title.as_deref(), Some("vim plan.md"));
+
+    // A survey requested earlier (its snapshot still has the old ones) lands late.
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s.clone()), 1_500));
+    let m = meta(&engine);
+    assert_eq!(
+        (m.title.as_deref(), m.cwd.as_deref()),
+        (Some("vim plan.md"), Some("/new")),
+        "stale survey won"
+    );
+
+    // One requested after the stream's report is believed.
+    let later = crate::agent::now_ms() + 60_000;
+    engine.apply_internal(Internal::Surveyed(None, Box::new(s), later));
+    let m = meta(&engine);
+    assert_eq!(
+        (m.title.as_deref(), m.cwd.as_deref()),
+        (Some("old title"), Some("/old"))
+    );
+}
+
+/// The tile showing a pane, if any.
+fn tile_of_pane(session: &Session, pane: &str) -> Option<azulejo_model::TileId> {
+    session
+        .tiles()
+        .find(|(_, t)| pane_of_tile(t) == Some(pane))
+        .map(|(_, t)| t.id)
+}
+
+/// A survey requested before herdr reported a pane, tab or workspace closed
+/// still lists it; applied late, it mustn't bring the tiles back. A survey
+/// requested after the close is believed.
+#[test]
+fn a_survey_older_than_a_close_in_herdr_doesnt_bring_the_pane_back() {
+    let mut engine = Engine::new();
+    survey(&mut engine, &fixture());
+    let stale = fixture();
+
+    // A one-pane tab (w1:t2) and a split-off pane (w1:p3 in w1:t1) close in
+    // herdr; so does workspace w2.
+    for pane in ["w1:p4", "w1:p3"] {
+        let tile = tile_of_pane(engine.session(), pane).unwrap();
+        engine.apply_internal(Internal::ClosedElsewhere { tile });
+        assert!(tile_of_pane(engine.session(), pane).is_none());
+    }
+    engine.apply_internal(Internal::HerdrWorkspaceClosed {
+        machine: None,
+        herdr: "w2".into(),
+    });
+    assert!(tile_of_pane(engine.session(), "w2:p1").is_none());
+
+    // The survey requested before those closes lands now.
+    let events = engine.apply_internal(Internal::Surveyed(None, Box::new(stale.clone()), 1_000));
+    for pane in ["w1:p4", "w1:p3", "w2:p1", "w2:p2"] {
+        assert!(
+            tile_of_pane(engine.session(), pane).is_none(),
+            "stale survey re-adopted {pane}: {events:?}"
+        );
+    }
+    assert_eq!(engine.session().check_invariants(), Ok(()));
+
+    // One requested after the closes, still listing w1:p4, is believed.
+    let later = crate::agent::now_ms() + 60_000;
+    engine.apply_internal(Internal::Surveyed(None, Box::new(stale), later));
+    assert!(tile_of_pane(engine.session(), "w1:p4").is_some());
 }
