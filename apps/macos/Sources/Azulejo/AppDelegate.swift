@@ -43,13 +43,23 @@ final class AppController: NSObject, NSApplicationDelegate {
         FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         Motion.load(core.animation())
+        Perf.installRunLoopObservers()
         core.onEvent = { [weak self] json in
+            Perf.noteEvent(json, moving: MotionStats.shared.moving)
+            let start = CACurrentMediaTime()
+            defer { Perf.record("event.route", start, CACurrentMediaTime()) }
             PreviewTileView.route(json)
             FilesTileView.route(json)
             TerminalTileView.route(json)
             if json.contains("\"config.reloaded\""), let core = self?.core { Motion.load(core.animation()) }
+            if json.contains("\"event\":\"machine") || json.contains("\"config.reloaded\"") {
+                self?.machinesStale = true
+            }
             self?.routeConfigReload(json)
-            self?.scheduleRefresh()
+            // Events trail the command that already refreshed the UI (a
+            // layout change arrives as `layout.changed` just after); while
+            // tiles move, they wait for the motion to end.
+            self?.scheduleRefresh(event: true)
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -142,7 +152,23 @@ final class AppController: NSObject, NSApplicationDelegate {
         send(["method": "tab.create", "params": ["workspace": workspace]])
     }
 
-    func scheduleRefresh() {
+    /// Brings the UI up to date on the next run-loop turn. `event`: the core
+    /// reported a change. Mid-motion, that waits until the motion ends: a
+    /// session fetch and apply on a frame the motion needs costs it a tick,
+    /// and the change that started the motion is already on screen. A command
+    /// from the user (`send`) always refreshes at once.
+    func scheduleRefresh(event: Bool = false) {
+        if event, MotionStats.shared.moving {
+            guard !refreshDeferred else { return }
+            refreshDeferred = true
+            let delay = max(0, MotionStats.shared.movingUntil - CACurrentMediaTime()) + 0.03
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                self.refreshDeferred = false
+                self.scheduleRefresh(event: true)
+            }
+            return
+        }
         guard !refreshScheduled else { return }
         refreshScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -151,10 +177,37 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The last `session.get` reply, so a refresh with nothing new skips the
+    /// decode and every window's apply.
+    private var sessionJSON: String?
+    private var refreshDeferred = false
+    /// `machines.list` changes only with `machine.*` events (and config reloads).
+    private var machinesStale = true
+
     /// Fetches the session and brings every window up to date.
     func refresh() {
-        guard let new = core.fetch("session.get", field: "session", as: SessionModel.self) else { return }
-        machines = core.fetch("machines.list", field: "machines", as: [MachineModel].self) ?? machines
+        let start = CACurrentMediaTime()
+        defer { Perf.record("refresh", start, CACurrentMediaTime()) }
+        Perf.noteRefresh(moving: MotionStats.shared.moving)
+        var machinesChanged = false
+        if machinesStale {
+            machinesStale = false
+            if let list = core.fetch("machines.list", field: "machines", as: [MachineModel].self), list != machines {
+                machines = list
+                machinesChanged = true
+            }
+        }
+        guard let fetched = core.fetchRaw(
+            "session.get", field: "session", as: SessionModel.self,
+            unlessEqualTo: machinesChanged ? nil : sessionJSON)
+        else { return }
+        guard let new = fetched.value else {
+            // Nothing new: windows stay as they are; only "seen" can change
+            // (the app came to the front).
+            if fetched.raw == sessionJSON, let session { markSeen(session) }
+            return
+        }
+        sessionJSON = fetched.raw
         recordHistory(old: session, new: new)
         session = new
         let ids = Set(new.windows.map(\.id))
@@ -178,8 +231,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        AttentionTracker.updateDock(new)
-        AttentionTracker.markSeen(new, controllers: Array(controllers.values)) { send($0) }
+        Perf.measure("refresh.attention") { AttentionTracker.updateDock(new) }
+        markSeen(new)
+    }
+
+    private func markSeen(_ session: SessionModel) {
+        AttentionTracker.markSeen(session, controllers: Array(controllers.values)) { send($0) }
     }
 
     /// `config.reloaded` (F25b): problems go in every window's banner; a clean

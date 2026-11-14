@@ -244,8 +244,17 @@ final class MotionStats {
     private(set) var actualResizes = 0
     private(set) var mismatches: [String] = []
     private var lastTick: CFTimeInterval?
+    /// When the last tick's callback ran (not its vsync timestamp): a missed
+    /// tick blames whatever the main thread did between two callbacks.
+    private var lastCallback: CFTimeInterval?
     private var currentKind = ""
     private(set) var droppedByKind: [String: Int] = [:]
+    /// Per dropped tick: what overlapped it (`Perf` spans), summed by name.
+    private(set) var dropCauses: [String: Double] = [:]
+    private(set) var drops: [[String: Any]] = []
+    /// Until when something is moving (any window), for `Perf`'s counts.
+    var movingUntil: CFTimeInterval = 0
+    var moving: Bool { CACurrentMediaTime() < movingUntil + 0.02 }
 
     func reset() {
         animations = [:]
@@ -256,7 +265,11 @@ final class MotionStats {
         actualResizes = 0
         mismatches = []
         lastTick = nil
+        lastCallback = nil
         droppedByKind = [:]
+        dropCauses = [:]
+        drops = []
+        Perf.reset()
     }
 
     func started(kind: String, setup: Double) {
@@ -267,18 +280,34 @@ final class MotionStats {
 
     func retargeted() { retargets += 1 }
 
-    /// A display-link tick during motion.
-    func tick(_ timestamp: CFTimeInterval) {
+    /// A display-link tick during motion; `now` is when its callback ran.
+    func tick(_ timestamp: CFTimeInterval, now: CFTimeInterval) {
         if let last = lastTick {
             let ms = (timestamp - last) * 1000
             intervals.append(ms)
-            if ms > 1500 / Double(Motion.refreshRate) { droppedByKind[currentKind, default: 0] += 1 }
+            if ms > 1500 / Double(Motion.refreshRate) {
+                droppedByKind[currentKind, default: 0] += 1
+                blame(interval: ms, from: lastCallback ?? last, to: now)
+            }
         }
         lastTick = timestamp
+        lastCallback = now
+    }
+
+    private func blame(interval: Double, from: CFTimeInterval, to: CFTimeInterval) {
+        let causes = Perf.overlap(from: from, to: to)
+        for (name, ms) in causes { dropCauses[name, default: 0] += ms }
+        guard drops.count < 40 else { return }
+        let top = causes.sorted { $0.value > $1.value }.prefix(8)
+            .map { "\($0.key) \(round2($0.value))" }
+        drops.append(["kind": currentKind, "interval_ms": round2(interval), "causes": top])
     }
 
     /// Motion over (or paused): the next tick starts a new interval run.
-    func idle() { lastTick = nil }
+    func idle() {
+        lastTick = nil
+        lastCallback = nil
+    }
 
     func resizes(tile: String, expected: Int, actual: Int, kind: String) {
         expectedResizes += expected
@@ -313,6 +342,9 @@ final class MotionStats {
             "pty_resizes_expected": expectedResizes,
             "pty_resizes_actual": actualResizes,
             "resize_mismatches": mismatches,
+            "drop_causes_ms": dropCauses.mapValues(round2),
+            "drops": drops,
+            "perf": Perf.summary(),
         ]
     }
 

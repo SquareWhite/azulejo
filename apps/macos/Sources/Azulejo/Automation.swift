@@ -118,8 +118,10 @@ final class Automation {
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if parts[0] == "key" || parts[0] == "action" { self.record("\(parts[0]) \(arg)") }
-            self.next()
+            Perf.measure("automation") {
+                if parts[0] == "key" || parts[0] == "action" { self.record("\(parts[0]) \(arg)") }
+                self.next()
+            }
         }
     }
 

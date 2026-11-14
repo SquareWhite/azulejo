@@ -25,7 +25,7 @@ final class KeyRouter {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             self.seen += 1
-            return self.handle(event) ? nil : event
+            return Perf.measure("key") { self.handle(event) } ? nil : event
         }
     }
 

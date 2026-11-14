@@ -70,23 +70,29 @@ class TileFrame: NSView, TileView {
 
     // MARK: TileView
 
-    /// What the content view last got, without the header: header text
-    /// changes with every command a terminal runs, which the content doesn't
-    /// need to hear about.
+    /// What the content view last got, without the header and agent state:
+    /// both change with every command a terminal runs (the header strip and
+    /// the attention overlay show them), and the content doesn't use them.
+    /// Forwarding them re-ran a terminal's attach bookkeeping on each change,
+    /// mid-motion too.
     private var forwarded: TileModel?
+
+    private static func bare(_ tile: TileModel) -> TileModel {
+        var bare = tile
+        bare.header = nil
+        bare.agent = nil
+        return bare
+    }
 
     /// The model the content view was made with.
     func prime(_ tile: TileModel) {
         header.show(tile)
-        var bare = tile
-        bare.header = nil
-        forwarded = bare
+        forwarded = Self.bare(tile)
     }
 
     func update(_ tile: TileModel) {
         header.show(tile)
-        var bare = tile
-        bare.header = nil
+        let bare = Self.bare(tile)
         guard bare != forwarded else { return }
         forwarded = bare
         content.update(tile)
