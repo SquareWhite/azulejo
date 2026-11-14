@@ -1,0 +1,128 @@
+# Every F2 and tall-layout action from the keyboard, plus tabs, workspaces,
+# sidebar and resize mode. Runs in-process on the dev profile (no OS input):
+#   just mac-automation
+# Fresh dev state: one window, one workspace, one tab, one terminal tile.
+
+log start
+expect windows 1
+expect tiles 1
+shot 00-start
+
+# --- tall layout (split_auto, promote, rotate, equalize) ---
+key ctrl+cmd+t                # split_auto: master | stack
+expect tiles 2
+expect axis h
+key ctrl+cmd+t
+key ctrl+cmd+t
+expect tiles 4
+expect focus 4                # the new tile, at the bottom of the stack
+shot 01-tall-four
+
+key alt+enter                 # promote the focused stack tile to master
+expect focus 1
+key alt+o                     # rotate: master on top
+expect axis v
+shot 02-rotated
+key alt+o                     # and back
+expect axis h
+
+# --- focus by direction ---
+key alt+l                     # master → stack: the stack tile nearest the master's centre
+expect focus 3
+key alt+j
+expect focus 4
+key alt+k
+expect focus 3
+key alt+k
+expect focus 2
+key alt+h
+expect focus 1
+
+# --- resize (one step each way) and equalize ---
+key ctrl+alt+shift+l          # grow the master: its right divider moves right
+expect ratio 0.55
+key ctrl+alt+shift+h          # the master has no left divider: refused, nothing changes
+expect ratio 0.55
+key alt+l
+key ctrl+alt+shift+h          # from the stack, the same divider moves back left
+expect ratio 0.50
+key ctrl+alt+shift+j          # unbalance the stack
+key alt+shift+e               # equalize the stack again
+shot 03-equalized
+
+# --- swap and move ---
+key alt+h
+expect focus 1
+key alt+shift+l               # swap master with its right neighbour (focus follows the tile)
+expect focus 3
+key alt+shift+h               # and back
+expect focus 1
+action move_tile_right        # no default chord: menu/palette path
+action move_tile_left
+expect tiles 4
+
+# --- zoom ---
+key alt+shift+m
+expect zoomed yes
+shot 04-zoomed
+key alt+shift+m
+expect zoomed no
+
+# --- plain splits, cycling, close ---
+key ctrl+cmd+v                # split right
+expect tiles 5
+key ctrl+cmd+shift+t          # split down
+expect tiles 6
+shot 05-six
+key alt+]
+key alt+[
+key alt+w                     # close tile (detaches its herdr pane)
+expect tiles 5
+
+# --- resize mode (sticky hjkl until esc) ---
+key alt+h
+key ctrl+alt+r
+key l
+key l
+key escape
+key alt+h                     # keys route normally again
+shot 06-after-resize-mode
+
+# --- tabs ---
+key cmd+shift+t               # new tab
+expect tabs 2
+expect tab 2
+key ctrl+1
+expect tab 1
+key ctrl+9                    # last tab
+expect tab 2
+key ctrl+tab
+expect tab 1
+key ctrl+shift+tab
+expect tab 2
+shot 07-second-tab
+key cmd+w                     # close tab
+expect tabs 1
+
+# --- workspaces ---
+key cmd+t                     # new workspace
+expect workspaces 2
+expect workspace 2
+key cmd+1
+expect workspace 1
+key cmd+9                     # last workspace
+expect workspace 2
+key cmd+1
+expect workspace 1
+
+# --- sidebar: cmd+a toggles it in terminal tiles ---
+key cmd+a
+expect sidebar hidden
+shot 08-no-sidebar
+key cmd+a
+expect sidebar visible
+
+# --- unbound keys pass through untouched ---
+key x
+expect tiles 5
+shot 09-end

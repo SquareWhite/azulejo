@@ -173,6 +173,20 @@ impl Action {
             .expect("every action has a name")
     }
 
+    /// The action a config-file name stands for (`"split_right"`); indexed
+    /// actions (`"switch_tab"`) need `index`. The inverse of [`Action::name`]
+    /// and [`Action::index`], for menus and the palette.
+    pub fn from_name(name: &str, index: Option<u8>) -> Option<Action> {
+        names()
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .and_then(|(_, spec)| match (spec, index) {
+                (NameSpec::Plain(action), None) => Some(action),
+                (NameSpec::Indexed(make), Some(i)) => Some(make(i)),
+                _ => None,
+            })
+    }
+
     /// The index of an indexed action (`SwitchTab(3)` → 3).
     pub fn index(self) -> Option<u8> {
         match self {
