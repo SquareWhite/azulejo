@@ -127,7 +127,7 @@ Machine: macOS test environment, debug build, 2026-11-03. Method: `apps/macos/au
 | herdr reconnect | ≤ 2 s after restart or sleep | Re-run at HEAD: relaunch 276 ms, kill -9 + relaunch 272 ms, wake 65 ms, herdr restart 726 ms | **Pass** |
 | Stability | Browser or preview crash never takes down terminals | WebContent and QuickLookUIService SIGKILLed: app, attach processes and ticker unaffected | **Pass** |
 | API | Every user action via the socket API; versioned JSON | Shell actions go through core commands (`azj_core_key` → command); `schema/api.v1.json`, CLI coverage test per method; `core.version` reports v1 | Pass (by construction) |
-| Security | Socket readable only by the user; per-workspace automation switch | Socket 0600, dir 0700, owned by the user. The automation switch belongs to F21 (M2) | Pass for the socket; switch deferred to M2 |
+| Security | Socket readable only by the user (the per-workspace automation switch went with F21, dropped Nov 3, 2026) | Socket 0600, dir 0700, owned by the user | Pass |
 
 ### Cold start
 
