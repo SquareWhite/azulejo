@@ -213,10 +213,12 @@ final class Automation {
             for line in lines { record("      · \(line)") }
             delay = wait
         case "sidebar":
-            if let problem = SidebarAutomation.run(arg, controller: app?.focusedController) {
+            if let problem = SidebarAutomation.run(arg, controller: app?.focusedController, app: app) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
             }
             record("sidebar \(arg)")
+            // Modifier changes time the ⌘N badges' wait: no extra pause.
+            if arg.hasPrefix("hints") { delay = 0 }
         case "until": return until(arg)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
@@ -734,6 +736,9 @@ final class Automation {
                 "sidebar.mode", "sidebar.statuses", "sidebar.footer", "sidebar.numbers", "workspace.active",
                 "drag.last", "drag.landed", "drag.active", "drag.slot", "drag.rows", "drag.indicator",
             ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
+            Source(["sidebar.hints", "sidebar.hints.pending", "sidebar.hints.fade"]) {
+                SidebarAutomation.hintState(app: app, controller: controller)
+            },
             Source(["theme", "terminal.attaches"], prefixes: ["theme."]) { ThemeAutomation.state(controller) },
             // After the `theme.` source, so asking for it computes only it.
             Source(["theme.colors"]) { ThemeAutomation.colors() },

@@ -60,6 +60,8 @@ final class KeyRouter {
     @discardableResult
     func handle(_ event: NSEvent) -> Bool {
         guard let app else { return false }
+        // Any key hides the ⌘N badges (it only looks; the key goes on).
+        app.workspaceHints.keyPressed(event)
         // Sheets and panels (rename, alerts) get their keys untouched.
         if let window = event.window, !app.owns(window) { return false }
         // Esc while a workspace row is being dragged cancels the drag, and

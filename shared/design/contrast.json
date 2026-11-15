@@ -54,6 +54,11 @@
     {"id": "sidebar.machine.connecting", "surface": "sidebar", "what": "machine state text, connecting", "fg": "statusConnecting", "bg": ["sidebar"], "kind": "secondary"},
     {"id": "sidebar.machine.error", "surface": "sidebar", "what": "machine state text, error", "fg": "statusError", "bg": ["sidebar"], "kind": "secondary"},
     {"id": "sidebar.machine.off", "surface": "sidebar", "what": "machine dot, off", "fg": "statusOff", "bg": ["sidebar"], "kind": "faint"},
+    {"id": "sidebar.hint", "surface": "sidebar", "what": "a row's ⌘N key badge while ⌘ is held", "fg": "textPrimary", "bg": ["control", "sidebar"], "kind": "secondary"},
+    {"id": "sidebar.hint.selected", "surface": "sidebar", "what": "⌘N key badge on the selected row", "fg": "textPrimary", "bg": ["control", "selected", "sidebar"], "kind": "secondary"},
+    {"id": "sidebar.hint.offline", "surface": "sidebar", "what": "⌘N key badge on a row whose machine isn't connected (row at alpha.dimmed)", "fg": "textPrimary*0.5", "bg": ["control*0.5", "sidebar"], "kind": "secondary"},
+    {"id": "sidebar.hint.fill", "surface": "sidebar", "what": "⌘N key badge against the card", "fg": "control", "bg": ["sidebar"], "kind": "faint", "relative": false},
+    {"id": "sidebar.hint.fill.selected", "surface": "sidebar", "what": "⌘N key badge against the selected row", "fg": "control", "bg": ["selected", "sidebar"], "kind": "faint", "relative": false},
     {"id": "sidebar.border", "surface": "sidebar", "what": "card hairline against the window", "fg": "border", "bg": ["window"], "kind": "faint"},
 
     {"id": "rail.number", "surface": "rail", "what": "rail number", "fg": "textMuted", "bg": ["sidebar"], "kind": "secondary"},
@@ -205,6 +210,8 @@
   "_accept": "Known failures, listed (KNOWN) but not failing the check, each with why it stays: a design call for the user, not a token to nudge.",
   "accept": [
     {"theme": "*", "pair": "browser.error", "why": "white on the error colour, as in atom-one-dark (3.4:1); changing it changes the reference's look, so it's the user's call"},
+    {"theme": "atom-one-light", "pair": "sidebar.hint.offline", "why": "as sidebar.name.offline: the badge fades with its offline row at alpha.dimmed (2.55:1, about the name's 2.58:1)"},
+    {"theme": "macos-light", "pair": "sidebar.hint.offline", "why": "as sidebar.name.offline: the badge fades with its offline row at alpha.dimmed (2.93:1, about the name's 2.97:1)"},
     {"theme": "macos-light", "pair": "sidebar.name.offline", "why": "as atom-one-light: alpha.dimmed is shared, and half-alpha dark text on a light card loses more contrast"},
     {"theme": "atom-one-light", "pair": "sidebar.name.offline", "why": "offline rows fade at alpha.dimmed, shared by every theme; half-alpha dark text on a light card loses more contrast than light text on a dark one"}
   ],

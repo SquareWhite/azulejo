@@ -41,13 +41,23 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarState: SidebarState = .full {
         didSet {
             guard sidebarState != oldValue else { return }
+            // The ⌘N badges belong to the full sidebar.
+            if sidebarState != .full {
+                sidebar.setHints(false)
+                app?.workspaceHints.sidebarCollapsed(in: self)
+            }
             // The keyboard doesn't stay in a sidebar that's going away (the
             // Files panel): back to the focused tile, as Esc would.
             if sidebarState != .full, let responder = window.firstResponder as? NSView,
                responder.isDescendant(of: sidebar) {
                 sidebar.onReturnFocus?()
             }
-            content.setSidebar(sidebarState, animated: model != nil && window.isVisible)
+            let settling = content.setSidebar(sidebarState, animated: model != nil && window.isVisible)
+            // Opened with ⌘ still held alone (⌘A and ⌘ kept down): the
+            // badges, once the rows are in.
+            if sidebarState == .full, model != nil {
+                app?.workspaceHints.sidebarExpanded(in: self, settling: settling)
+            }
         }
     }
 
@@ -393,9 +403,11 @@ final class ChromeLayoutView: NSView {
     /// full rows and the rail's cross-fade; the toggle and the tab strip
     /// slide along. The card's right edge and the tiles' left edge move in
     /// step, a gutter apart. A change mid-motion starts from where
-    /// everything shows now. The traffic lights don't move.
-    func setSidebar(_ state: SidebarState, animated: Bool) {
-        guard state != sidebarState else { return }
+    /// everything shows now. The traffic lights don't move. Returns how long
+    /// the motion runs (0 when it doesn't).
+    @discardableResult
+    func setSidebar(_ state: SidebarState, animated: Bool) -> TimeInterval {
+        guard state != sidebarState else { return 0 }
         sidebarState = state
         sidebarGeneration += 1
         let generation = sidebarGeneration
@@ -418,7 +430,7 @@ final class ChromeLayoutView: NSView {
         needsLayout = true
         layoutSubtreeIfNeeded()
         animatingSidebar = false
-        guard animate else { return }
+        guard animate else { return 0 }
 
         let duration = Motion.duration
         CATransaction.begin()
@@ -479,6 +491,7 @@ final class ChromeLayoutView: NSView {
             layer.add(fade, forKey: Self.chromeKey)
         }
         CATransaction.commit()
+        return duration
     }
 
     /// Where a view shows right now and how opaque (mid-motion: the

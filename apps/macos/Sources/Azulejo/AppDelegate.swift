@@ -12,6 +12,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private(set) var machines: [MachineModel] = []
     private var controllers: [String: WindowController] = [:]
     private var keys: KeyRouter!
+    /// ⌘ held alone: the full sidebar's ⌘N badges.
+    private(set) var workspaceHints: WorkspaceHints!
     private var refreshScheduled = false
     private var automation: Automation?
     private var signalSources: [DispatchSourceSignal] = []
@@ -26,6 +28,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         self.env = env
         super.init()
         keys = KeyRouter(app: self)
+        workspaceHints = WorkspaceHints(app: self)
     }
 
     // MARK: Lifecycle
@@ -40,6 +43,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
         ContextMenus.app = self
         keys.install()
+        workspaceHints.install()
         BrowserTileView.register(app: self)
         // The theme before any view or terminal exists (docs/themes.md).
         Theme.log = { [weak self] in self?.log($0) }
@@ -344,6 +348,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func windowResignedKey(_ controller: WindowController) {
         keys.reset()
+        workspaceHints.windowResignedKey()
         controller.palette.close()
         controller.setStatus(nil)
         // A read in progress there stops (F11).

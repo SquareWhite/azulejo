@@ -59,6 +59,11 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     private var panelOpening: (root: String, machine: String?, request: Int)?
     private var panelRequests = 0
 
+    /// Each row's ⌘N key badge shows (⌘ held alone, `WorkspaceHints`).
+    private(set) var hintsShown = false
+    /// Automation: how long the last show or hide of the badges faded.
+    private(set) var hintsFade: TimeInterval = 0
+
     override var isFlipped: Bool { true }
     /// A click on empty space does nothing (the card it sits in would move
     /// the window).
@@ -235,6 +240,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
                     dimmed: dimmed
                 ) { [weak self] in self?.onSelect?(ws.id) }
                 row.menuProvider = { [weak self] in self?.onMenu?(ws.id) }
+                row.setHint(hintsShown, duration: 0)
                 add(row, height: Design.Space.sidebarRowHeight)
             }
             // No "+" where nothing would run: off, or gone from herdr's list.
@@ -243,6 +249,15 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
                 add(addRow, height: Design.Space.sidebarAddHeight)
             }
         }
+    }
+
+    /// Shows or hides each row's ⌘N badge: a quick fade with layout motion
+    /// on, at once with it off or Reduce Motion on.
+    func setHints(_ on: Bool) {
+        guard on != hintsShown else { return }
+        hintsShown = on
+        hintsFade = Motion.active ? Design.Motion.sidebarHint : 0
+        for row in rows { row.setHint(on, duration: hintsFade) }
     }
 
     private func add(_ view: NSView, height: CGFloat) {
@@ -588,6 +603,14 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
     let markerText: String
     /// Automation: the branch, or "".
     let detailText: String
+    /// The chord that reaches it (⌘1…⌘8, ⌘9 for the last), shown in a key
+    /// badge while ⌘ is held alone (`WorkspaceHints`); nil past ⌘8 but the
+    /// last.
+    let hintText: String?
+    /// The key badge is showing (or fading in).
+    private(set) var hintShown = false
+    private let detail = NSTextField(labelWithString: "")
+    private let hint = HintBadge()
     private let handler: () -> Void
     private let selected: Bool
     private var pressing = RowPress()
@@ -607,12 +630,13 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
         markerText = marker?.string ?? ""
         let branch = SidebarView.branch(ws.git)
         detailText = branch ?? ""
+        hintText = SidebarView.chord(number, of: count)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.row + 1
         layer?.cornerCurve = .continuous
         alphaValue = dimmed ? Design.Alpha.dimmed : 1
-        var tip = SidebarView.chord(number, of: count).map { "\(ws.name) (\($0))" } ?? ws.name
+        var tip = hintText.map { "\(ws.name) (\($0))" } ?? ws.name
         if let branch { tip += "\n\(branch)" }
         toolTip = tip
         setAccessibilityRole(.button)
@@ -625,7 +649,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
         name.lineBreakMode = .byTruncatingTail
         name.setContentCompressionResistancePriority(.defaultLow + 1, for: .horizontal)
         name.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        let detail = NSTextField(labelWithString: branch ?? "")
+        detail.stringValue = branch ?? ""
         detail.font = Design.Font.sidebarBranch
         detail.textColor = Design.Color.textMuted
         detail.alignment = .right
@@ -649,7 +673,43 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
             // The branch never takes more than about half the row.
             detail.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.48),
         ])
+        if let hintText {
+            // At the row's end, over the branch, which fades out meanwhile.
+            hint.text = hintText
+            hint.alphaValue = 0
+            hint.isHidden = true
+            hint.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(hint)
+            NSLayoutConstraint.activate([
+                hint.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+                hint.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
+        }
         Theme.track(self)
+    }
+
+    /// Shows or hides the key badge, cross-fading it with the branch over
+    /// `duration` (0: at once). A row with no chord keeps its branch.
+    func setHint(_ on: Bool, duration: TimeInterval) {
+        guard hintText != nil, on != hintShown else { return }
+        hintShown = on
+        if on { hint.isHidden = false }
+        guard duration > 0 else {
+            hint.alphaValue = on ? 1 : 0
+            detail.alphaValue = on ? 0 : 1
+            return settleHint()
+        }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = duration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            hint.animator().alphaValue = on ? 1 : 0
+            detail.animator().alphaValue = on ? 0 : 1
+        }, completionHandler: { [weak self] in MainActor.assumeIsolated { self?.settleHint() } })
+    }
+
+    /// A faded-out badge leaves the view tree's drawing.
+    private func settleHint() {
+        if !hintShown { hint.isHidden = true }
     }
 
     @available(*, unavailable)
@@ -687,6 +747,52 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
 
     /// Automation: what a click does.
     func press() { handler() }
+}
+
+/// A workspace row's key badge (⌘3): the top bar's ⌘K badge's size and
+/// type, the row's text on the Agents | Files track's fill (the search
+/// badge's fill is meant for the search field and vanishes on a light
+/// sidebar).
+@MainActor
+private final class HintBadge: NSView, ThemeAware {
+    private let label = NSTextField(labelWithString: "")
+    var text: String {
+        get { label.stringValue }
+        set { label.stringValue = newValue; invalidateIntrinsicContentSize() }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = Design.Radius.searchBadge
+        layer?.cornerCurve = .continuous
+        label.font = Design.Font.searchBadge
+        label.textColor = Design.Color.textPrimary
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        Theme.track(self)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: ceil(label.intrinsicContentSize.width) + 12, height: Design.Space.searchBadgeHeight)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        Theme.reapply(self)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.control.cgColor
+    }
 }
 
 /// "+" under a machine group: a new workspace there.
@@ -897,6 +1003,9 @@ private final class SidebarFooter: NSView {
 /// State: `sidebar.mode`, `sidebar.statuses`, `sidebar.footer`,
 /// `sidebar.numbers` (each row's number and name: `1 alpha|2 bravo`), and
 /// the Files view's `tile.*` keys as `sidebar.files.*`.
+/// ⌘ held alone: `sidebar hints cmd|none|MODS|key on|off|resign|deactivate`
+/// (`hintsCommand`); state `sidebar.hints`, `sidebar.hints.pending`,
+/// `sidebar.hints.fade`.
 /// The rail: `sidebar rail select N|hover N|expand`; state `rail.shown`,
 /// `rail.rows`, `rail.groups`, `rail.tips`, `rail.group.tips`, `rail.fits`,
 /// `rail.spinning`, `rail.keyboard`, `rail.offsets` (how far each row's
@@ -907,11 +1016,14 @@ private final class SidebarFooter: NSView {
 /// `sidebar drag N|to N|out|drop` and the `drag.*` keys (`DragAutomation`).
 @MainActor
 enum SidebarAutomation {
-    static func run(_ arg: String, controller: WindowController?) -> String? {
+    static func run(_ arg: String, controller: WindowController?, app: AppController? = nil) -> String? {
         guard let sidebar = controller?.sidebarView else { return "no window" }
         let parts = arg.split(separator: " ", maxSplits: 1).map(String.init)
         let rest = parts.count > 1 ? parts[1] : ""
         switch parts.first ?? "" {
+        case "hints":
+            guard let controller, let hints = app?.workspaceHints else { return "no app" }
+            return hintsCommand(rest, hints: hints, controller: controller)
         case "mode":
             guard let mode = SidebarView.Mode(rawValue: rest) else { return "mode is agents or files" }
             sidebar.setMode(mode)
@@ -949,6 +1061,65 @@ enum SidebarAutomation {
             return "unknown sidebar verb \(parts.first ?? "")"
         }
         return nil
+    }
+
+    /// `sidebar hints cmd|none|cmd+shift…`: the modifiers now held, as a
+    /// flagsChanged event handed to `WorkspaceHints` in-process (nothing
+    /// system-wide); `key on|off`: count the window as key in a background
+    /// run, which has no key window; `resign`: the window resigns key (its
+    /// delegate's call); `deactivate`: the app goes to the background.
+    private static func hintsCommand(_ arg: String, hints: WorkspaceHints,
+                                     controller: WindowController) -> String? {
+        let bits = arg.split(separator: " ").map(String.init)
+        switch bits.first ?? "" {
+        case "key":
+            WorkspaceHints.assumeKey = bits.count > 1 && bits[1] == "on"
+        case "resign":
+            controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: controller.window))
+        case "deactivate":
+            hints.appResignedActive()
+        default:
+            var flags: NSEvent.ModifierFlags = []
+            for part in (bits.first ?? "").split(separator: "+") {
+                switch part {
+                case "cmd": flags.insert(.command)
+                case "shift": flags.insert(.shift)
+                case "alt": flags.insert(.option)
+                case "ctrl": flags.insert(.control)
+                case "none": break
+                default: return "sidebar hints takes cmd|none|MODS, key on|off, resign or deactivate"
+                }
+            }
+            let code: UInt16 = flags.contains(.command) ? 55 : flags.contains(.shift) ? 56
+                : flags.contains(.option) ? 58 : flags.contains(.control) ? 59 : 55
+            guard let event = NSEvent.keyEvent(
+                with: .flagsChanged, location: .zero, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: controller.window.windowNumber,
+                context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
+            else { return "couldn't make a flagsChanged event" }
+            // From here on what's held is what automation says (the sidebar
+            // opening with ⌘ held reads it), not the keyboard.
+            WorkspaceHints.handedIn = true
+            hints.flagsChanged(event)
+        }
+        return nil
+    }
+
+    /// `sidebar.hints`: the badges showing, as `sidebar.numbers` writes rows
+    /// ("1 l1|…|9 t1", the chord's digit, rows without one left out), or
+    /// `hidden`; `sidebar.hints.pending`: the wait after ⌘ is running;
+    /// `sidebar.hints.fade`: the last show or hide's fade in ms (0 with
+    /// motion off).
+    static func hintState(app: AppController, controller: WindowController) -> [String: String] {
+        let sidebar = controller.sidebarView
+        let shown = sidebar.rows.compactMap { row in
+            row.hintShown ? row.hintText.map { "\($0.dropFirst()) \(row.dragName)" } : nil
+        }
+        return [
+            "sidebar.hints": sidebar.hintsShown ? shown.joined(separator: "|") : "hidden",
+            "sidebar.hints.pending": app.workspaceHints.isPending ? "yes" : "no",
+            "sidebar.hints.fade": "\(Int((sidebar.hintsFade * 1000).rounded()))",
+        ]
     }
 
     /// The rows a drag works on: the rail when it shows, else the full

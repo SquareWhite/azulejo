@@ -858,5 +858,7 @@ enum Design {
         static let paletteOpen: TimeInterval = 0.16
         static let paletteClose: TimeInterval = 0.11
         static let drag: TimeInterval = 0.15
+        static let sidebarHint: TimeInterval = 0.08
+        static let sidebarHintDelay: TimeInterval = 0.1
     }
 }

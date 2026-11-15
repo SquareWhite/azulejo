@@ -1,0 +1,410 @@
+# ⌘ held alone shows each workspace row's chord in the full sidebar
+# (wshints.sh, WorkspaceHints): ⌘1…⌘8, and ⌘9 on the last row, numbered as
+# the rail and `sidebar.numbers` number them, across machine groups. They
+# wait 100 ms (a quick chord never shows them), go on release, on any key,
+# when another modifier joins ⌘, when the window resigns key and when the
+# app goes to the background; only a key window shows them; the rail stays
+# as it is. Opening the sidebar with ⌘ kept down (⌘A) shows them once its
+# motion ends. Modifiers are handed to the app in-process (`sidebar hints …`);
+# a background run has no key window, so `sidebar hints key on` counts this
+# one as key. wshints.sh fills in @FX@ (fixture repositories, one per Local
+# workspace) and sets up bravo, a stand-in remote machine (a throwaway
+# herdr session reached through the ssh stand-in).
+
+log wshints
+seen-visible off
+anim enabled true
+window-size 1100 640
+until tiles 1 8000
+until machines Local=connected,bravo=connected 20000
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"l1"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l1"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"l2"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l2"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"l3"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l3"}}
+# One on bravo, through its group's "+", then another Local one: it's
+# numbered before bravo's.
+machine-add bravo
+until workspaces 4 5000
+until workspace.machine bravo 5000
+core {"method":"workspace.rename","params":{"name":"b1"}}
+action new_workspace
+until workspaces 5 5000
+core {"method":"workspace.rename","params":{"name":"l4"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l4"}}
+until sidebar.numbers 1 l1|2 l2|3 l3|4 l4|5 b1 5000
+until sidebar.branches main|feature/sidebar-hints|fix/rail-numbers|release/2.0|- 10000
+key cmd+3
+until workspace.active l3 2000
+# `key` sends no modifier changes: ⌘ is let go here.
+sidebar hints none
+# A plain prompt in a fixture folder for the captures.
+core {"method":"terminal.send_text","params":{"text":"exec env -i HOME=@FX@ PATH=/usr/bin:/bin TERM=xterm-256color PS1='$ ' /bin/sh\n"}}
+wait 400
+core {"method":"terminal.send_text","params":{"text":"cd ~/l3 && clear\n"}}
+wait 400
+
+# ---- ⌘ alone: the badges after the wait, numbered as the rows are.
+shot 00-branches
+expect keywindow no
+expect sidebar.hints hidden
+sidebar hints key on
+sidebar hints cmd
+expect sidebar.hints hidden
+expect sidebar.hints.pending yes
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.pending no
+expect sidebar.hints.fade 80
+wait 300
+shot 01-hints-dark
+# Let go: gone.
+sidebar hints none
+expect sidebar.hints hidden
+wait 200
+
+# ---- A quick chord: the key comes inside the wait, nothing shows, and
+# nothing shows while ⌘ stays down. The key still does its job.
+sidebar hints cmd
+expect sidebar.hints.pending yes
+key cmd+2
+expect sidebar.hints.pending no
+until workspace.active l2 2000
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+
+# ---- Chords at normal speed: the key 60-80 ms after ⌘, close to the
+# 100 ms wait. Still nothing. Keys go straight to the router here: a posted
+# key in a background run reaches it 50 ms late (see `press`). ⌘C copies to
+# the automation run's private pasteboard.
+delivery direct
+sidebar hints cmd
+wait 70
+expect sidebar.hints.pending yes
+key cmd+1
+expect sidebar.hints.pending no
+until workspace.active l1 2000
+wait 300
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints cmd
+wait 80
+expect sidebar.hints.pending yes
+key cmd+c
+expect sidebar.hints.pending no
+wait 300
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints cmd
+wait 60
+expect sidebar.hints.pending yes
+key cmd+2
+expect sidebar.hints.pending no
+until workspace.active l2 2000
+wait 300
+expect sidebar.hints hidden
+sidebar hints none
+delivery post
+
+# ---- Held, then a key: they go at once and don't come back until ⌘ is
+# pressed again.
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+key cmd+3
+expect sidebar.hints hidden
+until workspace.active l3 2000
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+sidebar hints none
+until sidebar.hints hidden 500
+
+# ---- Another modifier joins ⌘ (⌘⇧…): gone until ⌘ is let go.
+sidebar hints cmd+shift
+wait 400
+expect sidebar.hints hidden
+# Back to ⌘ alone without letting go: still nothing.
+sidebar hints cmd
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+sidebar hints cmd+shift
+expect sidebar.hints hidden
+sidebar hints cmd
+wait 400
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+sidebar hints none
+# Option alone does nothing.
+sidebar hints alt
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+
+# ---- The window resigns key, the app goes to the background: gone.
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+sidebar hints resign
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+sidebar hints deactivate
+expect sidebar.hints hidden
+sidebar hints none
+# Resigning inside the wait cancels it.
+sidebar hints cmd
+sidebar hints resign
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+
+# ---- Not the key window: nothing.
+sidebar hints key off
+sidebar hints cmd
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+sidebar hints key on
+
+# ---- The rail: unchanged, no badges; collapsing while they show hides them.
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+remember rail.rows
+sidebar hints cmd
+wait 400
+expect sidebar.hints hidden
+unchanged rail.rows
+expect rail.rows 1:idle|2:idle|3:idle*|4:idle|5:idle
+sidebar hints none
+action toggle_sidebar
+until sidebar visible 3000
+wait 400
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+action toggle_sidebar
+until sidebar rail 3000
+expect sidebar.hints hidden
+sidebar hints none
+action toggle_sidebar
+until sidebar visible 3000
+wait 400
+
+# ---- Opened with ⌘ held: ⌘A (toggle_sidebar in a terminal) through the
+# key router, ⌘ kept down. The chord would keep the badges away; the
+# sidebar opening starts the wait again, and it lasts as long as the
+# sidebar's motion so they don't fade in on rows still coming in.
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.pending no
+expect sidebar.hints.fade 80
+# ⌘A again collapses: gone.
+key cmd+a
+until sidebar rail 3000
+expect sidebar.hints hidden
+wait 400
+expect sidebar.hints hidden
+sidebar hints none
+wait 400
+# Slow motion (800 ms): the wait runs to its end, not just 100 ms.
+anim duration 800
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+expect sidebar.hints hidden
+expect sidebar.hints.pending yes
+wait 300
+expect sidebar.hints hidden
+expect sidebar.hints.pending yes
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1500
+sidebar hints none
+expect sidebar.hints hidden
+action toggle_sidebar
+until sidebar rail 3000
+wait 1000
+# Let go inside the wait: nothing.
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+expect sidebar.hints.pending yes
+sidebar hints none
+expect sidebar.hints.pending no
+wait 1000
+expect sidebar.hints hidden
+action toggle_sidebar
+until sidebar rail 3000
+wait 1000
+# Another key inside the wait: gone until ⌘ is let go.
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+expect sidebar.hints.pending yes
+key cmd+2
+expect sidebar.hints.pending no
+until workspace.active l2 2000
+wait 1000
+expect sidebar.hints hidden
+sidebar hints none
+# Collapsed inside the wait: nothing.
+action toggle_sidebar
+until sidebar rail 3000
+wait 1000
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+expect sidebar.hints.pending yes
+key cmd+a
+until sidebar rail 3000
+expect sidebar.hints.pending no
+wait 1000
+expect sidebar.hints hidden
+sidebar hints none
+anim duration default
+# ⌘⇧ held as it opens: nothing.
+sidebar hints cmd+shift
+action toggle_sidebar
+until sidebar visible 3000
+wait 400
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+sidebar hints none
+# Opened with ⌘ up (the rail's », as a click; ⌘K's Toggle Sidebar runs
+# the same action): nothing.
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+sidebar rail expand
+until sidebar visible 3000
+wait 400
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+action toggle_sidebar
+until sidebar visible 3000
+wait 400
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+# The rule still holds elsewhere: ⌘C, then ⌘ kept down, shows nothing.
+sidebar hints cmd
+key cmd+c
+wait 400
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+sidebar hints none
+key cmd+3
+until workspace.active l3 2000
+sidebar hints none
+wait 400
+
+# ---- Motion off and Reduce Motion: no fade.
+anim enabled false
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.fade 0
+sidebar hints none
+expect sidebar.hints hidden
+expect sidebar.hints.fade 0
+# Opened with ⌘ held and motion off: no motion to wait for, no fade.
+action toggle_sidebar
+until sidebar rail 3000
+sidebar hints cmd
+key cmd+a
+until sidebar visible 3000
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.fade 0
+sidebar hints none
+expect sidebar.hints hidden
+# Reduce Motion (stood in for; the [animation] config follows the system's).
+anim enabled default
+anim reduce-motion true
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.fade 0
+sidebar hints none
+anim reduce-motion default
+anim enabled true
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints.fade 80
+sidebar hints none
+
+# ---- A light theme.
+theme set atom-one-light
+# Past the "Config reloaded" note.
+wait 2500
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+wait 300
+shot 02-hints-light
+sidebar hints none
+theme set atom-one-dark
+wait 400
+
+# ---- More than nine: ⌘1…⌘8 on the first eight, ⌘9 on the last, nothing
+# between. Five more Local ones land before bravo's.
+action new_workspace
+until workspaces 6 5000
+core {"method":"workspace.rename","params":{"name":"l5"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l5"}}
+action new_workspace
+until workspaces 7 5000
+core {"method":"workspace.rename","params":{"name":"l6"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l6"}}
+action new_workspace
+until workspaces 8 5000
+core {"method":"workspace.rename","params":{"name":"l7"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l7"}}
+action new_workspace
+until workspaces 9 5000
+core {"method":"workspace.rename","params":{"name":"l8"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l8"}}
+# Nine exactly: the last row's own number is ⌘9 too.
+until sidebar.numbers 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 l7|8 l8|9 b1 5000
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 l7|8 l8|9 b1 1000
+sidebar hints none
+action new_workspace
+until workspaces 10 5000
+core {"method":"workspace.rename","params":{"name":"l9"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/l9"}}
+until sidebar.numbers 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 l7|8 l8|9 l9|10 b1 5000
+key cmd+3
+until workspace.active l3 2000
+sidebar hints none
+sidebar hints cmd
+until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 l7|8 l8|9 b1 1000
+wait 300
+shot 03-hints-ten
+# What the badges say is what the chords do, and what the rail's
+# tooltips say.
+key cmd+9
+expect sidebar.hints hidden
+until workspace.active b1 2000
+sidebar hints none
+key cmd+8
+until workspace.active l8 2000
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+expect rail.rows 1:idle|2:idle|3:idle|4:idle|5:idle|6:idle|7:idle|8:idle*|9:idle|10:idle
+action toggle_sidebar
+until sidebar visible 3000
+quit

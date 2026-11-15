@@ -153,6 +153,19 @@ letter and dot, then its workspaces' ⌘ numbers and status icons, centred
 between equal insets, and `»`. `apps/macos/automation/rail.sh LABEL` captures
 it in all four themes into `docs/testing/rail/LABEL/`.
 
+Expanded, the rows show their numbers only while ⌘ is held alone
+(`SidebarHints.swift`, as Safari and Arc show tab shortcuts): after 100 ms
+(`motion.sidebarHintDelay`, so a chord typed at speed never flashes them)
+each row's chord fades in (80 ms) over its branch as a small key badge,
+⌘1…⌘8 and ⌘9 on the last row (rows between have none past nine), the same
+numbers as the rail and the tooltips. They fade out as fast (both at once
+with motion off or Reduce Motion) on release, on any key, when another modifier joins
+⌘ (until ⌘ is let go), when the window resigns key or the app goes to the
+background. Opening the sidebar with ⌘ kept down (⌘A, then still holding
+⌘) shows them too, once its motion ends; with ⌘ up (a click on the rail,
+⌘K) it doesn't. Keys reach the terminal untouched. `apps/macos/automation/e2e/wshints.sh`
+checks it (`sidebar hints cmd|none|…` in scripts, `sidebar.hints*` keys).
+
 Workspace rows reorder by drag, in the full list and the rail
 (`SidebarDrag.swift`): the row lifts, its group's rows slide aside round an
 accent slot, and the drop runs `workspace.move` (ADR 0013: Azulejo's order,
