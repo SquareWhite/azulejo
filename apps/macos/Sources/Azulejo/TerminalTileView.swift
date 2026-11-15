@@ -119,6 +119,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         Self.core = core
         Self.log = log
         TerminalSurfaceView.log = log
+        TerminalLinks.log = log
         guard TerminalRuntime.start(log: log) != nil else { return }
         TileViews.register(.terminal) { tile in TerminalTileView(tile) }
         DispatchQueue.global(qos: .utility).async { TerminalDrop.sweep() }
@@ -470,6 +471,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         }
         view.onTitle = { [weak self] title in self?.titleChanged(title) }
         view.onClickFocus = { [weak self] in self?.clickFocus() }
+        view.shellInForeground = { [weak self] in self?.model.shellInForeground ?? true }
         addSubview(view, positioned: .below, relativeTo: overlay)
         surface = view
         surfaceTerminal = herdr.terminalId
@@ -1344,5 +1346,24 @@ extension TerminalTileView: KeyScope {
     /// into the pane as is. False on a read-only view, so the chord goes on.
     func type(text: String) -> Bool {
         surface?.typeText(text) ?? false
+    }
+}
+
+// MARK: - Mouse owner
+
+extension TileModel {
+    /// Shells, which don't use the mouse themselves: plain drags in their
+    /// panes select text (TerminalSurfaceView, Mouse).
+    static let shells: Set<String> = ["bash", "zsh", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish"]
+
+    /// A shell has this pane's foreground: the core's polled foreground
+    /// command (`pane.command`, from herdr's `pane.process_info`) is unset,
+    /// or is a shell itself (`bash` run from `zsh`, a login `-zsh`). Not
+    /// polled yet counts as a shell.
+    var shellInForeground: Bool {
+        guard let command = pane?.command, let first = command.split(separator: " ").first else { return true }
+        var name = first.split(separator: "/").last.map(String.init) ?? String(first)
+        if name.hasPrefix("-") { name.removeFirst() }
+        return Self.shells.contains(name)
     }
 }

@@ -1,0 +1,146 @@
+# Terminal mouse scenarios; mouse.sh supplies the fixture directory.
+# Cells are column,row in the visible grid (MouseAutomation).
+delivery direct
+clip clear
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
+until tiles 2
+until terminal.phase attached 10000
+action focus_tile_left
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane} "stty -echo; PS1=; printf '\033[2J\033[H'; cat screen.txt"
+wait 600
+
+log === A drag selects text, and the click reaches the terminal
+expect terminal.mouse.owner shell
+# A cell counts once the pointer passes its middle: end on the next one.
+mouse drag 0,0 10,0
+expect mouse.target terminal
+expect terminal.selection.text alpha beta
+expect terminal.mouse reported
+shot mouse-drag
+wait 400
+expect terminal.selection.text alpha beta
+key cmd+c
+expect clipboard alpha beta
+
+log === Double-click selects a word, triple-click a line
+mouse click 7,0 2
+expect terminal.selection.text beta
+mouse click 2,2 3
+expect terminal.selection.text last line here
+wait 600
+
+log === Shift-click extends the selection
+mouse drag 0,0 3,0
+expect terminal.selection.text alp
+wait 600
+mouse click 10,0 shift
+expect terminal.selection.text alpha beta
+wait 600
+
+log === A plain click clears it; a drag across rows takes both
+mouse click 3,0
+expect terminal.selection.text -
+mouse drag 6,0 3,1
+expect terminal.selection.text beta gamma\nsee
+clip clear
+key cmd+c
+clip has beta gamma
+clip has see
+wait 600
+
+log === ⌘-hover highlights a URL; ⌘ up clears it
+mouse hover 10,1
+expect terminal.link -
+expect terminal.cursor arrow
+mouse hover 12,1 cmd
+expect terminal.cursor pointer
+expect terminal.link https://example.invalid/docs/page?x=1
+shot mouse-link-hover
+mouse mods none
+expect terminal.cursor arrow
+expect terminal.link -
+mouse mods cmd
+expect terminal.cursor pointer
+
+log === ⌘-click opens it (recorded in automation, never opened)
+mouse click 12,1 cmd
+expect terminal.opened https://example.invalid/docs/page?x=1
+expect terminal.selection.text -
+mouse mods none
+mouse hover 12,3 cmd
+expect terminal.link mailto:someone@example.invalid
+mouse click 12,3 cmd
+expect terminal.opened mailto:someone@example.invalid
+mouse mods none
+
+log === A plain click on a URL opens nothing
+mouse click 12,1
+mouse click 5,4
+expect terminal.opened mailto:someone@example.invalid
+
+log === OSC 8 hyperlinks open their target; other schemes are refused
+mouse hover 5,4 cmd
+expect terminal.link https://example.invalid/osc8
+mouse click 5,4 cmd
+expect terminal.opened https://example.invalid/osc8
+mouse mods none
+mouse hover 5,5 cmd
+mouse click 5,5 cmd
+expect terminal.refused ftp://example.invalid/file
+expect terminal.opened https://example.invalid/osc8
+mouse mods none
+
+log === Selection still works after the link clicks
+mouse drag 0,2 4,2
+expect terminal.selection.text last
+expect terminal.mouse reported
+
+log === A mouse-aware program gets plain clicks; shift-drag selects
+sh {herdr} --session {session} pane run {pane} "python3 mouse-app.py reports.log"
+until terminal.mouse.owner program 8000
+wait 300
+mouse drag 4,0 9,0
+expect terminal.selection.text -
+expect terminal.mouse reported
+wait 300
+sh grep -q '^0;5;1M$' @DIR@/reports.log
+sh grep -q '^0;10;1m$' @DIR@/reports.log
+mouse click 4,1
+wait 300
+sh grep -q '^0;5;2M$' @DIR@/reports.log
+mouse drag 4,0 14,0 shift
+expect terminal.selection.text alpha beta
+clip clear
+key cmd+c
+expect clipboard alpha beta
+wait 600
+# A plain click goes to the program and clears the selection; then a
+# shift-double-click selects a word (with a selection, it would extend it).
+mouse click 2,1
+expect terminal.selection.text -
+mouse click 11,0 2 shift
+expect terminal.selection.text beta
+wait 600
+sh test "$(grep -c . @DIR@/reports.log)" = 6
+
+log === Links work over the program too, and its clicks stay its own
+mouse hover 15,1 cmd
+expect terminal.link https://example.invalid/app
+mouse click 15,1 cmd
+expect terminal.opened https://example.invalid/app
+mouse mods none
+wait 300
+sh test "$(grep -c . @DIR@/reports.log)" = 6
+
+log === Back at the shell, plain drags select again
+key q
+until terminal.mouse.owner shell 8000
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 600
+mouse drag 0,0 10,0
+expect terminal.selection.text alpha beta

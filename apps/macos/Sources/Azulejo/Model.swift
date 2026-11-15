@@ -274,6 +274,8 @@ struct TileModel: Decodable, Equatable {
 
 struct PaneMetaModel: Decodable, Equatable {
     var cwd: String?
+    /// The foreground command when it isn't the shell (F28).
+    var command: String?
 }
 
 /// A tile's header text (`azulejo_model::TileHeader`).

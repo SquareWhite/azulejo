@@ -30,6 +30,9 @@ final class TerminalRuntime {
     private(set) var palette: TerminalSpec?
     /// Automation: how many times the terminals' config was replaced.
     private(set) var configUpdates = 0
+    /// The Ghostty config's `mouse-reporting` (on unless the user turned it
+    /// off): terminals switch it off for a selection only when it's on.
+    private(set) var mouseReporting = true
     private var surfaces: [UInt: WeakSurface] = [:]
     private var nextToken: UInt = 1
     private var observers: [NSObjectProtocol] = []
@@ -83,6 +86,13 @@ final class TerminalRuntime {
     private static let paletteFile = FileManager.default.temporaryDirectory
         .appendingPathComponent("azulejo-\(getpid())-terminal-theme.ghostty")
 
+    private static func mouseReporting(of config: ghostty_config_t) -> Bool {
+        var on = true
+        let key = "mouse-reporting"
+        guard ghostty_config_get(config, &on, key, UInt(key.utf8.count)) else { return true }
+        return on
+    }
+
     private static func background(of config: ghostty_config_t) -> NSColor? {
         var color = ghostty_config_color_s()
         let key = "background"
@@ -104,10 +114,14 @@ final class TerminalRuntime {
         config = cfg
         self.palette = palette
         background = Self.background(of: cfg)
+        mouseReporting = Self.mouseReporting(of: cfg)
         configUpdates += 1
         // Surfaces redraw on their own; ask now so the switch lands with the
         // chrome's.
-        for case let view? in surfaces.values.map(\.view) { view.needsDisplay = true }
+        for case let view? in surfaces.values.map(\.view) {
+            view.configReplaced()
+            view.needsDisplay = true
+        }
     }
 
     private func boot(log: (String) -> Void) -> Bool {
@@ -115,6 +129,7 @@ final class TerminalRuntime {
         config = cfg
         palette = Theme.terminal
         background = Self.background(of: cfg)
+        mouseReporting = Self.mouseReporting(of: cfg)
 
         var rt = ghostty_runtime_config_s()
         rt.userdata = nil
@@ -225,6 +240,19 @@ private func ghosttyAction(
         let shape = action.action.mouse_shape
         onMain(token(of: surface)) { $0.setMouseShape(shape) }
         return true
+    case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+        let link = action.action.mouse_over_link
+        let url = link.url.map { String(decoding: UnsafeRawBufferPointer(start: $0, count: link.len), as: UTF8.self) } ?? ""
+        onMain(token(of: surface)) { $0.mouseOverLink(url) }
+        return true
+    case GHOSTTY_ACTION_OPEN_URL:
+        // A ⌘-click on a link (detected URL or OSC 8). Handled here, so
+        // libghostty never falls back to running `open` itself.
+        let open = action.action.open_url
+        guard let pointer = open.url else { return true }
+        let url = String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(open.len)), as: UTF8.self)
+        DispatchQueue.main.async { MainActor.assumeIsolated { TerminalLinks.open(url) } }
+        return true
     default:
         return false
     }
@@ -270,5 +298,41 @@ private func ghosttyWriteClipboard(
             TerminalRuntime.pasteboard.setString(text, forType: .string)
         }
         return
+    }
+}
+
+/// Links ⌘-clicked in a terminal: web and mail links go to their default app
+/// through Launch Services, which never brings Azulejo forward. Terminal
+/// output decides the target (an OSC 8 link can say anything), so anything
+/// else (files, other schemes) is refused, as Ghostty.app refuses or asks.
+/// Automation runs record the link instead of opening it.
+@MainActor
+enum TerminalLinks {
+    /// The last link opened (automation: recorded instead), and the last refused.
+    private(set) static var lastOpened: String?
+    private(set) static var lastRefused: String?
+    static var log: (String) -> Void = { _ in }
+
+    static func open(_ text: String) {
+        guard let url = allowed(text) else {
+            lastRefused = text
+            log("terminal: refused to open a link (scheme \(URL(string: text)?.scheme ?? "none"))")
+            return
+        }
+        lastOpened = url.absoluteString
+        if ContextMenus.automating { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    static func allowed(_ text: String) -> URL? {
+        let unsafe = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+        guard !text.unicodeScalars.contains(where: unsafe.contains),
+              let url = URL(string: text), let scheme = url.scheme?.lowercased()
+        else { return nil }
+        switch scheme {
+        case "http", "https": return url.host?.isEmpty == false ? url : nil
+        case "mailto": return text.count > "mailto:".count ? url : nil
+        default: return nil
+        }
     }
 }

@@ -109,14 +109,22 @@ final class TerminalSurfaceView: NSView {
 
     func titleChanged(_ title: String) { onTitle?(title) }
 
+    /// The pointer libghostty last asked for (`text`, `pointer`, `arrow`).
+    private(set) var cursorName = "arrow"
+    /// The link under the pointer while it's highlighted, else nil.
+    private(set) var hoveredLink: String?
+
     func setMouseShape(_ shape: ghostty_action_mouse_shape_e) {
-        let cursor: NSCursor = switch shape {
-        case GHOSTTY_MOUSE_SHAPE_TEXT: .iBeam
-        case GHOSTTY_MOUSE_SHAPE_POINTER: .pointingHand
-        default: .arrow
+        let cursor: NSCursor
+        switch shape {
+        case GHOSTTY_MOUSE_SHAPE_TEXT: cursor = .iBeam; cursorName = "text"
+        case GHOSTTY_MOUSE_SHAPE_POINTER: cursor = .pointingHand; cursorName = "pointer"
+        default: cursor = .arrow; cursorName = "arrow"
         }
         cursor.set()
     }
+
+    func mouseOverLink(_ url: String) { hoveredLink = url.isEmpty ? nil : url }
 
     // MARK: Size and focus
 
@@ -314,6 +322,16 @@ final class TerminalSurfaceView: NSView {
     var markedString: String { markedText.string }
     var hasSelection: Bool { surface.map { ghostty_surface_has_selection($0) } ?? false }
 
+    /// The selected text (what ⌘C copies), nil with nothing selected.
+    var selectionText: String? {
+        guard let surface, ghostty_surface_has_selection(surface) else { return nil }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(surface, &text), let pointer = text.text else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return String(decoding: UnsafeBufferPointer(
+            start: UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self), count: Int(text.text_len)), as: UTF8.self)
+    }
+
     override func keyDown(with event: NSEvent) {
         guard !readOnly else { return }
         let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
@@ -388,6 +406,9 @@ final class TerminalSurfaceView: NSView {
         guard !readOnly, let surface else { return }
         var key = keyEvent(event, action: GHOSTTY_ACTION_PRESS)
         key.text = nil
+        // ⌘ down: libghostty underlines the link under a resting pointer
+        // (see Mouse); ⌘ up clears it.
+        key.mods = Self.mods(Self.linkFlags(event.modifierFlags))
         _ = ghostty_surface_key(surface, key)
     }
 
@@ -591,6 +612,15 @@ final class TerminalSurfaceView: NSView {
         return low
     }
 
+    /// The middle of a visible cell, in view coordinates (automation).
+    func automationPoint(column: Int, row: Int) -> CGPoint? {
+        guard let grid = gridSize, let cell = cellSize, (0..<grid.cols).contains(column), (0..<grid.rows).contains(row),
+              let origin = hintRow(row, from: column, through: column)
+        else { return nil }
+        // libghostty gives the cell's left edge and its text baseline, top down.
+        return CGPoint(x: origin.x + cell.width / 2, y: bounds.height - (origin.baseline - cell.height * 0.4))
+    }
+
     // MARK: Search highlight (find bar)
 
     /// Runs a libghostty binding action (`search:<text>`, `end_search`).
@@ -633,13 +663,49 @@ final class TerminalSurfaceView: NSView {
         super.updateTrackingAreas()
     }
 
+    // herdr's attach client turns on every mouse mode in the host terminal
+    // for every pane (docs/herdr-notes.md) and never says whether the
+    // program in the pane asked for the mouse: herdr forwards a click to it
+    // only if it did, and drops it otherwise. So libghostty took each click
+    // as a report for herdr: no selection, and no link detection (libghostty
+    // only looks for links while nothing captures the mouse, or with shift
+    // held). Two things put Ghostty's own behaviour back:
+    //
+    // - A local left-button gesture (click, double-click word, triple-click
+    //   line, drag, option-drag for a rectangle) turns libghostty's mouse
+    //   reporting off from press to release, so it selects. A gesture is
+    //   local when a shell has the pane's foreground (the core polls it from
+    //   herdr; `shellInForeground`), or with shift or ⌘ held. With anything
+    //   else in the foreground (an agent's TUI, vim, htop) plain clicks go to
+    //   herdr and on to the program, as before, and shift-drag selects
+    //   (Ghostty's convention under mouse capture). The wheel, right and
+    //   middle buttons always go to herdr (its history scrolls, ADR 0005).
+    // - While ⌘ is held, pointer positions and modifier changes reach
+    //   libghostty with shift added: its own rule for "shift overrides the
+    //   capture", so ⌘-hover underlines a link (pointing-hand cursor) and a
+    //   ⌘-click opens it (`TerminalLinks`). Shift never reaches herdr this
+    //   way: libghostty strips it while the mouse is captured.
+
+    /// Whether a shell has the pane's foreground (the tile's model says).
+    var shellInForeground: () -> Bool = { true }
+    /// Whether this surface's mouse reporting is switched off (a local
+    /// gesture is under way).
+    private(set) var reportingOff = false
+
     override func mouseDown(with event: NSEvent) {
         onClickFocus?()
         window?.makeFirstResponder(self)
+        if !event.modifierFlags.intersection([.shift, .command]).isEmpty || shellInForeground() {
+            setReporting(off: true)
+        }
         mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT)
     }
 
-    override func mouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT) }
+    override func mouseUp(with event: NSEvent) {
+        mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT)
+        setReporting(off: false)
+    }
+
     override func rightMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT) }
     override func rightMouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT) }
     override func otherMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE) }
@@ -647,6 +713,19 @@ final class TerminalSurfaceView: NSView {
     override func mouseMoved(with event: NSEvent) { mousePos(event) }
     override func mouseDragged(with event: NSEvent) { mousePos(event) }
     override func rightMouseDragged(with event: NSEvent) { mousePos(event) }
+
+    /// libghostty's `toggle_mouse_reporting`, tracked so it's only ever
+    /// flipped back. Not when the user's Ghostty config turned reporting off
+    /// already: then libghostty selects on its own.
+    private func setReporting(off: Bool) {
+        guard off != reportingOff, TerminalRuntime.shared?.mouseReporting != false,
+              bindingAction("toggle_mouse_reporting") else { return }
+        reportingOff = off
+    }
+
+    /// A config swap (theme change) resets libghostty's reporting switch to
+    /// the config's value.
+    func configReplaced() { reportingOff = false }
 
     /// The attach client turns on mouse reporting, so wheel events go to herdr,
     /// which scrolls its own history (ADR 0005).
@@ -674,7 +753,12 @@ final class TerminalSurfaceView: NSView {
     private func mousePos(_ event: NSEvent) {
         guard let surface else { return }
         let p = convert(event.locationInWindow, from: nil)
-        ghostty_surface_mouse_pos(surface, p.x, bounds.height - p.y, Self.mods(event.modifierFlags))
+        ghostty_surface_mouse_pos(surface, p.x, bounds.height - p.y, Self.mods(Self.linkFlags(event.modifierFlags)))
+    }
+
+    /// ⌘ held: shift too, so libghostty looks for links past herdr's capture.
+    private static func linkFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        flags.contains(.command) ? flags.union(.shift) : flags
     }
 }
 

@@ -345,6 +345,34 @@ boundaries and drives the GUI in an isolated dev session. Copy uses the private
 automation pasteboard; Open records its dispatch target without launching an
 external application; Run executes a fixture command in a real new pane.
 
+### Mouse in terminal tiles
+
+herdr's attach client switches on mouse reporting for every pane and never
+says whether the program in the pane wants the mouse (herdr forwards a click
+only if it does). So Azulejo goes by what runs in the pane's foreground, which
+the core polls from herdr (`pane.command`):
+
+- A shell (bash, zsh, fish, sh, dash, ksh, tcsh, nu…), or nothing polled yet:
+  selection works as in Ghostty. Drag, double-click a word, triple-click a
+  line, shift-click to extend, option-drag for a rectangle; ⌘C copies. The
+  surface turns libghostty's reporting off for each left-button gesture and
+  back on at the release.
+- Anything else (an agent's TUI, vim, htop, less): plain clicks and drags go
+  to herdr and on to the program, as before. Shift-drag, shift-double-click
+  and shift-triple-click select locally (Ghostty's convention under mouse
+  capture).
+
+The wheel, right and middle buttons always go to herdr, which scrolls its
+history.
+
+Hold ⌘ over a link (a URL or an OSC 8 hyperlink) to underline it, then ⌘-click
+to open it. Web (`http`, `https`) and `mailto` links open in their default app;
+Azulejo refuses other schemes and files, since terminal output picks the
+target. `apps/macos/automation/mouse.sh` drives all of this, in a shell and over a
+mouse-aware fixture program (`mouse-app.py`), with in-app mouse
+events and checks the selected text, the private pasteboard and the link it
+would open (automation records the link instead of opening it).
+
 ## Layout of the code
 
 | File | What |

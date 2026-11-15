@@ -20,6 +20,8 @@ import AppKit
 ///     wait 300               milliseconds
 ///     palette … / seen-visible … / sh …   see `ShellAutomation`
 ///     ime … / clip … / surface … / responder …   see `FocusAutomation`
+///     mouse click|drag|hover|mods …   in-app mouse events on the focused
+///                            terminal: selection and links (`MouseAutomation`)
 ///     drop [@N] files|text|url|image|hover|leave …   a drop on a terminal
 ///                            tile from a private pasteboard (`DropAutomation`)
 ///     shot name              PNG of the window's content → <out>/name.png
@@ -144,6 +146,11 @@ final class Automation {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }
             record("\(parts[0]) \(arg)")
+        case "mouse":
+            if let problem = MouseAutomation.run(arg, app: app) {
+                failures.append("line \(step): mouse \(arg): \(problem)")
+            }
+            record("mouse \(arg)")
         case "drop":
             if let controller = app?.focusedController,
                let problem = DropAutomation.run(arg, controller: controller, tab: focusedTab(controller)) {
@@ -676,6 +683,7 @@ final class Automation {
         s.merge(LayoutPickerAutomation.state(controller)) { $1 }
         s.merge(TabDragAutomation.state(app: app, controller: controller)) { $1 }
         s.merge(DividerAutomation.state(controller)) { $1 }
+        s.merge(MouseAutomation.state(controller)) { $1 }
         return s
     }
 
