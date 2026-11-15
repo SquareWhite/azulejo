@@ -78,13 +78,22 @@ and the preview toggle across a relaunch, on dev instance `hdr`.
 
 No visible title bar: the traffic lights sit in the sidebar card's top band
 (`TrafficLights` makes the transparent title bar as tall as the toolbar row and
-places them), and the toolbar row holds the tab strip (`TabStrip.swift`: state
-icon + name per tab, "+") and the search field (`ToolbarSearch.swift`: opens
-⌘K as a dropdown under itself; its badge shows `quick_open`'s chord). Empty
-toolbar space drags the window; a double click there follows the system's
-title-bar setting. `apps/macos/automation/toolbar.sh` checks where clicks land
-under the title bar, the tab icons, "+", the dropdown and the hidden-sidebar
-row, and takes window captures for comparing with `docs/design/mockup-v1.png`.
+places them), and the toolbar row (52 pt, the lights level with its middle)
+holds the tab strip (`TabStrip.swift`: state icon + name per tab, "+"), the
+layout picker and the search field (`ToolbarSearch.swift`: opens ⌘K as a
+dropdown under itself; its badge shows `quick_open`'s chord). The layout
+picker (`LayoutPicker.swift`) sits left of the search field: Manual, Master
+(Tile), Three Column and Monocle, the active tab's kind filled. It follows the
+tab whatever changes its layout (alt+[ / alt+], ⌘K, herdr) and picking a kind
+runs its `toggle_layout_*` action, as the key does (motion and the herdr
+mirror alike); tooltips show the chords. It hides first when the window gets
+too narrow for it. Empty toolbar space drags the window; a double click there
+follows the system's title-bar setting. `apps/macos/automation/toolbar.sh`
+checks where clicks land under the title bar, the tab icons, "+", the picker,
+the dropdown and the hidden-sidebar row, and takes window captures for
+comparing with `docs/design/mockup-v1.png`. `apps/macos/automation/topbar.sh
+LABEL` captures the toolbar row in all four themes with the sidebar full, as
+a rail and hidden, into `docs/testing/topbar/LABEL/`.
 
 ## Sidebar (M2.5 D.3)
 
@@ -103,8 +112,12 @@ checks both views with fixture repositories (`sidebar mode|select|focus|files
 
 ## Right-click menus
 
-Workspace rows (Agents view) and tile header strips have standard NSMenus
-(`ContextMenus.swift`). Rows: Rename…, New Tab, Reveal Folder in Finder, Open
+Workspace rows (Agents view), the top tabs and tile header strips have
+standard NSMenus (`ContextMenus.swift`). Tabs: Rename…, Layout ▸ (Manual,
+Master (Tile), Three Column, Monocle, the tab's kind ticked), New Tab, Move
+Left / Move Right (`tab.move`), Close Tab and Close Other Tabs; they act on
+the right-clicked tab without switching to it. `apps/macos/automation/e2e/topbar.sh`
+checks this menu and the layout picker. Rows: Rename…, New Tab, Reveal Folder in Finder, Open
 Folder in Files Tile, Copy Path, Close Workspace (the folder items only when
 the workspace has a repository or cwd; Reveal and Open in Files Tile only on
 Local). Headers: Split Right, Split Down, Zoom, Rename…, Copy Title, Copy
@@ -112,10 +125,10 @@ Working Directory (terminals), Reveal in Finder, Close Tile, and Kill Pane…
 for bound terminals (asks first). The browser has no header strip: these
 items follow the page's own in its chrome's menu. Every keymap item runs its
 action through `AppController.perform(action:target:)`, aimed at the row's
-workspace or the header's tile, and shows its chord from `commands.list`.
+workspace, the tab or the header's tile, and shows its chord from `commands.list`.
 A terminal's body keeps its own right-click (libghostty, mouse-reporting
 apps). `apps/macos/automation/menus.sh` builds both menus without a mouse
-(`menu workspace N|tile [invoke TITLE]`, `menu answer`, `menu shot`; state
+(`menu workspace N|tab N|tile [invoke TITLE]`, `invoke Layout/Monocle` for a submenu item, `menu answer`, `menu shot`; state
 `menu.items`, `menu.copied`, `menu.revealed`, `workspace.names`), checks herdr
 keeps a closed workspace's panes, and that a relaunch doesn't bring it back.
 

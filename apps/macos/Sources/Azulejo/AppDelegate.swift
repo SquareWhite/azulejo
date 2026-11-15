@@ -375,6 +375,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 switch target {
                 case .workspace(let id)?: params["workspace"] = id
                 case .tile(let id)?: params["tile"] = id
+                case .tab(let id)?: params["tab"] = id
                 case nil: break
                 }
                 params.merge(extra) { $1 }
@@ -552,17 +553,22 @@ final class AppController: NSObject, NSApplicationDelegate {
         let all = session?.windows.flatMap(\.workspaces) ?? []
         let ws: WorkspaceModel?
         var tileID: String?
+        var tabID: String?
         switch target {
         case .workspace(let id)?:
             ws = all.first { $0.id == id }
         case .tile(let id)?:
             ws = all.first { $0.tabs.contains { $0.tile(id) != nil } }
             tileID = id
+        case .tab(let id)?:
+            ws = all.first { $0.tabs.contains { $0.id == id } }
+            tabID = id
         case nil:
             ws = window.workspace
         }
         guard let ws else { return }
-        let tab = tileID.flatMap { id in ws.tabs.first { $0.tile(id) != nil } } ?? ws.tab
+        let tab = tabID.flatMap { id in ws.tabs.first { $0.id == id } }
+            ?? tileID.flatMap { id in ws.tabs.first { $0.tile(id) != nil } } ?? ws.tab
         let tile = tileID ?? tab?.focused ?? ""
         let (title, current, build): (String, String?, (String) -> [String: Any]) = switch action {
         case "rename_workspace":

@@ -21,7 +21,7 @@ Everything sits on a dark window background (`#1b1d23`) as rounded cards with ev
 ## Window chrome
 
 - **No title bar.** Full-size content view; traffic lights (red, yellow, green) at the top-left of the sidebar card, with a sidebar-toggle icon at the card's top-right.
-- The toolbar row shares the title-bar height: tab strip on the left, search field on the right.
+- The toolbar row shares the title-bar height (52 pt since the Nov 5 feedback, "slightly smaller vertical margins": 8 pt above the tab strip and above the tiles): tab strip on the left, the layout picker (Manual, Master, Three Column, Monocle) and the search field on the right.
 - **Sidebar toggle in motion** (Nov 4): the card slides out past the window's left edge and fades as it closes (and back as it opens), its right edge a gutter from the tiles' left edge all the way, while the tiles grow or shrink with the layout motion's crop rules. The toggle and the tab strip slide along. The traffic lights stay where they are, open or closed: on the card, then on the window colour.
 - **Collapsed is a rail** (Nov 4, the maintainer: "like in herdr"): `toggle_sidebar` turns the card into a narrow card (`space.railWidth`, 40 pt) under the toolbar row, level with the tiles' top, a gutter from them; the traffic lights and the toggle stay in the toolbar row above it. In motion the card's top and right edges move and it clips its rows, which cross-fade between their full and rail forms. `[sidebar] collapsed = "hidden"` slides it out of sight instead, as before. See "Rail" below.
 

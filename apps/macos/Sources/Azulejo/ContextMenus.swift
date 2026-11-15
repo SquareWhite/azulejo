@@ -5,6 +5,8 @@ import AppKit
 enum ActionTarget: Equatable {
     case workspace(String)
     case tile(String)
+    /// A tab in the top tab strip (its menu, the layout picker).
+    case tab(String)
 }
 
 /// Renames and confirmations. Automation queues answers (`menu answer …`)
@@ -131,6 +133,67 @@ enum ContextMenus {
         }
     }
 
+    // MARK: Tabs
+
+    /// A tab's menu in the top tab strip. Every item acts on that tab,
+    /// which needn't be the selected one, and none switches to it: Rename…,
+    /// Layout ▸ (the picker's kinds, through their `toggle_layout_*`
+    /// actions), New Tab, Move Left / Right (`tab.move`), Close Tab and
+    /// Close Other Tabs (`close_tab` for each; closing detaches).
+    static func tabMenu(_ id: String, in controller: WindowController) -> NSMenu? {
+        guard let app,
+              let ws = app.session?.windows.flatMap(\.workspaces).first(where: { $0.tabs.contains { $0.id == id } }),
+              let index = ws.tabs.firstIndex(where: { $0.id == id })
+        else { return nil }
+        let tab = ws.tabs[index]
+        let chords = catalogueChords(app)
+        let target = ActionTarget.tab(id)
+        let menu = NSMenu(title: tab.label)
+        menu.autoenablesItems = false
+
+        menu.addItem(action("Rename…", "rename_tab", target, chords, controller))
+        let layouts = NSMenu(title: "Layout")
+        layouts.autoenablesItems = false
+        for kind in LayoutKind.picker {
+            let entry = item(kind.title, kind.toggleAction, chords) { [weak controller] in
+                // Toggling the active kind would go back to the previous one.
+                guard kind != tab.kind else { return }
+                app.perform(action: kind.toggleAction, target: target, in: controller)
+            }
+            entry.state = kind == tab.kind ? .on : .off
+            entry.image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil)
+            layouts.addItem(entry)
+        }
+        let layout = NSMenuItem(title: "Layout", action: nil, keyEquivalent: "")
+        layout.submenu = layouts
+        menu.addItem(layout)
+
+        menu.addItem(.separator())
+        menu.addItem(action("New Tab", "new_tab", .workspace(ws.id), chords, controller))
+        menu.addItem(.separator())
+        func move(_ title: String, to position: Int) -> ContextMenuItem {
+            ContextMenuItem(title, enabled: ws.tabs.indices.contains(position)) { [weak controller] in
+                guard let controller else { return }
+                app.perform(["command": ["method": "tab.move", "params": ["tab": id, "index": position]]],
+                            in: controller)
+            }
+        }
+        menu.addItem(move("Move Left", to: index - 1))
+        menu.addItem(move("Move Right", to: index + 1))
+
+        menu.addItem(.separator())
+        let close = action("Close Tab", "close_tab", target, chords, controller)
+        close.toolTip = "Detaches: herdr keeps its panes running"
+        menu.addItem(close)
+        let others = ws.tabs.map(\.id).filter { $0 != id }
+        let closeOthers = ContextMenuItem("Close Other Tabs", enabled: !others.isEmpty) { [weak controller] in
+            for other in others { app.perform(action: "close_tab", target: .tab(other), in: controller) }
+        }
+        closeOthers.toolTip = close.toolTip
+        menu.addItem(closeOthers)
+        return menu
+    }
+
     // MARK: Tiles
 
     /// The tile header's menu.
@@ -252,10 +315,11 @@ protocol ContextMenuProviding: AnyObject {
 
 // MARK: - Automation
 
-/// `menu workspace N` (the Nth sidebar row) and `menu tile` (the focused
-/// tile's header, or a browser's chrome) build the menu a right-click
-/// shows and log its items; `… invoke TITLE` then runs one through the
-/// menu itself. `menu answer TEXT` (or `cancel`, `yes`, `no`) answers the
+/// `menu workspace N` (the Nth sidebar row), `menu tab N` (the Nth tab in
+/// the top tab strip) and `menu tile` (the focused tile's header, or a
+/// browser's chrome) build the menu a right-click shows and log its items;
+/// `… invoke TITLE` then runs one through the menu itself (`PARENT/TITLE`
+/// for a submenu's item: `invoke Layout/Monocle`). `menu answer TEXT` (or `cancel`, `yes`, `no`) answers the
 /// next rename or confirmation. State: `menu.items` (titles, `[chord]`,
 /// `-` for separators, `(off)` for disabled), `menu.copied`,
 /// `menu.revealed`, `workspace.names`. `menu shot NAME` (Automation)
@@ -268,7 +332,7 @@ enum MenuAutomation {
     static func run(_ arg: String, app: AppController?) -> String? {
         guard let app, let controller = app.focusedController else { return "no window" }
         var words = arg.split(separator: " ").map(String.init)
-        guard let what = words.first else { return "menu needs workspace N, rail N, tile, answer or shot" }
+        guard let what = words.first else { return "menu needs workspace N, rail N, tab N, tile, answer or shot" }
         words.removeFirst()
         if what == "answer" {
             let text = words.joined(separator: " ")
@@ -292,24 +356,42 @@ enum MenuAutomation {
             guard rows.indices.contains(n - 1) else { return "no rail row \(n)" }
             let row = rows[n - 1]
             built = row.contextMenu().map { ($0, row.convert(row.bounds, to: nil)) }
+        case "tab":
+            // A tab in the top tab strip.
+            guard let n = words.first.flatMap(Int.init) else { return "menu tab needs a tab number" }
+            words.removeFirst()
+            let tabs = controller.tabStrip.tabButtons
+            guard tabs.indices.contains(n - 1) else { return "no tab \(n)" }
+            let tab = tabs[n - 1]
+            built = tab.contextMenu().map { ($0, tab.convert(tab.bounds, to: nil)) }
         case "tile":
             guard let view = controller.tiles.focusedView as? NSView & ContextMenuProviding else {
                 return "the focused tile has no menu"
             }
             built = view.contextMenu().map { ($0, (view as? TileFrame)?.menuAnchor ?? view.convert(view.bounds, to: nil)) }
         default:
-            return "menu needs workspace N, rail N, tile or answer"
+            return "menu needs workspace N, rail N, tab N, tile or answer"
         }
         guard let (menu, anchor) = built else { return "no menu" }
         last = (menu, anchor)
         app.log("menu \(what): \(describe(menu))")
         guard words.first == "invoke" else { return nil }
-        let title = words.dropFirst().joined(separator: " ")
-        guard let index = menu.items.firstIndex(where: { $0.title == title }) else {
-            return "no item “\(title)” in \(describe(menu))"
+        var title = words.dropFirst().joined(separator: " ")
+        var target = menu
+        // `Parent/Title`: an item of a submenu.
+        if let slash = title.firstIndex(of: "/") {
+            let parent = String(title[..<slash])
+            guard let sub = menu.items.first(where: { $0.title == parent })?.submenu else {
+                return "no submenu “\(parent)” in \(describe(menu))"
+            }
+            target = sub
+            title = String(title[title.index(after: slash)...])
         }
-        guard menu.items[index].isEnabled else { return "“\(title)” is disabled" }
-        menu.performActionForItem(at: index)
+        guard let index = target.items.firstIndex(where: { $0.title == title }) else {
+            return "no item “\(title)” in \(describe(target))"
+        }
+        guard target.items[index].isEnabled else { return "“\(title)” is disabled" }
+        target.performActionForItem(at: index)
         return nil
     }
 
@@ -320,6 +402,7 @@ enum MenuAutomation {
             if let chord = (item as? ContextMenuItem)?.chord { text += " [\(chord)]" }
             if item.state == .on { text += " (on)" }
             if !item.isEnabled { text += " (off)" }
+            if let sub = item.submenu { text += " ▸ {" + describe(sub).replacingOccurrences(of: "|", with: "; ") + "}" }
             return text
         }.joined(separator: "|")
     }
@@ -350,7 +433,7 @@ enum MenuRender {
         for item in menu.items {
             height += item.isSeparatorItem ? separatorHeight : rowHeight
             titleWidth = max(titleWidth, (item.title as NSString).size(withAttributes: attrs).width)
-            chordWidth = max(chordWidth, (glyphs(item) as NSString).size(withAttributes: attrs).width)
+            chordWidth = max(chordWidth, (trailer(item) as NSString).size(withAttributes: attrs).width)
         }
         let width = max(180, ceil(leading + titleWidth + (chordWidth > 0 ? gap + chordWidth : 0) + trailing))
         let size = NSSize(width: width, height: height)
@@ -377,7 +460,7 @@ enum MenuRender {
                         ("✓" as NSString).draw(at: NSPoint(x: 7, y: baseline), withAttributes: text)
                     }
                     (item.title as NSString).draw(at: NSPoint(x: leading, y: baseline), withAttributes: text)
-                    let chord = glyphs(item)
+                    let chord = trailer(item)
                     if !chord.isEmpty {
                         let muted: [NSAttributedString.Key: Any] = [
                             .font: font, .foregroundColor: item.isEnabled ? NSColor.secondaryLabelColor : .tertiaryLabelColor,
@@ -392,6 +475,9 @@ enum MenuRender {
         }
         return image
     }
+
+    /// What a row shows at its right: a submenu's arrow, else its chord.
+    static func trailer(_ item: NSMenuItem) -> String { item.hasSubmenu ? "▸" : glyphs(item) }
 
     /// The key equivalent as a menu shows it: ⌃⌥⇧⌘ then the key.
     static func glyphs(_ item: NSMenuItem) -> String {

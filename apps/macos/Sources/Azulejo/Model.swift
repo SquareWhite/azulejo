@@ -132,6 +132,34 @@ enum LayoutKind: String, Decodable {
         case .threeColumn: "▥"
         }
     }
+
+    /// The kinds the layout picker and the tab menu offer, in their order.
+    static let picker: [LayoutKind] = [.manual, .tile, .threeColumn, .monocle]
+
+    /// The kind's name in the layout picker and the tab menu.
+    var title: String {
+        switch self {
+        case .manual: "Manual"
+        case .tile: "Master (Tile)"
+        case .threeColumn: "Three Column"
+        case .monocle: "Monocle"
+        }
+    }
+
+    /// The kind's SF Symbol in the layout picker and the tab menu.
+    var symbol: String {
+        switch self {
+        case .manual: Design.Icon.layoutManual
+        case .tile: Design.Icon.layoutTile
+        case .threeColumn: Design.Icon.layoutThreeColumn
+        case .monocle: Design.Icon.layoutMonocle
+        }
+    }
+
+    /// The keymap action that switches a tab to this kind (`layout.toggle`;
+    /// the picker only runs it for a kind the tab isn't in, where toggling
+    /// is setting).
+    var toggleAction: String { "toggle_layout_\(rawValue)" }
 }
 
 struct TabLayoutModel: Decodable, Equatable {

@@ -17,6 +17,8 @@ final class TabStripView: NSView, ThemeAware {
     var onSelect: ((String) -> Void)?
     /// "+": a new tab in the active workspace.
     var onAdd: (() -> Void)?
+    /// A tab's right-click menu, by tab id (`ContextMenus.tabMenu`).
+    var onMenu: ((String) -> NSMenu?)?
     private var buttons: [TabButton] = []
     private let add = NSButton()
     private var shown: [String] = []
@@ -81,6 +83,8 @@ final class TabStripView: NSView, ThemeAware {
     var statuses: [String] { buttons.map(\.status.rawValue) }
     /// Automation: the first tab, for hit tests.
     var firstTab: NSView? { buttons.first }
+    /// Automation: the tabs, in order (`menu tab N`).
+    var tabButtons: [TabButton] { buttons }
     /// The selected tab's hint (its tooltip: name, tile count, layout kind).
     var selectedHint: String { buttons.first { $0.selected }?.toolTip ?? "" }
 
@@ -99,6 +103,7 @@ final class TabStripView: NSView, ThemeAware {
                 tab: tab, selected: tab.id == active, rollup: rollup,
                 status: Self.status(rollup, hasAgent: Self.hasAgent(tab))
             ) { [weak self] in self?.onSelect?(tab.id) }
+            button.menuProvider = { [weak self] in self?.onMenu?(tab.id) }
             self.tabs.addSubview(button)
             return button
         }
@@ -248,13 +253,17 @@ private final class TabScrollView: NSScrollView {
     }
 }
 
-/// One tab in the strip: state icon and name, filled when selected.
+/// One tab in the strip: state icon and name, filled when selected. A
+/// right-click shows its menu without switching to it.
 @MainActor
-final class TabButton: NSView, ThemeAware {
+final class TabButton: NSView, ThemeAware, ContextMenuProviding {
     let status: Design.Status
     /// Automation: the rollup's marker text, as the sidebar shows it.
     let markerText: String
     private let handler: () -> Void
+    var menuProvider: (() -> NSMenu?)?
+    /// Automation: the tab's name as shown.
+    let title: String
     private let icon: StatusIconView
     private let label = NSTextField(labelWithString: "")
     let selected: Bool
@@ -266,6 +275,7 @@ final class TabButton: NSView, ThemeAware {
         self.handler = handler
         icon = StatusIconView(status) { Self.icon(status) }
         markerText = rollup.marker?.string ?? ""
+        title = tab.label
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.tab
@@ -358,4 +368,6 @@ final class TabButton: NSView, ThemeAware {
     }
     override var mouseDownCanMoveWindow: Bool { false }
     override func accessibilityPerformPress() -> Bool { handler(); return true }
+    override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
+    func contextMenu() -> NSMenu? { menuProvider?() }
 }

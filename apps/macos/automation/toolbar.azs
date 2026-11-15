@@ -1,7 +1,7 @@
 # Window chrome (D.2), tab strip (D.4) and toolbar search field (D.8):
 # traffic lights in the sidebar card, clicks reaching the toolbar's controls
-# under the transparent title bar, tab state icons, "+", the ⌘K badge and the
-# quick-open dropdown hanging from the search field.
+# under the transparent title bar, tab state icons, "+", the layout picker,
+# the ⌘K badge and the quick-open dropdown hanging from the search field.
 #   apps/macos/automation/toolbar.sh
 
 log toolbar
@@ -12,11 +12,13 @@ wait 800
 # D.2: lights level with the toolbar row, inside the card; every control
 # under the (transparent, taller) title bar takes its own clicks, and empty
 # toolbar space reaches the chrome view (which drags the window).
-expect chrome.lights 29,31
+expect chrome.lights 29,26
 expect chrome.hit.close _NSThemeCloseWidget
 expect chrome.hit.tab1 TabButton
 expect chrome.hit.add NSButton
 expect chrome.hit.search ToolbarSearchView
+expect chrome.hit.picker LayoutSegment
+expect picker.kind tile
 expect chrome.hit.toggle SidebarToggleButton
 expect chrome.hit.toolbar ChromeLayoutView
 expect chrome.fits yes
@@ -65,15 +67,17 @@ expect palette.anchor -
 action toggle_sidebar
 until sidebar rail 3000
 wait 300
-expect chrome.lights 29,31
+expect chrome.lights 29,26
 expect chrome.hit.toggle SidebarToggleButton
 expect chrome.hit.tab1 TabButton
 expect chrome.hit.toolbar ChromeLayoutView
 expect chrome.rail.overlaps none
+expect chrome.hit.picker LayoutSegment
+expect chrome.fits yes
 capture 04-sidebar-rail 0
 wait 400
 action toggle_sidebar
 until sidebar visible 3000
 wait 300
-expect chrome.lights 29,31
+expect chrome.lights 29,26
 quit
