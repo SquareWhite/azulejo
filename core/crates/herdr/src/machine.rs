@@ -124,10 +124,50 @@ pub struct RemoteMachine {
     pub ssh: Ssh,
 }
 
-/// The shell code that finds herdr on the remote machine. GUI-less SSH
-/// sessions get a minimal `PATH`, so the installer's `~/.local/bin` is tried
-/// first, like herdr's own discovery.
-const FIND_HERDR: &str = r#"h=""; for c in "$HOME/.local/bin/herdr" "$(command -v herdr 2>/dev/null)" /opt/homebrew/bin/herdr /usr/local/bin/herdr /usr/bin/herdr; do if [ -n "$c" ] && [ -x "$c" ]; then h="$c"; break; fi; done; if [ -z "$h" ]; then echo "no usable herdr on this machine" >&2; exit 127; fi"#;
+/// The shell code that picks the remote herdr and leaves its path in `$h`.
+///
+/// The order follows herdr's own lookup for saved machines
+/// (`remote_binary_candidates` in herdr's `src/remote/attach.rs`): `PATH`
+/// first, then `~/.local/bin` (where herdr installs itself on a remote), then
+/// Homebrew, mise and Nix. Like herdr, it takes the first one whose
+/// `remote-api-bridge --check` prints `herdr-api-bridge-v1`, so a stale copy
+/// early in the list can't hide a good one. The bridge, `terminal attach` and
+/// `terminal session observe` all run this, so they always pick the same
+/// binary. It costs one `--check` per candidate tried, no SSH round trips.
+///
+/// It runs in the remote user's login shell, often zsh, so no globs (zsh
+/// fails the whole command on one that matches nothing): mise's `latest`
+/// symlink stands in for herdr's exact-version mise paths.
+///
+/// On failure it prints one line (the bridge reports its last stderr line and
+/// the sidebar shows it as the machine's tooltip) that
+/// [`crate::needs_attention`] recognises: exit 127 when there's no herdr at
+/// all, 78 with every herdr it found and its version when none has the
+/// bridge. `remote-api-bridge` came with `herdr --machine` in 0.9.1.
+const FIND_HERDR: &str = concat!(
+    r#"h=""; seen="|"; bad=""; "#,
+    r#"for c in "$(command -v herdr 2>/dev/null)" "$HOME/.local/bin/herdr" "#,
+    r#"/opt/homebrew/bin/herdr /usr/local/bin/herdr /home/linuxbrew/.linuxbrew/bin/herdr "#,
+    r#""$HOME/.local/share/mise/installs/herdr/latest/bin/herdr" "#,
+    r#""$HOME/.local/share/mise/installs/herdr/latest/herdr" "#,
+    r#""$HOME/.local/share/mise/installs/github-ogulcancelik-herdr/latest/herdr" "#,
+    r#""$HOME/.nix-profile/bin/herdr" "/etc/profiles/per-user/${USER:-}/bin/herdr" "#,
+    r#"/nix/var/nix/profiles/default/bin/herdr /run/current-system/sw/bin/herdr /usr/bin/herdr; do "#,
+    // Absolute paths only, never mise's shim (herdr skips it too), each once.
+    r#"case $c in */mise/shims/herdr) continue;; /*) ;; *) continue;; esac; "#,
+    r#"case $seen in *"|$c|"*) continue;; esac; seen="$seen$c|"; "#,
+    r#"[ -f "$c" ] && [ -x "$c" ] || continue; "#,
+    r#"case $("$c" remote-api-bridge --check </dev/null 2>/dev/null) in *herdr-api-bridge-v1*) h=$c; break;; esac; "#,
+    // Not this one: note it for the error as `~/.local/bin/herdr 0.8.2`.
+    r#"v=$("$c" --version </dev/null 2>/dev/null | head -n 1); v=${v#herdr }; "#,
+    r#"d=$c; if [ -n "$HOME" ]; then case $c in "$HOME"/*) d="~${c#"$HOME"}";; esac; fi; "#,
+    r#"bad="$bad${bad:+, }$d ${v:-(no version)}"; "#,
+    r#"done; "#,
+    r#"if [ -z "$h" ]; then "#,
+    r#"if [ -z "$bad" ]; then echo "no usable herdr on this machine (looked on PATH, in ~/.local/bin, Homebrew, mise and Nix)" >&2; exit 127; fi; "#,
+    r#"echo "herdr on this machine is too old for Azulejo: $bad; needs herdr 0.9.1+ (remote-api-bridge)" >&2; exit 78; "#,
+    r#"fi"#,
+);
 
 impl RemoteMachine {
     pub fn new(profile: MachineProfile, ssh: Ssh) -> Self {
@@ -138,13 +178,11 @@ impl RemoteMachine {
         format!("--session {}", shell_quote(&self.profile.session))
     }
 
-    /// The remote command for the API bridge: find herdr, check it speaks
+    /// The remote command for the API bridge: find a herdr that speaks
     /// `herdr-api-bridge-v1`, then become the bridge.
     pub fn bridge_script(&self) -> String {
         let s = self.session_args();
-        format!(
-            r#"{FIND_HERDR}; cap=$("$h" {s} remote-api-bridge --check </dev/null 2>/dev/null); if [ "$cap" != herdr-api-bridge-v1 ]; then echo "herdr on this machine is too old for remote-api-bridge" >&2; exit 78; fi; exec "$h" {s} remote-api-bridge"#
-        )
+        format!(r#"{FIND_HERDR}; exec "$h" {s} remote-api-bridge"#)
     }
 
     /// The remote command a terminal tile runs.
@@ -352,19 +390,279 @@ mod tests {
     }
 
     #[test]
-    fn the_scripts_run_in_a_posix_shell() {
-        // A machine without herdr says so on stderr and exits 127.
-        let out = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(machine().bridge_script())
-            .env_clear()
-            .env("HOME", "/nonexistent")
-            .env("PATH", "/nonexistent")
-            .output()
+    fn every_script_picks_herdr_the_same_way_herdr_does() {
+        let m = machine();
+        let scripts = [
+            m.bridge_script(),
+            m.attach_script(&"term_1".into(), false),
+            m.observe(&"w1:p2".into(), 80, 24)
+                .args
+                .last()
+                .unwrap()
+                .clone(),
+        ];
+        for script in &scripts {
+            assert!(script.starts_with(FIND_HERDR), "{script}");
+            // One check, inside the shared lookup: nothing else picks a binary.
+            assert_eq!(script.matches("remote-api-bridge --check").count(), 1);
+        }
+        // herdr's order: PATH, its install dir, then the package managers.
+        let at = |needle: &str| FIND_HERDR.find(needle).unwrap();
+        assert!(at("command -v herdr") < at(r#""$HOME/.local/bin/herdr""#));
+        assert!(at(r#""$HOME/.local/bin/herdr""#) < at("/opt/homebrew/bin/herdr"));
+        assert!(at("/opt/homebrew/bin/herdr") < at("/usr/bin/herdr"));
+        for path in [
+            "/home/linuxbrew/.linuxbrew/bin/herdr",
+            "/.nix-profile/bin/herdr",
+            "/mise/installs/herdr/",
+            "/run/current-system/sw/bin/herdr",
+        ] {
+            assert!(FIND_HERDR.contains(path), "missing {path}");
+        }
+        assert!(!FIND_HERDR.contains('\n'));
+    }
+
+    /// The fixed system paths the lookup tries. If one holds a real herdr
+    /// on the test machine, the "nothing qualifies" cases can't be staged.
+    fn system_herdr() -> Option<&'static str> {
+        [
+            "/opt/homebrew/bin/herdr",
+            "/usr/local/bin/herdr",
+            "/home/linuxbrew/.linuxbrew/bin/herdr",
+            "/nix/var/nix/profiles/default/bin/herdr",
+            "/run/current-system/sw/bin/herdr",
+            "/usr/bin/herdr",
+        ]
+        .into_iter()
+        .find(|p| Path::new(p).exists())
+    }
+
+    /// A fake remote: `$HOME` and a `PATH` dir in a temp dir, to hold stub
+    /// herdrs, reached through scripts/ssh-standin.sh.
+    struct FakeRemote {
+        dir: tempfile::TempDir,
+    }
+
+    impl FakeRemote {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("home/.local/bin")).unwrap();
+            std::fs::create_dir_all(dir.path().join("bin")).unwrap();
+            Self { dir }
+        }
+
+        fn home(&self) -> PathBuf {
+            self.dir.path().join("home")
+        }
+
+        fn path_dir(&self) -> PathBuf {
+            self.dir.path().join("bin")
+        }
+
+        /// A stub herdr at `at`: prints `name` and its arguments, reports
+        /// `version`, and passes `remote-api-bridge --check` if `bridge`.
+        fn herdr(&self, at: &Path, name: &str, version: &str, bridge: bool) {
+            use std::os::unix::fs::PermissionsExt;
+            let check = if bridge {
+                "echo herdr-api-bridge-v1"
+            } else {
+                "echo \"error: unrecognized subcommand 'remote-api-bridge'\" >&2; exit 2"
+            };
+            std::fs::write(
+                at,
+                format!(
+                    "#!/bin/sh\ncase \"$*\" in\n\"remote-api-bridge --check\") {check} ;;\n--version) echo 'herdr {version}' ;;\n*) echo \"{name} $*\" ;;\nesac\n"
+                ),
+            )
             .unwrap();
-        // /usr/bin/herdr etc. don't exist on CI or this Mac.
-        if out.status.code() == Some(127) {
-            assert!(String::from_utf8_lossy(&out.stderr).contains("no usable herdr"));
+            std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        /// Runs ssh `args` on this fake remote: through the ssh stand-in
+        /// for `STANDIN`, else as `<shell> -c <script>`, like sshd hands the
+        /// script to the user's login shell.
+        fn run(&self, shell: &str, args: &[String]) -> (Option<i32>, String, String) {
+            let mut cmd = if shell == STANDIN {
+                let mut c = std::process::Command::new("/bin/sh");
+                c.arg(
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh"),
+                )
+                .args(args);
+                c
+            } else {
+                let mut c = std::process::Command::new(shell);
+                c.arg("-c").arg(args.last().unwrap());
+                c
+            };
+            let out = cmd
+                .env_clear()
+                .env("HOME", self.home())
+                .env(
+                    "PATH",
+                    format!("{}:/usr/bin:/bin", self.path_dir().display()),
+                )
+                .output()
+                .unwrap();
+            (
+                out.status.code(),
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        }
+    }
+
+    /// Runs the script through the ssh stand-in.
+    const STANDIN: &str = "ssh-standin";
+
+    /// The stand-in plus every login shell on this machine the script must
+    /// survive (sshd runs it with the remote user's shell, often zsh).
+    fn shells() -> Vec<&'static str> {
+        let mut out = vec![STANDIN];
+        out.extend(
+            [
+                "/bin/sh",
+                "/bin/bash",
+                "/bin/zsh",
+                "/bin/dash",
+                "/usr/bin/dash",
+            ]
+            .into_iter()
+            .filter(|s| Path::new(s).exists()),
+        );
+        out
+    }
+
+    #[test]
+    fn stale_herdrs_early_in_line_are_skipped_for_one_with_the_bridge() {
+        let fake = FakeRemote::new();
+        // PATH and ~/.local/bin hold old herdrs; the good one is in mise.
+        fake.herdr(&fake.path_dir().join("herdr"), "old", "0.8.2", false);
+        fake.herdr(
+            &fake.home().join(".local/bin/herdr"),
+            "older",
+            "0.8.0",
+            false,
+        );
+        let mise = fake
+            .home()
+            .join(".local/share/mise/installs/herdr/latest/bin");
+        std::fs::create_dir_all(&mise).unwrap();
+        fake.herdr(&mise.join("herdr"), "new", "0.9.5", true);
+        let m = machine();
+
+        for shell in shells() {
+            let (code, out, err) = fake.run(shell, &m.bridge().args);
+            assert_eq!(code, Some(0), "{shell}: {err}");
+            assert_eq!(
+                out.trim(),
+                "new --session default remote-api-bridge",
+                "{shell}"
+            );
+
+            // Tiles and the observe view use that same binary.
+            let (code, out, err) = fake.run(shell, &m.attach(&"term_1".into(), true).args);
+            assert_eq!(code, Some(0), "{shell}: {err}");
+            assert_eq!(
+                out.trim(),
+                "new --session default terminal attach term_1 --takeover",
+                "{shell}"
+            );
+            let (code, out, err) = fake.run(shell, &m.observe(&"w1:p2".into(), 80, 24).args);
+            assert_eq!(code, Some(0), "{shell}: {err}");
+            assert_eq!(
+                out.trim(),
+                "new --session default terminal session observe w1:p2 --cols 80 --rows 24",
+                "{shell}"
+            );
+        }
+    }
+
+    #[test]
+    fn when_several_herdrs_qualify_path_wins_as_in_herdr() {
+        let fake = FakeRemote::new();
+        fake.herdr(&fake.path_dir().join("herdr"), "on-path", "0.9.5", true);
+        fake.herdr(
+            &fake.home().join(".local/bin/herdr"),
+            "installed",
+            "0.9.5",
+            true,
+        );
+        for shell in shells() {
+            let (code, out, err) = fake.run(shell, &machine().bridge().args);
+            assert_eq!(code, Some(0), "{shell}: {err}");
+            assert!(out.starts_with("on-path "), "{shell}: {out}");
+        }
+    }
+
+    #[test]
+    fn with_no_herdr_that_has_the_bridge_it_lists_what_it_tried() {
+        if let Some(p) = system_herdr() {
+            eprintln!("skipped: {p} exists on this machine");
+            return;
+        }
+        let fake = FakeRemote::new();
+        fake.herdr(&fake.path_dir().join("herdr"), "old", "0.9.0", false);
+        fake.herdr(
+            &fake.home().join(".local/bin/herdr"),
+            "older",
+            "0.8.2",
+            false,
+        );
+        for shell in shells() {
+            let (code, out, err) = fake.run(shell, &machine().bridge().args);
+            assert_eq!(code, Some(78), "{shell}: {out}");
+            assert!(out.is_empty(), "{shell}: {out}");
+            assert_eq!(
+                err.trim(),
+                format!(
+                    "herdr on this machine is too old for Azulejo: {}/herdr 0.9.0, \
+                     ~/.local/bin/herdr 0.8.2; needs herdr 0.9.1+ (remote-api-bridge)",
+                    fake.path_dir().display()
+                ),
+                "{shell}"
+            );
+            assert!(crate::needs_attention(&err));
+        }
+
+        // On PATH and in ~/.local/bin at once: listed once. A herdr that
+        // can't say its version still shows up.
+        let fake = FakeRemote::new();
+        let at = fake.home().join(".local/bin/herdr");
+        fake.herdr(&at, "older", "0.8.2", false);
+        let stub = std::fs::read_to_string(&at).unwrap();
+        std::fs::write(&at, stub.replace("echo 'herdr 0.8.2'", "exit 1")).unwrap();
+        let mut args = machine().bridge().args;
+        let script = args.pop().unwrap();
+        args.push(format!("PATH=\"$HOME/.local/bin:$PATH\"; {script}"));
+        for shell in shells() {
+            let (code, _, err) = fake.run(shell, &args);
+            assert_eq!(code, Some(78), "{shell}: {err}");
+            assert!(
+                err.contains("Azulejo: ~/.local/bin/herdr (no version); needs"),
+                "{shell}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn with_no_herdr_at_all_it_says_so() {
+        if let Some(p) = system_herdr() {
+            eprintln!("skipped: {p} exists on this machine");
+            return;
+        }
+        let fake = FakeRemote::new();
+        // Neither a non-executable file nor a directory counts.
+        std::fs::write(fake.path_dir().join("herdr"), "").unwrap();
+        std::fs::create_dir(fake.home().join(".local/bin/herdr")).unwrap();
+        for shell in shells() {
+            let (code, _, err) = fake.run(shell, &machine().attach(&"term_1".into(), false).args);
+            assert_eq!(code, Some(127), "{shell}: {err}");
+            assert!(
+                err.trim().starts_with("no usable herdr on this machine"),
+                "{shell}: {err}"
+            );
+            assert_eq!(err.trim().lines().count(), 1, "{shell}: {err}");
+            assert!(crate::needs_attention(&err));
         }
     }
 }
