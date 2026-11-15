@@ -1305,6 +1305,70 @@ fn adopting_and_restoring_never_change_herdr() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Workspace order is Azulejo's own (ADR 0013): adoption takes herdr's
+/// order once; after that a move here calls nothing in herdr, a resync
+/// doesn't put herdr's order back, and a relaunch keeps the moved order.
+#[test]
+fn workspace_order_is_azulejos_own_and_survives_a_relaunch() {
+    let herdr_ids = |s: &Session| -> Vec<String> {
+        s.windows[0]
+            .workspaces
+            .iter()
+            .map(|w| w.herdr_workspace.clone().unwrap_or_default())
+            .collect()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(Some(state.clone())), fake.clone());
+    let session = wait_until(&core, |s| adopted(s) == 6);
+    wait_for_calls(&fake, "reresolve", 6);
+    assert_eq!(herdr_ids(&session), ["w1", "w2"], "herdr's order at first");
+
+    let second = session.windows[0].workspaces[1].id;
+    let outcome = core
+        .execute(Command::WorkspaceMove(azulejo_protocol::WorkspaceMove {
+            workspace: Some(second),
+            index: 0,
+        }))
+        .unwrap();
+    assert!(
+        outcome
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::WorkspacesReordered { .. }))
+    );
+    assert_eq!(herdr_ids(&core.session().unwrap()), ["w2", "w1"]);
+
+    // herdr resyncs: a survey runs, and the order stays ours.
+    let surveys = fake
+        .state()
+        .calls
+        .iter()
+        .filter(|c| **c == "survey")
+        .count();
+    fake.send(herdr::StreamItem::Resync);
+    wait_for_calls(&fake, "survey", surveys + 1);
+    std::thread::sleep(Duration::from_millis(50));
+    let moved = core.session().unwrap();
+    assert_eq!(herdr_ids(&moved), ["w2", "w1"]);
+    assert_eq!(
+        fake.mutations(),
+        Vec::<&str>::new(),
+        "nothing sent to herdr"
+    );
+    core.shutdown();
+
+    // Relaunch on the same herdr: the saved order wins.
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(Some(state)), fake.clone());
+    wait_for_calls(&fake, "reresolve", 6);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(herdr_ids(&core.session().unwrap()), ["w2", "w1"]);
+    assert_eq!(fake.mutations(), Vec::<&str>::new());
+    core.shutdown();
+}
+
 #[test]
 fn an_empty_herdr_still_gets_the_first_terminal() {
     let fake = Fake::default();

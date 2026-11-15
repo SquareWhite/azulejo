@@ -108,8 +108,8 @@ shot 04-back
 # ---- The rail: the collapsed sidebar (toggle_sidebar, default [sidebar]
 # collapsed = "rail"). Same data as the full sidebar.
 
-# Another agent in a second tab of sample-dashboard, in its second tile, to
-# jump to from the rail.
+# Another agent in a second tab of sample-dashboard, in its second tile: the
+# rail shows it on its workspace's row only (no agent list of its own).
 action switch_workspace 4
 action new_tab
 until tabs 2 5000
@@ -136,30 +136,26 @@ wait 600
 expect rail.shown yes
 expect rail.groups L:connected
 expect rail.rows 1:working*|2:blocked|3:blocked|4:working|5:idle
-# One agent row per terminal with an agent, in window order; blocked ones
-# stand out.
-expect rail.agents L:working|L:blocked!|L:blocked!|L:working
+# Rows sit as far from the left edge as from the right, their number and
+# icon centred between.
 expect rail.fits yes
+expect rail.centred yes
+expect rail.insets 4/4|4/4|4/4|4/4|4/4
 expect chrome.rail.overlaps none
 expect chrome.hit.close _NSThemeCloseWidget
 expect chrome.hit.toggle SidebarToggleButton
-until rail.spinning 4 3000
+until rail.spinning 2 3000
 expect rail.tips azulejo (⌘1) ¦ main ¦ 1 working ‖ sample-service (⌘2) ¦ development ¦ 1 blocked ‖ sample-project (⌘3) ¦ audit/critical-path-review ¦ 1 blocked ‖ sample-dashboard (⌘4) ¦ dev ¦ 1 working ‖ config (⌘5) ¦ main ¦ no agents
 expect rail.group.tips Local ¦ Connected
-expect rail.agent.tips claude ¦ azulejo / terminal ¦ working ‖ claude ¦ sample-service / terminal ¦ blocked ‖ codex ¦ sample-project / terminal ¦ blocked ‖ codex ¦ sample-dashboard / terminal ¦ working
 shot 05-rail
 capture 05-rail-window 0
 
-# Clicks: a workspace row focuses it; an agent row jumps to its tile (its
-# workspace, tab and tile).
+# Clicks: a workspace row focuses it, through the row's own mouse handling
+# too (a press that doesn't move is a click, not a drag).
 sidebar rail select 3
 expect workspace 3
 until rail.rows 1:working|2:blocked|3:blocked*|4:working|5:idle 2000
-sidebar rail agent 4
-expect workspace 4
-expect tab 2
-expect focus 2
-sidebar rail agent 2
+sidebar drag click 2
 expect workspace 2
 # Right-click on a rail row: the workspace's own menu.
 menu rail 1

@@ -248,13 +248,17 @@ impl Engine {
                     .iter()
                     .filter(|w| p.window.is_none_or(|id| id == w.id))
                     .flat_map(|w| {
-                        w.workspaces.iter().map(move |ws| WorkspaceSummary {
-                            window: w.id,
-                            active: w.active_workspace == ws.id,
-                            focused: focus.workspace == Some(ws.id),
-                            tabs: ws.tabs.len(),
-                            workspace: diff::workspace_info(ws),
-                        })
+                        w.workspaces
+                            .iter()
+                            .enumerate()
+                            .map(move |(i, ws)| WorkspaceSummary {
+                                window: w.id,
+                                number: i + 1,
+                                active: w.active_workspace == ws.id,
+                                focused: focus.workspace == Some(ws.id),
+                                tabs: ws.tabs.len(),
+                                workspace: diff::workspace_info(ws),
+                            })
                     })
                     .collect();
                 Reply::Workspaces { workspaces }

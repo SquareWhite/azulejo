@@ -108,6 +108,9 @@ pub struct WindowSummary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkspaceSummary {
     pub window: WindowId,
+    /// Its place in the window's list, from 1: the sidebar order, and the
+    /// ⌘ number that switches to it (⌘1…⌘8).
+    pub number: usize,
     /// The window's active workspace.
     pub active: bool,
     /// Active in the focused window.

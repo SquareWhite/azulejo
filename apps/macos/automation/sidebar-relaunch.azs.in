@@ -22,6 +22,8 @@ sh touch @SIDE@/ssh.fail
 sh pkill -f 'azj-dev-side-remote remote-api-bridge' || true
 until rail.groups L:connected|S:reconnecting 10000
 expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle~|7:idle~
+# The turning ring keeps the group's letter and mark centred too.
+expect rail.centred yes
 shot 07-rail-reconnecting
 capture 07-rail-reconnecting-window 0
 sh rm -f @SIDE@/ssh.fail

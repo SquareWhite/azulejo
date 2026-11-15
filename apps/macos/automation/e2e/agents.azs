@@ -123,12 +123,10 @@ expect tab.statuses done
 action toggle_sidebar
 until sidebar rail 3000
 wait 600
-expect rail.agents L:idle|L:done|L:idle
 expect rail.rows 1:done*
 key alt+k
 expect focus 2
-until rail.agents L:idle|L:idle|L:idle 2000
-expect rail.rows 1:idle*
+until rail.rows 1:idle* 2000
 action toggle_sidebar
 until sidebar visible 3000
 seen-visible off

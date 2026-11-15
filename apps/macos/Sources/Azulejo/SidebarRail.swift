@@ -8,33 +8,32 @@ import AppKit
 ///   or a turning ring in the state's colour while it connects or
 ///   reconnects; then its workspaces, each its number (as ⌘1…⌘8) and status
 ///   icon, the current one on the selected fill.
-/// - Lower down, one row per terminal with an agent: its machine's letter
-///   and the agent's status icon, in window order (workspace, tab, tile, as
-///   herdr's default `agent_panel_sort = "spaces"`). Blocked rows sit on a
-///   tint of the blocked colour.
 /// - `»` at the bottom opens the full sidebar.
 ///
-/// Hovering a row shows its tooltip; a click focuses the workspace or jumps
-/// to the tile; right-click on a workspace gives its usual menu. The rail
-/// never takes the keyboard.
+/// Rows keep the same inset on both sides, and their number and icon sit
+/// centred between them (icons in one column, whatever the numbers).
+/// Hovering a row shows its tooltip; a click focuses the workspace; a drag
+/// reorders it within its group (`WorkspaceDrag`); right-click gives its
+/// usual menu. The rail never takes the keyboard.
 @MainActor
-final class SidebarRailView: NSView, ThemeAware {
+final class SidebarRailView: NSView, WorkspaceDragHost {
     var onSelect: ((String) -> Void)?
     var onMenu: ((String) -> NSMenu?)?
-    /// An agent row: focus its tile (and its workspace and tab).
-    var onTile: ((String) -> Void)?
     var onExpand: (() -> Void)?
+    /// A dropped drag: move the workspace to an index in the window.
+    var onMove: ((String, Int) -> Void)?
 
     static var width: CGFloat { Design.Space.railWidth }
 
     private let scroll = NSScrollView()
     private let document = RailDocument()
-    private let separator = NSView()
     private lazy var expand = RailExpandButton { [weak self] in self?.onExpand?() }
     private var shown: [String] = []
+    private var order: [String] = []
+    /// A refresh held back while a drag runs.
+    private var pending: (window: WindowModel, machines: [MachineModel])?
     private(set) var groups: [RailGroupHeader] = []
     private(set) var workspaceRows: [RailWorkspaceRow] = []
-    private(set) var agentRows: [RailAgentRow] = []
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
@@ -50,53 +49,13 @@ final class SidebarRailView: NSView, ThemeAware {
         scroll.hasVerticalScroller = false
         scroll.verticalScrollElasticity = .allowed
         addSubview(scroll)
-        separator.wantsLayer = true
-        document.addSubview(separator)
         addSubview(expand)
-        Theme.track(self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        Theme.reapply(self)
-    }
-
-    func applyTheme() {
-        separator.layer?.backgroundColor = Design.Color.border.cgColor
-    }
-
     // MARK: Model
-
-    /// A terminal with an agent, for the rail's lower section.
-    struct Agent {
-        var tile: String
-        var machine: String
-        var status: Design.Status
-        var tip: String
-        var blocked: Bool
-    }
-
-    /// Every agent in the window, in window order: workspaces as the
-    /// sidebar lists them, then tabs, then tiles as they cycle.
-    static func agents(_ window: WindowModel, machines: [MachineModel]) -> [Agent] {
-        var out: [Agent] = []
-        for ws in window.workspaces {
-            for tab in ws.tabs {
-                for id in tab.order {
-                    guard let tile = tab.tile(id), let agent = tile.agent else { continue }
-                    let status = status(agent)
-                    let name = agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
-                    let tip = [name, "\(ws.name) / \(tab.label)", status.rawValue].joined(separator: "\n")
-                    out.append(Agent(tile: id, machine: letter(ws.machineID, machines: machines),
-                                     status: status, tip: tip, blocked: agent.status == .blocked))
-                }
-            }
-        }
-        return out
-    }
 
     /// One agent's icon, ranked as the sidebar ranks a workspace: blocked,
     /// then finished and not read, then working, else idle (a read finish
@@ -126,8 +85,13 @@ final class SidebarRailView: NSView, ThemeAware {
     }
 
     func apply(_ window: WindowModel, machines: [MachineModel]) {
+        if WorkspaceDrag.current?.hosted(by: self) == true {
+            pending = (window, machines)
+            return
+        }
+        pending = nil
+        order = window.workspaces.map(\.id)
         let groups = SidebarView.groups(window, machines: machines)
-        let agents = Self.agents(window, machines: machines)
         var key = groups.map {
             "\($0.id)|\($0.machine?.label ?? "")|\($0.machine?.state.rawValue ?? "")|\($0.machine?.message ?? "")"
         }
@@ -135,14 +99,12 @@ final class SidebarRailView: NSView, ThemeAware {
             key.append("\(ws.id)|\(ws.name)|\(ws.id == window.activeWorkspace)|\(SidebarView.status(ws).rawValue)"
                        + "|\(SidebarView.branch(ws.git) ?? "")|\(Self.counts(ws))")
         }
-        key += agents.map { "\($0.tile)|\($0.machine)|\($0.status.rawValue)|\($0.tip)" }
         guard key != shown else { return }
         shown = key
 
-        (self.groups as [NSView] + workspaceRows + agentRows).forEach { $0.removeFromSuperview() }
+        (self.groups as [NSView] + workspaceRows).forEach { $0.removeFromSuperview() }
         self.groups = []
         workspaceRows = []
-        agentRows = []
         for group in groups {
             let header = RailGroupHeader(group: group, letter: Self.letter(group.id, machines: machines))
             document.addSubview(header)
@@ -160,12 +122,9 @@ final class SidebarRailView: NSView, ThemeAware {
                 workspaceRows.append(row)
             }
         }
-        for agent in agents {
-            let row = RailAgentRow(agent) { [weak self] in self?.onTile?(agent.tile) }
-            document.addSubview(row)
-            agentRows.append(row)
-        }
-        separator.isHidden = agentRows.isEmpty
+        // Every number takes the widest one's room, so the icons line up.
+        let widest = workspaceRows.map(\.numberWidth).max() ?? 0
+        for row in workspaceRows { row.numberColumn = widest }
         needsLayout = true
     }
 
@@ -175,6 +134,20 @@ final class SidebarRailView: NSView, ThemeAware {
         if let branch = SidebarView.branch(ws.git) { lines.append(branch) }
         lines.append(counts(ws))
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: Dragging (WorkspaceDragHost)
+
+    var dragRows: [WorkspaceDragRow] { workspaceRows }
+    var dragOrder: [String] { pending.map { $0.window.workspaces.map(\.id) } ?? order }
+    var dropArea: NSRect {
+        convert(bounds, to: nil).insetBy(dx: -Design.Space.dropMargin, dy: -Design.Space.dropMargin)
+    }
+
+    func dragMove(_ workspace: String, to index: Int) { onMove?(workspace, index) }
+
+    func dragEnded() {
+        if let pending { apply(pending.window, machines: pending.machines) }
     }
 
     // MARK: Layout
@@ -189,8 +162,7 @@ final class SidebarRailView: NSView, ThemeAware {
         layoutDocument()
     }
 
-    /// Groups and workspaces from the top; the agents from the bottom when
-    /// everything fits (herdr's layout), else straight after.
+    /// Groups and their workspaces from the top, the same inset on both sides.
     private func layoutDocument() {
         let pad = Design.Space.railPadding
         let width = scroll.bounds.width
@@ -204,18 +176,7 @@ final class SidebarRailView: NSView, ThemeAware {
                 y += Design.Space.railRowHeight
             }
         }
-        let agentsHeight = CGFloat(agentRows.count) * Design.Space.railRowHeight
-        let gap = Design.Space.railSectionGap
-        let available = scroll.contentSize.height
-        var top = y + gap
-        if !agentRows.isEmpty, top + agentsHeight <= available { top = available - agentsHeight }
-        separator.frame = NSRect(x: pad + 2, y: top - gap / 2, width: max(0, rowWidth - 4), height: 1)
-        for (i, row) in agentRows.enumerated() {
-            row.frame = NSRect(x: pad, y: top + CGFloat(i) * Design.Space.railRowHeight,
-                               width: rowWidth, height: Design.Space.railRowHeight)
-        }
-        let end = agentRows.isEmpty ? y : top + agentsHeight
-        document.frame = NSRect(x: 0, y: 0, width: width, height: max(available, end))
+        document.frame = NSRect(x: 0, y: 0, width: width, height: max(scroll.contentSize.height, y))
     }
 }
 
@@ -230,21 +191,42 @@ extension SidebarRailView {
     /// Automation: group headers as "letter:state" ("L:connected|B:reconnecting").
     var groupSummary: String { groups.map(\.summary).joined(separator: "|") }
 
-    /// Automation: agent rows as "letter:status", "!" on blocked ones.
-    var agentSummary: String {
-        agentRows.map { "\($0.machine):\($0.status.rawValue)\($0.blocked ? "!" : "")" }.joined(separator: "|")
-    }
-
-    /// Automation: whether every agent row lies inside the rail (visible
-    /// without scrolling), and nothing overlaps.
+    /// Automation: whether every row lies inside the rail (visible without
+    /// scrolling), and nothing overlaps.
     var fits: Bool {
-        let rows: [NSView] = groups + workspaceRows + agentRows
+        let rows: [NSView] = groups + workspaceRows
         let visible = scroll.documentVisibleRect
         for (i, a) in rows.enumerated() {
             if !visible.contains(a.frame) { return false }
             for b in rows[(i + 1)...] where a.frame.intersects(b.frame) { return false }
         }
         return true
+    }
+
+    /// Automation: how far each row's content sits off the row's middle
+    /// (its number and icon, as drawn), and each row's inset from the rail
+    /// on the left and right ("0|0|0" and "4/4|4/4"), so a lopsided rail fails.
+    var contentOffsets: String {
+        (groups.map(\.contentOffset) + workspaceRows.map(\.contentOffset))
+            .map { String(format: "%g", ($0 * 2).rounded() / 2) }.joined(separator: "|")
+    }
+
+    /// Automation: every row's content within a point of its middle, and
+    /// every row inset the same on both sides.
+    var centred: Bool {
+        let offsets = groups.map(\.contentOffset) + workspaceRows.map(\.contentOffset)
+        let even = workspaceRows.allSatisfy { row in
+            let r = row.convert(row.bounds, to: self)
+            return abs(r.minX - (bounds.width - r.maxX)) < 0.5
+        }
+        return even && offsets.allSatisfy { abs($0) <= 1 }
+    }
+
+    var rowInsets: String {
+        workspaceRows.map { row in
+            let r = row.convert(row.bounds, to: self)
+            return "\(Int(r.minX.rounded()))/\(Int((bounds.width - r.maxX).rounded()))"
+        }.joined(separator: "|")
     }
 
     var expandButton: NSView { expand }
@@ -255,86 +237,39 @@ private final class RailDocument: NSView {
     override var isFlipped: Bool { true }
 }
 
-// MARK: - Rows
+// MARK: - Content
 
-/// A rail row: hover fill, a click handler, no keyboard focus.
+/// A label and a mark (status icon or dot) side by side, centred together
+/// in their row: the label right-aligned in a column `column` points wide,
+/// then `Design.Space.railContentGap`, then the mark.
 @MainActor
-class RailRow: NSView, ThemeAware {
-    fileprivate let handler: () -> Void
-    fileprivate var fill: NSColor? { nil }
-    private var icon: StatusIconView?
-    /// Automation: the working ring is turning.
-    var isSpinning: Bool { icon?.isSpinning == true }
-    private var hovering = false {
-        didSet { Theme.reapply(self) }
+private enum RailContent {
+    /// The width `text` takes in `font`.
+    static func width(_ text: String, font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    init(handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = Design.Radius.row
-        layer?.cornerCurve = .continuous
-        setAccessibilityRole(.button)
-        Theme.track(self)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var acceptsFirstResponder: Bool { false }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(
-            rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) {}
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { handler() }
-    }
-    override func accessibilityPerformPress() -> Bool { handler(); return true }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        Theme.reapply(self)
-    }
-
-    /// The selected or blocked fill, or the hover one.
-    func applyTheme() {
-        layer?.backgroundColor = (fill
-            ?? (hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover) : nil))?.cgColor
-    }
-
-    fileprivate func updateBackground() { Theme.reapply(self) }
-
-    /// Automation: what a click does.
-    func press() { handler() }
-
-    /// A centred label and status icon side by side.
-    fileprivate func addContent(text: String, font: NSFont, color: NSColor, icon: StatusIconView) {
-        self.icon = icon
-        let label = NSTextField(labelWithString: text)
-        label.font = font
-        label.textColor = color
-        label.alignment = .right
-        label.lineBreakMode = .byClipping
-        for view in [label, icon] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            label.trailingAnchor.constraint(equalTo: centerXAnchor, constant: -1),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 1),
-            icon.leadingAnchor.constraint(equalTo: centerXAnchor, constant: 2),
-            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: Design.Symbol.railStatus + 3),
-        ])
+    /// Frames for the label and the mark; `column` is the label's room.
+    /// Returns how far the drawn pair sits off the middle (0 when centred).
+    @discardableResult
+    static func layout(label: NSTextField, text: CGFloat, column: CGFloat, mark: NSView, markSize: NSSize,
+                       in bounds: NSRect, labelY: CGFloat? = nil) -> CGFloat {
+        let gap = Design.Space.railContentGap
+        let total = column + gap + markSize.width
+        let left = (bounds.width - total) / 2
+        // A label draws its text 2 points in from each side of its frame
+        // (its cell size; its intrinsic size leaves that out): line its
+        // text, not its frame, up with the column's right edge.
+        let field = label.cell?.cellSize ?? label.intrinsicContentSize
+        let inset = max(0, (field.width - text) / 2)
+        let textRight = left + column
+        label.frame = NSRect(x: textRight + inset - field.width, y: labelY ?? (bounds.height - field.height) / 2,
+                             width: field.width, height: field.height)
+        mark.frame = NSRect(x: textRight + gap, y: (bounds.height - markSize.height) / 2,
+                            width: markSize.width, height: markSize.height)
+        let drawnLeft = textRight - text
+        let drawnRight = textRight + gap + markSize.width
+        return (drawnLeft + drawnRight) / 2 - bounds.width / 2
     }
 }
 
@@ -344,6 +279,10 @@ class RailRow: NSView, ThemeAware {
 final class RailGroupHeader: NSView {
     let summary: String
     fileprivate var rows: [RailWorkspaceRow] = []
+    private let label: NSTextField
+    private let mark: NSView
+    private let letterWidth: CGFloat
+    private(set) var contentOffset: CGFloat = 0
 
     init(group: SidebarView.Group, letter: String) {
         let machine = group.machine
@@ -355,6 +294,18 @@ final class RailGroupHeader: NSView {
         case .off, nil: .off
         }
         summary = "\(letter):\(machine?.state.rawValue ?? "gone")"
+        label = NSTextField(labelWithString: letter)
+        label.font = Design.Font.railLetter
+        label.textColor = Design.Color.textMuted
+        letterWidth = RailContent.width(letter, font: Design.Font.railLetter)
+        let busy = machine?.state == .connecting || machine?.state == .reconnecting
+        if busy {
+            mark = StatusIconView(status, image: {
+                Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
+            }, spins: true)
+        } else {
+            mark = RailDot(color: status.color)
+        }
         super.init(frame: .zero)
         let state: String? = switch machine?.state {
         case .connected, nil: nil
@@ -365,35 +316,29 @@ final class RailGroupHeader: NSView {
         }
         toolTip = [machine?.label ?? "machine \(group.id.prefix(8))", state ?? machine.map { _ in "Connected" } ?? "Not in herdr",
                    machine?.message].compactMap { $0 }.joined(separator: "\n")
-
-        let label = NSTextField(labelWithString: letter)
-        label.font = Design.Font.railLetter
-        label.textColor = Design.Color.textMuted
-        let busy = machine?.state == .connecting || machine?.state == .reconnecting
-        let mark: NSView
-        if busy {
-            mark = StatusIconView(status, image: {
-                Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
-            }, spins: true)
-        } else {
-            mark = RailDot(color: status.color)
-        }
-        for view in [label, mark] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            label.trailingAnchor.constraint(equalTo: centerXAnchor, constant: -1),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
-            mark.leadingAnchor.constraint(equalTo: centerXAnchor, constant: 3),
-            mark.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-        ])
+        addSubview(label)
+        addSubview(mark)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
     override var acceptsFirstResponder: Bool { false }
+
+    override func layout() {
+        super.layout()
+        let dot = Design.Radius.machineDot * 2
+        let ring = mark.intrinsicContentSize
+        let size = mark is RailDot ? NSSize(width: dot, height: dot)
+            : ring.width > 0 ? ring : NSSize(width: Design.Symbol.machineRing, height: Design.Symbol.machineRing)
+        // The letter sits low in its row, as the group's label does in the
+        // full sidebar; the mark on the letter's middle.
+        let field = label.cell?.cellSize ?? label.intrinsicContentSize
+        let labelY: CGFloat = isFlipped ? bounds.height - 3 - field.height : 3
+        contentOffset = RailContent.layout(label: label, text: letterWidth, column: letterWidth, mark: mark,
+                                           markSize: size, in: bounds, labelY: labelY)
+        mark.frame.origin.y = label.frame.midY - size.height / 2
+    }
 }
 
 /// A machine's connection dot in the rail.
@@ -407,10 +352,6 @@ private final class RailDot: NSView, ThemeAware {
         super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.machineDot
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: side),
-            heightAnchor.constraint(equalToConstant: side),
-        ])
         Theme.track(self)
     }
 
@@ -427,14 +368,36 @@ private final class RailDot: NSView, ThemeAware {
     }
 }
 
-/// A workspace in the rail: its number and status icon.
+// MARK: - Rows
+
+/// A workspace in the rail: its number and status icon, centred; the
+/// selected fill or the hover one; a click, a drag or a right-click.
 @MainActor
-final class RailWorkspaceRow: RailRow, ContextMenuProviding {
+final class RailWorkspaceRow: NSView, ThemeAware, ContextMenuProviding, WorkspaceDragRow {
     let number: Int
     let status: Design.Status
     let selected: Bool
     let dimmed: Bool
+    let workspaceID: String
+    let groupID: String
+    var dragName: String { "\(number)" }
     var menuProvider: (() -> NSMenu?)?
+    /// The width of this row's number as drawn.
+    let numberWidth: CGFloat
+    /// The room every number in the rail takes (the widest's), set by the rail.
+    var numberColumn: CGFloat = 0 {
+        didSet { needsLayout = true }
+    }
+    private(set) var contentOffset: CGFloat = 0
+    private let handler: () -> Void
+    private let label: NSTextField
+    private let icon: StatusIconView
+    private var pressing = RowPress()
+    /// Automation: the working ring is turning.
+    var isSpinning: Bool { icon.isSpinning }
+    private var hovering = false {
+        didSet { Theme.reapply(self) }
+    }
 
     init(_ ws: WorkspaceModel, number: Int, status: Design.Status, selected: Bool, dimmed: Bool,
          tip: String, handler: @escaping () -> Void) {
@@ -442,47 +405,76 @@ final class RailWorkspaceRow: RailRow, ContextMenuProviding {
         self.status = status
         self.selected = selected
         self.dimmed = dimmed
-        super.init(handler: handler)
+        self.handler = handler
+        workspaceID = ws.id
+        groupID = ws.machineID
+        label = NSTextField(labelWithString: "\(number)")
+        label.font = Design.Font.railNumber
+        label.textColor = selected ? Design.Color.textPrimary : Design.Color.textSecondary
+        label.alignment = .right
+        label.lineBreakMode = .byClipping
+        numberWidth = RailContent.width("\(number)", font: Design.Font.railNumber)
+        icon = StatusIconView(status) { SidebarView.icon(status, pointSize: Design.Symbol.railStatus) }
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = Design.Radius.row
+        layer?.cornerCurve = .continuous
+        setAccessibilityRole(.button)
         toolTip = tip
         alphaValue = dimmed ? Design.Alpha.dimmed : 1
         setAccessibilityLabel("\(ws.name), \(status.rawValue)")
-        let icon = StatusIconView(status) { SidebarView.icon(status, pointSize: Design.Symbol.railStatus) }
-        addContent(text: "\(number)", font: Design.Font.railNumber,
-                   color: selected ? Design.Color.textPrimary : Design.Color.textSecondary, icon: icon)
-        updateBackground()
+        addSubview(label)
+        addSubview(icon)
+        Theme.track(self)
     }
 
-    override fileprivate var fill: NSColor? { selected ? Design.Color.selected : nil }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
 
+    override var acceptsFirstResponder: Bool { false }
+
+    override func layout() {
+        super.layout()
+        let side = Design.Symbol.railStatus + 3
+        contentOffset = RailContent.layout(
+            label: label, text: numberWidth, column: max(numberColumn, numberWidth), mark: icon,
+            markSize: NSSize(width: side, height: side), in: bounds)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func mouseDown(with event: NSEvent) { pressing.down(event) }
+    override func mouseDragged(with event: NSEvent) { pressing.dragged(event, row: self) }
+    override func mouseUp(with event: NSEvent) {
+        if pressing.up(event, in: self) { handler() }
+    }
+    override func accessibilityPerformPress() -> Bool { handler(); return true }
     override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
     func contextMenu() -> NSMenu? { menuProvider?() }
-}
 
-/// An agent in the rail: its machine's letter and status icon. Blocked
-/// ones sit on a tint of the blocked colour.
-@MainActor
-final class RailAgentRow: RailRow {
-    let machine: String
-    let status: Design.Status
-    let blocked: Bool
-
-    init(_ agent: SidebarRailView.Agent, handler: @escaping () -> Void) {
-        machine = agent.machine
-        status = agent.status
-        blocked = agent.blocked
-        super.init(handler: handler)
-        toolTip = agent.tip
-        setAccessibilityLabel(agent.tip.replacingOccurrences(of: "\n", with: ", "))
-        let state = agent.status
-        let icon = StatusIconView(state) { SidebarView.icon(state, pointSize: Design.Symbol.railStatus) }
-        addContent(text: machine, font: Design.Font.railLetter,
-                   color: blocked ? Design.Status.blocked.color : Design.Color.textMuted, icon: icon)
-        updateBackground()
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        Theme.reapply(self)
     }
 
-    override fileprivate var fill: NSColor? {
-        blocked ? Design.Status.blocked.color.withAlphaComponent(Design.Alpha.railAttention) : nil
+    /// The selected fill, or the hover one.
+    func applyTheme() {
+        layer?.backgroundColor = (selected ? Design.Color.selected
+            : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover) : nil)?.cgColor
     }
+
+    /// Automation: what a click does.
+    func press() { handler() }
+
+    /// Automation: the pointer over it, or not (its hover fill).
+    func hover(_ on: Bool) { hovering = on }
 }
 
 /// `»` at the bottom of the rail: opens the full sidebar.

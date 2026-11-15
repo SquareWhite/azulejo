@@ -411,6 +411,7 @@
           "type": "object"
         },
         {
+          "description": "Moves a workspace to another place in its window's list: the sidebar\norder, which ⌘1…⌘8 and ⌘9 (the last) follow. Saved with the session.\nIt's Azulejo's own order: herdr's workspace order stays as it is.",
           "properties": {
             "method": {
               "const": "workspace.move",
@@ -5883,7 +5884,7 @@
     "WorkspaceMove": {
       "properties": {
         "index": {
-          "description": "New position within its window; past the end means last.",
+          "description": "New position within its window, from 0, counted once the workspace\nhas left its old place; past the end means last.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
@@ -6000,6 +6001,12 @@
         "name": {
           "type": "string"
         },
+        "number": {
+          "description": "Its place in the window's list, from 1: the sidebar order, and the\n⌘ number that switches to it (⌘1…⌘8).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
         "repo": {
           "description": "The folder whose branch it shows, when the user set one\n(`workspace.set_repo`).",
           "type": [
@@ -6018,6 +6025,7 @@
       },
       "required": [
         "window",
+        "number",
         "active",
         "focused",
         "tabs",

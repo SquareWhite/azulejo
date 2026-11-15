@@ -585,6 +585,7 @@ fn replies_round_trip() {
         Reply::Workspaces {
             workspaces: vec![WorkspaceSummary {
                 window: WindowId::new(),
+                number: 1,
                 active: true,
                 focused: false,
                 tabs: 2,

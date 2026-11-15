@@ -555,6 +555,10 @@ mod tests {
         );
         assert_eq!(parse("tab.move", &["2"]).unwrap(), json!({"index": 2}));
         assert_eq!(
+            parse("workspace.move", &["0"]).unwrap(),
+            json!({"index": 0})
+        );
+        assert_eq!(
             parse("tab.rename", &["build"]).unwrap(),
             json!({"name": "build"})
         );

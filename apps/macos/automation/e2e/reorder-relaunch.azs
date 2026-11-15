@@ -1,0 +1,10 @@
+# After reorder.azs, the same profile relaunched: the dragged order is the
+# saved one, and the ⌘ numbers still follow it.
+log reorder relaunch
+until workspaces 4 8000
+until sidebar visible 5000
+expect workspace.names alpha|bravo|delta|charlie
+key cmd+4
+until workspace.active charlie 2000
+key cmd+1
+until workspace.active alpha 2000
