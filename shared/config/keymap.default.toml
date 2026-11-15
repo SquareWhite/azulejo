@@ -16,6 +16,8 @@
 #   action = ["chord", "chord"]     several chords
 #   action = "mod+1..8"             indexed binding; the action gets the index
 #   action = ""                     explicitly unbound
+#   "chord" = { send_text = "…" }   terminal tiles: type the text into the
+#                                   pane (kitty's send_text); "" unbinds
 # Sections:
 #   [keys.macos] / [keys.linux]     per platform
 #   [keys.<platform>.<context>]     only in that context; wins over the
@@ -119,6 +121,10 @@ minimize        = "cmd+m"
 toggle_sidebar    = "cmd+a"           # herdr binding; terminal-only so cmd+a stays select-all elsewhere
 send_herdr_prefix = "ctrl+b"          # typed twice so herdr's attach client never sees ctrl+b q (detach)
 # take_over: Take over / Take back on a read-only terminal; unbound (the button)
+# Text a chord types into the pane, like kitty's send_text. kitty's cmd+l
+# clears the last command's output locally; under herdr the screen is herdr's,
+# so ask the shell instead: ctrl+l clears and redraws the prompt.
+"cmd+l" = { send_text = "\u000c" }
 
 [keys.macos.browser]
 browser_focus_address      = "cmd+l"

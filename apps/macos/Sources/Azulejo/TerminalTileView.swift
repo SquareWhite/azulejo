@@ -1140,4 +1140,10 @@ extension TerminalTileView: KeyScope {
             return false
         }
     }
+
+    /// `send_text` (`"cmd+l" = { send_text = "\u000c" }`): types `text`
+    /// into the pane as is. False on a read-only view, so the chord goes on.
+    func type(text: String) -> Bool {
+        surface?.typeText(text) ?? false
+    }
 }

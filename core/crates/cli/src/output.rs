@@ -157,8 +157,13 @@ fn render_keys(result: &Value, out: &mut String) {
         .into_iter()
         .flatten()
         .map(|k| {
+            // `send_text` rows: the text in config syntax next to the name.
+            let action = match k["text"].as_str().or(k["default_text"].as_str()) {
+                Some(text) => format!("{} {}", scalar(&k["action"]), toml_string(text)),
+                None => scalar(&k["action"]),
+            };
             [
-                scalar(&k["action"]),
+                action,
                 scalar(&k["context"]),
                 chords(&k["default"]),
                 chords(&k["current"]),
@@ -194,6 +199,27 @@ fn render_keys(result: &Value, out: &mut String) {
         }
         let _ = writeln!(out, "{}", line.trim_end());
     }
+}
+
+/// `text` as a TOML basic string, as a config line writes it (`"\u000c"`);
+/// the same spelling `azulejo_config::quote_text` gives.
+fn toml_string(text: &str) -> String {
+    let mut out = String::from('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn scalar(v: &Value) -> String {

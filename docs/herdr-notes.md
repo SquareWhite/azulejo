@@ -33,7 +33,7 @@ Helpers in `scripts/herdr-probe/`:
 | Underline styles (`4:3` undercurl) | ✅ | Underline colour (`58`) not seen in frames |
 | OSC 8 hyperlinks | ✅ | Every frame resets with `]8;;` then re-emits links |
 | Cursor shape (DECSCUSR `5 q`) | ✅ | |
-| Kitty keyboard protocol push/pop (`>1u` / `<1u`) | ✅ | Forwarded to the host when the app pushes or pops |
+| Kitty keyboard protocol push/pop (`>1u` / `<1u`) | ✅ | Forwarded to the host when the app pushes or pops. Rechecked Nov 4, 2026: a set (`=5u`, fish's) arrives at the host as a push (`>5u`); a later attach gets the app's current flags replayed; herdr answers `?u` itself; `CSI u` keys from the host reach the app byte for byte (`1b 5b 31 33 3b 32 75` for shift+enter, `1b 5b 31 30 38 3b 39 75` for cmd+l), even when the app hasn't asked for them |
 | Mouse reporting | ✅ (differently) | The client enables all mouse modes on the host at start; herdr routes events to the app or uses them itself (scroll, selection) |
 | Bracketed paste | ✅ (differently) | Enabled on the host at start; herdr wraps input only when the app enabled 2004 (seen: `pane run` text arrived as `\e[200~…\e[201~` once `/bin/sh` had 2004 on) |
 | DECCKM (`?1h`, application cursor keys) | ❌ | Not forwarded, and herdr doesn't re-encode: the app got `1b 5b 41` for Up while in DECCKM mode |

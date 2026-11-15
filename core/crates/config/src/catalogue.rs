@@ -4,7 +4,7 @@
 
 use azulejo_protocol::{CommandEntry, METHODS};
 
-use crate::action::{NameSpec, names};
+use crate::action::{NameSpec, control_key, names, quote_text};
 use crate::{Action, Config, KeyContext, PLANNED_METHODS, Target};
 
 /// How many entries an indexed action (`switch_tab`) gets: 1 to this.
@@ -318,6 +318,10 @@ pub(crate) fn title(action: Action) -> String {
         Minimize => "Minimise window".into(),
         SendHerdrPrefix => "Type herdr's prefix (ctrl+b) into the pane".into(),
         TakeOver => "Take over or give back a terminal".into(),
+        SendText(text) => match control_key(text) {
+            Some(key) => format!("Type {} ({key}) into the pane", quote_text(text)),
+            None => format!("Type {} into the pane", quote_text(text)),
+        },
         PaletteClose => "Quick open: close".into(),
         PaletteRun => "Quick open: run the selected row".into(),
         PaletteNext => "Quick open: next row".into(),
@@ -368,7 +372,7 @@ fn category(action: Action) -> &'static str {
         NewTab | SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab | CloseTab
         | RenameTab => "tab",
         NewWindow | CloseWindow | Minimize => "window",
-        Find | EditScrollback | SendHerdrPrefix | TakeOver => "terminal",
+        Find | EditScrollback | SendHerdrPrefix | TakeOver | SendText(_) => "terminal",
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
         | SetTheme | EnterPrefix | Quit | Hide | HideOthers => "app",
         PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
@@ -412,6 +416,7 @@ fn needs_tile(action: Action) -> bool {
             | EditScrollback
             | SendHerdrPrefix
             | TakeOver
+            | SendText(_)
             | BrowserFocusAddress
             | BrowserReload
             | BrowserReloadFromOrigin

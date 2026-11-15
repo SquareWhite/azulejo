@@ -105,7 +105,15 @@ expect keys.resizing no
 key alt+h
 expect key.last action:focus_tile_left
 
-log === R04 palette: cmd+j opens it, ctrl+down moves, down and up don't
+log === R04 terminal: shift+enter types "\n" (send_text); cmd+l is a key again ("" unbinds its text)
+expect responder terminal
+key shift+enter
+expect key.last action:send_text
+key cmd+l
+expect key.last passed
+expect responder terminal
+
+log === R05 palette: cmd+j opens it, ctrl+down moves, down and up don't
 key cmd+k
 expect key.last passed
 expect palette closed
@@ -125,7 +133,7 @@ expect palette.index 1
 key escape
 expect palette closed
 
-log === R05 browser: cmd+e edits the address, cmd+l doesn't
+log === R06 browser: cmd+e edits the address, cmd+l doesn't
 key alt+l
 until responder browser-page 5000
 key cmd+l
@@ -137,7 +145,7 @@ expect tile.address_focused yes
 key escape
 expect tile.address_focused no
 
-log === R06 preview: cmd+shift+u toggles, alt+cmd+u doesn't
+log === R07 preview: cmd+shift+u toggles, alt+cmd+u doesn't
 key alt+j
 until responder preview-page 5000
 key alt+cmd+u
@@ -150,7 +158,7 @@ until tile.source source 5000
 key cmd+shift+u
 until tile.source rendered 5000
 
-log === R07 find_bar: ctrl+g closes the bar, escape doesn't
+log === R08 find_bar: ctrl+g closes the bar, escape doesn't
 key cmd+f
 until tile.find open 3000
 key escape
@@ -160,7 +168,7 @@ key ctrl+g
 expect key.last find
 expect tile.find closed
 
-log === R08 files: n moves, j doesn't; . is unbound ("")
+log === R09 files: n moves, j doesn't; . is unbound ("")
 key alt+l
 until responder files-tree 5000
 expect tile.selected alpha.txt
@@ -176,7 +184,7 @@ wait 300
 expect tile.hidden hidden
 shot r08-rebound
 
-log === R09 the old file back: the defaults return without a restart
+log === R10 the old file back: the defaults return without a restart
 sh cp {config}.orig {config}
 until search.chord ⌘K 5000
 key j
@@ -185,7 +193,7 @@ expect tile.selected gamma.txt
 key cmd+j
 expect key.last passed
 
-log === R10 open_config writes the commented template when the file is missing
+log === R11 open_config writes the commented template when the file is missing
 sh mv {config} {config}.moved
 wait 500
 action open_config

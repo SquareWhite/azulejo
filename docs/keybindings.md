@@ -32,6 +32,9 @@ palette_next = ["down", "ctrl+j"]
 
 [keys.macos.resize]             # resize mode: only these keys work
 zoom_tile = "z"
+
+[keys.macos.terminal]           # only while a terminal tile has focus
+"shift+enter" = { send_text = "\n" }   # type text on a chord (Terminal keys, below)
 ```
 
 Rules:
@@ -54,7 +57,60 @@ Rules:
 - **Precedence:** the context's own binding wins over a global one on the same chord, the user's file wins over the defaults, and a platform section wins over a platform-less one. Global bindings still apply inside a context unless the context rebinds that chord; resize mode is the exception and only has its own keys. In quick open only `quick_open`, `command_palette` and `goto` run among the global chords; other chords go to its search field as typing.
 - **Context-only actions** (`palette_next`, `browser_back`, `files_down`, `find_next`, `resize_mode_exit`, `send_herdr_prefix`, …) land in their context even when written under `[keys]` or `[keys.<platform>]`. Under another context's section, or in `[prefix.keys]`, they're ignored with a warning.
 - **Chords** name the physical key, not the character it types: `ctrl+shift+minus` stays `minus`, never `underscore`, and `alt+h` matches even though it types `˙`. Modifiers are `ctrl`, `alt`, `shift` and `cmd` (`super` on Linux; the two are the same modifier). Keys: letters, digits, `f1`..`f24`, `enter`, `tab`, `escape`, `space`, `backspace`, `delete`, arrows, `home`, `end`, `pageup`, `pagedown`, and `minus`, `equal`, `[`, `]`, `\`, `;`, `'`, `` ` ``, `,`, `.`, `/` (or their names: `bracketleft`, `period`, …).
+- **Text on a chord:** in terminal tiles a chord can type text instead of running an action, written the other way round: the chord is the key, `"shift+enter" = { send_text = "\n" }`. See [Terminal keys](#terminal-keys).
 - **Conflicts** show as warnings in the config banner, with the line they come from: two actions on one chord (and which one wins, per context), a chord the OS takes first (Spotlight, screenshots, Lock Screen), a bare `ctrl+<letter>` taken from terminals, or a binding on the prefix key.
+
+## Terminal keys
+
+Whatever the keymap doesn't bind goes to the terminal: libghostty encodes the key, herdr's attach client passes the bytes on, and the program in the pane reads them ([ADR 0001](adr/0001-terminal-bridge.md)).
+
+**The kitty keyboard protocol works end to end.** Programs that want it (Claude Code, fish 4, Neovim…) push their flags (`CSI > 1 u`). herdr's attach client passes the push on to libghostty, and replays it when a tile reattaches to a program that's already running. It answers `CSI ? u` queries itself and hands the program the `CSI u` keys untouched. Checked against herdr 0.9.1 on Nov 4, 2026.
+
+### shift+enter
+
+Once a program has the protocol on, shift+enter reaches it as `CSI 13;2u` (`1b 5b 31 33 3b 32 75`): Claude Code inserts a newline, and fish 4 runs its own `shift-enter` binding, which also inserts a newline. A program without it gets a plain enter (`\r`), as in Ghostty.
+
+Until Nov 4, 2026 Azulejo sent `\r` either way. It handed libghostty enter's `\r` as the key's text, so libghostty treated shift as used up by that text and encoded a plain enter. Control characters now go without text, as in Ghostty.app.
+
+For a program that doesn't speak the protocol but wants a newline on shift+enter, do what kitty users do (`map shift+enter send_text all \n`):
+
+```toml
+[keys.macos.terminal]
+"shift+enter" = { send_text = "\n" }
+```
+
+That types `\n` (ctrl+j) for every program, so fish runs the line on shift+enter, as it does under that kitty map.
+
+### cmd (super) chords
+
+They reach the program as `CSI <key>;9u` (`cmd+l` is `CSI 108;9u`), but only with the protocol on: in legacy mode Mac terminals send nothing for cmd chords. fish binds none by default, though since 4.0.2 you can bind one yourself (`bind super-l …`).
+
+### cmd+l
+
+`cmd+l` types ctrl+l (`"\u000c"`), so the shell clears the screen and redraws its prompt. In kitty, `cmd+l` is kitty's own `clear_terminal last_command`: kitty clears the last command's output itself and the shell never sees the key. Under herdr the screen belongs to herdr, so a local clear wouldn't stick. Asking the shell is the closest match. In browser tiles `cmd+l` still edits the address. To hand programs the real chord instead, unbind it: `"cmd+l" = { send_text = "" }`.
+
+### Your own text bindings
+
+Quote the chord as the key and give it `{ send_text = "…" }`:
+
+```toml
+[keys.macos.terminal]
+"shift+enter" = { send_text = "\n" }         # kitty's map shift+enter send_text all \n
+"alt+enter"   = { send_text = "\x1b\r" }     # escape, then return
+"f5"          = { send_text = "make\n" }     # run a command
+"cmd+l"       = { send_text = "" }           # drop the default: cmd+l goes through as a key
+```
+
+- The text reaches the pane byte for byte: not as a key, not as a paste. It's a TOML 1.1 string, so `\n`, `\r`, `\t`, `\\`, `\"`, `\e`, `\xHH` and `\uXXXX` work, and kitty's `\x1b[…` sequences paste in as they are.
+- `send_text` only works in terminal tiles, so a line under `[keys]` or `[keys.<platform>]` lands there too; under another context it's ignored with a warning.
+- Each line replaces only that chord's text, over the defaults and over less specific sections. `send_text = ""` unbinds it.
+- In a terminal, a text beats a global action on the same chord (`alt+enter` above stays `promote_tile` elsewhere), with the usual clash warning.
+- `azj config keys` lists one `send_text` row per chord, the text next to the name; `--json` has `text` and `default_text`.
+- It never fires while an input method is composing.
+
+### Ghostty `keybind` lines
+
+Terminal tiles load your Ghostty config, `keybind` lines included, and libghostty checks those before it encodes a key. So `keybind = shift+enter=text:\n` works in Azulejo too, as long as the keymap doesn't bind that chord: the keymap sees every key first (with the defaults, `keybind = cmd+l=…` never fires). The Edit menu keeps `cmd+c`, `cmd+v`, `cmd+x`, `cmd+a` and `cmd+z` from reaching libghostty. A `send_text` line does the same job and shows up in `azj config keys`.
 
 ## Reference
 
@@ -180,6 +236,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `files_leave` | files | `escape` | `escape` | Files: back to the tiles (sidebar) |
 | `switch_workspace` | global | `cmd+1..8` | `super+1..8` | Switch to workspace N |
 | `switch_tab` | global | `ctrl+1..8` | `ctrl+1..8` | Switch to tab N |
+| `send_text` | terminal | `cmd+l` | unbound | Type "\u000c" (ctrl+l) into the pane |
 
 Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `super+b` on Linux), then:
 
@@ -270,7 +327,7 @@ These stay with the system or AppKit, on purpose:
 - **Text editing in text fields.** Quick open's field, find bars, the files filter, the browser address bar and rename prompts use AppKit's field editor: `cmd+a`, `cmd+c`, `cmd+v`, `cmd+x`, `cmd+z` and `cmd+shift+z` come from the standard Edit menu, and arrows, `alt+arrows`, `home`/`end`, `backspace` and so on are AppKit's text navigation. Rebinding them would break muscle memory every Mac text field shares, and the Edit menu items also carry copy and paste for terminals. A keymap chord on the same keys still wins (that's how `cmd+a` toggles the sidebar in terminals).
 - **Field-level fallbacks.** In the browser address bar `escape` puts the page's URL back; in the files filter `down` moves into the list. Both are AppKit's cancel and move commands on the field, not chords. (`find_close` and `find_next` cover `escape` and `enter` in the files filter.)
 - **The files list's `left` and `right` arrows**: AppKit's outline view collapses and expands folders with them. `files_collapse` and `files_expand` (`h` and `l`) are the keymap's versions.
-- **Terminal input.** Whatever the keymap doesn't bind goes to the terminal untouched; Ghostty `keybind` lines in your Ghostty config still apply to those chords. Input methods (marked text) take every key while composing.
+- **Terminal input.** Whatever the keymap doesn't bind goes to the terminal untouched; Ghostty `keybind` lines in your Ghostty config still apply to those chords ([Terminal keys](#terminal-keys)). Input methods (marked text) take every key while composing.
 - **Web pages' own keys** in browser and preview tiles, for chords the keymap doesn't bind.
 - **System chords:** `cmd+tab`, `cmd+space`, `` cmd+` ``, screenshots, Force Quit, Lock Screen (the WM's on Linux). The config warns when you bind one.
 - **Quick open's `>` and `@`.** They're typed text at the start of the query, not keys. Bind `command_palette` or `goto` to open the menu with them already typed.
@@ -372,6 +429,7 @@ Where each global default came from:
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` | herdr |
 | `close_tab` | `cmd+shift+w` | was `cmd+w` (herdr); moved so it mirrors `cmd+shift+t` |
 | `toggle_sidebar` | `cmd+a`, **terminal tiles only** | herdr (see conflicts) |
+| `send_text` (types `ctrl+l`) | `cmd+l`, **terminal tiles only** | kitty's `cmd+l` clears the last command; under herdr only the shell can clear ([Terminal keys](#terminal-keys)) |
 | `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
 | `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
 | `goto` (quick open, places only: opens with `@`) | unbound | was `cmd+p`; rebind it to get that back |
@@ -400,7 +458,7 @@ command_palette = "cmd+shift+p"
 goto            = "cmd+p"
 ```
 
-**`cmd+k` and Ghostty.** Ghostty binds `cmd+k` to `clear_screen` by default; Azulejo's key router sees the chord first, so in Azulejo `cmd+k` opens quick open. Clearing still works with `ctrl+l` (the shell clears and redraws). Chords Azulejo doesn't bind still reach the terminal surface, so Ghostty `keybind` lines for other keys keep working, e.g. `keybind = cmd+shift+k=clear_screen` in your Ghostty config. Under herdr that clear is cosmetic: herdr owns the screen and its scrollback, and redraws on the next update.
+**`cmd+k` and Ghostty.** Ghostty binds `cmd+k` to `clear_screen` by default; Azulejo's key router sees the chord first, so in Azulejo `cmd+k` opens quick open. Clearing still works with `ctrl+l`, or `cmd+l` (which types `ctrl+l`): the shell clears and redraws. Chords Azulejo doesn't bind still reach the terminal surface, so Ghostty `keybind` lines for other keys keep working, e.g. `keybind = cmd+shift+k=clear_screen` in your Ghostty config. Under herdr that clear is cosmetic: herdr owns the screen and its scrollback, and redraws on the next update.
 
 ### Linux defaults
 
@@ -470,7 +528,7 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 | `cmd+t` / `cmd+shift+t` | new tab / reopen closed tab | used for workspace / tab, as in herdr. No clash because browser tiles have no inner tabs |
 | `cmd+9` / `ctrl+9` | last tab (browsers) | `switch_workspace_last` / `switch_tab_last`: the last in order, as in a browser. The previously active workspace is `alt+0` |
 | `cmd+p` | print | taken by `goto`. Printing a browser tile goes through the palette |
-| `cmd+k` | clear (Ghostty, Terminal.app) | not bound. A local clear does nothing under herdr's re-rendering. A later `clear_screen` action should send `ctrl+l` to the pane |
+| `cmd+k` | clear (Ghostty, Terminal.app) | not bound. A local clear does nothing under herdr's re-rendering. `cmd+l` types `ctrl+l` instead, so the shell clears ([Terminal keys](#terminal-keys)) |
 | `ctrl+cmd+f` / `ctrl+cmd+q` / `ctrl+cmd+space` | full screen / lock screen / emoji | avoided |
 | `alt+<letter>` | types `˙∆˚¬…` in text fields | in browser tiles `alt+h/j/k/l/w/o` won't type those characters, which is acceptable. Shells lose fish's `alt+h` (help), `alt+l` (list dir) and `alt+w` (whatis), as they already do under herdr |
 

@@ -620,4 +620,21 @@ key backspace
 key escape
 expect responder preview-page
 expect tile.find closed
+
+log === S52 terminal keys reach the pane's program as bytes: shift+enter is CSI 13;2u under the kitty keyboard protocol (what Claude Code and fish ask for), enter stays \r, cmd+l types ctrl+l (send_text)
+key cmd+shift+t
+until terminal.phase attached 10000
+until responder terminal 5000
+sh {herdr} --session {session} pane run {pane} "python3 @HERE@/keyecho.py 1 30"
+sh @HERE@/pane-has.sh {herdr} {session} {pane} "(kitty flags 1)"
+key shift+enter
+expect key.last passed
+sh @HERE@/pane-has.sh {herdr} {session} {pane} "got 1b5b31333b3275"
+key enter
+sh @HERE@/pane-has.sh {herdr} {session} {pane} "got 0d"
+key cmd+l
+expect key.last action:send_text
+sh @HERE@/pane-has.sh {herdr} {session} {pane} "got 0c"
+key q
+expect responder terminal
 quit

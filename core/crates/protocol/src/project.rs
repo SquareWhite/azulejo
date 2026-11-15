@@ -111,6 +111,13 @@ pub struct KeyBinding {
     pub current: Vec<String>,
     /// `default` (bundled keymap) or `user` (the config file sets it).
     pub source: String,
+    /// `send_text` rows (one per chord, terminal context): the text the
+    /// chord types now, as raw text. Absent when unbound, and on other rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// `send_text` rows: the text the bundled defaults type on that chord.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_text: Option<String>,
 }
 
 /// A problem in the config file, for the shell's banner.

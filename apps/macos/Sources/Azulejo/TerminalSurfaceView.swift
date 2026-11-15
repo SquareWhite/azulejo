@@ -10,7 +10,8 @@ import GhosttyKit
 /// `ctrl+b` goes out twice (`typeTwice`, the keymap's `send_herdr_prefix` in
 /// terminal tiles): herdr's attach client reads `ctrl+b ctrl+b` as a literal
 /// `ctrl+b`, so `ctrl+b q` can never detach the tile by accident
-/// (docs/keybindings.md). A read-only surface (observe mode) swallows keys.
+/// (docs/keybindings.md). A `send_text` chord types its text instead
+/// (`typeText`). A read-only surface (observe mode) swallows keys.
 @MainActor
 final class TerminalSurfaceView: NSView {
     private(set) var surface: ghostty_surface_t?
@@ -341,6 +342,12 @@ final class TerminalSurfaceView: NSView {
         text.unicodeScalars.count == 1 && (text.unicodeScalars.first?.value ?? 0x20) < 0x20
     }
 
+    /// C0 or DEL first: not key text (Ghostty.app's `keyEventText`).
+    private static func startsWithControl(_ text: String) -> Bool {
+        guard let scalar = text.unicodeScalars.first else { return false }
+        return scalar.value < 0x20 || scalar.value == 0x7F
+    }
+
     private func syncPreedit(clearIfNeeded: Bool = true) {
         guard let surface else { return }
         if markedText.length > 0 {
@@ -375,6 +382,25 @@ final class TerminalSurfaceView: NSView {
         sendKey(event, action: action)
     }
 
+    /// The keymap's `send_text`: these bytes go to the PTY exactly as given,
+    /// not as a key or a paste. It's libghostty's own `text:` binding action
+    /// (Ghostty's `keybind = …=text:…`), with every byte that isn't plain
+    /// printable ASCII escaped as `\xNN` so nothing in the text is read as
+    /// an escape sequence.
+    @discardableResult
+    func typeText(_ text: String) -> Bool {
+        guard !readOnly, !text.isEmpty else { return false }
+        var literal = "text:"
+        for byte in text.utf8 {
+            if byte >= 0x20, byte < 0x7F, byte != UInt8(ascii: "\\") {
+                literal.append(Character(UnicodeScalar(byte)))
+            } else {
+                literal += String(format: "\\x%02x", byte)
+            }
+        }
+        return bindingAction(literal)
+    }
+
     /// Committed input-method text, sent as typed input (never as a paste).
     private func sendText(_ text: String) {
         guard let surface, !text.isEmpty else { return }
@@ -392,7 +418,12 @@ final class TerminalSurfaceView: NSView {
         guard let surface else { return }
         var key = keyEvent(event, action: action)
         let text = action == GHOSTTY_ACTION_RELEASE ? nil : (override ?? Self.text(for: event))
-        if let text, !text.isEmpty {
+        // Control characters (enter's \r, tab, escape, backspace's DEL) go
+        // without text, as in Ghostty.app: libghostty encodes those keys
+        // itself. Text would mark shift as used up by it, so shift+enter
+        // left as a plain \r even when the app asked for the kitty keyboard
+        // protocol (CSI 13;2u).
+        if let text, !text.isEmpty, !Self.startsWithControl(text) {
             text.withCString { ptr in
                 key.text = ptr
                 _ = ghostty_surface_key(surface, key)
