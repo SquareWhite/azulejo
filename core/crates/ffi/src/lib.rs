@@ -37,6 +37,7 @@ pub use hints::{
     azj_hints_pane_focus, azj_hints_pane_free, azj_hints_pane_grow, azj_hints_pane_keep,
     azj_hints_pane_nearest, azj_hints_pane_neighbour, azj_hints_pane_shrink,
     azj_hints_pane_targets, azj_hints_pane_text, azj_hints_place_callouts, azj_hints_run_line,
+    azj_hints_run_plan,
 };
 pub use terminal::{azj_core_attach_exit, azj_core_terminal_command};
 

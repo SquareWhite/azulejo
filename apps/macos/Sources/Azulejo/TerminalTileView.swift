@@ -1373,4 +1373,16 @@ extension TileModel {
         if name.hasPrefix("-") { name.removeFirst() }
         return Self.shells.contains(name)
     }
+
+    /// An idle shell, where ⌘S Run may type a command (TerminalRun): the
+    /// same test as `shellInForeground`, but unknown counts as busy. A pane
+    /// not polled yet (no shell seen), ended or unbound, a working or
+    /// blocked agent, or a foreground command line beyond a bare shell name
+    /// (`bash script.sh`) is busy.
+    var idleShell: Bool {
+        guard kind == .terminal, herdr != nil, ended != true, pane?.shell != nil else { return false }
+        if agent?.status == .working || agent?.status == .blocked { return false }
+        if let command = pane?.command, command.contains(" ") { return false }
+        return shellInForeground
+    }
 }

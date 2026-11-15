@@ -24,9 +24,13 @@ enum TerminalHints {
     /// `[hints] row_classifier`: the row classifier refines commands.
     nonisolated(unsafe) static var rowClassifier = false
 
+    /// `[hints] run_target`: `reuse` (an idle shell, else a new pane) or `new`.
+    nonisolated(unsafe) static var runTarget = "reuse"
+
     /// Reads `azj_core_hints`' JSON. Called at launch and on `config.reloaded`.
     static func apply(_ settings: [String: Any]) {
         rowClassifier = settings["row_classifier"] as? Bool == true
+        runTarget = settings["run_target"] as? String ?? "reuse"
     }
 
     /// One pane's items (paragraphs included, in reading order), each row's
@@ -157,6 +161,19 @@ enum TerminalHints {
         guard let pointer = azj_hints_run_line(value) else { return value }
         defer { azj_string_free(pointer) }
         return String(cString: pointer)
+    }
+
+    /// Where Run sends a command and the line it types there
+    /// (`azj_hints_run_plan`; the request's fields are documented there).
+    /// Nil if the core refuses the request.
+    static func runPlan(_ request: [String: Any]) -> (target: String, tile: String?, line: String)? {
+        guard let data = try? JSONSerialization.data(withJSONObject: request),
+              let reply = azj_hints_run_plan(String(decoding: data, as: UTF8.self)) else { return nil }
+        defer { azj_string_free(reply) }
+        guard let object = try? JSONSerialization.jsonObject(with: Data(String(cString: reply).utf8)) as? [String: Any],
+              object["ok"] as? Bool == true, let target = object["target"] as? String,
+              let line = object["line"] as? String else { return nil }
+        return (target, object["tile"] as? String, line)
     }
 
     /// Homerow-style callouts for one pane's labelled items

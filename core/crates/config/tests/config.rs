@@ -359,6 +359,40 @@ fn the_hints_row_classifier_is_on_unless_switched_off() {
 }
 
 #[test]
+fn hints_run_reuses_an_idle_shell_unless_set_to_new() {
+    use azulejo_config::RunTarget;
+    assert_eq!(Config::defaults(MAC).hints.run_target, RunTarget::Reuse);
+    assert_eq!(RunTarget::Reuse.as_str(), "reuse");
+
+    let config = user("[hints]\nrun_target = \"new\"\n", MAC);
+    assert_eq!(config.hints.run_target, RunTarget::New);
+    assert_eq!(config.hints.run_target.as_str(), "new");
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+
+    let config = user("[hints]\nrun_target = \"reuse\"\n", MAC);
+    assert_eq!(config.hints.run_target, RunTarget::Reuse);
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+
+    for bad in ["\"split\"", "true"] {
+        let config = user(&format!("[hints]\nrun_target = {bad}\n"), MAC);
+        assert!(config.has_errors(), "{bad}");
+        assert!(
+            config
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("`hints.run_target` must be")),
+            "{:?}",
+            config.diagnostics
+        );
+        assert_eq!(
+            config.hints.run_target,
+            RunTarget::Reuse,
+            "a bad value keeps the default"
+        );
+    }
+}
+
+#[test]
 fn a_collapsed_sidebar_is_a_rail_unless_hidden() {
     use azulejo_protocol::SidebarState;
     assert_eq!(Config::defaults(MAC).sidebar.collapsed, SidebarState::Rail);

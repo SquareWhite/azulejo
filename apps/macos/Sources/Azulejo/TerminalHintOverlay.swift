@@ -110,6 +110,8 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     private var machineID: String?
     private var workspaceCwd: String?
     private(set) var lastOpened = ""
+    /// Automation: where the last Run went (`current`, `reuse:<N>`, `new`).
+    private(set) var lastRunTarget = ""
     /// Automation: the last filter fade's length (0 with motion off).
     private var lastFade: TimeInterval = 0
     var isOpen: Bool { superview != nil }
@@ -130,7 +132,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         for (button, symbol, label, tip) in [
             (copyButton, "doc.on.doc", "Copy", "Copy (C)"),
             (openButton, "arrow.up.forward.app", "Open", "Open in Default App (O)"),
-            (runButton, "play.fill", "Run in New Pane", "Run in New Pane (R)"),
+            (runButton, "play.fill", "Run", "Run (R)"),
         ] {
             button.bezelStyle = .accessoryBarAction
             button.isBordered = false
@@ -943,17 +945,16 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         }
     }
 
+    /// Runs the command in an idle shell (this pane, else the nearest) or
+    /// a new pane: `TerminalRun`.
     @objc private func runSelection() {
         guard let entry = singleEntry, let app, let controller else { return }
         guard entry.item.kind == .command, let cwd = entry.cwd else { return }
         validate()
-        guard isOpen else { return }
+        guard isOpen, let workspace = controller.model?.workspace, let tab = workspace.tab else { return }
         close()
-        let command: [String: Any] = ["method": "layout.split", "params": [
-            "tile": entry.tileID, "direction": "right",
-            "content": ["kind": "terminal", "cwd": cwd, "command": [TerminalHints.runLine(entry.item.value)]],
-        ]]
-        if case .failure(let error) = app.send(command) { controller.report(error) }
+        lastRunTarget = TerminalRun.run(entry.item.value, cwd: cwd, source: entry.tileID, tab: tab,
+                                        workspace: workspace, app: app, controller: controller)
     }
 
     // MARK: Drawing
@@ -1211,6 +1212,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             "hints.extend": extendPrefix.isEmpty ? "-" : extendPrefix,
             "hints.actions": actions,
             "hints.opened": lastOpened.isEmpty ? "-" : lastOpened,
+            "hints.run.target": lastRunTarget.isEmpty ? "-" : lastRunTarget,
             "hints.panes": String(captures.count),
             "hints.label": entry.map { $0.label.isEmpty ? "-" : $0.label } ?? "-",
             "hints.fade": String(Int((lastFade * 1000).rounded())),

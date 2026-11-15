@@ -6,6 +6,7 @@
 //!   colours. Paths check the filesystem through [`detect::Filesystem`].
 //! - [`select`]: kind-letter labels, text paragraphs, grow and shrink,
 //!   arrow neighbours, range text and the Run line.
+//! - [`run`]: where Run sends a command (an idle shell, else a new pane).
 //! - [`callout`]: where labels go (geometry only).
 //! - The row classifier: the detector is good at atoms and decent at
 //!   commands, but picks up output and prose rows that start with a command
@@ -29,6 +30,7 @@ pub mod detect;
 pub mod features;
 pub mod model;
 pub mod refine;
+pub mod run;
 pub mod select;
 pub mod text;
 

@@ -448,7 +448,7 @@ type a label):
 | --- | --- |
 | `c` (or ⌘C) | Copy |
 | `o` | Open (URLs and existing local paths) |
-| `r` | Run in a new pane (commands) |
+| `r` | Run (commands): in this pane if it's an idle shell, else the nearest idle shell, else a new pane |
 | ← → | Previous / next item in reading order (a command comes before the paths inside it) |
 | ↑ ↓ | The nearest item on the row above / below, closest to the selection's first column |
 | ⇧ + arrow | Extend the selection from its anchor |
@@ -512,17 +512,55 @@ keeps its own hint next to the items inside it.
 Open resolves paths against the source terminal's working directory and uses
 the default macOS application. Missing paths, remote paths, branches,
 addresses, domains, UUIDs and hashes remain copy-only.
-Run applies only to commands with a known working directory; it creates a pane
-on the source machine in that directory, leaving the original pane untouched.
-The new shell starts with its normal environment, not the source shell's
+Run applies only to commands with a known working directory. It picks where
+to run (`azj_hints_run_plan`, `run::plan` in the crate; `TerminalRun.swift`
+gathers the panes and carries it out):
+
+1. **The current pane** (the focused tile), if it's an idle shell.
+2. **The nearest idle shell** in the tab: the smallest gap between its rect
+   and the current tile's in the layout tree (neighbours touch, so they tie;
+   Monocle uses the Tile arrangement it hides), ties to the shell used as a
+   Run target most recently, then the closest centre, then reading order.
+3. **A new pane** beside the source, in the source's directory, leaving the
+   original pane untouched, as before.
+
+Only panes on the source pane's machine count: a command from a remote pane
+never runs in a local shell, or the other way round. Idle means the core's
+polled foreground process (`pane.process_info`, every second and at once
+when herdr reports a pane change; `PaneMeta.shell`/`command`) is the shell
+itself: `TileModel.idleShell`, the mouse-mode `shellInForeground` test made
+strict. A pane not polled yet, ended, running an agent that's working or
+blocked, or with any foreground command line beyond a bare shell name
+(`vim`, `claude`, `sleep 30`, `bash script.sh`) is busy. Deciding costs no
+herdr round trip: it reads the session the shell already has. A command
+started less than a poll ago can still look idle; most shells retitle
+themselves when a command starts, which polls at once (about 150 ms).
+
+In an existing shell Run first clears whatever is half typed: ⌃E then ⌃U
+(`terminal.send_keys`), end of line and delete back to its start in bash
+(readline), zsh's emacs keymap and fish; in zsh's vi insert keymap ⌃E types
+a character and ⌃U deletes back from the cursor, so text right of a moved
+cursor survives there. Then it types the line (`terminal.send_text`) and
+Return, in order, without blocking the main thread. When the shell sits in
+another directory, the line starts with `cd '<source dir>' &&` (quoted the
+way POSIX shells and fish both read; a directory with a backslash or a
+control character falls back to a new pane), so the shell stays there
+afterwards. The pane Run used takes focus, as a new pane does (in Monocle it
+comes to the front), and the mode closes. `[hints] run_target = "new"`
+always makes a new pane, as Run did before; the default is `"reuse"`.
+Automation: `hints.run.target` (`current`, `reuse:<N>` for the Nth tile in
+reading order, `new`) and `hints.run.idle` (`idle` / `busy` per tile).
+
+A new shell starts with its normal environment, not the source shell's
 unexported variables or temporary state. A single-line command is typed into
-that shell as it is. A multi-line one (a heredoc, or a `\` continuation from a
+the shell as it is. A multi-line one (a heredoc, or a `\` continuation from a
 coding agent's tool call) runs through `/bin/sh` instead
 (`azj_hints_run_line`): one line,
 `/bin/sh -c 'eval "$(printf %s <base64> | base64 -d)"'`, that POSIX shells and
 fish parse alike, since typing it line by line breaks in fish (no `<<`) and
 typed tabs trigger completion. `hints.sh` runs these with fish (without your
-config) as the login shell when fish is installed.
+config or history) as the login shell when fish is installed, and checks Run
+into an idle fish, zsh and bash with half-typed input.
 
 Recognition uses visible text and terminal foreground colors, not a full shell
 parser. A prompt marker followed by a space (`$`, `%`, `❯`, `➜`, or `#` and `>`

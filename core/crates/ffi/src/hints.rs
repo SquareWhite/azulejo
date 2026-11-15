@@ -12,6 +12,7 @@ use std::ffi::{CString, c_char};
 
 use azulejo_hints::callout::{self, Metrics, Rect};
 use azulejo_hints::detect::{Input, StdFilesystem, detect, matching_colors};
+use azulejo_hints::run;
 use azulejo_hints::select::{self, Direction, Level, Pane, Pos, TextRange, Unit};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -477,6 +478,34 @@ pub unsafe extern "C" fn azj_hints_run_line(value: *const c_char) -> *mut c_char
     CString::new(select::run_line(value)).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
+/// Where Run sends a command and what it types there. `request_json`:
+///
+/// `{"mode":"reuse","value":"make test","cwd":"/w","machine":"local","current":"<tile>",
+///   "panes":[{"tile":"<tile>","rect":[x,y,w,h],"machine":"local","idle":true,"cwd":"/w"}],
+///   "recent":["<tile>"]}`
+///
+/// the tab's terminal panes in reading order (idle: a shell at its prompt,
+/// unknown counting as busy), the focused tile and earlier Run targets, most
+/// recent first. Returns `{"ok":true,"target":"current"|"reuse"|"new",
+/// "tile":"<tile>"(reuse only),"line":"…"}` or `{"ok":false,…}`. Free with
+/// `azj_string_free`.
+///
+/// # Safety
+/// `request_json` must be a valid C string or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_hints_run_plan(request_json: *const c_char) -> *mut c_char {
+    let request: run::Request = match unsafe { arg(request_json) }
+        .ok_or("request isn't a UTF-8 C string".to_owned())
+        .and_then(|text| serde_json::from_str(text).map_err(|e| e.to_string()))
+    {
+        Ok(request) => request,
+        Err(e) => return out(failure("invalid_params", &e)),
+    };
+    let mut reply = serde_json::to_value(run::plan(&request)).unwrap_or_default();
+    reply["ok"] = json!(true);
+    out(reply)
+}
+
 #[derive(Debug, Deserialize)]
 struct CalloutRequest {
     items: Vec<callout::Item>,
@@ -526,7 +555,8 @@ pub unsafe extern "C" fn azj_hints_place_callouts(request_json: *const c_char) -
     out(json!({"ok": true, "callouts": callouts}))
 }
 
-/// The current `[hints]` settings, as JSON: `{"row_classifier":true}`.
+/// The current `[hints]` settings, as JSON:
+/// `{"row_classifier":true,"run_target":"reuse"}`.
 /// Follows config reloads. Free with `azj_string_free`; NULL on a bad handle.
 ///
 /// # Safety
@@ -536,7 +566,11 @@ pub unsafe extern "C" fn azj_core_hints(core: *const AzjCore) -> *mut c_char {
     let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
         return std::ptr::null_mut();
     };
-    out(json!({ "row_classifier": app.config().hints.row_classifier }))
+    let hints = app.config().hints;
+    out(json!({
+        "row_classifier": hints.row_classifier,
+        "run_target": hints.run_target.as_str(),
+    }))
 }
 
 #[cfg(test)]
@@ -668,6 +702,24 @@ mod tests {
             azj_hints_pane_free(pane);
             azj_hints_pane_free(other);
         }
+    }
+
+    #[test]
+    fn run_plan() {
+        let request = CString::new(
+            r#"{"value":"ls","cwd":"/w","machine":"local","current":"a",
+                "panes":[{"tile":"a","rect":[0,0,1,1],"machine":"local","idle":false},
+                         {"tile":"b","rect":[1,0,1,1],"machine":"local","idle":true,"cwd":"/w"}]}"#,
+        )
+        .unwrap();
+        let reply = take(unsafe { azj_hints_run_plan(request.as_ptr()) });
+        assert_eq!(
+            reply,
+            json!({"ok": true, "target": "reuse", "tile": "b", "line": "ls"})
+        );
+        let bad = CString::new("{}").unwrap();
+        let reply = take(unsafe { azj_hints_run_plan(bad.as_ptr()) });
+        assert_eq!(reply["ok"], json!(false));
     }
 
     #[test]

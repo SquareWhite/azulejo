@@ -21,18 +21,21 @@ cleanup() {
 trap cleanup EXIT
 "$root/apps/macos/dev.sh" --reset >/dev/null
 # Run's new panes start the login shell. With fish installed, make that fish
-# (without the user's config) so a multi-line Run proves it never relies on
-# POSIX syntax in the login shell.
+# (without the user's config or history) so a multi-line Run proves it never
+# relies on POSIX syntax in the login shell, and Run into an idle fish proves
+# the line clearing works there.
 fish_login=""
 if fish="$(command -v fish)"; then
   fish_login="$fixtures/fish-login"
-  printf '#!/bin/sh\nexec %s --no-config "$@"\n' "$fish" > "$fish_login"
+  printf '#!/bin/sh\nexec %s --no-config --private "$@"\n' "$fish" > "$fish_login"
   chmod +x "$fish_login"
   export SHELL="$fish_login"
 fi
 config="$root/.dev/$AZJ_DEV_NAME/config/azulejo/config.toml"
 mkdir -p "$(dirname "$config")"
-printf '[herdr]\nsession = "%s"\n[keys.macos.terminal]\nselect_visible_item = "cmd+s"\n' \
+# Run reuses idle shells by default; the scenarios before "Run reuses idle
+# shells" check the new-pane path, so they start with `run_target = "new"`.
+printf '[herdr]\nsession = "%s"\n[keys.macos.terminal]\nselect_visible_item = "cmd+s"\n[hints]\nrun_target = "new"\n' \
   "${AZJ_DEV_SESSION:-azj-dev-$AZJ_DEV_NAME}" > "$config"
 mkdir -p "$fixtures/src" "$out"
 touch "$fixtures/src/example.swift" "$fixtures/src/setup.sh" "$fixtures/two words.txt"
@@ -129,7 +132,7 @@ awk -v w=$((cols - 1)) '{
 pathlib.Path(output).write_text(pathlib.Path(source).read_text().replace('@FISH@', fish_login or '-').replace('@DIR@', fixture)
                               .replace('@WRAPPED@', wrapped).replace('@INLINE_WRAPPED@', inline_wrapped))
 PY
-(sleep 300; "$root/apps/macos/dev.sh" --stop) &
+(sleep 480; "$root/apps/macos/dev.sh" --stop) &
 watchdog=$!
 "$root/apps/macos/dev.sh" --automation "$fixtures/hints.azs" --out "$out"
 printf 'terminal hints: GUI scenarios passed\n'

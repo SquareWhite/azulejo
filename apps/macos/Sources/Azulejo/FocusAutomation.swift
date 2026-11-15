@@ -171,6 +171,7 @@ enum FocusAutomation {
             s["ime.marked"] = "-"
         }
         s.merge(controller.terminalHints.automationState) { _, new in new }
+        s["hints.run.idle"] = TerminalRun.idleStates(controller.model?.workspace?.tab)
         return s
     }
 

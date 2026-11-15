@@ -673,6 +673,184 @@ until terminal.phase attached 10000
 sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
 wait 400
 
+log === Run reuses idle shells ([hints] run_target = "reuse", the default)
+sh printf '[herdr]\nsession = "{session}"\n[keys.macos.terminal]\nselect_visible_item = "cmd+s"\n' > {config}
+action reload_config
+wait 400
+sh rm -f @DIR@/ran.txt @DIR@/junk.txt @DIR@/shell.txt @DIR@/heredoc-ran.txt
+until hints.run.idle idle 10000
+
+log === Run in an idle shell types the command into the current pane
+key cmd+s
+hints select printf hint-ran > ran.txt
+expect hints.actions copy,run
+key r
+expect hints.state closed
+expect hints.run.target current
+expect tiles 1
+expect focus 1
+wait 800
+sh test "$(cat @DIR@/ran.txt)" = hint-ran
+expect responder terminal
+
+log === From a busy pane, Run goes to the idle split beside it, in the source's directory
+sh rm -f @DIR@/ran.txt
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@/nested"}}}
+until tiles 2
+until terminal.phase attached 10000
+action focus_tile_left
+until focus 1
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt; sleep 120"
+until hints.run.idle busy,idle 15000
+key cmd+s
+hints select printf hint-ran > ran.txt
+key r
+expect hints.state closed
+expect hints.run.target reuse:2
+expect tiles 2
+expect focus 2
+until terminal.cwd @DIR@ 10000
+wait 500
+sh test "$(cat @DIR@/ran.txt)" = hint-ran
+expect responder terminal
+expect responder.focused yes
+shot hints-run-reuse
+
+log === The reused login shell (fish when installed) runs a multi-line command through /bin/sh
+action focus_tile_left
+until focus 1
+sh {herdr} --session {session} pane send-keys {pane} ctrl+c
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat shell-probe.txt; sleep 120"
+until hints.run.idle busy,idle 15000
+sh {herdr} --session {session} pane run {pane:2} "clear"
+wait 400
+key cmd+s
+key c
+expect hints.kind command
+key r
+expect hints.run.target reuse:2
+expect tiles 2
+wait 1200
+sh test @FISH@ = - || test -s @DIR@/shell.txt
+action focus_tile_left
+until focus 1
+sh {herdr} --session {session} pane send-keys {pane} ctrl+c
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat tool-heredoc.txt; sleep 120"
+until hints.run.idle busy,idle 15000
+sh {herdr} --session {session} pane run {pane:2} "clear"
+wait 400
+key cmd+s
+key c
+expect hints.selected cat > heredoc-ran.txt <<'EOF'↵heredoc-ran↵EOF
+key r
+expect hints.run.target reuse:2
+expect tiles 2
+wait 1200
+sh test "$(cat @DIR@/heredoc-ran.txt)" = heredoc-ran
+
+log === Half-typed input in the reused shell is cleared first: login shell (fish when installed)
+action focus_tile_left
+until focus 1
+sh {herdr} --session {session} pane send-keys {pane} ctrl+c
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt; sleep 120"
+until hints.run.idle busy,idle 15000
+sh rm -f @DIR@/ran.txt @DIR@/junk.txt
+sh {herdr} --session {session} pane send-text {pane:2} "touch junk.txt; "
+wait 300
+key cmd+s
+hints select printf hint-ran > ran.txt
+key r
+expect hints.run.target reuse:2
+wait 1000
+sh test "$(cat @DIR@/ran.txt)" = hint-ran && test ! -e @DIR@/junk.txt
+
+log === Half-typed input is cleared in zsh
+action close_tile
+until tiles 1
+until focus 1
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -u EDITOR -u VISUAL HOME='@DIR@' /bin/zsh -f"]}}}
+until tiles 2
+until terminal.phase attached 10000
+action focus_tile_left
+until hints.run.idle busy,idle 15000
+sh rm -f @DIR@/ran.txt @DIR@/junk.txt
+sh {herdr} --session {session} pane send-text {pane:2} "touch junk.txt; "
+wait 300
+key cmd+s
+hints select printf hint-ran > ran.txt
+key r
+expect hints.run.target reuse:2
+wait 1000
+sh test "$(cat @DIR@/ran.txt)" = hint-ran && test ! -e @DIR@/junk.txt
+
+log === Half-typed input is cleared in bash
+action close_tile
+until tiles 1
+until focus 1
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -u EDITOR -u VISUAL HOME='@DIR@' HISTFILE= /bin/bash --norc --noprofile"]}}}
+until tiles 2
+until terminal.phase attached 10000
+action focus_tile_left
+until hints.run.idle busy,idle 15000
+sh rm -f @DIR@/ran.txt @DIR@/junk.txt
+sh {herdr} --session {session} pane send-text {pane:2} "touch junk.txt; "
+wait 300
+key cmd+s
+hints select printf hint-ran > ran.txt
+key r
+expect hints.run.target reuse:2
+wait 1000
+sh test "$(cat @DIR@/ran.txt)" = hint-ran && test ! -e @DIR@/junk.txt
+
+log === In Monocle, the reused shell comes to the front
+action focus_tile_left
+until focus 1
+action toggle_layout_monocle
+wait 600
+expect kind monocle
+sh rm -f @DIR@/ran.txt
+key cmd+s
+expect hints.panes 1
+hints select printf hint-ran > ran.txt
+key r
+expect hints.run.target reuse:2
+expect focus 2
+wait 1000
+sh test "$(cat @DIR@/ran.txt)" = hint-ran
+action toggle_layout_manual
+wait 400
+
+log === With no idle shell, Run makes a new pane
+sh {herdr} --session {session} pane run {pane:2} "sleep 120"
+action focus_tile_left
+until focus 1
+until hints.run.idle busy,busy 15000
+sh rm -f @DIR@/ran.txt
+key cmd+s
+hints select printf hint-ran > ran.txt
+key r
+expect hints.run.target new
+until tiles 3
+until terminal.phase attached 10000
+expect focus 2
+wait 1000
+sh test "$(cat @DIR@/ran.txt)" = hint-ran
+action close_tile
+until tiles 2
+sh {herdr} --session {session} pane send-keys {pane:2} ctrl+c
+sh {herdr} --session {session} pane send-keys {pane:1} ctrl+c
+action focus_tile_right
+until focus 2
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+until hints.run.idle idle 10000
+sh printf '[herdr]\nsession = "{session}"\n[keys.macos.terminal]\nselect_visible_item = "cmd+s"\n[hints]\nrun_target = "new"\n' > {config}
+action reload_config
+wait 400
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
 log === All visible panes participate, hidden panes do not
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
 until tiles 2

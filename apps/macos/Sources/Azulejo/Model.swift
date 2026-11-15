@@ -297,6 +297,9 @@ struct PaneMetaModel: Decodable, Equatable {
     var cwd: String?
     /// The foreground command when it isn't the shell (F28).
     var command: String?
+    /// The shell's name, set once the core has polled the pane's
+    /// foreground process (else `$SHELL`'s, as the core falls back to).
+    var shell: String?
 }
 
 /// A tile's header text (`azulejo_model::TileHeader`).

@@ -290,12 +290,35 @@ pub struct HintsConfig {
     /// line). On by default: on every scored set it matches or beats the
     /// detector alone (core/crates/hints/tools/model.sh prints the table).
     pub row_classifier: bool,
+    /// Where Run (`r`) sends a command.
+    pub run_target: RunTarget,
 }
 
 impl Default for HintsConfig {
     fn default() -> Self {
         HintsConfig {
             row_classifier: true,
+            run_target: RunTarget::Reuse,
+        }
+    }
+}
+
+/// `[hints] run_target`: where ⌘S Run sends a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RunTarget {
+    /// The current pane when it's an idle shell, else the nearest idle shell
+    /// in the tab on the same machine, else a new pane.
+    #[default]
+    Reuse,
+    /// Always a new pane beside the source.
+    New,
+}
+
+impl RunTarget {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RunTarget::Reuse => "reuse",
+            RunTarget::New => "new",
         }
     }
 }
@@ -681,6 +704,16 @@ fn parse_hints(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mu
             ("row_classifier", _) => {
                 sink.error(value.span(), "`hints.row_classifier` must be true or false")
             }
+            ("run_target", DeValue::String(s)) if s.as_ref() == "reuse" => {
+                out.run_target = RunTarget::Reuse
+            }
+            ("run_target", DeValue::String(s)) if s.as_ref() == "new" => {
+                out.run_target = RunTarget::New
+            }
+            ("run_target", _) => sink.error(
+                value.span(),
+                "`hints.run_target` must be \"reuse\" or \"new\"",
+            ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `hints.{other}`")),
         }
     }
