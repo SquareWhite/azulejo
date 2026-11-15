@@ -22,9 +22,9 @@ mod stream;
 
 pub use azulejo_model::{
     Axis, Direction, Focus, Frame, GitInfo, HerdrRef, InsertAt, LayoutKind, LayoutParams,
-    LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, PreviewMode, Rect, Session, TabId,
-    ThreeColumnParams, Tile, TileContent, TileHeader, TileId, TileKind, TileParams, WindowId,
-    WorkspaceId,
+    LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, PreviewMode, Rect, Session,
+    SidebarState, TabId, ThreeColumnParams, Tile, TileContent, TileHeader, TileId, TileKind,
+    TileParams, WindowId, WorkspaceId,
 };
 pub use command::*;
 pub use error::{Error, ErrorCode};

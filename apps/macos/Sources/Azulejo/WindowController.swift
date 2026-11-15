@@ -8,6 +8,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     let window: NSWindow
     let tiles = TileContainerView()
     private let sidebar = SidebarView()
+    /// The collapsed sidebar's rail (`[sidebar] collapsed = "rail"`).
+    private let rail = SidebarRailView()
     /// The sidebar's rounded card: the traffic lights sit in its top band
     /// and the sidebar's rows below them (D.2).
     private let sidebarCard = SidebarCardView()
@@ -27,20 +29,25 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// Set while applying a frame from the core, so it isn't echoed back.
     private var applyingFrame = false
 
-    /// The sidebar card opens and closes with layout motion (it slides and
-    /// fades, the tiles grow or shrink to match); instantly on the first
-    /// refresh, and when motion is off.
-    var sidebarVisible = true {
+    /// How the sidebar shows: full, a rail or hidden. It changes with layout
+    /// motion (the card changes shape or slides and fades, the tiles grow or
+    /// shrink to match); instantly on the first refresh, and when motion is
+    /// off.
+    var sidebarState: SidebarState = .full {
         didSet {
-            guard sidebarVisible != oldValue else { return }
+            guard sidebarState != oldValue else { return }
             // The keyboard doesn't stay in a sidebar that's going away (the
             // Files panel): back to the focused tile, as Esc would.
-            if !sidebarVisible, let responder = window.firstResponder as? NSView, responder.isDescendant(of: sidebar) {
+            if sidebarState != .full, let responder = window.firstResponder as? NSView,
+               responder.isDescendant(of: sidebar) {
                 sidebar.onReturnFocus?()
             }
-            content.setSidebar(shown: sidebarVisible, animated: model != nil && window.isVisible)
+            content.setSidebar(sidebarState, animated: model != nil && window.isVisible)
         }
     }
+
+    /// The full sidebar is open (`toggle_sidebar` collapses it, else opens it).
+    var sidebarVisible: Bool { sidebarState == .full }
 
     init(windowID: String, app: AppController) {
         self.windowID = windowID
@@ -63,6 +70,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         window.tabbingMode = .disallowed
         content.sidebarCard = sidebarCard
         content.sidebar = sidebar
+        content.rail = rail
         content.sidebarToggle = sidebarToggle
         content.tabBar = tabBar
         content.search = search
@@ -71,9 +79,13 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.attention = attention
         content.banner = banner
         content.palette = palette
-        // The card draws the sidebar's (rounded) background; the rows sit on it.
+        // The card draws the sidebar's (rounded) background; the rows, full
+        // or the rail's, sit in it and it clips them as it changes shape.
         sidebar.layer?.backgroundColor = nil
-        [sidebarCard, sidebar, sidebarToggle, tabBar, search, tiles, attention, banner, hud, palette]
+        sidebarCard.addSubview(sidebar)
+        sidebarCard.addSubview(rail)
+        rail.isHidden = true
+        [sidebarCard, sidebarToggle, tabBar, search, tiles, attention, banner, hud, palette]
             .forEach(content.addSubview)
         content.wantsLayer = true
         window.contentView = content
@@ -94,6 +106,12 @@ final class WindowController: NSObject, NSWindowDelegate {
             window.makeFirstResponder(nil)
             tiles.focusedView?.setFocused(true)
         }
+        rail.onSelect = sidebar.onSelect
+        rail.onMenu = sidebar.onMenu
+        rail.onTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
+        rail.onExpand = { [weak app, windowID] in
+            app?.send(["method": "window.set_sidebar", "params": ["window": windowID, "visible": true]])
+        }
         tabBar.onSelect = { [weak app] id in app?.send(["method": "tab.focus", "params": ["tab": id]]) }
         tiles.onClickTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
         attention.header = { [weak tiles = self.tiles] id in tiles?.header(of: id) }
@@ -105,11 +123,11 @@ final class WindowController: NSObject, NSWindowDelegate {
     func apply(_ model: WindowModel) {
         let first = self.model == nil
         if first { placeWindow(model.frame) }
-        let showSidebar = model.sidebarHidden != true
         // Before `self.model` is set: the first refresh shows it as it was.
-        if sidebarVisible != showSidebar { sidebarVisible = showSidebar }
+        if sidebarState != model.sidebarState { sidebarState = model.sidebarState }
         self.model = model
         Perf.measure("apply.sidebar") { sidebar.apply(model, machines: app?.machines ?? []) }
+        Perf.measure("apply.rail") { rail.apply(model, machines: app?.machines ?? []) }
         Perf.measure("apply.tabbar") { tabBar.apply(model.workspace) }
         Perf.measure("apply.tiles") { tiles.apply(model) }
         Perf.measure("apply.attention") { attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames()) }
@@ -166,6 +184,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarBranches: [String] { sidebar.branches }
     /// Automation: the sidebar itself (Agents | Files, rows, footer).
     var sidebarView: SidebarView { sidebar }
+    /// Automation: the collapsed sidebar's rail.
+    var railView: SidebarRailView { rail }
     var tabMarkers: [String] { tabBar.markers }
 
     /// The keymap changed (config reload): the search field's chord badge.
@@ -250,6 +270,7 @@ final class WindowController: NSObject, NSWindowDelegate {
 final class ChromeLayoutView: NSView {
     weak var sidebarCard: NSView?
     weak var sidebar: NSView?
+    weak var rail: NSView?
     weak var sidebarToggle: NSView?
     weak var tabBar: TabStripView?
     weak var search: ToolbarSearchView?
@@ -272,40 +293,47 @@ final class ChromeLayoutView: NSView {
 
     // MARK: Sidebar motion
 
-    /// Whether the sidebar card is open. Closed, it waits off the window's
-    /// left edge, hidden.
-    private(set) var sidebarShown = true
-    /// Set for the one layout pass that opens or closes the sidebar: the
-    /// tiles move as a layout motion instead of jumping.
+    /// How the sidebar shows. Full, the card runs down the window's left
+    /// with the traffic lights in its top band; as a rail it's a narrow card
+    /// under the toolbar row, the lights on the window colour above it;
+    /// hidden, it waits off the window's left edge.
+    private(set) var sidebarState: SidebarState = .full
+    /// Set for the one layout pass that changes the sidebar: the tiles move
+    /// as a layout motion instead of jumping.
     private var animatingSidebar = false
-    /// Bumped by each open or close; a finished close only hides the card if
-    /// it's still the latest.
+    /// Bumped by each change; a finished one only tidies up (hides what
+    /// faded out) if it's still the latest.
     private var sidebarGeneration = 0
     private static let chromeKey = "azj.chrome"
 
-    /// Opens or closes the sidebar. Animated (and motion on), the card and
-    /// its rows slide and fade while the tile area grows or shrinks to match
-    /// with the tiles' own motion (same length, curve and style; crop rules
-    /// for terminals), the toggle and the tab strip slide along. The card's
-    /// edge and the tiles' edge move in step, a gutter apart. A toggle
-    /// mid-motion starts from where everything shows now. The traffic
-    /// lights don't move: they sit in the same spot open or closed.
-    func setSidebar(shown: Bool, animated: Bool) {
-        guard shown != sidebarShown else { return }
-        sidebarShown = shown
+    /// Opens, collapses (to a rail) or hides the sidebar. Animated (and
+    /// motion on), the card changes shape (full ↔ rail: its top and right
+    /// edges move, and it clips its rows) or slides and fades (hidden),
+    /// while the tile area grows or shrinks to match with the tiles' own
+    /// motion (same length, curve and style; crop rules for terminals). The
+    /// full rows and the rail's cross-fade; the toggle and the tab strip
+    /// slide along. The card's right edge and the tiles' left edge move in
+    /// step, a gutter apart. A change mid-motion starts from where
+    /// everything shows now. The traffic lights don't move.
+    func setSidebar(_ state: SidebarState, animated: Bool) {
+        guard state != sidebarState else { return }
+        sidebarState = state
         sidebarGeneration += 1
         let generation = sidebarGeneration
         let animate = animated && Motion.active && window != nil && bounds.width > 1 && bounds.height > 1
-        let card = [sidebarCard, sidebar].compactMap { $0 }
-        let others: [NSView?] = [sidebarToggle, tabBar, search, banner, hud]
-        let sliding = card + others.compactMap { $0 }
+        let others: [NSView?] = [sidebarCard, sidebarToggle, tabBar, search, banner, hud]
+        let sliding = others.compactMap { $0 }
+        // The rows inside the card: shown in their own form only.
+        let rows: [(view: NSView, shown: Bool)] = [(sidebar, state == .full), (rail, state == .rail)]
+            .compactMap { view, shown in view.map { ($0, shown) } }
         var before: [ObjectIdentifier: (frame: CGRect, opacity: Float)] = [:]
-        for view in sliding {
+        for view in sliding + rows.map(\.view) {
             if animate { before[ObjectIdentifier(view)] = Self.visual(view) }
             view.layer?.removeAnimation(forKey: Self.chromeKey)
         }
-        // The card stays up while it slides out; hidden once it's gone.
-        for view in card where shown || !animate { view.isHidden = !shown }
+        // What shows, shows now; what goes stays up while it fades out.
+        if state != .hidden || !animate { sidebarCard?.isHidden = state == .hidden }
+        for (view, shown) in rows where shown || !animate { view.isHidden = !shown }
 
         animatingSidebar = animate
         needsLayout = true
@@ -317,14 +345,18 @@ final class ChromeLayoutView: NSView {
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
             guard let self, generation == self.sidebarGeneration else { return }
-            for view in card {
-                if !self.sidebarShown { view.isHidden = true }
+            if let card = self.sidebarCard {
+                card.isHidden = self.sidebarState == .hidden
+                card.layer?.removeAnimation(forKey: Self.chromeKey)
+            }
+            for (view, shown) in rows {
+                view.isHidden = !shown
                 view.layer?.removeAnimation(forKey: Self.chromeKey)
             }
         }
         for view in sliding {
             guard let layer = view.layer, let was = before[ObjectIdentifier(view)] else { continue }
-            let isCard = card.contains { $0 === view }
+            let isCard = view === sidebarCard
             let group = CAAnimationGroup()
             var parts: [CAAnimation] = []
             if !Self.close(was.frame, view.frame) {
@@ -332,11 +364,18 @@ final class ChromeLayoutView: NSView {
                 position.fromValue = NSValue(point: Motion.position(of: was.frame, anchorPoint: layer.anchorPoint))
                 position.toValue = NSValue(point: Motion.position(of: view.frame, anchorPoint: layer.anchorPoint))
                 parts.append(position)
+                if was.frame.size != view.frame.size {
+                    // Full ↔ rail: the card changes shape round its rows.
+                    let bounds = CABasicAnimation(keyPath: "bounds")
+                    bounds.fromValue = NSValue(rect: CGRect(origin: layer.bounds.origin, size: was.frame.size))
+                    bounds.toValue = NSValue(rect: layer.bounds)
+                    parts.append(bounds)
+                }
             }
             if isCard {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = was.opacity
-                fade.toValue = shown ? 1 : 0
+                fade.toValue = state == .hidden ? 0 : 1
                 parts.append(fade)
                 // Held at 0 until the completion hides it.
                 group.fillMode = .forwards
@@ -346,6 +385,19 @@ final class ChromeLayoutView: NSView {
             group.animations = parts
             Motion.configure(group, duration: duration)
             layer.add(group, forKey: Self.chromeKey)
+        }
+        // The full rows and the rail's cross-fade in the card.
+        for (view, shown) in rows {
+            guard let layer = view.layer, let was = before[ObjectIdentifier(view)] else { continue }
+            let target: Float = shown ? 1 : 0
+            guard was.opacity != target else { continue }
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = was.opacity
+            fade.toValue = target
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            Motion.configure(fade, duration: duration)
+            layer.add(fade, forKey: Self.chromeKey)
         }
         CATransaction.commit()
     }
@@ -389,14 +441,23 @@ final class ChromeLayoutView: NSView {
         let fullScreen = window?.styleMask.contains(.fullScreen) == true
         var tilesLeft = inset
         var toolbarLeft: CGFloat
-        // Closed, the card waits just off the left edge, where it slides
+        let full = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
+        // The rail: under the toolbar row, level with the tiles' top.
+        let railHeight = max(0, bounds.height - Design.Space.toolbarHeight - inset)
+        var card = full
+        switch sidebarState {
+        case .full: break
+        case .rail: card = NSRect(x: inset, y: inset, width: SidebarRailView.width, height: railHeight)
+        // Hidden, the card waits just off the left edge, where it slides
         // out to and in from: its right edge a gutter left of the tiles'.
-        var card = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
-        if !sidebarShown { card.origin.x = -card.width }
+        case .hidden: card.origin.x = -card.width
+        }
         sidebarCard?.frame = card
-        sidebar?.frame = NSRect(x: card.minX, y: card.minY, width: card.width,
-                                height: max(0, card.height - Design.Space.titlebarZone))
-        if sidebarShown {
+        // The rows sit in the card from its bottom left at their own size,
+        // so it clips them, without a relayout, while it changes shape.
+        sidebar?.frame = NSRect(x: 0, y: 0, width: full.width, height: max(0, full.height - Design.Space.titlebarZone))
+        rail?.frame = NSRect(x: 0, y: 0, width: SidebarRailView.width, height: railHeight)
+        if sidebarState == .full {
             sidebarToggle?.frame = NSRect(
                 x: card.maxX - Design.Space.titlebarToggleInset - 11, y: rowMidY - 11, width: 22, height: 22)
             tilesLeft = card.maxX + inset
@@ -406,6 +467,7 @@ final class ChromeLayoutView: NSView {
             let lightsEnd = fullScreen ? inset - 6 : Design.Space.titlebarLightsX + 2 * 20 + 14
             sidebarToggle?.frame = NSRect(x: lightsEnd + 12, y: rowMidY - 11, width: 22, height: 22)
             toolbarLeft = lightsEnd + 12 + 22 + Design.Space.toolbarGap
+            if sidebarState == .rail { tilesLeft = card.maxX + inset }
         }
 
         // The search field at the row's right end; the tabs get what's left.
@@ -493,6 +555,10 @@ final class SidebarCardView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        // The rows (full or the rail's) are subviews, clipped to the card as
+        // it changes shape between the two.
+        clipsToBounds = true
+        layer?.masksToBounds = true
         layer?.cornerRadius = Design.Radius.card
         layer?.borderWidth = Design.Border.hairline
         applyColours()
@@ -632,6 +698,22 @@ extension WindowController {
         let t = tiles.frame
         s["chrome.tiles"] = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
         s["chrome.fits"] = tabBar.frame.maxX <= search.frame.minX ? "yes" : "no"
+        // As a rail, the card sits clear of the traffic lights, the toggle,
+        // the tab strip and the tiles (a gutter from them): what it
+        // overlaps, or "none".
+        if sidebarState == .rail {
+            let card = sidebarCard.frame
+            var hits: [String] = []
+            let lights = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap {
+                window.standardWindowButton($0).map { $0.convert($0.bounds, to: content) }
+            }
+            if lights.contains(where: { $0.intersects(card) }) { hits.append("lights") }
+            if sidebarToggle.frame.intersects(card) { hits.append("toggle") }
+            if tabBar.frame.intersects(card) { hits.append("tabs") }
+            if tiles.frame.insetBy(dx: -Design.Space.gutter + 1, dy: 0).intersects(card) { hits.append("tiles") }
+            s["chrome.rail.overlaps"] = hits.isEmpty ? "none" : hits.joined(separator: ",")
+            s["chrome.rail"] = "\(Int(card.minX)),\(Int(content.bounds.height - card.maxY)),\(Int(card.width)),\(Int(card.height))"
+        }
         s["tab.statuses"] = tabBar.statuses.joined(separator: ",")
         s["tab.overflow"] = tabBar.overflow
         s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText

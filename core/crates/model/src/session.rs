@@ -282,9 +282,34 @@ pub struct Window {
     /// Last known screen frame, in points; restored on relaunch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<Frame>,
-    /// The workspace sidebar is hidden; restored on relaunch.
+    /// The workspace sidebar is collapsed, to a rail or out of sight
+    /// (`sidebar` says which); restored on relaunch. The name predates the
+    /// rail.
     #[serde(default, skip_serializing_if = "crate::tile::is_false")]
     pub sidebar_hidden: bool,
+    /// How the sidebar shows: `full`, or collapsed as the `[sidebar]
+    /// collapsed` setting says (`rail` by default, or `hidden`).
+    #[serde(default, skip_serializing_if = "SidebarState::is_full")]
+    pub sidebar: SidebarState,
+}
+
+/// How a window's sidebar shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SidebarState {
+    /// Machine groups, workspace rows and the footer.
+    #[default]
+    Full,
+    /// Collapsed to a narrow rail: workspace numbers and agent states.
+    Rail,
+    /// Collapsed out of sight.
+    Hidden,
+}
+
+impl SidebarState {
+    pub fn is_full(&self) -> bool {
+        *self == SidebarState::Full
+    }
 }
 
 /// A window's frame on screen, in points, origin top left of the main display.
@@ -554,6 +579,7 @@ impl Session {
             workspaces: vec![ws],
             frame: None,
             sidebar_hidden: false,
+            sidebar: SidebarState::Full,
         };
         let ids = (window.id, window.active_workspace);
         self.windows.push(window);
@@ -576,11 +602,35 @@ impl Session {
         Ok(())
     }
 
-    /// Records where the shell put a window.
-    pub fn set_window_sidebar(&mut self, id: WindowId, visible: bool) -> Result<(), ModelError> {
+    /// Opens a window's sidebar, or collapses it to `collapsed` (a rail,
+    /// or hidden; `Full` counts as a rail).
+    pub fn set_window_sidebar(
+        &mut self,
+        id: WindowId,
+        visible: bool,
+        collapsed: SidebarState,
+    ) -> Result<(), ModelError> {
         let index = self.window_index(id)?;
-        self.windows[index].sidebar_hidden = !visible;
+        let window = &mut self.windows[index];
+        window.sidebar_hidden = !visible;
+        window.sidebar = Self::sidebar_form(visible, collapsed);
         Ok(())
+    }
+
+    /// Every collapsed sidebar takes the `collapsed` form (the setting
+    /// changed, or a saved session came back); open ones stay open.
+    pub fn set_sidebar_collapsed(&mut self, collapsed: SidebarState) {
+        for window in &mut self.windows {
+            window.sidebar = Self::sidebar_form(!window.sidebar_hidden, collapsed);
+        }
+    }
+
+    fn sidebar_form(visible: bool, collapsed: SidebarState) -> SidebarState {
+        match (visible, collapsed) {
+            (true, _) => SidebarState::Full,
+            (false, SidebarState::Hidden) => SidebarState::Hidden,
+            (false, _) => SidebarState::Rail,
+        }
     }
 
     pub fn set_window_frame(&mut self, id: WindowId, frame: Frame) -> Result<(), ModelError> {

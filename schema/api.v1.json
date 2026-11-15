@@ -282,7 +282,7 @@
           "type": "object"
         },
         {
-          "description": "Shows or hides a window's workspace sidebar (restored on relaunch).",
+          "description": "Opens a window's workspace sidebar, or collapses it to a rail or out\nof sight, as `[sidebar] collapsed` says (restored on relaunch).",
           "properties": {
             "method": {
               "const": "window.set_sidebar",
@@ -1700,8 +1700,14 @@
                     }
                   ]
                 },
+                "sidebar": {
+                  "$ref": "#/$defs/SidebarState",
+                  "default": "full",
+                  "description": "How the sidebar shows: `full`, `rail` or `hidden`."
+                },
                 "sidebar_hidden": {
                   "default": false,
+                  "description": "The sidebar is collapsed (a rail or hidden).",
                   "type": "boolean"
                 },
                 "window": {
@@ -4256,6 +4262,26 @@
       ],
       "type": "object"
     },
+    "SidebarState": {
+      "description": "How a window's sidebar shows.",
+      "oneOf": [
+        {
+          "const": "full",
+          "description": "Machine groups, workspace rows and the footer.",
+          "type": "string"
+        },
+        {
+          "const": "rail",
+          "description": "Collapsed to a narrow rail: workspace numbers and agent states.",
+          "type": "string"
+        },
+        {
+          "const": "hidden",
+          "description": "Collapsed out of sight.",
+          "type": "string"
+        }
+      ]
+    },
     "Tab": {
       "description": "A tab: one layout tree. A tab always holds at least one tile; closing its\nlast tile closes the tab.",
       "properties": {
@@ -5396,8 +5422,12 @@
         "id": {
           "$ref": "#/$defs/WindowId"
         },
+        "sidebar": {
+          "$ref": "#/$defs/SidebarState",
+          "description": "How the sidebar shows: `full`, or collapsed as the `[sidebar]\ncollapsed` setting says (`rail` by default, or `hidden`)."
+        },
         "sidebar_hidden": {
-          "description": "The workspace sidebar is hidden; restored on relaunch.",
+          "description": "The workspace sidebar is collapsed, to a rail or out of sight\n(`sidebar` says which); restored on relaunch. The name predates the\nrail.",
           "type": "boolean"
         },
         "workspaces": {
@@ -5454,6 +5484,7 @@
     "WindowSetSidebar": {
       "properties": {
         "visible": {
+          "description": "`true` opens the full sidebar; `false` collapses it (`[sidebar]\ncollapsed`: a rail by default, or hidden).",
           "type": "boolean"
         },
         "window": {
@@ -5487,6 +5518,11 @@
         },
         "id": {
           "$ref": "#/$defs/WindowId"
+        },
+        "sidebar": {
+          "$ref": "#/$defs/SidebarState",
+          "default": "full",
+          "description": "How the sidebar shows: `full`, `rail` or `hidden`."
         },
         "workspaces": {
           "items": {

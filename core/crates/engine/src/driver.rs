@@ -83,6 +83,7 @@ enum Msg {
     SetCommands(CommandsFn),
     SetOnExit(azulejo_model::OnExit),
     SetLayoutPrefs(azulejo_model::LayoutPrefs),
+    SetSidebarCollapsed(azulejo_model::SidebarState),
     Shutdown(mpsc::Sender<()>),
 }
 
@@ -214,6 +215,12 @@ impl Core {
     /// model's defaults until this is called.
     pub fn set_layout_prefs(&self, prefs: azulejo_model::LayoutPrefs) {
         let _ = self.tx.send(Msg::SetLayoutPrefs(prefs));
+    }
+
+    /// What a collapsed sidebar shows as (`[sidebar] collapsed`): a rail,
+    /// or hidden. A rail until this is called.
+    pub fn set_sidebar_collapsed(&self, collapsed: azulejo_model::SidebarState) {
+        let _ = self.tx.send(Msg::SetSidebarCollapsed(collapsed));
     }
 
     /// Saves pending state and stops the core.
@@ -721,6 +728,17 @@ fn run<P: HerdrPort>(
             Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
             Msg::SetCommands(list) => commands = Some(list),
             Msg::SetOnExit(policy) => on_exit = policy,
+            Msg::SetSidebarCollapsed(collapsed) => {
+                let events = engine.set_sidebar_collapsed(collapsed);
+                if !events.is_empty() {
+                    if let Some(saver) = &saver {
+                        saver.schedule(engine.session().clone());
+                    }
+                    for event in events {
+                        listeners.retain(|l| l.send(event.clone()).is_ok());
+                    }
+                }
+            }
             Msg::SetLayoutPrefs(prefs) => {
                 let events = engine.set_layout_prefs(prefs);
                 if !events.is_empty() {

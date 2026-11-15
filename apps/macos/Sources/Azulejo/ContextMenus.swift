@@ -268,7 +268,7 @@ enum MenuAutomation {
     static func run(_ arg: String, app: AppController?) -> String? {
         guard let app, let controller = app.focusedController else { return "no window" }
         var words = arg.split(separator: " ").map(String.init)
-        guard let what = words.first else { return "menu needs workspace N, tile, answer or shot" }
+        guard let what = words.first else { return "menu needs workspace N, rail N, tile, answer or shot" }
         words.removeFirst()
         if what == "answer" {
             let text = words.joined(separator: " ")
@@ -284,13 +284,21 @@ enum MenuAutomation {
             guard rows.indices.contains(n - 1) else { return "no row \(n)" }
             let row = rows[n - 1]
             built = row.contextMenu().map { ($0, row.convert(row.bounds, to: nil)) }
+        case "rail":
+            // A workspace row of the collapsed sidebar's rail.
+            guard let n = words.first.flatMap(Int.init) else { return "menu rail needs a row number" }
+            words.removeFirst()
+            let rows = controller.railView.workspaceRows
+            guard rows.indices.contains(n - 1) else { return "no rail row \(n)" }
+            let row = rows[n - 1]
+            built = row.contextMenu().map { ($0, row.convert(row.bounds, to: nil)) }
         case "tile":
             guard let view = controller.tiles.focusedView as? NSView & ContextMenuProviding else {
                 return "the focused tile has no menu"
             }
             built = view.contextMenu().map { ($0, (view as? TileFrame)?.menuAnchor ?? view.convert(view.bounds, to: nil)) }
         default:
-            return "menu needs workspace N, tile or answer"
+            return "menu needs workspace N, rail N, tile or answer"
         }
         guard let (menu, anchor) = built else { return "no menu" }
         last = (menu, anchor)

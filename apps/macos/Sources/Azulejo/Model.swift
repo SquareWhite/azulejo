@@ -24,15 +24,34 @@ struct WindowModel: Decodable, Equatable {
     var workspaces: [WorkspaceModel]
     var activeWorkspace: String
     var frame: FrameModel?
+    /// Collapsed: a rail or hidden (`sidebar` says which).
     var sidebarHidden: Bool?
+    /// How the sidebar shows; absent while it's full.
+    var sidebar: SidebarState?
 
     enum CodingKeys: String, CodingKey {
-        case id, workspaces, frame
+        case id, workspaces, frame, sidebar
         case activeWorkspace = "active_workspace"
         case sidebarHidden = "sidebar_hidden"
     }
 
     var workspace: WorkspaceModel? { workspaces.first { $0.id == activeWorkspace } }
+
+    /// How the sidebar shows (a core without `sidebar` only knew hidden).
+    var sidebarState: SidebarState {
+        sidebar ?? (sidebarHidden == true ? .hidden : .full)
+    }
+}
+
+/// How a window's sidebar shows (`azulejo_model::SidebarState`): the full
+/// list, a narrow rail of numbers and agent states, or nothing.
+enum SidebarState: String, Decodable {
+    case full, rail, hidden
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = SidebarState(rawValue: raw) ?? .full
+    }
 }
 
 struct WorkspaceModel: Decodable, Equatable {

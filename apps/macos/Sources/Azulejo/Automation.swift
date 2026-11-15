@@ -31,7 +31,7 @@ import AppKit
 ///     remember key           note a state value now…
 ///     unchanged key          …and fail if it differs from the noted one
 ///     log text               a note in the log
-///     menu workspace N|tile [invoke TITLE]   build a right-click menu, log
+///     menu workspace N|rail N|tile [invoke TITLE]   build a right-click menu, log
 ///                            its items, run one (see `MenuAutomation`);
 ///                            `menu answer TEXT` answers the next prompt,
 ///                            `menu shot NAME` shoots it drawn open
@@ -508,7 +508,7 @@ final class Automation {
             "windows": "\(session.windows.count)",
             "workspaces": "\(window.workspaces.count)",
             "workspace": "\((window.workspaces.firstIndex { $0.id == window.activeWorkspace } ?? -1) + 1)",
-            "sidebar": controller.sidebarVisible ? "visible" : "hidden",
+            "sidebar": controller.sidebarState == .full ? "visible" : controller.sidebarState.rawValue,
         ]
         if let ws = window.workspace {
             s["tabs"] = "\(ws.tabs.count)"

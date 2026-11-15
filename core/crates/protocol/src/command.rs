@@ -38,7 +38,8 @@ pub enum Command {
     /// Records a window's frame after the user moves or resizes it.
     #[serde(rename = "window.set_frame")]
     WindowSetFrame(WindowSetFrame),
-    /// Shows or hides a window's workspace sidebar (restored on relaunch).
+    /// Opens a window's workspace sidebar, or collapses it to a rail or out
+    /// of sight, as `[sidebar] collapsed` says (restored on relaunch).
     #[serde(rename = "window.set_sidebar")]
     WindowSetSidebar(WindowSetSidebar),
     /// Every window; replies `windows`.
@@ -439,6 +440,8 @@ pub struct WindowSetFrame {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WindowSetSidebar {
     pub window: WindowId,
+    /// `true` opens the full sidebar; `false` collapses it (`[sidebar]
+    /// collapsed`: a rail by default, or hidden).
     pub visible: bool,
 }
 

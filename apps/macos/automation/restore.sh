@@ -6,7 +6,7 @@
 #   apps/macos/automation/restore.sh        (build first: just mac)
 #
 # Steps: build a session (6 terminals in a tall layout, a second tab with a
-# browser and a zoomed preview, sidebar hidden) → quit + relaunch → kill -9 +
+# browser and a zoomed preview, sidebar collapsed) → quit + relaunch → kill -9 +
 # relaunch → kill every attach process + wake → stop + restart herdr → launch
 # with herdr stopped. Each step checks the session came back and times how
 # long until every terminal tile is attached again (target ≤ 2 s).
@@ -114,7 +114,7 @@ sleep 1.5
 snapshot >"$out/before.json"
 terminal_ids >"$out/terms-before.txt"
 t0="$(tick "${tiles[0]}")"
-echo "   $target terminals, browser + zoomed preview in tab 2, sidebar hidden, ticker at $t0"
+echo "   $target terminals, browser + zoomed preview in tab 2, sidebar collapsed, ticker at $t0"
 
 check_same() {
   local label=$1

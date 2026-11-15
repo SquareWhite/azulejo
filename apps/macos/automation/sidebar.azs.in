@@ -104,3 +104,78 @@ sidebar mode agents
 expect sidebar.mode agents
 expect sidebar.statuses working|blocked|blocked|idle|idle
 shot 04-back
+
+# ---- The rail: the collapsed sidebar (toggle_sidebar, default [sidebar]
+# collapsed = "rail"). Same data as the full sidebar.
+
+# Another agent in a second tab of sample-dashboard, in its second tile, to
+# jump to from the rail.
+action switch_workspace 4
+action new_tab
+until tabs 2 5000
+key ctrl+cmd+t
+until tiles 2 5000
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent codex --state working
+until sidebar.statuses working|blocked|blocked|working|idle 5000
+action switch_workspace 1
+expect workspace 1
+
+# Files had the keyboard: collapsing hands it back to the focused tile.
+sidebar mode files
+sidebar focus
+expect sidebar.files.keyboard yes
+action toggle_sidebar
+until sidebar rail 3000
+expect responder.focused yes
+expect rail.keyboard no
+sidebar mode agents
+wait 600
+expect rail.shown yes
+expect rail.groups L:connected
+expect rail.rows 1:working*|2:blocked|3:blocked|4:working|5:idle
+# One agent row per terminal with an agent, in window order; blocked ones
+# stand out.
+expect rail.agents L:working|L:blocked!|L:blocked!|L:working
+expect rail.fits yes
+expect chrome.rail.overlaps none
+expect chrome.hit.close _NSThemeCloseWidget
+expect chrome.hit.toggle SidebarToggleButton
+until rail.spinning 4 3000
+expect rail.tips azulejo (⌘1) ¦ main ¦ 1 working ‖ sample-service (⌘2) ¦ development ¦ 1 blocked ‖ sample-project (⌘3) ¦ audit/critical-path-review ¦ 1 blocked ‖ sample-dashboard (⌘4) ¦ dev ¦ 1 working ‖ config (⌘5) ¦ main ¦ no agents
+expect rail.group.tips Local ¦ Connected
+expect rail.agent.tips claude ¦ azulejo / terminal ¦ working ‖ claude ¦ sample-service / terminal ¦ blocked ‖ codex ¦ sample-project / terminal ¦ blocked ‖ codex ¦ sample-dashboard / terminal ¦ working
+shot 05-rail
+capture 05-rail-window 0
+
+# Clicks: a workspace row focuses it; an agent row jumps to its tile (its
+# workspace, tab and tile).
+sidebar rail select 3
+expect workspace 3
+until rail.rows 1:working|2:blocked|3:blocked*|4:working|5:idle 2000
+sidebar rail agent 4
+expect workspace 4
+expect tab 2
+expect focus 2
+sidebar rail agent 2
+expect workspace 2
+# Right-click on a rail row: the workspace's own menu.
+menu rail 1
+remember menu.items
+menu workspace 1
+unchanged menu.items
+
+# Off: the full sidebar again, rows back; » does the same from the rail.
+action toggle_sidebar
+until sidebar visible 3000
+until rail.shown no 2000
+action toggle_sidebar
+until sidebar rail 3000
+sidebar rail expand
+until sidebar visible 3000
+# Collapsed for the relaunch check (sidebar-relaunch.azs).
+action toggle_sidebar
+until sidebar rail 3000
+wait 800

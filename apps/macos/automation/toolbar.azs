@@ -60,16 +60,17 @@ until palette closed 3000
 expect search.active no
 expect palette.anchor -
 
-# The sidebar hidden: lights stay put, the toggle follows them, the tabs
-# move left and still take clicks.
+# The sidebar collapsed to its rail: lights stay put, the toggle follows them, the tabs
+# move left and still take clicks; the rail sits clear of all of them.
 action toggle_sidebar
-until sidebar hidden 3000
+until sidebar rail 3000
 wait 300
 expect chrome.lights 29,31
 expect chrome.hit.toggle SidebarToggleButton
 expect chrome.hit.tab1 TabButton
 expect chrome.hit.toolbar ChromeLayoutView
-capture 04-sidebar-hidden 0
+expect chrome.rail.overlaps none
+capture 04-sidebar-rail 0
 wait 400
 action toggle_sidebar
 until sidebar visible 3000

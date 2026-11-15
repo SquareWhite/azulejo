@@ -87,6 +87,9 @@ pub struct WindowSummary {
     pub workspaces: Vec<WorkspaceId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<Frame>,
+    /// How the sidebar shows: `full`, `rail` or `hidden`.
+    #[serde(default)]
+    pub sidebar: crate::SidebarState,
 }
 
 /// A workspace and where it lives.

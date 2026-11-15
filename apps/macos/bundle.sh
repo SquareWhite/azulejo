@@ -48,6 +48,10 @@ else
   bin="$bindir/Azulejo"
   if [[ -f "$bin" && "$header" -nt "$bin" ]]; then
     rm -rf "$bindir/Azulejo.build" "$bindir/Modules" "$bindir/ModuleCache" "$bin"
+    # SwiftPM's cached build plan still points into Azulejo.build (its
+    # output-file-map.json): drop it too, or the next build fails on the
+    # missing file instead of planning again.
+    rm -f "$bindir/description.json" "$bindir/plugin-tools-description.json"
   elif [[ -f "$bin" && ( "$lib" -nt "$bin" || "$ghostty" -nt "$bin" ) ]]; then
     rm -f "$bin"
   fi

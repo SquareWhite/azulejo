@@ -22,8 +22,12 @@ pub enum Event {
         window: WindowId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frame: Option<Frame>,
+        /// The sidebar is collapsed (a rail or hidden).
         #[serde(default)]
         sidebar_hidden: bool,
+        /// How the sidebar shows: `full`, `rail` or `hidden`.
+        #[serde(default)]
+        sidebar: crate::SidebarState,
     },
 
     #[serde(rename = "workspace.created")]
