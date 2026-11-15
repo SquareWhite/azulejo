@@ -76,8 +76,8 @@ P0 is the MVP, P1 is needed before it can be a daily driver, P2 can come later. 
 | F10 | Tiles | File browser tile: tree view, keyboard navigation, file watching, open in preview or terminal | P1 |
 | F11 | Tiles | Attention signal on a tile when herdr reports a blocked or finished agent: a status icon in the tile's header (working, blocked, or done and unread; nothing for idle or a read finish), not a coloured border (Nov 9, 2026). A finished agent's mark clears once the user reads it (its tile focused and on screen in the key window for 0.75 s); a blocked agent's stays until its state changes (Nov 5, 2026). herdr doesn't pass on OSC 9/777/99 notifications, so generic "command finished" alerts wait on upstream ([ADR 0005](adr/0005-scrollback-and-passthrough.md)) | P1 |
 | F12 | herdr | Every terminal tile attaches to a herdr pane; a new terminal tile creates a herdr pane | P0 |
-| F13 | herdr | Each app workspace maps one-to-one to a herdr workspace | P0 |
-| F14 | herdr | Closing a tile detaches by default; killing the herdr pane is an explicit choice | P0 |
+| F13 | herdr | Each app workspace maps one-to-one to a herdr workspace; closing or renaming it in the app does the same in herdr, and a rename in herdr comes back ([ADR 0014](adr/0014-workspace-close-and-rename-reach-herdr.md), Nov 9, 2026) | P0 |
+| F14 | herdr | Closing a tile with `close_tile` (`alt+w`) detaches; `cmd+w` (`close_pane`) kills the herdr pane at once, with no confirmation (the user's call, Nov 9, 2026); the menus' Kill still asks | P0 |
 | F15 | herdr | Panes created or closed elsewhere (phone, CLI, agent) appear or disappear in the app within 1 second | P1 |
 | F16 | herdr | herdr agent state (blocked, working, done, idle) shown on tiles and in the sidebar | P1 |
 | F17 | herdr | Several herdr servers at once, local and remote over SSH, grouped by machine in the sidebar with per-machine connection state; the machines are the ones saved in herdr (`herdr machine add`), Azulejo only presents them ([ADR 0011](adr/0011-multiple-herdr-machines.md); moved from P2 on Nov 3, 2026 after the design mockup; PLAN 2.13) | P1 |

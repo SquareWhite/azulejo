@@ -100,6 +100,15 @@ action cycle_tile_next        # next/previous tile: palette-only (alt+] / alt+[ 
 action cycle_tile_previous
 key alt+w                     # close tile (detaches its herdr pane)
 expect tiles 5
+wait 1500
+sh echo {pane} >{out}/cmdw-pane
+sh {herdr} --session {session} pane list | grep -q "\"{pane}\""
+key cmd+w                     # close pane: kills its herdr pane, no dialog
+expect key.last action:close_pane
+expect tiles 4
+wait 1500
+sh ! {herdr} --session {session} pane list | grep -q "\"$(cat {out}/cmdw-pane)\""
+expect workspaces 1
 
 # --- resize mode (sticky hjkl until esc) ---
 key alt+h
@@ -140,7 +149,7 @@ key cmd+2
 expect workspace 2
 key alt+0                     # the previously active workspace
 expect workspace 3
-key cmd+w                     # close workspace (detaches; mirrors cmd+t)
+key alt+cmd+w                 # close workspace (closes it in herdr too; macOS Close All)
 expect workspaces 2
 expect workspace 2
 key cmd+1
@@ -166,5 +175,5 @@ expect kind tile
 
 # --- unbound keys pass through untouched ---
 key x
-expect tiles 5
+expect tiles 4
 shot 09-end

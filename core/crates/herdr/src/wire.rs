@@ -16,6 +16,7 @@ pub(crate) mod method {
     pub const WORKSPACE_GET: &str = "workspace.get";
     pub const WORKSPACE_LIST: &str = "workspace.list";
     pub const WORKSPACE_CLOSE: &str = "workspace.close";
+    pub const WORKSPACE_RENAME: &str = "workspace.rename";
     pub const TAB_CREATE: &str = "tab.create";
     pub const TAB_RENAME: &str = "tab.rename";
     pub const PANE_GET: &str = "pane.get";

@@ -351,14 +351,40 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// The red button and close_window: closing the last window quits instead
-    /// (the session is saved and comes back on relaunch); other windows close
-    /// in the core, detaching their terminals.
+    /// (the session is saved and comes back on relaunch, herdr untouched);
+    /// other windows close in the core, which closes their herdr workspaces
+    /// too (ADR 0014).
+    /// Asks first when something still runs in its terminals (see
+    /// `confirmRunning`).
     func closeWindow(_ controller: WindowController) {
         if controllers.count <= 1 {
             NSApp.terminate(nil)
-        } else {
-            send(["method": "window.close", "params": ["window": controller.windowID]])
+            return
         }
+        let workspaces = session?.window(controller.windowID)?.workspaces ?? []
+        confirmRunning(workspaces.flatMap(\.runningProcesses), closing: "this window", in: controller) {
+            [weak self] in
+            guard let self else { return }
+            self.send(["method": "window.close", "params": ["window": controller.windowID]])
+        }
+    }
+
+    /// Closing a workspace ends every process in its herdr workspace (ADR
+    /// 0014). When something besides an idle shell runs there (a foreground
+    /// command, or a working or blocked agent: `TileModel.runningProcess`),
+    /// a sheet on the window asks first, as Ghostty does; an idle workspace
+    /// closes at once. Automation answers with `menu answer`.
+    private func confirmRunning(_ running: [String], closing what: String, in controller: WindowController,
+                                then close: @escaping () -> Void) {
+        guard !running.isEmpty else { return close() }
+        let listed = running.prefix(3).joined(separator: ", ") + (running.count > 3 ? ", …" : "")
+        let count = running.count == 1 ? "A process is" : "\(running.count) processes are"
+        Prompts.confirm(
+            "Close \(what)?",
+            info: "\(count) still running: \(listed). Closing ends \(running.count == 1 ? "it" : "them"), "
+                + "and herdr closes the workspace too.",
+            button: "Close", in: controller, background: env.background
+        ) { if $0 { close() } }
     }
 
     // MARK: Actions
@@ -386,7 +412,10 @@ final class AppController: NSObject, NSApplicationDelegate {
                 let id = (command["params"] as? [String: Any])?["workspace"] as? String
                 return closeWorkspace(id ?? session?.window(controller.windowID)?.activeWorkspace, in: controller)
             }
-            if (command["params"] as? [String: Any])?["kill"] as? Bool == true {
+            // `close_pane` (⌘W) kills straight away: the user chose no dialog
+            // for it. `kill_tile` (menus, palette) still asks.
+            if (command["params"] as? [String: Any])?["kill"] as? Bool == true,
+               outcome["action"] as? String != "close_pane" {
                 return confirmKill(command, in: controller)
             }
             switch send(command) {
@@ -511,14 +540,24 @@ final class AppController: NSObject, NSApplicationDelegate {
         perform(outcome, in: controller, target: target, extra: extra)
     }
 
-    /// `close_workspace` (⌘W): closes the workspace and detaches its
-    /// terminals, with no confirmation since nothing is killed (F14). The
-    /// app's last workspace gets a fresh one in its place first, so the
-    /// window stays; another window's last workspace closes that window.
+    /// `close_workspace` (⌥⌘W): closes the workspace, and the core closes its
+    /// herdr workspace with every tab and pane in it (ADR 0014). The app's
+    /// last workspace gets a fresh one in its place first, so the window
+    /// stays; another window's last workspace closes that window. Asks first
+    /// when something still runs there (`confirmRunning`).
     private func closeWorkspace(_ id: String?, in controller: WindowController) {
         guard let id, let session,
-              let window = session.windows.first(where: { $0.workspaces.contains { $0.id == id } })
+              let window = session.windows.first(where: { $0.workspaces.contains { $0.id == id } }),
+              let workspace = window.workspaces.first(where: { $0.id == id })
         else { return controller.flash("no such workspace") }
+        confirmRunning(workspace.runningProcesses, closing: "“\(workspace.name)”", in: controller) {
+            [weak self] in
+            self?.closeWorkspaceNow(id, in: window.id, controller: controller)
+        }
+    }
+
+    private func closeWorkspaceNow(_ id: String, in windowID: String, controller: WindowController) {
+        guard let session, let window = session.window(windowID) else { return }
         if session.windows.count == 1, window.workspaces.count == 1,
            case .success(let reply) = send(["method": "workspace.create", "params": ["window": window.id]]),
            let fresh = reply["workspace"] as? String {

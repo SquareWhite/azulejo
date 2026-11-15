@@ -264,7 +264,39 @@ expect key.last action:last_workspace
 expect workspace 1
 key cmd+2
 expect workspace 2
+# --- cmd+w closes the pane: the tile goes and herdr's pane is killed, no dialog (F14) ---
+expect tiles 1
+key ctrl+cmd+t
+until tiles 2 3000
+wait 1500
+sh echo {pane} >{out}/cmdw-closed-pane
+sh {herdr} --session {session} pane list >{out}/cmdw-panes-before.json
 key cmd+w
+expect key.last action:close_pane
+until tiles 1 3000
+expect workspaces 2
+expect workspace 2
+expect tabs 1
+wait 1500
+sh echo {pane} >{out}/cmdw-kept-pane
+sh {herdr} --session {session} pane list >{out}/cmdw-panes-after.json
+# exactly the closed tile's pane is gone; every other pane still runs
+sh test "$(/opt/homebrew/bin/jq -c --arg c "$(cat {out}/cmdw-closed-pane)" '[.result.panes[].pane_id | select(. != $c)] | sort' {out}/cmdw-panes-before.json)" = "$(/opt/homebrew/bin/jq -c '[.result.panes[].pane_id] | sort' {out}/cmdw-panes-after.json)"
+sh /opt/homebrew/bin/jq -e --arg c "$(cat {out}/cmdw-closed-pane)" 'any(.result.panes[]; .pane_id == $c)' {out}/cmdw-panes-before.json
+# --- cmd+w on the workspace's last tile kills its pane; herdr deletes the
+# emptied workspace and Azulejo follows (it isn't the window's last) ---
+key cmd+w
+expect key.last action:close_pane
+until workspaces 1 3000
+expect workspace 1
+wait 1500
+sh {herdr} --session {session} pane list >{out}/cmdw-panes-last.json
+sh test "$(/opt/homebrew/bin/jq -c --arg k "$(cat {out}/cmdw-kept-pane)" '[.result.panes[].pane_id | select(. != $k)] | sort' {out}/cmdw-panes-after.json)" = "$(/opt/homebrew/bin/jq -c '[.result.panes[].pane_id] | sort' {out}/cmdw-panes-last.json)"
+sh /opt/homebrew/bin/jq -e --arg k "$(cat {out}/cmdw-kept-pane)" 'any(.result.panes[]; .pane_id == $k)' {out}/cmdw-panes-after.json
+# --- alt+cmd+w closes the workspace ---
+key cmd+t
+until workspaces 2 3000
+key alt+cmd+w
 expect key.last action:close_workspace
 until workspaces 1 3000
 # --- menus and misc ---

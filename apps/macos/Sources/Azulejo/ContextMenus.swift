@@ -17,11 +17,19 @@ enum Prompts {
     static let cancel = "\u{0}cancel"
     static var answers: [String] = []
 
+    /// How many confirmations were asked for, and the last one's message
+    /// (automation: `prompt.asks`, `prompt.last`).
+    static var asked = 0
+    static var lastAsked = ""
+
     static func takeAnswer() -> String? { answers.isEmpty ? nil : answers.removeFirst() }
 
-    /// A destructive confirmation as a sheet on `controller`'s window.
+    /// A destructive confirmation as a sheet on `controller`'s window. A
+    /// sheet never activates the app or raises the window.
     static func confirm(_ message: String, info: String, button: String, in controller: WindowController,
                         background: Bool, done: @escaping (Bool) -> Void) {
+        asked += 1
+        lastAsked = message
         if let answer = takeAnswer() { return done(answer != cancel && answer != "no") }
         guard !background else {
             controller.flash("\(button) needs the app in front")

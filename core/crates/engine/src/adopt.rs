@@ -159,6 +159,25 @@ pub fn adopt(
     changed
 }
 
+/// herdr workspaces on `machine` that no Azulejo workspace shows, after
+/// adoption: every tab in them holds a pane closed here. Workspaces closed
+/// in Azulejo before closing reached herdr (ADR 0014) end up like this, and
+/// so do ones whose close failed. They're left running and reported, never
+/// closed: the processes in them are the user's.
+pub fn unshown(
+    session: &Session,
+    machine: &Machine,
+    workspaces: &[herdr::WorkspaceInfo],
+) -> Vec<String> {
+    let mut out: Vec<String> = workspaces
+        .iter()
+        .filter(|hw| find_workspace(session, machine, hw.workspace_id.as_str()).is_none())
+        .map(|hw| hw.workspace_id.0.clone())
+        .collect();
+    out.sort();
+    out
+}
+
 /// The same herdr pane: by terminal ID (survives moves), or by pane and tab ID
 /// (survives a herdr restart, which gives the slot a fresh terminal).
 pub fn same_pane(p: &herdr::PaneInfo, r: &HerdrRef) -> bool {

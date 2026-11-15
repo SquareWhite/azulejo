@@ -268,6 +268,16 @@ impl Client {
             .map(drop)
     }
 
+    /// Set a herdr workspace's label; herdr then sends `workspace_renamed`.
+    pub async fn rename_workspace(&self, id: &WorkspaceId, label: &str) -> Result<()> {
+        self.call(
+            method::WORKSPACE_RENAME,
+            json!({ "workspace_id": id, "label": label }),
+        )
+        .await
+        .map(drop)
+    }
+
     // ---- terminals ---------------------------------------------------------
 
     /// Create the herdr tab behind a new terminal tile: one tab per tile,

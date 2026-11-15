@@ -647,3 +647,67 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
     eprintln!("push with nothing to do: {:?}", t0.elapsed());
     let _ = attached.kill().await;
 }
+
+/// Workspace rename and close (ADR 0014): herdr takes the label and says so
+/// with `workspace_renamed`; closing takes its tabs and panes and says
+/// `workspace_closed`; both are `*_not_found` once it's gone.
+#[tokio::test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+async fn renames_and_closes_a_workspace() {
+    let tmp = TempSession::new().await;
+    let (client, _) = tmp
+        .herdr
+        .ensure_server(&tmp.session(), quick())
+        .await
+        .unwrap();
+    let mut events = client.subscribe(Subscription::lifecycle());
+    next_event(&mut events, |i| *i == StreamItem::Connected).await;
+    let ensured = client
+        .ensure_workspace(
+            None,
+            &WorkspaceSpec {
+                label: Some("before".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let ws = ensured.workspace.workspace_id.clone();
+    client
+        .create_terminal(&TerminalSpec {
+            workspace_id: ws.clone(),
+            label: None,
+            cwd: None,
+            env: Vec::new(),
+        })
+        .await
+        .unwrap();
+
+    client.rename_workspace(&ws, "after").await.unwrap();
+    let renamed = next_event(&mut events, |i| {
+        matches!(i, StreamItem::Event(HerdrEvent::WorkspaceRenamed { .. }))
+    })
+    .await;
+    assert_eq!(
+        renamed,
+        StreamItem::Event(HerdrEvent::WorkspaceRenamed {
+            workspace_id: ws.clone(),
+            label: "after".into(),
+        })
+    );
+    let info = client.workspace(&ws).await.unwrap().expect("still there");
+    assert_eq!(info.label.as_deref(), Some("after"));
+
+    client.close_workspace(&ws).await.unwrap();
+    next_event(&mut events, |i| {
+        matches!(i, StreamItem::Event(HerdrEvent::WorkspaceClosed { workspace_id }) if *workspace_id == ws)
+    })
+    .await;
+    assert!(client.workspace(&ws).await.unwrap().is_none());
+    let panes = client.panes().await.unwrap();
+    assert!(panes.iter().all(|p| p.workspace_id != ws), "{panes:?}");
+    let again = client.close_workspace(&ws).await.unwrap_err();
+    assert!(again.is_not_found(), "{again:?}");
+    let rename_gone = client.rename_workspace(&ws, "x").await.unwrap_err();
+    assert!(rename_gone.is_not_found(), "{rename_gone:?}");
+}

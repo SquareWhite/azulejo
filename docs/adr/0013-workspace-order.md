@@ -1,6 +1,8 @@
 # 0013: Workspace order is Azulejo's own
 
-Status: accepted · Nov 5, 2026 · M2.5 (dogfooding feedback) · relates to [0008](0008-use-the-users-herdr-session.md), [0012](0012-mirror-layout-into-herdr.md)
+Status: accepted · Nov 5, 2026 · M2.5 (dogfooding feedback) · relates to [0008](0008-use-the-users-herdr-session.md), [0012](0012-mirror-layout-into-herdr.md) · amended by [0014](0014-workspace-close-and-rename-reach-herdr.md)
+
+> Amended by ADR 0014 (Nov 9, 2026): names are no longer Azulejo's own. A rename here goes to herdr, a rename in herdr comes back, and a survey pushes Azulejo's name where they differ. Closed workspaces close in herdr too. Order still isn't mirrored: the other reasons below stand.
 
 ## Context
 

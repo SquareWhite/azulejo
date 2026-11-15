@@ -43,6 +43,20 @@ That means Azulejo has to deal with herdr state it didn't create: workspaces, ta
 
 ## Amendment (Nov 4, 2026): closing a workspace detaches it
 
+> Superseded by [ADR 0014](0014-workspace-close-and-rename-reach-herdr.md) (Nov 9, 2026): closing a workspace now closes its herdr workspace too. The detach bookkeeping below still applies when that close doesn't reach herdr, and such workspaces are reported, not adopted.
+
 `cmd+w` now closes the workspace (`close_workspace`, `cmd+shift+w` closes the tab). A closed workspace follows the closed-tile rule above: every terminal's pane goes on `Session.detached_herdr`, nothing is killed, and herdr keeps the workspace, its tabs and panes. A survey skips the herdr workspace because all its panes are known, and so does a relaunch (the list is saved with the session). No separate list of closed workspaces is needed. One gap closed on the way: a pane herdr finishes making after its tile (or the tile's workspace) closed now counts as detached too, instead of being adopted as a new workspace on the next survey. A tab created later in that herdr workspace (from the phone, say) is new work and is adopted as usual. Reopening a closed workspace is future work, like reattaching a closed tile.
 
 Evidence: `adopt_tests.rs` `a_closed_workspace_detaches_and_stays_closed`, `a_pane_made_for_a_closed_workspace_isnt_adopted`; live `closing_a_workspace_detaches_it_and_a_relaunch_keeps_it_closed` (herdr's structure identical after the close and after a relaunch).
+
+## Amendment (Nov 9, 2026): cmd+w kills the focused pane
+
+The user decided this one. `cmd+w` closing the whole workspace took too much with it, and a closed tile's pane running on unseen in herdr wasn't what they wanted from `cmd+w` either. So `cmd+w` now runs `close_pane`: the focused tile closes and its herdr pane is killed (`pane.close`) straight away, with no confirmation, the way `cmd+w` closes the innermost thing in any Mac app and herdr's own close pane ends the process. F14 changes with it.
+
+- `alt+w` (`close_tile`) still detaches: the pane keeps running in herdr, as in the rule above.
+- `kill_tile` (Kill Tile… in the menus, the palette, `prefix+shift+k`) does the same as `close_pane` but still asks first.
+- A tab's last tile closes the tab. With `alt+w` the workspace stays even when that was its last tab. With `cmd+w` the workspace's last pane is gone, herdr deletes the workspace, and Azulejo closes it too (`close_herdr_workspace`), unless it's the window's last workspace, which stays, empty. That's how `kill_tile` already behaved.
+- `close_workspace` moves to `alt+cmd+w` (macOS "Close All") and keeps its File menu item; `cmd+shift+w` still closes the tab. Since [ADR 0014](0014-workspace-close-and-rename-reach-herdr.md) (same day) it closes the herdr workspace too, and asks first when something still runs there.
+- The "never closes a pane except on an explicit kill" rule stands: `cmd+w` is now an explicit kill.
+
+Evidence: the B2 chords suite (`e2e/chords.azs.in`) checks that `cmd+w` closes the tile with no dialog and that exactly that pane leaves herdr's `pane list`, the others still running; `keys.azs` checks the pane is gone too.

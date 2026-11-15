@@ -57,6 +57,11 @@ struct FakeState {
     trees: HashMap<String, herdr::LayoutNode>,
     /// Every mirror push, in order.
     pushes: Vec<herdr::MirrorTarget>,
+    /// Workspace labels herdr holds, by ID (surveys report them).
+    labels: HashMap<String, String>,
+    /// `workspace.close` and `workspace.rename` calls, in order.
+    closed_workspaces: Vec<String>,
+    renamed_workspaces: Vec<(String, String)>,
 }
 
 fn tab_layout(tab: &str, root: &herdr::LayoutNode) -> herdr::TabLayout {
@@ -179,6 +184,9 @@ impl HerdrPort for Fake {
         s.created_workspaces += 1;
         let id = format!("w{}", s.created_workspaces);
         s.workspaces.push(id.clone());
+        if let Some(label) = &spec.label {
+            s.labels.insert(id.clone(), label.clone());
+        }
         s.workspace_specs.push(spec);
         let terminal = new_pane(&mut s, &id);
         Ok(herdr::EnsuredWorkspace {
@@ -206,6 +214,26 @@ impl HerdrPort for Fake {
         s.calls.push("kill_terminal");
         s.panes.retain(|p| p.pane_id.0 != pane_id);
         s.killed.push(pane_id);
+        Ok(())
+    }
+
+    async fn close_workspace(&self, workspace_id: String) -> Result<(), String> {
+        let mut s = self.state();
+        s.calls.push("close_workspace");
+        s.workspaces.retain(|w| *w != workspace_id);
+        s.panes.retain(|p| p.workspace_id.0 != workspace_id);
+        s.existing
+            .workspaces
+            .retain(|w| w.workspace_id.0 != workspace_id);
+        s.closed_workspaces.push(workspace_id);
+        Ok(())
+    }
+
+    async fn rename_workspace(&self, workspace_id: String, label: String) -> Result<(), String> {
+        let mut s = self.state();
+        s.calls.push("rename_workspace");
+        s.labels.insert(workspace_id.clone(), label.clone());
+        s.renamed_workspaces.push((workspace_id, label));
         Ok(())
     }
 
@@ -257,6 +285,11 @@ impl HerdrPort for Fake {
         survey
             .tabs
             .retain(|tab| survey.panes.iter().any(|p| p.tab_id == tab.tab_id));
+        for w in &mut survey.workspaces {
+            if let Some(label) = s.labels.get(w.workspace_id.as_str()) {
+                w.label = Some(label.clone());
+            }
+        }
         for p in &mut survey.panes {
             if let Some(status) = s.agent_statuses.get(p.pane_id.as_str()) {
                 p.agent = Some("claude".into());
@@ -690,6 +723,250 @@ fn a_closed_herdr_workspace_takes_its_tiles_and_binding() {
     let after = wait_until(&core, |s| s.windows[0].workspaces.len() == 1);
     assert_eq!(after.windows[0].workspaces[0].id, second.id);
     assert_eq!(terminals(&after).len(), 1);
+}
+
+/// A new workspace in the focused window with one terminal tab.
+fn workspace_with_terminal(core: &Core, name: &str) -> azulejo_model::WorkspaceId {
+    let created = core
+        .execute(Command::WorkspaceCreate(
+            azulejo_protocol::WorkspaceCreate {
+                window: None,
+                name: Some(name.into()),
+                cwd: None,
+                machine: None,
+            },
+        ))
+        .unwrap();
+    let Reply::Created(created) = created.reply else {
+        panic!("{created:?}")
+    };
+    core.execute(Command::TabCreate(azulejo_protocol::TabCreate {
+        workspace: created.workspace,
+        ..Default::default()
+    }))
+    .unwrap();
+    created.workspace.unwrap()
+}
+
+fn herdr_workspace_of(s: &Session, id: azulejo_model::WorkspaceId) -> Option<String> {
+    s.workspace(id).ok().and_then(|w| w.herdr_workspace.clone())
+}
+
+fn wait_for<T>(what: &str, f: impl Fn() -> Option<T>) -> T {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(v) = f() {
+            return v;
+        }
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Closing a workspace in Azulejo closes its herdr workspace, tabs and
+/// panes (ADR 0014), even one whose herdr workspace is still being made;
+/// herdr's `workspace_closed` coming back changes nothing more.
+#[test]
+fn closing_a_workspace_closes_it_in_herdr() {
+    use azulejo_protocol::WorkspaceTarget;
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    wait_until(&core, all_bound);
+    let other = workspace_with_terminal(&core, "other");
+    let s = wait_until(&core, |s| all_bound(s) && terminals(s).len() == 2);
+    let herdr_ws = herdr_workspace_of(&s, other).unwrap();
+
+    core.execute(Command::WorkspaceClose(WorkspaceTarget {
+        workspace: Some(other),
+    }))
+    .unwrap();
+    wait_for("the close", || {
+        (fake.state().closed_workspaces == [herdr_ws.clone()]).then_some(())
+    });
+    assert!(
+        fake.state()
+            .panes
+            .iter()
+            .all(|p| p.workspace_id.0 != herdr_ws)
+    );
+    assert!(
+        fake.state().killed.is_empty(),
+        "closed whole, not pane by pane"
+    );
+    fake.send(herdr::StreamItem::Event(
+        herdr::HerdrEvent::WorkspaceClosed {
+            workspace_id: herdr::WorkspaceId(herdr_ws.clone()),
+        },
+    ));
+    std::thread::sleep(Duration::from_millis(50));
+    let after = core.session().unwrap();
+    assert_eq!(after.windows[0].workspaces.len(), 1);
+    assert_eq!(terminals(&after).len(), 1);
+
+    // Closed right after it was made, before herdr's workspace is bound:
+    // the worker made it, so the worker closes it.
+    let quick = workspace_with_terminal(&core, "quick");
+    core.execute(Command::WorkspaceClose(WorkspaceTarget {
+        workspace: Some(quick),
+    }))
+    .unwrap();
+    let closed = wait_for("the second close", || {
+        let s = fake.state();
+        (s.closed_workspaces.len() == 2).then(|| s.closed_workspaces[1].clone())
+    });
+    assert_ne!(closed, herdr_ws);
+    assert!(
+        fake.state()
+            .panes
+            .iter()
+            .all(|p| p.workspace_id.0 != closed)
+    );
+    assert_eq!(
+        core.session().unwrap().windows[0].workspaces.len(),
+        1,
+        "nothing adopted back"
+    );
+}
+
+/// `window.close` closes every workspace of the window in herdr too; the
+/// other window's stay.
+#[test]
+fn closing_a_window_closes_its_workspaces_in_herdr() {
+    use azulejo_protocol::{WindowCreate, WindowTarget};
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let first = wait_until(&core, all_bound);
+    let kept = first.windows[0].workspaces[0].herdr_workspace.clone();
+    let created = core
+        .execute(Command::WindowCreate(WindowCreate::default()))
+        .unwrap();
+    let Reply::Created(created) = created.reply else {
+        panic!("{created:?}")
+    };
+    let window = created.window.unwrap();
+    core.execute(Command::TabCreate(azulejo_protocol::TabCreate {
+        workspace: created.workspace,
+        ..Default::default()
+    }))
+    .unwrap();
+    workspace_with_terminal(&core, "second");
+    let s = wait_until(&core, |s| all_bound(s) && terminals(s).len() == 3);
+    let mut closing: Vec<String> = s
+        .window(window)
+        .unwrap()
+        .workspaces
+        .iter()
+        .filter_map(|w| w.herdr_workspace.clone())
+        .collect();
+    closing.sort();
+    assert_eq!(closing.len(), 2);
+
+    core.execute(Command::WindowClose(WindowTarget { window }))
+        .unwrap();
+    let mut closed = wait_for("both closes", || {
+        let s = fake.state();
+        (s.closed_workspaces.len() == 2).then(|| s.closed_workspaces.clone())
+    });
+    closed.sort();
+    assert_eq!(closed, closing);
+    assert!(!closed.contains(kept.as_ref().unwrap()));
+}
+
+/// Renames go to herdr (ADR 0014); herdr's own come back. An echo of an
+/// older name while a newer one is on its way doesn't flash it, and a
+/// rename made in herdr isn't pushed back.
+#[test]
+fn renames_go_to_herdr_and_herdr_renames_come_back() {
+    use azulejo_protocol::WorkspaceRename;
+    let fake = Fake::default();
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let s = wait_until(&core, all_bound);
+    let ws = s.windows[0].workspaces[0].id;
+    let herdr_ws = herdr_workspace_of(&s, ws).unwrap();
+    let name = |core: &Core| core.session().unwrap().workspace(ws).unwrap().name.clone();
+    let rename = |to: &str| {
+        core.execute(Command::WorkspaceRename(WorkspaceRename {
+            workspace: Some(ws),
+            name: to.into(),
+        }))
+        .unwrap();
+    };
+    let echo = |label: &str| {
+        fake.send(herdr::StreamItem::Event(
+            herdr::HerdrEvent::WorkspaceRenamed {
+                workspace_id: herdr::WorkspaceId(herdr_ws.clone()),
+                label: label.into(),
+            },
+        ));
+    };
+
+    rename("a");
+    rename("b");
+    wait_for("both renames", || {
+        let s = fake.state();
+        (s.renamed_workspaces.len() == 2).then_some(())
+    });
+    assert_eq!(
+        fake.state().renamed_workspaces,
+        [
+            (herdr_ws.clone(), "a".into()),
+            (herdr_ws.clone(), "b".into())
+        ]
+    );
+    echo("a");
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(name(&core), "b", "the older echo is skipped");
+    echo("b");
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(name(&core), "b");
+
+    // Renamed in herdr's TUI: Azulejo follows, and sends nothing back.
+    echo("from herdr");
+    wait_until(&core, |s| s.workspace(ws).unwrap().name == "from herdr");
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(fake.state().renamed_workspaces.len(), 2);
+}
+
+/// Names that drifted (renamed before names were synced, or in herdr while
+/// Azulejo wasn't running) are put back by the next survey: Azulejo's win.
+#[test]
+fn a_survey_puts_azulejos_names_back_into_herdr() {
+    let fake = Fake::with_existing(crate::adopt::tests::fixture());
+    let core = Core::start_with_herdr(opts(None), fake.clone());
+    let s = wait_until(&core, |s| adopted(s) == 6);
+    wait_for_calls(&fake, "reresolve", 6);
+    let api = s.windows[0].workspaces[0].clone();
+    assert_eq!(api.name, "api");
+    assert!(fake.state().renamed_workspaces.is_empty());
+
+    fake.state().labels.insert("w1".into(), "drifted".into());
+    let surveys = fake
+        .state()
+        .calls
+        .iter()
+        .filter(|c| **c == "survey")
+        .count();
+    fake.send(herdr::StreamItem::Resync);
+    wait_for_calls(&fake, "survey", surveys + 1);
+    wait_for("the rename", || {
+        let s = fake.state();
+        (!s.renamed_workspaces.is_empty()).then(|| s.renamed_workspaces.clone())
+    });
+    assert_eq!(
+        fake.state().renamed_workspaces,
+        [("w1".to_string(), "api".to_string())]
+    );
+    assert_eq!(
+        core.session().unwrap().workspace(api.id).unwrap().name,
+        "api"
+    );
+    // The unlabelled herdr workspace keeps its lack of a label.
+    assert!(
+        fake.state()
+            .renamed_workspaces
+            .iter()
+            .all(|(w, _)| w != "w2")
+    );
 }
 
 #[test]

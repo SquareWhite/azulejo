@@ -338,12 +338,13 @@ fn closing_a_tile_without_kill_detaches() {
     core.shutdown();
 }
 
-/// ⌘W (`workspace.close`) detaches a whole workspace (F14): herdr keeps its
-/// workspace, tabs and panes, and neither a survey nor a relaunch adopts it
-/// again.
+/// ⌥⌘W (`workspace.close`) closes the herdr workspace too, with its tabs
+/// and panes (ADR 0014); the other workspace is untouched. Renames go
+/// both ways. A relaunch neither brings the closed workspace back nor
+/// changes herdr.
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
-fn closing_a_workspace_detaches_it_and_a_relaunch_keeps_it_closed() {
+fn closing_and_renaming_a_workspace_reach_herdr_and_survive_a_relaunch() {
     use azulejo_protocol::WorkspaceTarget;
     let h = TempHerdr::start();
     h.cli(&["workspace", "create", "--label", "keep"]);
@@ -383,21 +384,60 @@ fn closing_a_workspace_detaches_it_and_a_relaunch_keeps_it_closed() {
             .collect()
     };
     assert_eq!(names(&session), ["keep", "probe"]);
-    let probe = session.windows[0].workspaces[1].id;
+    let keep = session.windows[0].workspaces[0].clone();
+    let keep_ws = azulejo_herdr::WorkspaceId(keep.herdr_workspace.clone().unwrap());
+    let probe_ws = probe_pane.workspace_id.clone();
+    let deadline = |what: &str, ok: &dyn Fn() -> bool| {
+        let until = Instant::now() + Duration::from_secs(5);
+        while !ok() {
+            assert!(Instant::now() < until, "timed out: {what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let label = |id: &azulejo_herdr::WorkspaceId| {
+        h.rt.block_on(h.client.workspace(id))
+            .unwrap()
+            .and_then(|w| w.label)
+    };
+
     core.execute(Command::WorkspaceClose(WorkspaceTarget {
-        workspace: Some(probe),
+        workspace: Some(session.windows[0].workspaces[1].id),
     }))
     .unwrap();
-    std::thread::sleep(Duration::from_millis(800));
-    assert_eq!(h.structure(), before, "herdr keeps everything");
+    deadline("herdr closes probe", &|| label(&probe_ws).is_none());
+    assert!(h.panes().iter().all(|p| p.workspace_id != probe_ws));
+    // Everything of `keep` is as it was.
+    let kept: Vec<String> = before
+        .lines()
+        .filter(|l| !l.contains(&format!(" {probe_ws}")) && !l.contains(&format!("{probe_ws}:")))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(h.structure().lines().collect::<Vec<_>>(), kept);
     assert_eq!(names(&core.session().unwrap()), ["keep"]);
 
-    // Relaunch: herdr's events and a fresh survey still leave it closed.
+    // Renamed here → renamed in herdr; renamed in herdr → renamed here.
+    core.execute(Command::WorkspaceRename(
+        azulejo_protocol::WorkspaceRename {
+            workspace: Some(keep.id),
+            name: "kept".into(),
+        },
+    ))
+    .unwrap();
+    deadline("herdr takes the name", &|| {
+        label(&keep_ws).as_deref() == Some("kept")
+    });
+    h.cli(&["workspace", "rename", keep_ws.as_str(), "from-herdr"]);
+    wait_until(&core, Duration::from_secs(2), |s| {
+        names(s) == ["from-herdr"]
+    });
+    let after = h.structure();
+
+    // Relaunch: still closed, same names, herdr unchanged.
     core.shutdown();
     let core = Core::start_with_herdr(opts(&state), h.client.clone());
     std::thread::sleep(Duration::from_millis(1200));
-    assert_eq!(names(&core.session().unwrap()), ["keep"]);
-    assert_eq!(h.structure(), before, "herdr unchanged after relaunch");
+    assert_eq!(names(&core.session().unwrap()), ["from-herdr"]);
+    assert_eq!(h.structure(), after, "herdr unchanged after relaunch");
     core.shutdown();
 }
 

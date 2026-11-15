@@ -53,7 +53,8 @@ resize_tile_up    = "ctrl+alt+shift+k"
 resize_tile_right = "ctrl+alt+shift+l"
 resize_mode = "ctrl+alt+r"            # sticky hjkl until esc (herdr prefix+r)
 zoom_tile   = "alt+shift+m"           # not cmd+m (Minimise), not alt+m (Hammerspoon)
-close_tile  = "alt+w"                 # detaches the herdr pane (F14); kill is palette-only
+close_pane  = "cmd+w"                 # kills the herdr pane, no confirmation (F14, the user's call)
+close_tile  = "alt+w"                 # detaches: the herdr pane keeps running
 # cycle_tile_next / cycle_tile_previous (herdr prefix+tab) are unbound, as in
 # Bismuth: alt+] / alt+[ switch layouts now. Quick open and prefix mode keep them.
 
@@ -84,14 +85,13 @@ move_position_next     = "alt+shift+bracketright"
 move_position_previous = "alt+shift+bracketleft"
 rotate_part            = "alt+shift+o"           # several masters side by side <-> stacked
 
-# Workspaces (herdr: cmd+t, cmd+1..9, alt+0). cmd+w closes the workspace and
-# cmd+shift+w the tab, like cmd+t / cmd+shift+t open them. Closing detaches:
-# herdr keeps the panes running (F14).
+# Workspaces (herdr: cmd+t, cmd+1..9, alt+0). cmd+w closes the pane (above),
+# cmd+shift+w the tab and alt+cmd+w (macOS "Close All") the workspace.
 new_workspace         = "cmd+t"
 switch_workspace      = "cmd+1..8"
 switch_workspace_last = "cmd+9"       # the last one in the sidebar, as cmd+9 in a browser
 last_workspace        = "alt+0"       # the previously active one (herdr's last.py space)
-close_workspace       = "cmd+w"
+close_workspace       = "alt+cmd+w"
 
 # Tabs (herdr: cmd+shift+t, ctrl+tab; prefix+1..9)
 new_tab         = "cmd+shift+t"
@@ -204,6 +204,7 @@ resize_tile_up    = "ctrl+alt+shift+k"
 resize_tile_right = "ctrl+alt+shift+l"
 resize_mode = "ctrl+alt+r"
 zoom_tile   = "alt+shift+m"
+close_pane  = "super+w"
 close_tile  = "alt+w"
 
 split_auto  = "ctrl+super+t"
@@ -231,7 +232,7 @@ new_workspace         = "super+t"
 switch_workspace      = "super+1..8"
 switch_workspace_last = "super+9"
 last_workspace        = "alt+0"
-close_workspace       = "super+w"
+close_workspace       = "alt+super+w"
 
 new_tab         = "super+shift+t"
 switch_tab      = "ctrl+1..8"

@@ -27,6 +27,9 @@ pub enum Action {
     CloseTile,
     /// Closes the tile and kills its herdr pane.
     KillTile,
+    /// `kill_tile` without the shell's confirmation (cmd+w): closes the tile
+    /// and kills its herdr pane straight away.
+    ClosePane,
     CycleTileNext,
     CycleTilePrevious,
     RenameTile,
@@ -209,6 +212,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("zoom_tile", ZoomTile),
         ("close_tile", CloseTile),
         ("kill_tile", KillTile),
+        ("close_pane", ClosePane),
         ("cycle_tile_next", CycleTileNext),
         ("cycle_tile_previous", CycleTilePrevious),
         ("rename_tile", RenameTile),
@@ -518,7 +522,7 @@ impl Action {
             MoveTile(_) => "layout.move",
             ResizeTile(_) => "layout.resize",
             ZoomTile => "layout.zoom",
-            CloseTile | KillTile => "tile.close",
+            CloseTile | KillTile | ClosePane => "tile.close",
             CycleTileNext | CycleTilePrevious => "tile.focus",
             RenameTile => "tile.rename",
             Split(_) => "layout.split",
@@ -572,7 +576,7 @@ impl Action {
                 tile: None,
                 kill: false,
             }),
-            KillTile => Command::TileClose(TileClose {
+            KillTile | ClosePane => Command::TileClose(TileClose {
                 tile: None,
                 kill: true,
             }),

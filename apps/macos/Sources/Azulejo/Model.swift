@@ -76,6 +76,9 @@ struct WorkspaceModel: Decodable, Equatable {
     var machineID: String { machine ?? MachineModel.local }
 
     var tab: TabModel? { tabs.first { $0.id == activeTab } ?? tabs.first }
+
+    /// What closing it would end (`TileModel.runningProcess`), in tab order.
+    var runningProcesses: [String] { tabs.flatMap(\.tiles).compactMap(\.runningProcess) }
 }
 
 struct TabModel: Decodable, Equatable {
@@ -270,6 +273,20 @@ struct TileModel: Decodable, Equatable {
 
     /// Needs a look: the agent became blocked or finished and nobody has seen it.
     var needsAttention: Bool { agent?.attention == true }
+
+    /// What runs in this terminal's pane besides an idle shell, for the
+    /// "still running" confirmation (ADR 0014): the foreground command the
+    /// core polls from herdr (`pane.process_info`), else a working or
+    /// blocked agent. nil for an idle shell, an ended pane, a pane not made
+    /// yet, a tile that isn't a terminal, or a pane not polled yet.
+    var runningProcess: String? {
+        guard kind == .terminal, ended != true, herdr != nil else { return nil }
+        if let command = pane?.command, !command.isEmpty { return command }
+        switch agent?.status {
+        case .working?, .blocked?: return agent?.name ?? "an agent"
+        default: return nil
+        }
+    }
 }
 
 struct PaneMetaModel: Decodable, Equatable {

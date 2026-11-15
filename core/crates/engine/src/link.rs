@@ -15,6 +15,9 @@
 //! one: herdr always gives a new workspace a first pane, and that pane becomes
 //! the terminal. Creating workspaces eagerly would leave a stray pane that
 //! can't be killed without herdr deleting the (otherwise empty) workspace.
+//!
+//! Closing or renaming a workspace here does the same in herdr, and herdr's
+//! renames come back ([`WorkspaceSync`], ADR 0014).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -48,6 +51,27 @@ pub trait HerdrPort: Send + Sync + 'static {
     ) -> impl Future<Output = Result<herdr::TerminalRef, String>> + Send;
 
     fn kill_terminal(&self, pane_id: String) -> impl Future<Output = Result<(), String>> + Send;
+
+    /// Closes a herdr workspace with its tabs and panes (ADR 0014). One
+    /// that's gone already counts as closed.
+    fn close_workspace(
+        &self,
+        workspace_id: String,
+    ) -> impl Future<Output = Result<(), String>> + Send {
+        let _ = workspace_id;
+        async { Err(crate::meta::UNSUPPORTED.to_owned()) }
+    }
+
+    /// Sets a herdr workspace's label (ADR 0014). One that's gone counts as
+    /// done.
+    fn rename_workspace(
+        &self,
+        workspace_id: String,
+        label: String,
+    ) -> impl Future<Output = Result<(), String>> + Send {
+        let _ = (workspace_id, label);
+        async { Err(crate::meta::UNSUPPORTED.to_owned()) }
+    }
 
     fn reresolve(
         &self,
@@ -193,6 +217,21 @@ impl HerdrPort for herdr::Client {
         herdr::Client::kill_terminal(self, &herdr::PaneId(pane_id))
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn close_workspace(&self, workspace_id: String) -> Result<(), String> {
+        match herdr::Client::close_workspace(self, &herdr::WorkspaceId(workspace_id)).await {
+            Err(e) if !e.is_not_found() => Err(e.to_string()),
+            _ => Ok(()),
+        }
+    }
+
+    async fn rename_workspace(&self, workspace_id: String, label: String) -> Result<(), String> {
+        match herdr::Client::rename_workspace(self, &herdr::WorkspaceId(workspace_id), &label).await
+        {
+            Err(e) if !e.is_not_found() => Err(e.to_string()),
+            _ => Ok(()),
+        }
     }
 
     async fn reresolve(&self, stored: herdr::TerminalRef) -> Result<herdr::Resolved, String> {
@@ -341,6 +380,20 @@ pub enum Effect {
     },
     /// Kill a closed tile's pane (F14: only when the user asked to).
     KillTerminal { pane_id: String },
+    /// The user closed an Azulejo workspace: its herdr workspace closes
+    /// too, tabs and panes with it (ADR 0014). `herdr_workspace` is the
+    /// session's binding; one the worker made since wins.
+    CloseWorkspace {
+        workspace: WorkspaceId,
+        herdr_workspace: Option<String>,
+    },
+    /// The user renamed an Azulejo workspace, or a survey found herdr's
+    /// label differs: herdr takes Azulejo's name (ADR 0014).
+    RenameWorkspace {
+        workspace: WorkspaceId,
+        herdr_workspace: Option<String>,
+        label: String,
+    },
     /// Check what became of a stored pane (relaunch, reconnect).
     Reresolve {
         tile: TileId,
@@ -384,6 +437,14 @@ pub enum Internal {
     HerdrWorkspaceClosed {
         machine: Machine,
         herdr: String,
+    },
+    /// A herdr workspace was renamed (the TUI, a phone, the CLI, or our
+    /// own push coming back): the Azulejo workspace showing it takes the
+    /// label (ADR 0014).
+    HerdrWorkspaceRenamed {
+        machine: Machine,
+        herdr: String,
+        label: String,
     },
     /// herdr reported the agent in a pane (F16).
     AgentStatus {
@@ -501,6 +562,27 @@ impl Engine {
                 let events = self.changes_since(&before);
                 self.remember_closed_in_herdr(&events);
                 events
+            }
+            Internal::HerdrWorkspaceRenamed {
+                machine,
+                herdr,
+                label,
+            } => {
+                if label.trim().is_empty() {
+                    return Vec::new();
+                }
+                let stale: Vec<WorkspaceId> = bound_workspaces(&self.session, &machine, &herdr)
+                    .filter(|w| w.name != label)
+                    .map(|w| w.id)
+                    .collect();
+                if stale.is_empty() {
+                    return Vec::new();
+                }
+                let before = self.session.clone();
+                for id in stale {
+                    let _ = self.session.rename_workspace(id, label.clone());
+                }
+                self.changes_since(&before)
             }
             Internal::AgentStatus {
                 machine,
@@ -753,6 +835,131 @@ pub fn restore_effects(session: &Session, machine: &Machine) -> Vec<Effect> {
         .collect()
 }
 
+/// Workspace closes and renames the user asked for, to carry into herdr
+/// (ADR 0014). Read with [`workspace_sync`] before the command runs (a
+/// closed workspace is gone after it), then turned into effects with
+/// [`WorkspaceSync::effects`] once it succeeded. Only explicit commands
+/// count: a workspace herdr closed, or the placeholder adoption drops, never
+/// closes anything in herdr.
+#[derive(Debug, Default, PartialEq)]
+pub struct WorkspaceSync {
+    /// Machine, workspace and its herdr binding, for each workspace the
+    /// command closes.
+    closing: Vec<(Machine, WorkspaceId, Option<String>)>,
+    renaming: Option<WorkspaceId>,
+}
+
+/// See [`WorkspaceSync`]. `workspace.close` closes one workspace,
+/// `window.close` all of its window's (the shell quits instead of closing
+/// the last window, so quitting never gets here).
+pub fn workspace_sync(command: &Command, session: &Session) -> WorkspaceSync {
+    let focused = session.focus().workspace;
+    let entry = |w: &azulejo_model::Workspace| (w.machine.clone(), w.id, w.herdr_workspace.clone());
+    match command {
+        Command::WorkspaceClose(p) => WorkspaceSync {
+            closing: p
+                .workspace
+                .or(focused)
+                .and_then(|id| session.workspace(id).ok())
+                .map(entry)
+                .into_iter()
+                .collect(),
+            renaming: None,
+        },
+        Command::WindowClose(p) => WorkspaceSync {
+            closing: session
+                .window(p.window)
+                .map(|w| w.workspaces.iter().map(entry).collect())
+                .unwrap_or_default(),
+            renaming: None,
+        },
+        Command::WorkspaceRename(p) => WorkspaceSync {
+            closing: Vec::new(),
+            renaming: p.workspace.or(focused),
+        },
+        _ => WorkspaceSync::default(),
+    }
+}
+
+impl WorkspaceSync {
+    /// The herdr work, given the session after the command.
+    pub fn effects(self, session: &Session) -> Vec<(Machine, Effect)> {
+        let mut out = Vec::new();
+        for (machine, workspace, herdr_workspace) in self.closing {
+            if session.workspace(workspace).is_ok() {
+                continue;
+            }
+            // Another Azulejo workspace still shows that herdr workspace.
+            if let Some(h) = &herdr_workspace
+                && bound_workspaces(session, &machine, h).next().is_some()
+            {
+                continue;
+            }
+            out.push((
+                machine,
+                Effect::CloseWorkspace {
+                    workspace,
+                    herdr_workspace,
+                },
+            ));
+        }
+        if let Some(id) = self.renaming
+            && let Ok(ws) = session.workspace(id)
+            && !ws.name.trim().is_empty()
+        {
+            out.push((
+                ws.machine.clone(),
+                Effect::RenameWorkspace {
+                    workspace: id,
+                    herdr_workspace: ws.herdr_workspace.clone(),
+                    label: ws.name.clone(),
+                },
+            ));
+        }
+        out
+    }
+}
+
+/// Azulejo's names win (ADR 0014): a rename for each workspace on `machine`
+/// whose herdr workspace is labelled otherwise in `survey`. That's drift
+/// from before names were synced, a rename made while herdr was away, or
+/// one made in herdr while Azulejo wasn't running (herdr doesn't replay
+/// events). An unlabelled herdr workspace is left alone.
+pub fn survey_renames(session: &Session, machine: &Machine, survey: &herdr::Survey) -> Vec<Effect> {
+    session
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .filter(|w| w.machine == *machine && !w.name.trim().is_empty())
+        .filter_map(|w| {
+            let bound = w.herdr_workspace.as_deref()?;
+            let hw = survey
+                .workspaces
+                .iter()
+                .find(|hw| hw.workspace_id.as_str() == bound)?;
+            let label = hw.label.as_deref().filter(|l| !l.trim().is_empty())?;
+            (label != w.name).then(|| Effect::RenameWorkspace {
+                workspace: w.id,
+                herdr_workspace: Some(bound.to_owned()),
+                label: w.name.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Azulejo workspaces on `machine` bound to herdr workspace `herdr`.
+fn bound_workspaces<'a>(
+    session: &'a Session,
+    machine: &'a Machine,
+    herdr: &'a str,
+) -> impl Iterator<Item = &'a azulejo_model::Workspace> {
+    session
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .filter(move |w| w.machine == *machine && w.herdr_workspace.as_deref() == Some(herdr))
+}
+
 /// Work to give a respawned tile (`terminal.respawn`) a fresh pane.
 pub fn respawn_effect(session: &Session, tile: TileId) -> Option<(Machine, Effect)> {
     create_effect(session, session.tile(tile).ok()?)
@@ -900,6 +1107,14 @@ pub fn reconcile(
                     herdr: workspace_id.0.clone(),
                 });
             }
+            E::WorkspaceRenamed {
+                workspace_id,
+                label,
+            } => reaction.internals.push(Internal::HerdrWorkspaceRenamed {
+                machine: machine.clone(),
+                herdr: workspace_id.0.clone(),
+                label: label.clone(),
+            }),
             E::AgentStatusChanged {
                 pane_id,
                 agent,
@@ -1295,6 +1510,32 @@ pub(crate) async fn run_worker<P: HerdrPort>(
             Effect::KillTerminal { pane_id } => {
                 if let Err(e) = port.kill_terminal(pane_id.clone()).await {
                     log(format!("herdr: killing pane {pane_id}: {e}"));
+                }
+            }
+            // A workspace made here and not bound yet is closed or renamed
+            // too: the worker runs in order, so its creation is done.
+            Effect::CloseWorkspace {
+                workspace,
+                herdr_workspace,
+            } => {
+                let Some(id) = workspaces.remove(&workspace).or(herdr_workspace) else {
+                    continue;
+                };
+                if let Err(e) = port.close_workspace(id.clone()).await {
+                    log(format!("herdr: closing workspace {id}: {e}"));
+                }
+            }
+            Effect::RenameWorkspace {
+                workspace,
+                herdr_workspace,
+                label,
+            } => {
+                let Some(id) = workspaces.get(&workspace).cloned().or(herdr_workspace) else {
+                    continue;
+                };
+                // The name is the user's: not in the log.
+                if let Err(e) = port.rename_workspace(id.clone(), label).await {
+                    log(format!("herdr: renaming workspace {id}: {e}"));
                 }
             }
             Effect::Reresolve {

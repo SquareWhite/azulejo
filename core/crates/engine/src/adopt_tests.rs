@@ -233,8 +233,10 @@ fn closed_tiles_stay_closed_until_herdr_drops_the_pane() {
     assert_eq!(engine.session().windows[0].workspaces[0].tabs.len(), 1);
 }
 
-/// ⌘W closes a workspace (F14): every pane detaches, nothing is killed, and
-/// neither the next survey nor a relaunch brings the workspace back.
+/// ⌥⌘W closes a workspace. Its tiles close without killing pane by pane:
+/// the whole herdr workspace closes instead (ADR 0014). Should that close
+/// never reach herdr, its panes count as detached: neither the next survey
+/// nor a relaunch brings the workspace back, and it's reported as not shown.
 #[test]
 fn a_closed_workspace_detaches_and_stays_closed() {
     use azulejo_protocol::WorkspaceTarget;
@@ -243,11 +245,22 @@ fn a_closed_workspace_detaches_and_stays_closed() {
     let api = engine.session().windows[0].workspaces[0].clone();
     assert_eq!(api.herdr_workspace.as_deref(), Some("w1"));
 
-    let outcome = engine
-        .execute(Command::WorkspaceClose(WorkspaceTarget {
-            workspace: Some(api.id),
-        }))
-        .unwrap();
+    let command = Command::WorkspaceClose(WorkspaceTarget {
+        workspace: Some(api.id),
+    });
+    let sync = crate::link::workspace_sync(&command, engine.session());
+    let outcome = engine.execute(command).unwrap();
+    assert_eq!(
+        sync.effects(engine.session()),
+        [(
+            None,
+            crate::Effect::CloseWorkspace {
+                workspace: api.id,
+                herdr_workspace: Some("w1".into()),
+            }
+        )],
+        "herdr closes the workspace"
+    );
     let closed: Vec<_> = outcome
         .events
         .iter()
@@ -259,7 +272,7 @@ fn a_closed_workspace_detaches_and_stays_closed() {
     assert_eq!(closed, [false; 4], "four tiles close, none killed");
     assert!(
         crate::link::effects(&outcome.events, engine.session()).is_empty(),
-        "nothing reaches herdr"
+        "no pane killed one by one"
     );
     let mut detached: Vec<&str> = engine
         .session()
@@ -270,8 +283,13 @@ fn a_closed_workspace_detaches_and_stays_closed() {
     detached.sort_unstable();
     assert_eq!(detached, ["w1:p1", "w1:p2", "w1:p3", "w1:p4"]);
 
-    // herdr still runs all of it; the next survey adopts nothing.
+    // The close didn't reach herdr, which still runs all of it: the next
+    // survey adopts nothing, and w1 is reported as not shown.
     assert!(survey(&mut engine, &fixture()).is_empty());
+    assert_eq!(
+        crate::adopt::unshown(engine.session(), &None, &fixture().workspaces),
+        ["w1"]
+    );
     let names = |s: &Session| -> Vec<String> {
         s.windows[0]
             .workspaces

@@ -443,8 +443,8 @@ TileViews.register(.terminal) { tile in TerminalTileView(tile) }
 - `keyContext` overrides the keymap context (defaults to the tile's kind).
 
 Closing the last window quits the app (the session is saved and comes back on
-relaunch); closing any other window closes it in the core, detaching its
-terminals.
+relaunch, and herdr keeps everything); closing any other window closes it in
+the core, which closes its workspaces in herdr too, like ⌥⌘W (ADR 0014).
 
 ## herdr machines (ADR 0011)
 

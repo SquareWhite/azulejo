@@ -822,6 +822,8 @@ extension WindowController {
         var s: [String: String] = ["chrome.lights": TrafficLights.describe(window)]
         s["hud.flashes"] = "\(flashes)"
         s["hud.last"] = lastFlash.isEmpty ? "-" : lastFlash
+        s["prompt.asks"] = "\(Prompts.asked)"
+        s["prompt.last"] = Prompts.lastAsked.isEmpty ? "-" : Prompts.lastAsked
         guard let theme = window.contentView?.superview else { return s }
         func hit(_ view: NSView?, at point: NSPoint? = nil) -> String {
             guard let view, !view.isHidden else { return "hidden" }

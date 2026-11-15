@@ -31,6 +31,8 @@ pub enum Command {
     /// Opens a window with one empty workspace.
     #[serde(rename = "window.create")]
     WindowCreate(WindowCreate),
+    /// Closes a window and its workspaces, herdr workspaces included (see
+    /// `workspace.close`).
     #[serde(rename = "window.close")]
     WindowClose(WindowTarget),
     #[serde(rename = "window.focus")]
@@ -52,13 +54,14 @@ pub enum Command {
     WorkspaceList(WorkspaceList),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreate),
-    /// Closes a workspace and its tabs. Its terminals detach (F14): herdr
-    /// keeps the workspace, tabs and panes running, and Azulejo doesn't adopt
-    /// them again. Closing a window's last workspace closes the window.
+    /// Closes a workspace and its tabs, and its herdr workspace with every
+    /// tab and pane in it: their processes end (ADR 0014). Closing a
+    /// window's last workspace closes the window.
     #[serde(rename = "workspace.close")]
     WorkspaceClose(WorkspaceTarget),
     #[serde(rename = "workspace.focus")]
     WorkspaceFocus(WorkspaceTarget),
+    /// Renames a workspace, and its herdr workspace too (ADR 0014).
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRename),
     /// Sets the folder whose git branch the sidebar shows; without `path` the

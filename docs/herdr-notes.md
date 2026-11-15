@@ -215,6 +215,14 @@ The TUI tracks viewed completions per client, so its Done badge can differ from 
 
 **Implication.** Azulejo doesn't mark panes seen in herdr. Doing it means `pane.focus`, which moves herdr's session focus: the TUI and a phone would jump to whatever Azulejo is reading, and ADR 0012 leaves herdr's focus alone on purpose. It wouldn't clear the TUI's per-client badge either. So herdr's `done` outlives a read in Azulejo, and a finish in herdr's focused pane arrives as `idle`. The core treats both as finishes and keeps its own unread flag, `tile.agent.attention`, which `tile.seen` clears. Views show the checkmark from `attention`, never from `status == done`.
 
+## 12. Workspace rename and close (ADR 0014)
+
+Checked Nov 9, 2026 on herdr 0.9.5 (protocol 22) in a throwaway session (`azulejo-herdr` live test `renames_and_closes_a_workspace`).
+
+- `workspace.rename {workspace_id, label}` sets the label and sends `workspace_renamed {workspace_id, label}` on the lifecycle stream. CLI: `herdr workspace rename <id> <label>`.
+- `workspace.close {workspace_id}` closes every tab and pane in it (their processes end) and sends `workspace_closed`. CLI: `herdr workspace close <id>`.
+- Both answer `workspace_not_found` once the workspace is gone.
+
 ## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
 
 | Situation | Exit status | Last stderr line |

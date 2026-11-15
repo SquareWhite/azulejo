@@ -20,7 +20,7 @@ until workspace.names alpha|beta 3000
 
 log === workspace row: items and chords (catalogue), acting on a row that isn't the active one
 menu workspace 2
-expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Open Folder in Files Tile|Copy Path|-|Close Workspace [cmd+w]
+expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Open Folder in Files Tile|Copy Path|-|Close Workspace [alt+cmd+w]
 wait 300
 menu shot menus-workspace
 menu answer gamma
@@ -107,7 +107,7 @@ expect menu.copied about:blank
 menu tile invoke Split Down
 until tiles 6 3000
 
-log === close-detach: the workspace goes, herdr keeps its workspace and panes
+log === Close Workspace: the workspace goes, and herdr closes it with its panes (ADR 0014)
 sh {herdr} --session {session} workspace list >{out}/workspaces-before.json
 sh {herdr} --session {session} pane list >{out}/panes-before.json
 menu workspace 2 invoke Close Workspace
@@ -118,24 +118,29 @@ sh {herdr} --session {session} workspace list >{out}/workspaces-after.json
 sh {herdr} --session {session} pane list >{out}/panes-after.json
 expect workspace.names alpha
 
-log === cmd+w closes the workspace from a browser tile and from a preview tile
+log === cmd+w closes a browser tile and a preview tile (the router sees it before the web view); alt+cmd+w the workspace
 key cmd+t
 until workspaces 2 3000
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
 until tile.kind browser 3000
+until tiles 2 3000
 key cmd+w
-expect key.last action:close_workspace
-until workspaces 1 3000
-key cmd+t
-until workspaces 2 3000
+expect key.last action:close_pane
+until tiles 1 3000
+expect workspaces 2
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/notes.md"}}}
 until tile.kind preview 3000
+until tiles 2 3000
 key cmd+w
+expect key.last action:close_pane
+until tiles 1 3000
+expect workspaces 2
+key alt+cmd+w
 expect key.last action:close_workspace
 until workspaces 1 3000
 
-log === the app's last workspace: cmd+w leaves a fresh one, the window stays
-key cmd+w
+log === the app's last workspace: alt+cmd+w leaves a fresh one, the window stays
+key alt+cmd+w
 until workspace.names workspace 2 3000
 expect windows 1
 until tiles 1 3000

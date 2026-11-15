@@ -148,6 +148,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `zoom_tile` | global | `alt+shift+m` | `alt+shift+m` | Zoom tile |
 | `close_tile` | global | `alt+w` | `alt+w` | Close tile (detach) |
 | `kill_tile` | global | unbound | unbound | Kill tile and its process |
+| `close_pane` | global | `cmd+w` | `super+w` | Close pane (kill its process, no confirmation) |
 | `cycle_tile_next` | global | unbound | unbound | Next tile |
 | `cycle_tile_previous` | global | unbound | unbound | Previous tile |
 | `rename_tile` | global | unbound | unbound | Rename tile… |
@@ -175,7 +176,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `last_workspace` | global | `alt+0` | `alt+0` | Previous active workspace |
 | `next_workspace` | global | unbound | unbound | Next workspace |
 | `previous_workspace` | global | unbound | unbound | Previous workspace |
-| `close_workspace` | global | `cmd+w` | `super+w` | Close workspace (detach) |
+| `close_workspace` | global | `alt+cmd+w` | `alt+super+w` | Close workspace |
 | `rename_workspace` | global | unbound | unbound | Rename workspace… |
 | `new_tab` | global | `cmd+shift+t` | `super+shift+t` | New tab |
 | `switch_tab_last` | global | `ctrl+9` | `ctrl+9` | Switch to last tab |
@@ -257,7 +258,7 @@ Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `su
 | `cycle_tile_previous` | `shift+tab` | Previous tile |
 | `rename_tile` | `shift+p` | Rename tile… |
 | `new_workspace` | `shift+n` | New workspace |
-| `close_workspace` | `shift+d` | Close workspace (detach) |
+| `close_workspace` | `shift+d` | Close workspace |
 | `rename_workspace` | `shift+w` | Rename workspace… |
 | `new_tab` | `c` | New tab |
 | `next_tab` | `n` | Next tab |
@@ -383,7 +384,7 @@ The master-stack placement rule has one master on the left and an evenly divided
 ### Rule of thumb
 
 - **`alt` = tiles** (focus, swap, resize, zoom, close, layout rules), exactly as in herdr.
-- **`cmd` = workspaces, tabs, app** (new, switch, close, sidebar, palette), exactly as in herdr, now native.
+- **`cmd` = workspaces, tabs, app** (new, switch, close, sidebar, palette), exactly as in herdr, now native. One exception: `cmd+w` closes the focused pane, as in any Mac app.
 - **`ctrl+cmd` = new tiles** (splits), as in herdr.
 - No chord in the default layer uses `ctrl+<letter>` alone, so shells, editors and TUIs keep every control key.
 
@@ -412,14 +413,15 @@ Where each global default came from:
 | `grow_master_area` / `shrink_master_area` | `alt+shift+=` / `alt+shift+-` | unbound in Bismuth; resizing the master edge does the same |
 | `move_position_next/previous` | `alt+shift+]` / `alt+shift+[` | unbound in Bismuth |
 | `rotate_part` (several masters side by side ↔ stacked) | `alt+shift+o` | Bismuth `Meta+Shift+R` |
-| `close_tile` (detaches the herdr pane, F14) | `alt+w` | new: the `alt` twin of `cmd+w` |
+| `close_pane` (kills the herdr pane, no confirmation, F14) | `cmd+w` | macOS convention: close the innermost thing (Nov 9, 2026, the user's call) |
+| `close_tile` (detaches the herdr pane, F14) | `alt+w` | herdr-style `alt` chord; the pane keeps running |
 | `cycle_tile_next/previous` | unbound | lost `alt+]` / `alt+[` to the layout cycle (Nov 4, 2026). Bismuth leaves focus next/previous unbound too; quick open and prefix mode (`prefix+tab`) still have them. No free `alt` chord fits: `alt+tab` is Hammerspoon's and `alt+.` is the shells' last-argument key |
 | `new_workspace` | `cmd+t` | herdr |
 | `new_tab` | `cmd+shift+t` | herdr |
 | `switch_workspace` 1–8 | `cmd+1..8` | herdr |
 | `switch_workspace_last` (the last workspace in the sidebar) | `cmd+9` | browser convention: `cmd+9` is the last tab in Chrome and Safari |
 | `last_workspace` (the previously active workspace) | `alt+0` | herdr `last.py space` |
-| `close_workspace` (detaches, F14) | `cmd+w` | new: closes what `cmd+t` opens |
+| `close_workspace` (closes the herdr workspace too, ADR 0014) | `alt+cmd+w` | macOS "Close All"; was `cmd+w` until Nov 9, 2026 |
 | `switch_tab` 1–8 | `ctrl+1..8` | new (herdr's own suggestion for direct tab switching) |
 | `switch_tab_last` (the last tab in order) | `ctrl+9` | browser convention, as `cmd+9` |
 | `last_tab` (the previously active tab) | unbound | herdr's `alt+9`; Hammerspoon owns `alt+9`, so it's palette-only |
@@ -436,7 +438,7 @@ Where each global default came from:
 
 The app menu keeps the macOS chords, now as actions: `quit` (`cmd+q`), `hide` (`cmd+h`), `hide_others` (`alt+cmd+h`) and `minimize` (`cmd+m`). Keys that only work in one tile kind or mode (browser chrome, the files list, preview's Preview | Source, quick open, find bars, resize mode) keep the conventions they had before they were configurable; they're in the reference.
 
-Rename, kill the herdr pane, help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_anticlockwise` (Bismuth's unbound Rotate Reverse), `flip_layout` (master left ↔ top: what `alt+o` did before it turned four ways) and "Set layout…". The old `rotate_clockwise` name still binds `rotate_layout`, with a warning.
+Rename, kill with a confirmation (`kill_tile`; `cmd+w` kills without one), help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_anticlockwise` (Bismuth's unbound Rotate Reverse), `flip_layout` (master left ↔ top: what `alt+o` did before it turned four ways) and "Set layout…". The old `rotate_clockwise` name still binds `rotate_layout`, with a warning.
 
 New tabs start as a dynamic Tile layout (`[layout] default`, ADR 0010), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
 
@@ -469,7 +471,7 @@ goto            = "cmd+p"
 | `switch_workspace` 1–8, `switch_workspace_last`, `last_workspace` | `super+1..8`, `super+9`, `alt+0` |
 | `switch_tab` 1–8, `switch_tab_last` | `ctrl+1..8`, `ctrl+9` (`last_tab` unbound) |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` |
-| `close_workspace` / `close_tab` | `super+w` / `super+shift+w` |
+| `close_pane` / `close_tab` / `close_workspace` | `super+w` / `super+shift+w` / `alt+super+w` (`close_tile`: `alt+w`) |
 | `toggle_sidebar` | `super+a`, terminal tiles only |
 | `quick_open` / `find` | `super+k` / `super+f` (`command_palette` and `goto` unbound, as on macOS) |
 | `new_window` / `open_config` | `super+n` / `super+comma` |
@@ -492,7 +494,7 @@ The Linux terminal convention (kitty, GNOME Terminal, Ptyxis). It avoids every W
 | `split_down` / `split_right` | `ctrl+shift+minus` / `ctrl+shift+backslash` | visual mnemonics, no 4-modifier chords |
 | `new_workspace` / `new_tab` | `ctrl+shift+t` / `ctrl+alt+shift+t` | |
 | `switch_workspace` 1–8, `switch_workspace_last`, `last_workspace` | `alt+1..8`, `alt+9`, `alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
-| `close_workspace` / `close_tab` | `ctrl+shift+w` / `ctrl+alt+shift+w` | mirrors `new_workspace` / `new_tab` |
+| `close_pane` / `close_tab` | `ctrl+shift+w` / `ctrl+alt+shift+w` | `ctrl+shift+w` closes the window (our pane) in kitty and GNOME Terminal; `close_workspace` stays in the palette and prefix mode |
 | `toggle_sidebar` | `ctrl+shift+b` | `ctrl+shift+a` is select-all in GTK terminals |
 | `quick_open` / `find` | `ctrl+shift+p` / `ctrl+shift+f` | VS Code's palette chord; `ctrl+p` is shell history and `ctrl+shift+k` is scroll-up in kitty |
 | `new_window` / `open_config` | `ctrl+shift+n` / `ctrl+comma` | |
@@ -518,7 +520,7 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 
 | Chord | Convention | Decision |
 | --- | --- | --- |
-| `cmd+w` / `cmd+shift+w` | close tab / close window | **`close_workspace` / `close_tab`** (Nov 4, 2026), mirroring `cmd+t` / `cmd+shift+t`. Both detach: herdr keeps the workspace, tabs and panes running, and Azulejo doesn't adopt them again, so there's no confirmation. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes the workspace in browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
+| `cmd+w` / `cmd+shift+w` / `alt+cmd+w` | close tab / close window / close all | **`close_pane` / `close_tab` / `close_workspace`** (Nov 9, 2026; from Nov 4 `cmd+w` closed the workspace, which took too much with it). `cmd+w` closes the innermost thing, as in every Mac app: the focused tile closes and its herdr pane is killed, with no confirmation (the user's call; `alt+w` closes and keeps the pane running). Closing a tab's last tile closes the tab. When `cmd+w` kills a workspace's last pane, herdr deletes that workspace and Azulejo closes it too, unless it's the window's last (that one stays, empty); `alt+w` always leaves the workspace. `close_tab` detaches: herdr keeps the tab and its panes running, and Azulejo doesn't adopt them again. `close_workspace` closes the herdr workspace too, ending its processes (ADR 0014); when a command or a working agent runs there, a sheet asks first. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
 | `cmd+q` | quit | `quit`. Safe: sessions live in herdr |
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | `hide` and `minimize`, as in every Mac app; `` cmd+` `` is the system's. the maintainer's config avoids `cmd+m` for this reason |
 | `cmd+a` | select all | **Decided:** `toggle_sidebar` is bound **only when a terminal tile is focused**; in browser and preview tiles and text fields (address bar, palette) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` context section |

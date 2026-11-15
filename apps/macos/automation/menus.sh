@@ -2,10 +2,12 @@
 # Right-click menus (workspace rows, tile headers, the browser's chrome)
 # check, in-process, on its own dev instance (AZJ_DEV_NAME=mnu): items and
 # chords, rename, copy (private pasteboard), reveal (logged, Finder never
-# opens), split, zoom, kill (cancelled), close-detach, and cmd+w closing the
-# workspace from browser and preview tiles. Then it checks herdr: a closed
-# workspace's herdr workspace and panes are all still there, and a relaunch
-# doesn't bring the workspace back. Captures menus-workspace.png and
+# opens), split, zoom, kill (cancelled), Close Tile (detaches), Close
+# Workspace, cmd+w (close_pane) closing browser and preview tiles, and
+# alt+cmd+w closing the workspace. Then it checks herdr: Close Workspace
+# closes that herdr workspace with its panes and nothing else (ADR 0014),
+# and after a relaunch herdr holds only the fresh workspace that replaced
+# the app's last one. Captures menus-workspace.png and
 # menus-tile.png (the menu drawn open in an in-app render).
 #   apps/macos/automation/menus.sh [--keep]   (--keep: leave the dev instance)
 set -euo pipefail
@@ -39,8 +41,9 @@ watchdog=$!
 "$root/apps/macos/dev.sh" --automation "$here/menus-relaunch.azs" --out "$out/relaunch"
 [[ "$(cat "$out/relaunch/result")" == ok ]] || { echo "menus relaunch: $(cat "$out/relaunch/result")"; exit 1; }
 
-# herdr after Close Workspace: the same workspaces and panes as before it,
-# and still after a relaunch.
+# herdr after Close Workspace: exactly that workspace and its panes are gone
+# (ADR 0014). After alt+cmd+w closed the rest and a relaunch: none of them
+# is left, only the fresh workspace that took the last one's place.
 python3 - "$out" <<'PY'
 import json, sys
 out = sys.argv[1]
@@ -52,15 +55,19 @@ def panes(name):
 def workspaces(name):
     return sorted(w["workspace_id"] for w in load(name)["workspaces"])
 ok = True
-for label, before, after in [
-    ("workspaces", workspaces("workspaces-before.json"), workspaces("workspaces-after.json")),
-    ("panes", panes("panes-before.json"), panes("panes-after.json")),
-    ("workspaces (relaunch)", workspaces("workspaces-before.json"), workspaces("relaunch/workspaces-relaunch.json")),
-    ("panes (relaunch)", panes("panes-before.json"), panes("relaunch/panes-relaunch.json")),
-]:
-    missing = sorted(set(before) - set(after))
-    print(f"herdr {label}: {len(before)} before, {len(after)} after" + (f", missing {missing}" if missing else ""))
-    ok &= not missing
+ws_before, ws_after = workspaces("workspaces-before.json"), workspaces("workspaces-after.json")
+p_before, p_after = panes("panes-before.json"), panes("panes-after.json")
+closed = sorted(set(ws_before) - set(ws_after))
+gone = sorted(set(p_before) - set(p_after))
+print(f"herdr after Close Workspace: workspaces {ws_before} -> {ws_after}, panes gone {gone}")
+ok &= len(closed) == 1 and set(ws_after) <= set(ws_before)
+ok &= bool(gone) and {p.split(":")[0] for p in gone} == set(closed)
+ok &= all(p.split(":")[0] in ws_after for p in p_after)
+ws_relaunch = workspaces("relaunch/workspaces-relaunch.json")
+p_relaunch = panes("relaunch/panes-relaunch.json")
+print(f"herdr after relaunch: workspaces {ws_relaunch}, {len(p_relaunch)} pane(s)")
+ok &= len(ws_relaunch) == 1 and not set(ws_relaunch) & set(ws_before)
+ok &= not set(p_relaunch) & set(p_before)
 # Close Tile detached its pane too.
 before, after = panes("panes-before-close.json"), panes("panes-after-tile-close.json")
 print(f"herdr panes around Close Tile: {len(before)} before, {len(after)} after")

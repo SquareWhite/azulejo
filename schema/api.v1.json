@@ -233,6 +233,7 @@
           "type": "object"
         },
         {
+          "description": "Closes a window and its workspaces, herdr workspaces included (see\n`workspace.close`).",
           "properties": {
             "method": {
               "const": "window.close",
@@ -345,7 +346,7 @@
           "type": "object"
         },
         {
-          "description": "Closes a workspace and its tabs. Its terminals detach (F14): herdr\nkeeps the workspace, tabs and panes running, and Azulejo doesn't adopt\nthem again. Closing a window's last workspace closes the window.",
+          "description": "Closes a workspace and its tabs, and its herdr workspace with every\ntab and pane in it: their processes end (ADR 0014). Closing a\nwindow's last workspace closes the window.",
           "properties": {
             "method": {
               "const": "workspace.close",
@@ -378,6 +379,7 @@
           "type": "object"
         },
         {
+          "description": "Renames a workspace, and its herdr workspace too (ADR 0014).",
           "properties": {
             "method": {
               "const": "workspace.rename",

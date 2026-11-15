@@ -51,8 +51,9 @@ enum MainMenu {
             .separator(),
             item("Quit Azulejo", "quit"),
         ]))
-        // ⌘W closes the workspace and ⌘⇧W the tab (keymap), so Close Window
-        // has no chord of its own unless `close_window` is bound.
+        // ⌘W closes the pane (kills it), ⌘⇧W the tab and ⌥⌘W the workspace
+        // (keymap), so Close Window has no chord of its own unless
+        // `close_window` is bound.
         let closeWindow = chords["close_window"] == nil
             ? std("Close Window", #selector(MenuTarget.closeWindow(_:)), "")
             : item("Close Window", "close_window")
@@ -64,7 +65,8 @@ enum MainMenu {
             .separator(),
             item("Close Workspace", "close_workspace"),
             item("Close Tab", "close_tab"),
-            item("Close Tile", "close_tile"),
+            item("Close Pane", "close_pane"),
+            item("Close Tile (Keep Running)", "close_tile"),
             item("Kill Tile…", "kill_tile"),
             closeWindow,
         ]))

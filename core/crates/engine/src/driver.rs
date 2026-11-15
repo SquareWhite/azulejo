@@ -597,9 +597,13 @@ fn run<P: HerdrPort>(
                 // A command is an Azulejo op: the tabs it rearranges may
                 // change herdr's structure (ADR 0012, amendment).
                 let before = mirror::arrangements(engine.session());
+                let sync = link::workspace_sync(&command, engine.session());
                 let result = engine.execute(command);
                 if result.is_ok() {
                     herdr.authorise(&before, engine.session());
+                    for (machine, effect) in sync.effects(engine.session()) {
+                        herdr.send(&machine, effect, engine.session());
+                    }
                 }
                 if let (Ok(_), Some(tile)) = (&result, respawn)
                     && let Some((machine, effect)) = link::respawn_effect(engine.session(), tile)
@@ -643,6 +647,19 @@ fn run<P: HerdrPort>(
                     Internal::Surveyed(m, _, _) | Internal::SurveyFailed(m) => Some(m.clone()),
                     _ => None,
                 };
+                // Names drifted while herdr was away (or before they were
+                // synced): Azulejo's go to herdr (ADR 0014).
+                let (renames, herdr_workspaces) = match &internal {
+                    Internal::Surveyed(m, survey, _) => (
+                        if herdr.take_names_due(m) {
+                            link::survey_renames(engine.session(), m, survey)
+                        } else {
+                            Vec::new()
+                        },
+                        Some(survey.workspaces.clone()),
+                    ),
+                    _ => (Vec::new(), None),
+                };
                 if let Internal::BindTerminal { tile, .. } | Internal::MarkEnded { tile } =
                     &internal
                 {
@@ -659,6 +676,12 @@ fn run<P: HerdrPort>(
                     &mut repos,
                 );
                 if let Some(machine) = surveyed {
+                    for effect in renames {
+                        herdr.send(&machine, effect, engine.session());
+                    }
+                    if let Some(workspaces) = herdr_workspaces {
+                        herdr.report_unshown(&machine, engine.session(), &workspaces);
+                    }
                     herdr.survey_done(&machine, &engine);
                 }
             }
@@ -678,6 +701,9 @@ fn run<P: HerdrPort>(
                 }
                 if connected {
                     herdr.mirror_reset(&machine);
+                    if let Some(link) = herdr.links.get_mut(&machine) {
+                        link.names_due = true;
+                    }
                 }
                 if let StreamItem::Event(azulejo_herdr::HerdrEvent::LayoutUpdated {
                     tab_id, ..
@@ -867,6 +893,12 @@ struct Links<P> {
     /// change the structure of the tab's herdr tab.
     intents: std::cell::RefCell<HashMap<azulejo_model::TabId, u64>>,
     clock: std::cell::Cell<u64>,
+    /// Names sent to herdr whose `workspace_renamed` hasn't come back yet,
+    /// oldest first, by workspace (ADR 0014): an echo of an older name
+    /// mustn't undo a newer one.
+    renaming: std::cell::RefCell<HashMap<azulejo_model::WorkspaceId, Vec<String>>>,
+    /// herdr workspaces last reported as not shown here, per machine.
+    unshown: HashMap<Machine, Vec<String>>,
 }
 
 /// One machine's worker, event stream and agent subscription.
@@ -880,6 +912,11 @@ struct Link<P> {
     agents: tokio::sync::watch::Sender<Vec<String>>,
     /// Asks the process poller to look now (see [`meta::follow_processes`]).
     processes: Arc<tokio::sync::Notify>,
+    /// The next survey compares workspace names (ADR 0014): set when the
+    /// stream (re)connects, the only time names can have drifted. Later
+    /// surveys skip it, so one racing a rename made in herdr can't put the
+    /// old name back.
+    names_due: bool,
     /// Set once the first survey is in and restore work has been queued.
     restored: bool,
     /// Counts the event stream's connects and drops; an
@@ -921,7 +958,71 @@ impl<P: HerdrPort> Links<P> {
             mirror: Arc::new(AtomicBool::new(false)),
             intents: Default::default(),
             clock: Default::default(),
+            renaming: Default::default(),
+            unshown: HashMap::new(),
         }
+    }
+
+    /// Whether `herdr`'s rename to `label` is the echo of a name we sent
+    /// with a newer one still on its way, so following it would flash the
+    /// older name. A label we never sent is someone else's rename: it's
+    /// followed, and our pending names are forgotten (herdr applied theirs
+    /// last, or ours failed).
+    fn stale_echo(
+        &self,
+        session: &azulejo_model::Session,
+        machine: &Machine,
+        herdr: &str,
+        label: &str,
+    ) -> bool {
+        let mut renaming = self.renaming.borrow_mut();
+        let mut stale = false;
+        for ws in session.windows.iter().flat_map(|w| &w.workspaces) {
+            if ws.machine != *machine || ws.herdr_workspace.as_deref() != Some(herdr) {
+                continue;
+            }
+            let Some(sent) = renaming.get_mut(&ws.id) else {
+                continue;
+            };
+            match sent.iter().position(|l| l == label) {
+                Some(i) => {
+                    sent.drain(..=i);
+                    stale |= !sent.is_empty();
+                }
+                None => sent.clear(),
+            }
+            if sent.is_empty() {
+                renaming.remove(&ws.id);
+            }
+        }
+        stale
+    }
+
+    /// Logs herdr workspaces nobody here shows (ADR 0014), when the list
+    /// changed: left running, never closed. Only IDs, no names.
+    fn report_unshown(
+        &mut self,
+        machine: &Machine,
+        session: &azulejo_model::Session,
+        workspaces: &[azulejo_herdr::WorkspaceInfo],
+    ) {
+        let now = crate::adopt::unshown(session, machine, workspaces);
+        if self.unshown.get(machine) == Some(&now) {
+            return;
+        }
+        if !now.is_empty() {
+            let shown: Vec<&str> = now.iter().take(20).map(String::as_str).collect();
+            (self.log)(format!(
+                "herdr ({}): {} workspace(s) not shown in Azulejo, left running: {}{}. \
+                 Most likely closed here before closes reached herdr; close them in \
+                 herdr if they aren't needed",
+                if machine.is_none() { "Local" } else { "remote" },
+                now.len(),
+                shown.join(", "),
+                if now.len() > shown.len() { ", …" } else { "" },
+            ));
+        }
+        self.unshown.insert(machine.clone(), now);
     }
 
     /// An Azulejo op ran: every tab it rearranged (`before` is how they were
@@ -950,6 +1051,15 @@ impl<P: HerdrPort> Links<P> {
     /// amendment). A manual tab collapses as herdr's tree did, and nothing
     /// else from herdr authorises anything.
     fn apply_internal(&self, engine: &mut Engine, internal: Internal) -> Vec<Event> {
+        if let Internal::HerdrWorkspaceRenamed {
+            machine,
+            herdr,
+            label,
+        } = &internal
+            && self.stale_echo(engine.session(), machine, herdr, label)
+        {
+            return Vec::new();
+        }
         let closes = matches!(
             internal,
             Internal::ClosedElsewhere { .. } | Internal::HerdrWorkspaceClosed { .. }
@@ -1097,6 +1207,7 @@ impl<P: HerdrPort> Links<P> {
                 agents,
                 processes,
                 creating: Default::default(),
+                names_due: true,
                 restored: false,
                 generation: 0,
                 check: None,
@@ -1211,6 +1322,20 @@ impl<P: HerdrPort> Links<P> {
                 self.authorise_tab(session.ids_at(path).2);
             }
         }
+        match &effect {
+            Effect::RenameWorkspace {
+                workspace, label, ..
+            } => self
+                .renaming
+                .borrow_mut()
+                .entry(*workspace)
+                .or_default()
+                .push(label.clone()),
+            Effect::CloseWorkspace { workspace, .. } => {
+                self.renaming.borrow_mut().remove(workspace);
+            }
+            _ => {}
+        }
         let _ = link.effects_tx.send(effect);
     }
 
@@ -1292,6 +1417,14 @@ impl<P: HerdrPort> Links<P> {
                 }
             }
         }
+    }
+
+    /// Whether this survey should compare workspace names, once per
+    /// (re)connect.
+    fn take_names_due(&mut self, machine: &Machine) -> bool {
+        self.links
+            .get_mut(machine)
+            .is_some_and(|l| std::mem::take(&mut l.names_due))
     }
 
     /// herdr (re)connected: its mirror task forgets what it recorded, and

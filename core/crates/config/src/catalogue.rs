@@ -261,6 +261,7 @@ pub(crate) fn title(action: Action) -> String {
         ZoomTile => "Zoom tile".into(),
         CloseTile => "Close tile (detach)".into(),
         KillTile => "Kill tile and its process".into(),
+        ClosePane => "Close pane (kill its process, no confirmation)".into(),
         CycleTileNext => "Next tile".into(),
         CycleTilePrevious => "Previous tile".into(),
         RenameTile => "Rename tile…".into(),
@@ -292,7 +293,7 @@ pub(crate) fn title(action: Action) -> String {
         LastWorkspace => "Previous active workspace".into(),
         NextWorkspace => "Next workspace".into(),
         PreviousWorkspace => "Previous workspace".into(),
-        CloseWorkspace => "Close workspace (detach)".into(),
+        CloseWorkspace => "Close workspace".into(),
         RenameWorkspace => "Rename workspace…".into(),
         NewTab => "New tab".into(),
         SwitchTab(i) => format!("Switch to tab {i}"),
@@ -365,7 +366,9 @@ fn category(action: Action) -> &'static str {
     use Action::*;
     match action {
         FocusTile(_) | SwapTile(_) | MoveTile(_) | ResizeTile(_) | ResizeMode | ZoomTile
-        | CloseTile | KillTile | CycleTileNext | CycleTilePrevious | RenameTile => "tile",
+        | CloseTile | KillTile | ClosePane | CycleTileNext | CycleTilePrevious | RenameTile => {
+            "tile"
+        }
         Split(_) | SplitAuto | PromoteTile | RotateLayout | EqualizeLayout | CycleLayoutNext
         | CycleLayoutPrevious | ToggleLayout(_) | IncreaseMasters | DecreaseMasters
         | GrowMasterArea | ShrinkMasterArea | MovePositionNext | MovePositionPrevious
@@ -412,6 +415,7 @@ fn needs_tile(action: Action) -> bool {
             | ZoomTile
             | CloseTile
             | KillTile
+            | ClosePane
             | RenameTile
             | Split(_)
             | PromoteTile
@@ -569,8 +573,8 @@ mod tests {
     }
 
     /// ⌘9 and ⌃9 go to the last workspace and tab in order, as in a browser;
-    /// the previously active ones keep alt+0 (and the palette). ⌘W closes
-    /// the workspace and ⌘⇧W the tab, as ⌘T and ⌘⇧T open them.
+    /// the previously active ones keep alt+0 (and the palette). ⌘W closes the
+    /// pane, ⌘⇧W the tab and ⌥⌘W the workspace (macOS Close All).
     #[test]
     fn last_and_close_chords_follow_the_browser() {
         for (platform, cmd) in [(Platform::Macos, "cmd"), (Platform::Linux, "super")] {
@@ -589,7 +593,13 @@ mod tests {
             let previous_tab = get("last_tab");
             assert!(previous_tab.chords.is_empty(), "{previous_tab:?}");
             assert_eq!(previous_tab.title, "Previous active tab");
-            assert_eq!(get("close_workspace").chords, [format!("{cmd}+w")]);
+            // cmd+w kills the pane, alt+w detaches; the workspace takes
+            // macOS's Close All.
+            let close_pane = get("close_pane");
+            assert_eq!(close_pane.chords, [format!("{cmd}+w")]);
+            assert_eq!(close_pane.method.as_deref(), Some("tile.close"));
+            assert_eq!(get("close_tile").chords, ["alt+w"]);
+            assert_eq!(get("close_workspace").chords, [format!("alt+{cmd}+w")]);
             assert_eq!(
                 get("close_workspace").method.as_deref(),
                 Some("workspace.close")
