@@ -261,6 +261,90 @@ link, PTY resizes per motion, a capture after the stress); `--slow` runs
 runs one style regardless of the config. The app can't run
 `screencapture` itself, so `capture` lines drop a request the script takes.
 
+## Visible terminal items
+
+In a terminal, press **⌘S** (`select_visible_item`) to label selectable items
+across the current window's visible terminal panes. Zoom and Monocle exclude
+hidden panes. Each label sits just outside its item, left of the item's first
+cell (on the first row of a multi-row item), one terminal cell per letter. It
+joins the item's highlight as one box, rounded on the label's side (colours
+`hintBadge` and `hintBadgeText`). A label never covers its own item; it covers
+the cells just before it, usually a space and the end of the previous word.
+With no room on the left (column 0) it goes on the right instead. Labels
+never overlap each other and stay off other items' text, except a command's
+text: a path inside a command takes the cells before it. Only when neither
+side is free (`192.0.2.1 198.51.100.2`) does a label cover a neighbouring
+item's text. Type a label, then choose **C Copy**, **O Open**, or **R Run in
+New Pane**. A small popup appears beside the selection, staying inside its
+terminal pane. Each icon has a shortcut bubble using the item-label styling;
+hovering shows its action and keystroke. Run appears for commands only.
+Escape or a click outside the popup exits the mode. Backspace removes a
+partially typed item label.
+
+URLs, absolute and relative paths, existing local filenames, the workspace's
+current branch, plain `git branch` listings, shell commands, IPv4 and IPv6
+addresses (with an optional `:port`), bare domains, UUIDs and git hashes
+receive hints.
+Paths support quotes, escaped spaces, `:line:column` suffixes,
+surrounding parentheses/brackets, and output prefixes such as `key=/path`.
+An existing name without a `/` or a file extension (`docs`) only counts inside
+a command, so prose words that happen to name a directory stay unmarked.
+Domains need a known top-level domain from a short built-in list that leaves
+out TLDs doubling as file extensions (`.md`, `.sh`, `.py`, `.rs`, `.app`, ...),
+so `README.md`, `file.txt`, `2026.11` and `e.g.` aren't hosts. Git hashes are
+7-40 lowercase hex characters with at least one letter and one digit, and never
+part of a longer token or a UUID. Trailing sentence punctuation and surrounding
+brackets stay outside every item. When items overlap, the longest wins
+(`198.51.100.12:8443` over `198.51.100.12`, a URL over its host); a command
+keeps its own hint next to the items inside it.
+Open resolves paths against the source terminal's working directory and uses
+the default macOS application. Missing paths, remote paths, branches,
+addresses, domains, UUIDs and hashes remain copy-only.
+Run applies only to commands with a known working directory; it creates a pane
+on the source machine in that directory, leaving the original pane untouched.
+The new shell starts with its normal environment, not the source shell's
+unexported variables or temporary state.
+
+Recognition uses visible text and terminal foreground colors, not a shell
+parser. Commands after a `$`, `%`, `❯`, or `➜` prompt followed by a space, or
+a coding-agent `!` marker with optional space (`!cargo test` or `! cargo test`),
+do not need a known executable name. The agent marker is excluded from copying
+and execution.
+
+Unprompted commands use a built-in vocabulary of common Unix, Linux, macOS,
+Windows, and PowerShell command names, independent of the local `PATH`.
+They must start an unstyled standalone/list-item line, a backtick-delimited code
+span, or a foreground-color run. For example, an inline colored `sudo bash ./setup.sh`
+gets a full-command hint as well as a separate path hint; adjacent prose stays
+outside the command. Palette and RGB colors work without assuming a particular
+theme. Color alone does not make arbitrary text runnable. Recognition is a
+heuristic, not an execution safety check or proof that a command is installed;
+Run passes the displayed command to the source machine's shell without OS
+translation.
+
+Full-width token continuations, including colored commands, can span rows.
+Commands also continue across rows an application wrapped itself, such as a
+coding agent's indented answer: a prompted command carries on while a row ends
+with `\`, `|`, `&&` or `||`, a quote opens that a later row closes, or the
+next row has the same non-zero indent and its first word wouldn't have fitted
+on this row (within two cells of the pane's right edge, since wrappers often
+keep a margin). Shell secondary prompts (`> `, `pipe> `) are skipped. URLs and paths
+cut at the right edge of such a block rejoin the same way. A multi-row item
+gets one label and a highlight on every row; Copy and Run use the command
+joined with single spaces, without indent, prompt marker or line-continuation
+backslashes.
+Terminal frames freeze while choosing, so live output cannot retarget a label.
+Scroll, resize, tab/focus changes, and source-directory or binding changes
+cancel the mode. `just ghostty` applies the styled-text bridge patch on both
+Xcode and runtime-Metal builds; rebuild GhosttyKit after changing that patch.
+
+Rebind or disable `select_visible_item` under `[keys.macos.terminal]`. Other
+tile kinds and text fields retain their save shortcuts. The command also
+appears in quick open. `apps/macos/automation/hints.sh` checks recognition
+boundaries and drives the GUI in an isolated dev session. Copy uses the private
+automation pasteboard; Open records its dispatch target without launching an
+external application; Run executes a fixture command in a real new pane.
+
 ## Layout of the code
 
 | File | What |

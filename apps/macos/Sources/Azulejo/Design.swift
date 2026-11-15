@@ -40,6 +40,10 @@ enum Design {
         static let textOnAccent = Theme.token("textOnAccent")
         /// progress bars, matched characters, links
         static let accent = Theme.token("accent")
+        /// visible-item hint labels, joined to the item's highlight
+        static let hintBadge = Theme.token("hintBadge")
+        /// letters on hint labels
+        static let hintBadgeText = Theme.token("hintBadgeText")
         /// what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it
         static let dimFill = Theme.token("dimFill")
         /// working agents (azulejo.ring)
@@ -162,6 +166,8 @@ enum Design {
             "textMuted",
             "textOnAccent",
             "accent",
+            "hintBadge",
+            "hintBadgeText",
             "dimFill",
             "statusWorking",
             "statusBlocked",
@@ -232,6 +238,8 @@ enum Design {
                     "textMuted": .rgba(0x7f848eff),
                     "textOnAccent": .rgba(0xffffffff),
                     "accent": .rgba(0x61afefff),
+                    "hintBadge": .rgba(0x61afefff),
+                    "hintBadgeText": .rgba(0x282c34ff),
                     "dimFill": .rgba(0x1b1d23ff),
                     "statusWorking": .rgba(0x61afefff),
                     "statusBlocked": .rgba(0xe5c07bff),
@@ -306,6 +314,8 @@ enum Design {
                     "textMuted": .rgba(0x74767fff),
                     "textOnAccent": .rgba(0xffffffff),
                     "accent": .rgba(0x526fffff),
+                    "hintBadge": .rgba(0x526fffff),
+                    "hintBadgeText": .rgba(0xffffffff),
                     "dimFill": .rgba(0xe1e1e3ff),
                     "statusWorking": .rgba(0x4078f2ff),
                     "statusBlocked": .rgba(0xc18401ff),
@@ -380,6 +390,8 @@ enum Design {
                     "textMuted": .system("labelColor", alpha: 0.45, fallback: 0xffffff73),
                     "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "hintBadge": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "hintBadgeText": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "dimFill": .rgba(0x000000ff),
                     "statusWorking": .system("systemBlue", alpha: nil, fallback: 0x0091ffff),
                     "statusBlocked": .system("systemYellow", alpha: nil, fallback: 0xffd600ff),
@@ -454,6 +466,8 @@ enum Design {
                     "textMuted": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
                     "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "hintBadge": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
+                    "hintBadgeText": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "dimFill": .rgba(0xecececff),
                     "statusWorking": .system("systemBlue", alpha: nil, fallback: 0x0088ffff),
                     "statusBlocked": .system("systemOrange", alpha: nil, fallback: 0xff8d28ff),
@@ -596,6 +610,7 @@ enum Design {
         static let searchBadge: CGFloat = 4
         static let sidebarSegment: CGFloat = 7
         static let badgeDot: CGFloat = 4
+        static let hintBadge: CGFloat = 3
         static let machineDot: CGFloat = 3
     }
 

@@ -1,0 +1,354 @@
+# Background-only terminal hint scenarios; hints.sh supplies fixture paths.
+delivery direct
+clip clear
+until terminal.phase attached 10000
+core {"method":"layout.set","params":{"kind":"manual"}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
+until tiles 2
+until terminal.phase attached 10000
+action focus_tile_left
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane} "stty -echo; PS1=; printf '\033[2J\033[H'; cat screen.txt"
+wait 600
+
+log === Labels select and copy without typing into the shell
+key cmd+s
+expect key.last action:select_visible_item
+expect hints.state choosing
+expect hints.popup hidden
+expect hints.panes 1
+expect hints.count 6
+expect hints.badge.clash 0
+expect hints.badge.covers 0
+shot hints-choosing
+key a
+expect hints.prefix a
+key backspace
+expect hints.prefix -
+key a
+key a
+expect hints.state selected
+expect hints.kind url
+expect hints.selected https://example.invalid/first
+expect hints.actions copy,open
+expect hints.popup visible
+expect hints.popup.fits yes
+shot hints-selected
+key c
+expect hints.state closed
+expect clipboard https://example.invalid/first
+expect responder terminal
+
+log === Clicking away in window chrome dismisses the popup
+key cmd+s
+hints select https://example.invalid/first
+hints click-away chrome
+until hints.state closed
+expect hints.popup hidden
+expect responder terminal
+
+log === Paths use source cwd, not the application cwd
+key cmd+s
+hints select ./src/example.swift:12:3
+expect hints.kind path
+expect hints.actions copy,open
+expect hints.popup visible
+expect hints.popup.fits yes
+shot hints-path
+hints click open
+expect hints.state closed
+hints opened-file @DIR@/src/example.swift
+key cmd+s
+hints select two words.txt
+key c
+expect clipboard two words.txt
+
+log === Branches are copy-only, unsupported actions do nothing
+key cmd+s
+hints select feature/other
+expect hints.kind branch
+expect hints.actions copy
+key o
+expect hints.state selected
+key r
+expect tiles 1
+key escape
+expect hints.state closed
+
+log === Formatted build output and missing relative paths receive hints
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat paths.txt"
+wait 400
+key cmd+s
+shot hints-formatted-paths
+hints select @DIR@/src
+expect hints.kind path
+expect hints.actions copy,open
+hints click copy
+expect clipboard @DIR@/src
+key cmd+s
+hints select ./src/example.swift:12:3
+hints click open
+hints opened-file @DIR@/src/example.swift
+key cmd+s
+hints select target/release/missing.app
+expect hints.actions copy
+key o
+expect hints.state selected
+hints click-away
+until hints.state closed
+expect hints.popup hidden
+
+log === A bottom-row selection keeps its popup on screen
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[999;1Hhttps://example.invalid/bottom'"
+wait 400
+key cmd+s
+hints select https://example.invalid/bottom
+expect hints.popup visible
+expect hints.popup.fits yes
+expect hints.popup.position above
+shot hints-popup-bottom
+key escape
+expect hints.state closed
+expect hints.popup hidden
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === Agent bang commands copy and run without the marker
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat agent-screen.txt"
+wait 400
+key cmd+s
+hints select printf agent-ran > agent-ran.txt
+expect hints.kind command
+expect hints.actions copy,run
+shot hints-agent-command
+key c
+expect clipboard printf agent-ran > agent-ran.txt
+key cmd+s
+hints select printf agent-ran > agent-ran.txt
+hints click run
+until tiles 2
+until terminal.phase attached 10000
+wait 500
+sh test "$(cat @DIR@/agent-ran.txt)" = agent-ran
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === Colors bound full inline commands, not neighboring prose
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat inline-screen.txt"
+wait 400
+key cmd+s
+shot hints-inline-choosing
+hints select sudo bash ./src/setup.sh
+expect hints.kind command
+expect hints.actions copy,run
+shot hints-inline-command
+key c
+expect clipboard sudo bash ./src/setup.sh
+key cmd+s
+hints select ./src/setup.sh
+expect hints.kind path
+hints click open
+hints opened-file @DIR@/src/setup.sh
+key cmd+s
+hints select sudo usermod -aG wheel example
+key c
+expect clipboard sudo usermod -aG wheel example
+key cmd+s
+hints select DIR /b
+expect hints.kind command
+key c
+expect clipboard DIR /b
+key cmd+s
+hints select Get-ChildItem -Force
+expect hints.kind command
+key c
+expect clipboard Get-ChildItem -Force
+key cmd+s
+hints select git status --short
+expect hints.kind command
+key c
+expect clipboard git status --short
+key cmd+s
+hints select printf '%s' color-ran > color-ran.txt
+key r
+until tiles 2
+until terminal.phase attached 10000
+wait 500
+sh test "$(cat @DIR@/color-ran.txt)" = color-ran
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+
+log === Inline command color ranges survive physical wraps
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat inline-wrapped.txt"
+wait 400
+key cmd+s
+hints select @INLINE_WRAPPED@
+expect hints.kind command
+shot hints-inline-wrapped
+key c
+expect clipboard @INLINE_WRAPPED@
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === Live output cannot retarget the captured item
+key cmd+s
+hints select https://example.invalid/first
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[Hhttps://example.invalid/changed\n'"
+wait 400
+expect hints.selected https://example.invalid/first
+key c
+expect clipboard https://example.invalid/first
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === Wrapped items retain their complete value
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat wrapped.txt"
+wait 400
+key cmd+s
+hints select @WRAPPED@
+expect hints.popup.fits yes
+shot hints-wrapped-popup
+key c
+expect clipboard @WRAPPED@
+
+log === Agent-wrapped commands get one hint across rows; new item kinds
+sh {herdr} --session {session} pane run {pane} "sh sheet.sh"
+wait 600
+key cmd+s
+shot hints-sheet-choosing
+expect hints.badge.clash 0
+expect hints.badge.covers 0
+hints badge left 192.0.2.47
+hints badge left .
+hints select find . -type f -name "*.swift" -not -path "./vendor/*" -not -path "./.dev/*" -exec grep -l "TerminalHint" {} + | xargs -I{} sh -c 'echo "== {}"; wc -l "{}"' | sort -t: -k2 -n | tee /tmp/hints-report.txt
+expect hints.kind command
+expect hints.popup.fits yes
+shot hints-sheet-command
+key c
+expect clipboard find . -type f -name "*.swift" -not -path "./vendor/*" -not -path "./.dev/*" -exec grep -l "TerminalHint" {} + | xargs -I{} sh -c 'echo "== {}"; wc -l "{}"' | sort -t: -k2 -n | tee /tmp/hints-report.txt
+key cmd+s
+hints select cargo build --release --manifest-path shared/Cargo.toml --features "hints,mirror" && ls -lah target/release && printf "%s\n" one two three four five six seven
+expect hints.kind command
+key c
+expect clipboard cargo build --release --manifest-path shared/Cargo.toml --features "hints,mirror" && ls -lah target/release && printf "%s\n" one two three four five six seven
+key cmd+s
+hints select 198.51.100.12:8443
+expect hints.kind ip
+expect hints.actions copy
+key c
+expect clipboard 198.51.100.12:8443
+key cmd+s
+hints select 192.0.2.47
+expect hints.kind ip
+key escape
+key cmd+s
+hints select mirror.example.org
+expect hints.kind domain
+key escape
+key cmd+s
+hints select 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
+expect hints.kind uuid
+key escape
+key cmd+s
+hints select 7c3e9a1
+expect hints.kind hash
+key escape
+key cmd+s
+hints select 7c3e9a1f4b2d8e05a6f1c9b3d7e2a4f80b5c6d19
+expect hints.kind hash
+key escape
+key cmd+s
+hints select release/2026.11
+expect hints.kind path
+key escape
+expect hints.state closed
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === A cwd update cancels and restores terminal focus
+key cmd+s
+sh mkdir -p @DIR@/nested/src; touch @DIR@/nested/src/example.swift; {herdr} --session {session} pane run {pane} "cd nested"
+until hints.state closed 10000
+until terminal.cwd @DIR@/nested 10000
+expect responder terminal
+key cmd+s
+hints select ./src/example.swift:12:3
+key o
+hints opened-file @DIR@/nested/src/example.swift
+
+log === Run creates a real pane and executes in the source directory
+key cmd+s
+hints select printf hint-ran > ran.txt
+expect hints.kind command
+expect hints.actions copy,run
+shot hints-command-popup
+key r
+expect hints.state closed
+until tiles 2
+until terminal.phase attached 10000
+wait 500
+sh test "$(cat @DIR@/nested/ran.txt)" = hint-ran
+action close_tile
+until tiles 1
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane} "cd .."
+until terminal.cwd @DIR@ 10000
+
+log === All visible panes participate, hidden panes do not
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
+until tiles 2
+until terminal.phase attached 10000
+sh {herdr} --session {session} pane run {pane} "stty -echo; PS1=; printf '\033[2J\033[Hhttps://example.invalid/second\n'"
+wait 500
+key cmd+s
+expect hints.panes 2
+hints select https://example.invalid/first
+key escape
+action zoom_tile
+wait 400
+key cmd+s
+expect hints.panes 1
+hints select https://example.invalid/second
+expect hints.popup.fits yes
+shot hints-right-pane-popup
+key escape
+action zoom_tile
+action toggle_layout_monocle
+wait 400
+key cmd+s
+expect hints.panes 1
+key escape
+action toggle_layout_manual
+wait 400
+
+log === Resize and tab changes cancel the session
+key cmd+s
+window-size 1050 680
+expect hints.state closed
+key cmd+s
+core {"method":"tab.create"}
+expect hints.state closed
+until terminal.phase attached 10000
+
+log === Live rebinding stays terminal-only
+sh printf '[herdr]\nsession = "{session}"\n[keys.macos.terminal]\nselect_visible_item = "cmd+shift+s"\n' > {config}
+action reload_config
+wait 400
+key cmd+s
+expect hints.state closed
+expect key.last passed
+key cmd+shift+s
+expect hints.state choosing
+key escape
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
+until tile.kind browser
+key cmd+shift+s
+expect hints.state closed
+expect key.last passed
+quit

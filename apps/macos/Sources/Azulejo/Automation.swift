@@ -139,7 +139,7 @@ final class Automation {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }
             record("\(parts[0]) \(arg)")
-        case "ime", "clip", "surface", "responder", "terminal":
+        case "ime", "clip", "surface", "responder", "terminal", "hints":
             if let problem = FocusAutomation.run(parts[0], arg, app: app) {
                 failures.append("line \(step): \(parts[0]) \(arg): \(problem)")
             }

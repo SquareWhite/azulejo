@@ -243,6 +243,8 @@ struct TileModel: Decodable, Equatable {
     var command: [String]?
     var herdr: HerdrRefModel?
     var ended: Bool?
+    /// Live pane metadata, distinct from the terminal's launch directory.
+    var pane: PaneMetaModel?
     // browser
     var url: String?
     var pageTitle: String?
@@ -258,15 +260,20 @@ struct TileModel: Decodable, Equatable {
     var previewMode: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent, header
+        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent, header, pane
         case pageTitle = "page_title"
         case previewMode = "preview_mode"
     }
 
     var showsSource: Bool { previewMode == "source" }
+    var terminalCwd: String? { pane?.cwd ?? cwd }
 
     /// Needs a look: the agent became blocked or finished and nobody has seen it.
     var needsAttention: Bool { agent?.attention == true }
+}
+
+struct PaneMetaModel: Decodable, Equatable {
+    var cwd: String?
 }
 
 /// A tile's header text (`azulejo_model::TileHeader`).

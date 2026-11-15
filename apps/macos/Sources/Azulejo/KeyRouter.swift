@@ -76,6 +76,14 @@ final class KeyRouter {
             lastOutcome = "tab-drag-cancel"
             return true
         }
+        // Hint mode owns every key, including unnamed keys, before AppKit
+        // menu equivalents or the terminal can interpret them.
+        if controller.terminalHints.isOpen {
+            lastOutcome = "terminal-hints"
+            lastContext = "terminal-hints"
+            if let chord = Self.chord(for: event) { controller.terminalHints.handle(chord) }
+            return true
+        }
         guard let chord = Self.chord(for: event) else {
             lastOutcome = "unnamed"
             return false
@@ -131,6 +139,11 @@ final class KeyRouter {
         switch outcome["outcome"] as? String {
         case "action":
             let name = outcome["action"] as? String ?? ""
+            if name == "select_visible_item" {
+                lastOutcome = "action:select_visible_item"
+                controller.selectVisibleTerminalItem()
+                return true
+            }
             if outcome["context"] is String {
                 // Only works in its context: the scope runs it, or declines
                 // and the chord goes on as typed.

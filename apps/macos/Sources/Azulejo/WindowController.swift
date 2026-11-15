@@ -26,6 +26,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     let palette = PaletteView()
     let banner = BannerView()
     let attention = AttentionOverlayView()
+    let terminalHints = TerminalHintOverlay()
     private let content = ChromeLayoutView()
     private weak var app: AppController?
     private(set) var model: WindowModel?
@@ -155,6 +156,12 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// The keymap context for the focused tile (`"terminal"`, …).
     var keyContext: String? { tiles.focusedView?.keyContext }
 
+    func selectVisibleTerminalItem() {
+        guard let app else { return }
+        palette.close()
+        terminalHints.open(in: self, app: app)
+    }
+
     func apply(_ model: WindowModel) {
         let first = self.model == nil
         if first { placeWindow(model.frame) }
@@ -166,6 +173,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         Perf.measure("apply.tabbar") { tabBar.apply(model.workspace) }
         layoutPicker.apply(model.workspace?.tab?.kind)
         Perf.measure("apply.tiles") { tiles.apply(model) }
+        terminalHints.validate()
         Perf.measure("apply.attention") { attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames()) }
         let ws = model.workspace
         let title = [ws?.name, ws?.tab?.label].compactMap { $0 }.joined(separator: " — ")
@@ -273,7 +281,10 @@ final class WindowController: NSObject, NSWindowDelegate {
     // MARK: NSWindowDelegate
 
     func windowDidMove(_ notification: Notification) { scheduleFrameSave() }
-    func windowDidResize(_ notification: Notification) { scheduleFrameSave() }
+    func windowDidResize(_ notification: Notification) {
+        terminalHints.close()
+        scheduleFrameSave()
+    }
 
     private func scheduleFrameSave() {
         guard !applyingFrame, model != nil else { return }
@@ -297,6 +308,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        terminalHints.close()
         app?.windowResignedKey(self)
         TrafficLights.place(in: window)
     }
@@ -309,6 +321,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        terminalHints.close(restoreFocus: false)
         sidebar.closePanel()
     }
 

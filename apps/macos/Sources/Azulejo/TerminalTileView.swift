@@ -154,6 +154,16 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
 
     override var acceptsFirstResponder: Bool { surface == nil }
 
+    /// Only live terminal contents participate; reconnect/ended overlays and
+    /// an open find bar aren't terminal text.
+    var hintSurface: TerminalSurfaceView? {
+        guard finder?.bar.isOpen != true else { return nil }
+        switch phase {
+        case .attached, .observing: return surface
+        default: return nil
+        }
+    }
+
     // MARK: TileView
 
     func update(_ tile: TileModel) {

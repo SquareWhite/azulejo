@@ -200,6 +200,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `hide_others` | global | `alt+cmd+h` | unbound | Hide other apps |
 | `minimize` | global | `cmd+m` | unbound | Minimise window |
 | `send_herdr_prefix` | terminal | `ctrl+b` | `ctrl+b` | Type herdr's prefix (ctrl+b) into the pane |
+| `select_visible_item` | terminal | `cmd+s` | unbound | Select visible terminal item… |
 | `take_over` | terminal | unbound | unbound | Take over or give back a terminal |
 | `palette_close` | palette | `escape` | `escape` | Quick open: close |
 | `palette_run` | palette | `enter` | `enter` | Quick open: run the selected row |

@@ -468,6 +468,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "quick_open": openQuickOpen(in: controller)
         case "command_palette": openQuickOpen(query: ">", in: controller)
         case "goto": openQuickOpen(query: "@", in: controller)
+        case "select_visible_item": controller.selectVisibleTerminalItem()
         case "find":
             // The focused tile's find bar (terminal, browser, preview) or
             // filter (files).

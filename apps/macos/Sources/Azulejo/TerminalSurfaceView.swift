@@ -535,6 +535,62 @@ final class TerminalSurfaceView: NSView {
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
+    // MARK: Visible-item hints
+
+    /// A physical row, preserving spaces and graphemes. Rectangular reads
+    /// keep soft wraps separate so the hint layer can retain cell positions.
+    func hintRow(_ row: Int, from firstColumn: Int = 0, through column: Int) -> (text: String, x: CGFloat, baseline: CGFloat)? {
+        guard let surface else { return nil }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                                     x: UInt32(firstColumn), y: UInt32(row)),
+            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                                         x: UInt32(column), y: UInt32(row)),
+            rectangle: true)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text), let pointer = text.text else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        let value = String(decoding: UnsafeBufferPointer(start: UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self),
+                                                        count: Int(text.text_len)), as: UTF8.self)
+        return (value, CGFloat(text.tl_px_x), CGFloat(text.tl_px_y))
+    }
+
+    /// One styled viewport snapshot. Accept only rows that match the plain
+    /// capture, so output arriving between reads cannot move a color boundary
+    /// onto different text. Trailing padding has no selectable content.
+    func hintColors(rows: [String], columns: Int) -> [TerminalHintColorSpan] {
+        guard let surface, !rows.isEmpty, columns > 0 else { return [] }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
+                                         x: UInt32(columns - 1), y: UInt32(rows.count - 1)),
+            rectangle: true)
+        let text = ghostty_surface_read_text_vt(surface, selection)
+        defer { ghostty_string_free(text) }
+        guard let pointer = text.ptr else { return [] }
+        let bytes = UnsafeBufferPointer(start: UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self), count: Int(text.len))
+        let snapshot = TerminalHints.styledRows(String(decoding: bytes, as: UTF8.self))
+        let matchingRows = Set(zip(rows, snapshot.rows).enumerated().compactMap { row, pair -> Int? in
+            let (plain, styled) = pair
+            guard plain.hasPrefix(styled), plain.dropFirst(styled.count).allSatisfy({ $0 == " " }) else { return nil }
+            return row
+        })
+        return snapshot.colors.filter { matchingRows.contains($0.row) && NSMaxRange($0.range) <= rows[$0.row].utf16.count }
+    }
+
+    /// Locate a UTF-16 boundary using Ghostty's own cell interpretation,
+    /// rather than guessing emoji, combining-character or wide glyph widths.
+    func hintColumn(at offset: Int, row: Int, text: String, columns: Int) -> Int {
+        if text.utf8.allSatisfy({ $0 < 128 }) { return min(offset, columns) }
+        var low = 0, high = columns
+        while low < high {
+            let mid = (low + high) / 2
+            let length = hintRow(row, through: mid)?.text.utf16.count ?? 0
+            if length > offset { high = mid } else { low = mid + 1 }
+        }
+        return low
+    }
+
     // MARK: Search highlight (find bar)
 
     /// Runs a libghostty binding action (`search:<text>`, `end_search`).

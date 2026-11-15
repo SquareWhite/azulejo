@@ -319,6 +319,7 @@ pub(crate) fn title(action: Action) -> String {
         HideOthers => "Hide other apps".into(),
         Minimize => "Minimise window".into(),
         SendHerdrPrefix => "Type herdr's prefix (ctrl+b) into the pane".into(),
+        SelectVisibleItem => "Select visible terminal item…".into(),
         TakeOver => "Take over or give back a terminal".into(),
         SendText(text) => match control_key(text) {
             Some(key) => format!("Type {} ({key}) into the pane", quote_text(text)),
@@ -374,7 +375,9 @@ fn category(action: Action) -> &'static str {
         NewTab | SwitchTab(_) | SwitchTabLast | LastTab | NextTab | PreviousTab | CloseTab
         | RenameTab => "tab",
         NewWindow | CloseWindow | Minimize => "window",
-        Find | EditScrollback | SendHerdrPrefix | TakeOver | SendText(_) => "terminal",
+        Find | EditScrollback | SendHerdrPrefix | SelectVisibleItem | TakeOver | SendText(_) => {
+            "terminal"
+        }
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
         | SetTheme | EnterPrefix | Quit | Hide | HideOthers => "app",
         PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
@@ -417,6 +420,7 @@ fn needs_tile(action: Action) -> bool {
             | Find
             | EditScrollback
             | SendHerdrPrefix
+            | SelectVisibleItem
             | TakeOver
             | SendText(_)
             | BrowserFocusAddress

@@ -24,6 +24,16 @@ mise install "zig@$ZIG_VERSION" >/dev/null
 
 cd "$GHOSTTY"
 
+# App-facing text snapshots need colors, which the upstream plain-text API
+# discards. Apply on both the Xcode and runtime-Metal build paths.
+PATCH="$ROOT/scripts/patches/ghostty-styled-text.patch"
+if git apply --check "$PATCH" 2>/dev/null; then
+  git apply "$PATCH"
+elif ! git apply --reverse --check "$PATCH" 2>/dev/null; then
+  echo "error: $PATCH neither applies nor is already applied" >&2
+  exit 1
+fi
+
 if xcrun -sdk macosx -f metal >/dev/null 2>&1 && xcodebuild -version >/dev/null 2>&1; then
   echo "==> Xcode found: official xcframework build ($OPTIMIZE, native)"
   zig build -Doptimize="$OPTIMIZE" -Demit-xcframework=true -Demit-macos-app=false \

@@ -119,6 +119,16 @@ enum FocusAutomation {
             surface.selectAll(nil)
         case ("responder", "focus"):
             controller.tiles.focusedView?.setFocused(true)
+        case ("hints", "select"):
+            return controller.terminalHints.automationSelect(rest)
+        case ("hints", "click"):
+            return controller.terminalHints.automationClick(rest)
+        case ("hints", "opened-file"):
+            return controller.terminalHints.automationOpenedFile(rest)
+        case ("hints", "badge"):
+            return controller.terminalHints.automationBadge(rest)
+        case ("hints", "click-away"):
+            return controller.terminalHints.automationClickAway(chrome: rest == "chrome")
         case ("terminal", _):
             // Presses an overlay button (`terminal takeover`, `respawn`…)
             // on the focused terminal tile, as a click would.
@@ -148,6 +158,7 @@ enum FocusAutomation {
         let focused = app.session?.window(controller.windowID)?.workspace?.tab?.focused
         s["responder.focused"] = tile != nil && tile == focused ? "yes" : "no"
         s["terminal.phase"] = focusedTerminal(controller)?.phaseName ?? "-"
+        s["terminal.cwd"] = controller.model?.workspace?.tab.flatMap { $0.tile($0.focused)?.terminalCwd } ?? "-"
         if let surface = window.firstResponder as? TerminalSurfaceView {
             s["ime.marked"] = surface.hasMarkedText() ? surface.markedString : "-"
             s["terminal.selection"] = surface.hasSelection ? "yes" : "no"
@@ -157,6 +168,7 @@ enum FocusAutomation {
         } else {
             s["ime.marked"] = "-"
         }
+        s.merge(controller.terminalHints.automationState) { _, new in new }
         return s
     }
 

@@ -108,6 +108,8 @@ pub enum Action {
     /// Types the chord into the pane twice, so herdr's attach client passes
     /// one on and never starts its detach sequence (`ctrl+b q`).
     SendHerdrPrefix,
+    /// Select a visible terminal item using keyboard hints. Shell-local.
+    SelectVisibleItem,
     /// Take over a terminal another client holds (read-only view), or give
     /// it back.
     TakeOver,
@@ -262,6 +264,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("hide_others", HideOthers),
         ("minimize", Minimize),
         ("send_herdr_prefix", SendHerdrPrefix),
+        ("select_visible_item", SelectVisibleItem),
         ("take_over", TakeOver),
         ("palette_close", PaletteClose),
         ("palette_run", PaletteRun),
@@ -430,7 +433,7 @@ impl Action {
     pub fn context(self) -> Option<KeyContext> {
         use Action::*;
         Some(match self {
-            SendHerdrPrefix | TakeOver | SendText(_) => KeyContext::Terminal,
+            SendHerdrPrefix | SelectVisibleItem | TakeOver | SendText(_) => KeyContext::Terminal,
             PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
             | PalettePageUp | PaletteComplete => KeyContext::Palette,
             FindNext | FindPrevious | FindClose => KeyContext::Find,
@@ -472,6 +475,7 @@ impl Action {
             | HideOthers
             | Minimize
             | SendHerdrPrefix
+            | SelectVisibleItem
             | TakeOver
             | SendText(_)
             | PaletteClose
