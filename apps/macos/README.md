@@ -48,6 +48,42 @@ name a herdr session other than `default`.
 - `AZULEJO_AUTOMATION` / `AZULEJO_AUTOMATION_OUT`: run a script, then quit
 - `AZJ_DEBUG_MIRROR`, when set in `dev.sh`'s environment: the core logs every mirror push and pull (ADR 0012) to the app log
 - `AZJ_FILES_LIST_DELAY_MS`, likewise: the core holds every folder listing back that long, standing in for a slow folder (`automation/files-slow.sh`)
+- `AZJ_HERDR_BIN` / `AZJ_HERDR_CONFIG`: a custom herdr build and its config (below)
+
+### A custom herdr build
+
+To hand-test a herdr branch inside Azulejo, point a dev instance at its
+binary with `AZJ_HERDR_BIN`. The core then runs that file for everything
+local: the server it starts, its herdr CLI calls, and every terminal tile's
+`terminal attach` / `observe`. `dev.sh --reset` stops the session with it too.
+Remote machines keep their own lookup.
+
+`AZJ_HERDR_CONFIG=<file>` gives the instance's herdr a `config.toml` of its
+own, via herdr's `HERDR_CONFIG_PATH`. Without it, `dev.sh` uses
+`.dev/<name>/config/herdr/config.toml` if that exists. It refuses a file in
+your own herdr config folder, and `--reset` leaves `.dev/<name>/config/` alone.
+
+```sh
+# A herdr checkout next to this one, built with `cargo build --release`.
+fork="$(dirname "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")/herdr/target/release/herdr"
+mkdir -p .dev/fork/config/herdr
+printf '[terminal]\nresize_pull_scrollback = false\n' > .dev/fork/config/herdr/config.toml
+AZJ_DEV_NAME=fork AZJ_HERDR_BIN="$fork" just mac-dev
+```
+
+herdr reads most of its config only when the server starts, and the server
+outlives the app. To change the config or the binary, quit and restart the
+session: `AZJ_DEV_NAME=fork just dev-reset`, edit the file, launch again.
+`dev.sh` warns when the session is already running. The app log names the
+herdr binary and config it picked (`herdr: …`).
+
+Guards: the core only reads these on the dev profile (`AZULEJO_PROFILE=dev`),
+so the installed app ignores them. A path that is relative, missing, not a
+file or not executable stops `dev.sh` before launch, and the core logs it
+and runs without herdr rather than falling back to the herdr on `PATH`.
+`HERDR_CONFIG_PATH` is visible in the dev session's panes (herdr passes its
+environment on), so a `herdr` run in one of them reads the same file.
+`automation/e2e/hd` honours both variables when they're exported.
 
 ## Automation (no OS input)
 

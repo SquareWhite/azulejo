@@ -249,6 +249,14 @@ So off fixes what's on screen, but stale copies remain in scrollback, and every 
 
 **Implication.** Azulejo can only avoid giving a pane sizes it doesn't need: a divider drag that overshoots and comes back feeds the program the smaller sizes on the way (live reflow), as a window drag does in any terminal. The pane-side fix is herdr's (upstream ask 8), and it's a trade, not a pure win.
 
+**Outcome (Nov 13, 2026).** A herdr build with the switch backported, run with the pull off:
+
+- `resize.sh` passes 18/18, with no stale Ink blocks in herdr's copy of the pane. Stock herdr shows doubled blocks after `d3` and `d4`.
+- In the herdr-only repro above, the Ink block stays one clean block. A shell gets no history back on a grow: the prompt stays mid-screen with blank rows under it, as the table says.
+- Claude Code in an Azulejo dev instance (`AZJ_HERDR_BIN`, `AZJ_HERDR_CONFIG`; [apps/macos/README.md](../apps/macos/README.md#a-custom-herdr-build)), checked by hand: the trash lines are gone. The worry above about its incremental redraw didn't show up.
+
+So the user runs a personal herdr fork with that patch as their everyday local herdr, the pull off by default, and Azulejo doesn't depend on it ([ADR 0017](adr/0017-personal-herdr-fork.md)). Stock herdr, remote machines included, still shows the stale rows.
+
 ## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
 
 | Situation | Exit status | Last stderr line |
@@ -304,7 +312,7 @@ The client always restores the host terminal (leaves the alt screen, turns mouse
 5. `layout.apply` that reuses live `pane_id`s instead of replacing the tab.
 6. Clearer exit messages than "server shut down" for take-over and pane-ended cases (or a JSON exit reason).
 7. Wake the attach client's size poll on SIGWINCH. `resize_poll_loop` (`src/client/terminal_geometry.rs`, 0.9.1 and still on master) sleeps a fixed 100 ms between looks at the terminal size; the signal handler only sets a flag. A PTY resize reaches the pane 4–103 ms later (uniform, median 57–66 ms), and the pane sees at most one size per 100 ms however often the host resizes. That's most of the reflow motion lag (ADR 0004, reflow-lead amendment). No config knob; a signal-driven wake (or a ~10 ms poll while signalled) would cut it to a few ms. Also: the frame carrying the pane's first output after a resize reaches the client about 19 ms later (17–21 ms), against ~1.5 ms for the same output without a resize.
-8. Make pulling scrollback back into view on a pane resize optional (newer libghostty-vt's `GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK`; 0.9.5's vendored copy has no such switch), or stop pulling rows that a bottom-anchored redraw has already replaced. Today a pane that shrinks below an Ink-style program's live area and grows back shows the old copies of that area above the new one (question 13).
+8. Make pulling scrollback back into view on a pane resize optional (newer libghostty-vt's `GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK`; 0.9.5's vendored copy has no such switch), or stop pulling rows that a bottom-anchored redraw has already replaced. Today a pane that shrinks below an Ink-style program's live area and grows back shows the old copies of that area above the new one (question 13). **Status (Nov 13, 2026):** patched locally in a personal fork, as a `[terminal] resize_pull_scrollback` config key ([ADR 0017](adr/0017-personal-herdr-fork.md)). The upstream proposal, the same key with upstream's default kept on, goes in as a GitHub Discussion, since herdr doesn't take unsolicited PRs. Not posted yet.
 
 ### Not determined
 

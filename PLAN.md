@@ -458,6 +458,7 @@ P1 parity on Linux; Linux success-metric clock starts.
 - **Core first.** A feature isn't started in a shell until its command, events, core tests and `azj` subcommand exist.
 - **One herdr module.** No herdr method names or JSON shapes outside `core/crates/herdr`.
 - **Pinned upstreams.** Ghostty and the herdr minimum version change only in dedicated PRs that re-run the latency bench and the herdr integration tests.
+- **Any herdr, no fork.** The user's local herdr is a personal fork (trash-lines fix, [ADR 0017](docs/adr/0017-personal-herdr-fork.md)); remotes run stock herdr. Azulejo never depends on the fork. When a result depends on herdr, say which one ran: the app log's `herdr: <bin> (config <file>)` line (dev instances: `.dev/logs/app.log`, or `.dev/<name>/logs/app.log` with `AZJ_DEV_NAME`; the installed app logs with `AZULEJO_VERBOSE=1`, see [dogfooding](docs/dogfooding.md)), or `herdr --version` (`+azj.N` is the fork).
 - **Schema is the contract.** `schema/api.v1.json` is generated and committed; breaking changes need `v2`.
 - **Both CIs green.** A PR that breaks the Linux build doesn't merge, even during the macOS milestones.
 - **Measure, don't guess.** Every performance claim goes in `docs/measurements.md` with machine, date and method.

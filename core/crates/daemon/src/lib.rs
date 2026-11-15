@@ -237,7 +237,15 @@ impl App {
             config.herdr.enabled && config.herdr.machines.unwrap_or(s.name().is_none())
         });
         let herdr = session.and_then(|session| match connect_herdr(&session) {
-            Ok(found) => Some(found),
+            Ok(found) => {
+                // Says which herdr a dev run picked (AZJ_HERDR_BIN, AZJ_HERDR_CONFIG).
+                let h = &found.1.herdr;
+                log(match h.config() {
+                    Some(c) => format!("herdr: {} (config {})", h.path().display(), c.display()),
+                    None => format!("herdr: {}", h.path().display()),
+                });
+                Some(found)
+            }
             Err(e) => {
                 log(format!(
                     "running without herdr: terminal tiles stay unbound ({e})"
