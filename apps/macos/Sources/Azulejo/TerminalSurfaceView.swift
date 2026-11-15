@@ -520,6 +520,15 @@ final class TerminalSurfaceView: NSView {
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
 
+    /// Text that arrives as a paste without touching any pasteboard (a drop:
+    /// `TerminalDrop`). libghostty frames it as a bracketed paste when the
+    /// terminal asked for one, and applies its paste protection, as
+    /// Ghostty.app's own drops do.
+    func pasteText(_ text: String) {
+        guard !readOnly, let surface, !text.isEmpty else { return }
+        text.withCString { ghostty_surface_paste_text(surface, $0, UInt(strlen($0))) }
+    }
+
     @objc override func selectAll(_ sender: Any?) {
         guard let surface else { return }
         let action = "select_all"

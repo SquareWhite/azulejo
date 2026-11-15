@@ -603,6 +603,7 @@ enum Design {
     enum Border {
         static let attention: CGFloat = 2
         static let hairline: CGFloat = 1
+        static let drop: CGFloat = 2
     }
 
     /// Opacities (0 to 1) applied on top of colour tokens.
@@ -613,6 +614,8 @@ enum Design {
         static let footerZero: CGFloat = 0.45
         static let dimmed: CGFloat = 0.5
         static let unfocusedDim: CGFloat = 0.25
+        static let dropFill: CGFloat = 0.1
+        static let dropBorder: CGFloat = 0.8
         static let badgePulse: CGFloat = 0.35
         static let bannerFill: CGFloat = 0.16
         static let bannerMix: CGFloat = 0.75
