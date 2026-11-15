@@ -36,6 +36,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         log("core: \(core.info())")
         installSignalHandlers()
+        DockIcon.install { [weak self] in self?.log($0) }
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
         ContextMenus.app = self
         keys.install()

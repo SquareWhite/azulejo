@@ -189,9 +189,14 @@ enum Theme {
     /// ⌘K's live preview: this theme until it's chosen or cancelled.
     private(set) static var previewID: String?
     /// Automation: the system appearance `auto` follows (never the real one's
-    /// setting; the app's own idea of it).
+    /// setting; the app's own idea of it). The Dock icon's `auto` follows it
+    /// too.
     static var systemOverride: ThemeAppearance? {
-        didSet { if systemOverride != oldValue { refresh() } }
+        didSet {
+            guard systemOverride != oldValue else { return }
+            refresh()
+            DockIcon.update()
+        }
     }
     /// The terminal palette state last applied (nil: Ghostty's own colours).
     private(set) static var terminal: TerminalSpec?
