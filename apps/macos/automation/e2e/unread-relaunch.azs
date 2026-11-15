@@ -1,0 +1,26 @@
+# After unread.azs, the same profile relaunched: the mark on alpha's focused
+# tile comes back with the session and stays, though that tile is focused
+# in front; leaving it and coming back reads it.
+log unread relaunch
+delivery direct
+seen-visible off
+until workspaces 2 8000
+until sidebar visible 5000
+until workspace.active alpha 3000
+until tiles 2 5000
+expect focus 1
+until tile.unread marked,none 5000
+until dock.badge 1 3000
+expect header.agents done,none
+seen-visible on
+wait 1500
+expect tile.unread marked,none
+shot 05-relaunch-marked
+key alt+l
+expect focus 2
+wait 200
+key alt+h
+expect focus 1
+until tile.unread read,none 2000
+expect dock.badge none
+seen-visible off

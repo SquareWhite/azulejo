@@ -870,6 +870,8 @@ pub struct AppearanceConfig {
     pub tile_agent_badge: bool,
     /// The Dock icon while the app runs: light (the default), dark, or auto.
     pub app_icon: AppIcon,
+    /// The number of unread agent tiles on the Dock icon (on by default).
+    pub dock_badge: bool,
 }
 
 impl Default for AppearanceConfig {
@@ -881,6 +883,7 @@ impl Default for AppearanceConfig {
             terminal_colors: None,
             tile_agent_badge: false,
             app_icon: AppIcon::Light,
+            dock_badge: true,
         }
     }
 }
@@ -968,6 +971,11 @@ pub(crate) fn parse_appearance(
                 None => sink.error(value.span(), APP_ICON_VALUES),
             },
             ("app_icon", _) => sink.error(value.span(), APP_ICON_VALUES),
+            ("dock_badge", DeValue::Boolean(on)) => out.dock_badge = *on,
+            ("dock_badge", _) => sink.error(
+                value.span(),
+                "`appearance.dock_badge` must be true or false",
+            ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `appearance.{other}`")),
         }
     }

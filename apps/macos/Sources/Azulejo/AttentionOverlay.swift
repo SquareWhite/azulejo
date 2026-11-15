@@ -31,15 +31,17 @@ enum AttentionStyle {
         }
     }
 
-    /// The status icon in a tile's header: blocked, then a finish nobody has
-    /// read, then working. Nil for a quiet agent (idle, or a finish already
-    /// read, whatever herdr still calls it), without an agent, or once herdr
-    /// lets go of it: the title keeps the whole strip.
+    /// The status icon in a tile's header: blocked, then working, then an
+    /// unread finish or unread mark. Nil for a quiet agent (idle, or a
+    /// finish already read, whatever herdr still calls it), without an
+    /// agent, or once herdr lets go of it: the title keeps the whole strip.
+    /// A working agent is only ever lit when the user marked it unread: its
+    /// ring keeps the header until it stops, then the done mark shows.
     static func status(for tile: TileModel) -> Design.Status? {
         guard let agent = tile.agent else { return nil }
         if agent.status == .blocked { return .blocked }
-        if agent.attention { return .done }
-        return agent.status == .working ? .working : nil
+        if agent.status == .working { return .working }
+        return agent.attention ? .done : nil
     }
 
     /// Per-scope rollup for the sidebar and tab bar.
@@ -312,8 +314,9 @@ final class AgentBadgeView: NSView, ThemeAware {
     }
 }
 
-/// App-wide attention bookkeeping: the Dock badge (blocked agents) and
-/// telling the core the user read a finished agent's result.
+/// App-wide attention bookkeeping: the Dock badge (unread agent tiles) and
+/// telling the core the user read a finished agent's result or came back to
+/// a tile they marked unread.
 @MainActor
 enum AttentionTracker {
     /// Automation: treat background windows as visible to the user.
@@ -327,33 +330,68 @@ enum AttentionTracker {
     private static var looking: [String: CFTimeInterval] = [:]
     /// Tiles we've sent `tile.seen` for and the core hasn't cleared yet.
     private static var pending: Set<String> = []
+    /// Tiles marked unread that have stopped being their window's focused
+    /// tile since (focus went to another tile, tab or workspace). Only these
+    /// clear when the user comes back to them.
+    private static var away: Set<String> = []
 
-    /// The Dock badge shows blocked agents. On by default; turn off with
-    /// `defaults write dev.azulejo.Azulejo AzulejoDockBadge -bool false`.
+    /// `[appearance] dock_badge` (on by default): the unread count on the
+    /// Dock icon. Follows config reloads.
+    static var dockBadge = true {
+        didSet { if dockBadge != oldValue { applyBadge() } }
+    }
+    /// Agent tiles that are unread (`AgentModel.isUnread`), across every
+    /// window and workspace, as of the last session.
+    private(set) static var unreadCount = 0
+
+    /// The Dock badge counts unread agent tiles: finishes nobody has read
+    /// plus tiles marked unread. Blocked and working agents count only when
+    /// they're marked. (To count blocked ones too, add `|| $0.status ==
+    /// .blocked` to the filter.)
     static func updateDock(_ session: SessionModel) {
-        let enabled = UserDefaults.standard.object(forKey: "AzulejoDockBadge") as? Bool ?? true
-        let blocked = session.windows.flatMap(\.workspaces).flatMap(\.tabs).flatMap(\.tiles)
-            .filter { $0.agent?.status == .blocked }.count
-        let label = enabled && blocked > 0 ? "\(blocked)" : nil
-        if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
+        unreadCount = session.windows.flatMap(\.workspaces).flatMap(\.tabs).flatMap(\.tiles)
+            .filter { $0.agent?.isUnread == true }.count
+        applyBadge()
+    }
+
+    /// Puts the badge on the Dock tile; empty at 0 or with `dock_badge` off.
+    /// `force`: set it even when the label looks the same (after the Dock
+    /// icon changes, `DockIcon.update`).
+    static func applyBadge(force: Bool = false) {
+        let label = dockBadge && unreadCount > 0 ? "\(unreadCount)" : nil
+        if force || NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
 
     /// A finished agent's result counts as read once its tile has been the
     /// focused, visible tile of the key window (app active, palette closed)
     /// for `dwell`: then the core gets `tile.seen`. Blocked agents aren't
-    /// answered by looking, so they're left alone. `again` runs this once
-    /// more when a dwell is up, with whatever the session is by then.
+    /// answered by looking, so they're left alone. A tile the user marked
+    /// unread reads the same way, but only once they come back to it: after
+    /// focus has left it for another tile, tab or workspace. So marking the
+    /// focused tile doesn't clear itself, and neither does switching apps or
+    /// windows, nor a relaunch. A marked blocked tile loses the mark that
+    /// way (it stays blocked). `again` runs this once more when a dwell is
+    /// up, with whatever the session is by then.
     static func markSeen(
         _ session: SessionModel, controllers: [WindowController],
         send: ([String: Any]) -> Void, again: @escaping @MainActor () -> Void
     ) {
         let now = CACurrentMediaTime()
+        var marked: Set<String> = []
+        for window in session.windows {
+            let focused = window.workspace?.tab?.focused
+            for tile in window.workspaces.flatMap(\.tabs).flatMap(\.tiles) where tile.agent?.unread == true {
+                marked.insert(tile.id)
+                if tile.id != focused { away.insert(tile.id) }
+            }
+        }
+        away.formIntersection(marked)
         var front: [String: CFTimeInterval] = [:]
         var still: Set<String> = []
         for controller in controllers {
             guard let tab = session.window(controller.windowID)?.workspace?.tab,
                   let tile = tab.tile(tab.focused), let agent = tile.agent,
-                  agent.attention, agent.status != .blocked
+                  agent.unread ? away.contains(tile.id) : (agent.attention && agent.status != .blocked)
             else { continue }
             let visible = assumeVisible
                 || (NSApp.isActive && controller.window.isKeyWindow

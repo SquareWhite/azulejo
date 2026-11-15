@@ -6,7 +6,9 @@
 //! finishes. A finished agent's stays lit until the user reads the result:
 //! `tile.seen`, which the shell sends once the tile has been focused in the
 //! key window for a moment. A blocked agent's stays lit until its state
-//! changes: looking doesn't answer it.
+//! changes: looking doesn't answer it. The user can also mark a tile unread
+//! ([`mark_unread`]): its attention then stays lit whatever the agent does,
+//! until `tile.seen`.
 //!
 //! herdr has a "seen" notion of its own (`done` is a finish nobody has
 //! focused in herdr yet, `idle` one somebody has), but only herdr's focus
@@ -56,6 +58,8 @@ pub fn update(tile: &mut Tile, name: Option<String>, status: AgentStatus, at_ms:
         AgentStatus::Unknown => name,
         _ => name.or_else(|| prev.and_then(|p| p.name.clone())),
     };
+    // A mark the user set (`tile.mark_unread`) outlives status changes.
+    let unread = prev.is_some_and(|p| p.unread);
     let next = if status == AgentStatus::Unknown && name.is_none() {
         None
     } else {
@@ -65,18 +69,21 @@ pub fn update(tile: &mut Tile, name: Option<String>, status: AgentStatus, at_ms:
                 status,
                 since_ms: p.since_ms,
                 attention: p.attention,
+                unread,
             },
             _ => AgentInfo {
                 name,
                 status,
                 since_ms: at_ms,
-                attention: status.wants_attention()
+                attention: unread
+                    || status.wants_attention()
                     || (status == AgentStatus::Idle
                         && prev.is_some_and(|p| match p.status {
                             AgentStatus::Working | AgentStatus::Blocked => true,
                             AgentStatus::Done => p.attention,
                             AgentStatus::Idle | AgentStatus::Unknown => false,
                         })),
+                unread,
             },
         })
     };
@@ -125,16 +132,29 @@ pub fn refresh(
 }
 
 /// The user read the tile's agent's result: clears a finished agent's
-/// attention. A blocked agent keeps it until its state changes. Returns
-/// whether anything cleared.
+/// attention and the user's unread mark. A blocked agent keeps its attention
+/// until its state changes. Returns whether anything cleared.
 pub fn mark_seen(session: &mut Session, tile: TileId) -> bool {
     match session.tile_mut(tile).ok().and_then(|t| t.agent.as_mut()) {
-        Some(a) if a.attention && a.status != AgentStatus::Blocked => {
-            a.attention = false;
+        Some(a) if a.unread || (a.attention && a.status != AgentStatus::Blocked) => {
+            a.unread = false;
+            a.attention = a.status == AgentStatus::Blocked;
             true
         }
         _ => false,
     }
+}
+
+/// The user wants to come back to the tile: lights its attention as a
+/// finish nobody has read would, and keeps it lit through status changes
+/// until [`mark_seen`]. Only tiles with an agent can be marked. Returns
+/// whether anything changed, or `None` when the tile has no agent.
+pub fn mark_unread(session: &mut Session, tile: TileId) -> Option<bool> {
+    let a = session.tile_mut(tile).ok()?.agent.as_mut()?;
+    let changed = !(a.unread && a.attention);
+    a.unread = true;
+    a.attention = true;
+    Some(changed)
 }
 
 #[cfg(test)]
@@ -217,6 +237,49 @@ mod tests {
         set(s.tile_mut(id).unwrap(), AgentStatus::Done, 3);
         assert!(mark_seen(&mut s, id));
         assert!(!s.tile(id).unwrap().needs_attention());
+    }
+
+    #[test]
+    fn an_unread_mark_stays_through_status_changes_until_seen() {
+        let (mut s, id) = session();
+        set(s.tile_mut(id).unwrap(), AgentStatus::Working, 1);
+        assert_eq!(mark_unread(&mut s, id), Some(true));
+        assert_eq!(mark_unread(&mut s, id), Some(false));
+        let a = s.tile(id).unwrap().agent.clone().unwrap();
+        assert!(a.unread && a.attention && a.status == AgentStatus::Working);
+        // Blocked, back to work, finished, idle: still marked and lit.
+        for (status, at) in [
+            (AgentStatus::Blocked, 2),
+            (AgentStatus::Working, 3),
+            (AgentStatus::Done, 4),
+            (AgentStatus::Idle, 5),
+        ] {
+            set(s.tile_mut(id).unwrap(), status, at);
+            let a = s.tile(id).unwrap().agent.clone().unwrap();
+            assert!(a.unread && a.attention, "{status:?}");
+        }
+        // Reading it clears both.
+        assert!(mark_seen(&mut s, id));
+        let a = s.tile(id).unwrap().agent.clone().unwrap();
+        assert!(!a.unread && !a.attention);
+        assert!(!mark_seen(&mut s, id));
+    }
+
+    #[test]
+    fn reading_a_marked_blocked_agent_keeps_it_lit() {
+        let (mut s, id) = session();
+        set(s.tile_mut(id).unwrap(), AgentStatus::Blocked, 1);
+        assert_eq!(mark_unread(&mut s, id), Some(true));
+        assert!(mark_seen(&mut s, id));
+        let a = s.tile(id).unwrap().agent.clone().unwrap();
+        assert!(!a.unread && a.attention, "blocked still asks for a look");
+    }
+
+    #[test]
+    fn only_agent_tiles_can_be_marked_unread() {
+        let (mut s, id) = session();
+        assert_eq!(mark_unread(&mut s, id), None);
+        assert!(s.tile(id).unwrap().agent.is_none());
     }
 
     #[test]

@@ -74,6 +74,8 @@ import AppKit
 ///     dock-icon name         the Dock's icon image at 1024 → <out>/name.png;
 ///                            `expect dockicon dark` checks which one it is
 ///                            (`theme system dark` drives `app_icon = "auto"`)
+///                            unread marks and the Dock badge: `tile.unread`,
+///                            `unread.count`, `dock.badge` (`UnreadAutomation`)
 ///     quit                   finish (implied at the end)
 ///
 /// Writes `<out>/automation.log` (every step with the layout after it) and
@@ -743,6 +745,9 @@ final class Automation {
             // After the `theme.` source, so asking for it computes only it.
             Source(["theme.colors"]) { ThemeAutomation.colors() },
             Source(["workspace.names"], prefixes: ["menu."]) { MenuAutomation.state(app: app, controller: controller) },
+            Source(["tile.unread", "unread.count", "dock.badge", "dock.badge.setting", "menu.unread"]) {
+                UnreadAutomation.state(app: app, controller: controller)
+            },
             Source([
                 "hud.flashes", "hud.last", "prompt.asks", "prompt.last", "tab.statuses", "tab.overflow",
                 "tab.names", "tab.hint", "search.chord", "search.active", "palette.anchor",

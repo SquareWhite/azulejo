@@ -72,6 +72,8 @@ Agent state shows in the sidebar rows, the rail, the tab strip's status icons, �
 
 A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show no icon, so the title gets the whole strip.
 
+**Mark as Unread.** To come back to an agent tile later, right-click its header and choose Mark as Unread (or run "Mark tile as unread" from ⌘K, or bind `toggle_unread`). It then looks like a finish nobody has read: the checkmark in its header, the sidebar's and tab strip's markers, the footer's done count and the Dock badge. It stays unread while its tile stays focused, and whatever the agent does next; a working or blocked agent keeps its own icon in the header until it stops. Once focus has moved to another tile, tab or workspace, coming back to the tile for the same 0.75 s reads it. Switching apps or windows doesn't count as leaving it, and the mark survives a relaunch. Mark as Read (the same menu item and ⌘K command once it's unread) clears it straight away; a workspace row's menu has Mark All as Read. Plain shells (no agent) can't be marked.
+
 ```toml
 [appearance]
 tile_agent_badge = true    # the badge in every agent tile's header (default false)
@@ -93,6 +95,17 @@ app_icon = "auto"    # follows the system's light or dark appearance
 `auto` follows macOS's own appearance setting, not the theme's. It applies live when you save the config.
 
 The setting only reaches the Dock, and only while Azulejo runs: the app hands the Dock its icon at run time. Finder, Launchpad, Spotlight and the Dock before launch always show the bundle's light icon. An icon that switches there by itself needs an `Assets.car` compiled by Xcode, which the build doesn't use.
+
+## Dock badge
+
+The Dock icon shows how many agent tiles are unread, across every window and workspace: finishes nobody has read plus tiles marked unread. Blocked and working agents count only when they're marked unread. It's empty at 0, and stays on the Dock tile whichever `app_icon` is showing.
+
+```toml
+[appearance]
+dock_badge = true    # the default; false hides the count
+```
+
+It applies live when you save the config.
 
 ## Previews
 

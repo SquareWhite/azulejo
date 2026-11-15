@@ -22,6 +22,10 @@
         },
         "status": {
           "$ref": "#/$defs/AgentStatus"
+        },
+        "unread": {
+          "description": "The user marked the tile unread (`tile.mark_unread`) to come back to\nit. Keeps `attention` lit whatever the agent does next, until the\nuser reads it (`tile.seen`). Saved with the session, so it survives a\nrelaunch.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -614,10 +618,27 @@
           "type": "object"
         },
         {
-          "description": "The user has read the tile's agent's result: clears a finished\nagent's attention (the done mark) without moving focus. A blocked\nagent keeps its attention until its state changes. The macOS shell\nsends it once the tile has been focused, on screen, in the key window\nfor 0.75 s.",
+          "description": "The user has read the tile's agent's result: clears a finished\nagent's attention (the done mark) and an unread mark\n(`tile.mark_unread`) without moving focus. A blocked\nagent keeps its attention until its state changes. The macOS shell\nsends it once the tile has been focused, on screen, in the key window\nfor 0.75 s.",
           "properties": {
             "method": {
               "const": "tile.seen",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/TileTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user wants to come back to the tile: marks its agent unread, so\nthe tile shows the done mark (and counts as unread everywhere) until\n`tile.seen`, whatever the agent does in between. Tiles without an\nagent can't be marked (`invalid_state`).",
+          "properties": {
+            "method": {
+              "const": "tile.mark_unread",
               "type": "string"
             },
             "params": {
@@ -2142,7 +2163,7 @@
           "type": "object"
         },
         {
-          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, went back to work, or the user read its result\n(`tile.seen`) (F11). Also visible as `tile.agent.attention` on\n`tile.updated`.",
+          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, went back to work, the user read its result\n(`tile.seen`) or marked it unread (`tile.mark_unread`) (F11). Also\nvisible as `tile.agent.attention` on `tile.updated`.",
           "properties": {
             "data": {
               "properties": {
@@ -6154,6 +6175,7 @@
     "tile.close",
     "tile.focus",
     "tile.seen",
+    "tile.mark_unread",
     "tile.rename",
     "browser.open",
     "browser.state",

@@ -28,26 +28,26 @@ until header.agents working,none 2000
 shot 20-working
 
 # Blocked on a tile that isn't focused: the header's blocked icon, counts,
-# Dock badge.
+# no Dock badge (it counts unread tiles, not blocked ones).
 sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state blocked
 until agents blocked!,none 3000
 expect header.agents blocked,none
 expect sidebar.markers ●1
 expect tab.markers ●1
-expect dock 1
+expect dock none
 shot 21-blocked
 
-# Looking doesn't answer it: still blocked and lit (Dock badge stays).
+# Looking doesn't answer it: still blocked and lit.
 seen-visible on
 key alt+h
 expect focus 1
 wait 1200
 expect agents blocked!,none
 seen-visible off
-expect dock 1
+expect dock none
 expect sidebar.markers ●1
 
-# Back to work: no attention, no Dock badge.
+# Back to work: no attention.
 sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state working
 until agents working,none 3000
 expect dock none
@@ -60,6 +60,7 @@ sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --ag
 until tab.markers ●1 3000
 expect sidebar.markers ●1
 until header.agents done,none 2000
+expect dock 1
 shot 22-idle
 
 # Blocked on the focused tile: attention stays lit, on screen or not.

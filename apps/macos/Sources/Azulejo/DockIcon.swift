@@ -62,6 +62,9 @@ enum DockIcon {
         showingDark = dark
         // nil restores the bundle's icon, exactly as the Dock drew it at launch.
         NSApp.applicationIconImage = dark ? darkImage : nil
+        // The unread badge sits on the Dock tile, not the image: put it back
+        // in case the Dock dropped it with the old image.
+        AttentionTracker.applyBadge(force: true)
         log("dock icon: \(dark ? "dark" : "light")")
     }
 }

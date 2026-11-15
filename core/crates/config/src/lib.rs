@@ -49,6 +49,7 @@
 //! tile_agent_badge = false  # true: "● claude · working" in terminal tile headers
 //!                           # (off, a blocked tile still gets a yellow mark there)
 //! app_icon = "light"     # the Dock icon while running: "light", "dark" or "auto" (follows the system)
+//! dock_badge = true      # the number of unread agent tiles on the Dock icon
 //! [sidebar]
 //! collapsed = "rail"     # what toggle_sidebar collapses it to: "rail" (workspace numbers and
 //!                        # agent states down a narrow column) or "hidden"

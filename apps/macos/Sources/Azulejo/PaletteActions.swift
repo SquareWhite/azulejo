@@ -124,6 +124,15 @@ extension AppController {
                 item.enabled = false
                 item.note = "\(context) tiles"
             }
+            if id == "toggle_unread" {
+                // Says what it'll do to the focused tile; agent tiles only.
+                if let title = Self.unreadTitle(focused, menu: false) {
+                    item.title = title
+                } else if item.enabled {
+                    item.enabled = false
+                    item.note = "agent tiles"
+                }
+            }
             item.initialInput = initialInput(for: id, prompt: prompt, controller: controller)
             items.append(item)
         }

@@ -33,6 +33,10 @@ pub enum Action {
     CycleTileNext,
     CycleTilePrevious,
     RenameTile,
+    /// Marks the focused agent tile unread to come back to it, or read when
+    /// it's unread (`tile.mark_unread`, `tile.seen`). Shell-local: the shell
+    /// knows which applies.
+    ToggleUnread,
     // New tiles and layout rules
     Split(Direction),
     /// Tall layout: master left, stack right, new tiles append to the stack.
@@ -216,6 +220,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("cycle_tile_next", CycleTileNext),
         ("cycle_tile_previous", CycleTilePrevious),
         ("rename_tile", RenameTile),
+        ("toggle_unread", ToggleUnread),
         ("split_auto", SplitAuto),
         ("promote_tile", PromoteTile),
         ("rotate_layout", RotateLayout),
@@ -466,6 +471,7 @@ impl Action {
         use Action::*;
         let method = match self {
             ResizeMode
+            | ToggleUnread
             | QuickOpen
             | CommandPalette
             | Goto

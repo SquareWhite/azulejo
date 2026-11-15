@@ -498,6 +498,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             keys.enterResizeMode(in: controller)
         case "rename_tile", "rename_tab", "rename_workspace":
             rename(name, in: controller, target: target)
+        case "toggle_unread":
+            toggleUnread(target: target, in: controller)
         case "open_config":
             openConfig(in: controller)
         case "quick_open": openQuickOpen(in: controller)

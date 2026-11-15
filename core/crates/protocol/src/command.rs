@@ -110,12 +110,19 @@ pub enum Command {
     #[serde(rename = "tile.focus")]
     TileFocus(TileTarget),
     /// The user has read the tile's agent's result: clears a finished
-    /// agent's attention (the done mark) without moving focus. A blocked
+    /// agent's attention (the done mark) and an unread mark
+    /// (`tile.mark_unread`) without moving focus. A blocked
     /// agent keeps its attention until its state changes. The macOS shell
     /// sends it once the tile has been focused, on screen, in the key window
     /// for 0.75 s.
     #[serde(rename = "tile.seen")]
     TileSeen(TileTarget),
+    /// The user wants to come back to the tile: marks its agent unread, so
+    /// the tile shows the done mark (and counts as unread everywhere) until
+    /// `tile.seen`, whatever the agent does in between. Tiles without an
+    /// agent can't be marked (`invalid_state`).
+    #[serde(rename = "tile.mark_unread")]
+    TileMarkUnread(TileTarget),
     /// Sets or clears a tile's title.
     #[serde(rename = "tile.rename")]
     TileRename(TileRename),
@@ -350,6 +357,7 @@ pub const METHODS: &[&str] = &[
     "tile.close",
     "tile.focus",
     "tile.seen",
+    "tile.mark_unread",
     "tile.rename",
     "browser.open",
     "browser.state",

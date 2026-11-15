@@ -89,6 +89,7 @@ fn sample_commands() -> Vec<Command> {
         }),
         Command::TileFocus(TileTarget { tile: Some(tile) }),
         Command::TileSeen(TileTarget { tile: None }),
+        Command::TileMarkUnread(TileTarget { tile: Some(tile) }),
         Command::LayoutGet,
         Command::LayoutSplit(LayoutSplit {
             tile: None,

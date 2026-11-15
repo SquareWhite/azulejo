@@ -411,6 +411,17 @@ impl Engine {
                 agent::mark_seen(s, s.target(p.tile)?);
                 Reply::Ok
             }
+            Command::TileMarkUnread(p) => {
+                let id = s.target(p.tile)?;
+                if agent::mark_unread(s, id).is_none() {
+                    return Err(Error::new(
+                        ErrorCode::InvalidState,
+                        "only a tile with an agent can be marked unread",
+                    )
+                    .with_data(json!({ "tile": id })));
+                }
+                Reply::Ok
+            }
             Command::TileRename(p) => {
                 let id = s.target(p.tile)?;
                 s.tile_mut(id)?.title = p.title.filter(|t| !t.is_empty());

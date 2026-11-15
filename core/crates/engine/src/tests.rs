@@ -966,6 +966,7 @@ fn focus_alone_keeps_a_done_mark_and_tile_seen_clears_it() {
         status,
         since_ms: 1,
         attention: true,
+        unread: false,
     };
     engine.session.tile_mut(first).unwrap().agent = Some(finished(AgentStatus::Done));
     // Moving focus onto it (the shell decides whether anyone's looking), or
@@ -986,6 +987,38 @@ fn focus_alone_keeps_a_done_mark_and_tile_seen_clears_it() {
     let events = engine.handle(Command::TileSeen(TileTarget { tile: Some(first) }));
     assert!(engine.session().tile(first).unwrap().needs_attention());
     assert!(events.is_empty(), "{:?}", names(&events));
+}
+
+#[test]
+fn mark_unread_lights_an_agent_tile_until_seen() {
+    use azulejo_model::{AgentInfo, AgentStatus};
+    let mut engine = Engine::new();
+    let first = engine.session().focused_tile().unwrap();
+    // A plain shell has nothing to come back to.
+    let err = engine
+        .execute(Command::TileMarkUnread(TileTarget { tile: None }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidState);
+    engine.session.tile_mut(first).unwrap().agent = Some(AgentInfo {
+        name: Some("claude".into()),
+        status: AgentStatus::Idle,
+        since_ms: 1,
+        attention: false,
+        unread: false,
+    });
+    let events = engine.handle(Command::TileMarkUnread(TileTarget { tile: Some(first) }));
+    assert!(events.iter().any(|e| matches!(e,
+        Event::TileAttentionChanged { tile, attention: true, .. } if *tile == first)));
+    let agent = engine.session().tile(first).unwrap().agent.clone().unwrap();
+    assert!(agent.unread && agent.attention);
+    // Saved with the session: the mark comes back after a relaunch.
+    let json = serde_json::to_value(engine.session()).unwrap();
+    let back: azulejo_model::Session = serde_json::from_value(json).unwrap();
+    assert!(back.tile(first).unwrap().agent.as_ref().unwrap().unread);
+    // Reading it clears the mark.
+    engine.handle(Command::TileSeen(TileTarget { tile: None }));
+    let agent = engine.session().tile(first).unwrap().agent.clone().unwrap();
+    assert!(!agent.unread && !agent.attention);
 }
 
 // ----- dynamic layouts (ADR 0010) -----

@@ -114,8 +114,11 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "tab.list",
     "tile.list",
     "tile.get",
-    // Shells send it once the user has read a focused tile's finished agent.
+    // Shells send it once the user has read a focused tile's finished agent,
+    // and for Mark as Read.
     "tile.seen",
+    // The shell's `toggle_unread` action (menus, ⌘K) sends it.
+    "tile.mark_unread",
     "browser.state",
     "preview.get",
     // The files tile lists and watches folders as the user opens them.
@@ -265,6 +268,7 @@ pub(crate) fn title(action: Action) -> String {
         CycleTileNext => "Next tile".into(),
         CycleTilePrevious => "Previous tile".into(),
         RenameTile => "Rename tile…".into(),
+        ToggleUnread => "Mark tile as unread or read".into(),
         Split(d) => format!("Split {}", dir(d)),
         SplitAuto => "New tile in stack (tall)".into(),
         PromoteTile => "Promote tile to master".into(),
@@ -366,9 +370,8 @@ fn category(action: Action) -> &'static str {
     use Action::*;
     match action {
         FocusTile(_) | SwapTile(_) | MoveTile(_) | ResizeTile(_) | ResizeMode | ZoomTile
-        | CloseTile | KillTile | ClosePane | CycleTileNext | CycleTilePrevious | RenameTile => {
-            "tile"
-        }
+        | CloseTile | KillTile | ClosePane | CycleTileNext | CycleTilePrevious | RenameTile
+        | ToggleUnread => "tile",
         Split(_) | SplitAuto | PromoteTile | RotateLayout | EqualizeLayout | CycleLayoutNext
         | CycleLayoutPrevious | ToggleLayout(_) | IncreaseMasters | DecreaseMasters
         | GrowMasterArea | ShrinkMasterArea | MovePositionNext | MovePositionPrevious
@@ -417,6 +420,7 @@ fn needs_tile(action: Action) -> bool {
             | KillTile
             | ClosePane
             | RenameTile
+            | ToggleUnread
             | Split(_)
             | PromoteTile
             | MovePositionNext

@@ -152,6 +152,7 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `cycle_tile_next` | global | unbound | unbound | Next tile |
 | `cycle_tile_previous` | global | unbound | unbound | Previous tile |
 | `rename_tile` | global | unbound | unbound | Rename tile… |
+| `toggle_unread` | global | unbound | unbound | Mark tile as unread or read |
 | `split_auto` | global | `ctrl+cmd+t` | `ctrl+super+t` | New tile in stack (tall) |
 | `promote_tile` | global | `alt+enter` | `alt+enter` | Promote tile to master |
 | `rotate_layout` | global | `alt+o` | `alt+o` | Rotate layout clockwise |

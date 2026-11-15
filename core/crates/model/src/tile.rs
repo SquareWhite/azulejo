@@ -174,6 +174,12 @@ pub struct AgentInfo {
     /// read, so this, not `status`, is the "unseen" flag.
     #[serde(default, skip_serializing_if = "is_false")]
     pub attention: bool,
+    /// The user marked the tile unread (`tile.mark_unread`) to come back to
+    /// it. Keeps `attention` lit whatever the agent does next, until the
+    /// user reads it (`tile.seen`). Saved with the session, so it survives a
+    /// relaunch.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unread: bool,
 }
 
 /// What herdr reports about a terminal tile's pane (F28): enough to say what
@@ -435,6 +441,7 @@ mod header_tests {
             status: AgentStatus::Working,
             since_ms: 0,
             attention: false,
+            unread: false,
         });
         let h = t.compute_header(HOME);
         assert_eq!(

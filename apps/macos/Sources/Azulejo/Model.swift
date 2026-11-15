@@ -328,9 +328,17 @@ struct AgentModel: Decodable, Equatable {
     var status: Status
     var sinceMs: UInt64?
     var attention: Bool
+    /// The user marked the tile unread (`tile.mark_unread`) to come back to
+    /// it; `attention` stays lit with it until the user reads it.
+    var unread: Bool
+
+    /// An unread chat: a finish nobody has read, or a tile the user marked
+    /// unread. A blocked agent isn't unread unless it's marked (it waits for
+    /// an answer, not a read). The Dock badge counts these.
+    var isUnread: Bool { unread || (attention && status != .blocked) }
 
     enum CodingKeys: String, CodingKey {
-        case name, status, attention
+        case name, status, attention, unread
         case sinceMs = "since_ms"
     }
 
@@ -340,6 +348,7 @@ struct AgentModel: Decodable, Equatable {
         status = try c.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
         sinceMs = try c.decodeIfPresent(UInt64.self, forKey: .sinceMs)
         attention = try c.decodeIfPresent(Bool.self, forKey: .attention) ?? false
+        unread = try c.decodeIfPresent(Bool.self, forKey: .unread) ?? false
     }
 }
 

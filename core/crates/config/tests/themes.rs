@@ -442,6 +442,19 @@ fn appearance_section() {
         );
     }
 
+    // The Dock badge: on unless the config turns it off.
+    assert!(plain.appearance.dock_badge, "on by default");
+    let off = Config::from_toml("[appearance]\ndock_badge = false\n", None, MAC);
+    assert!(off.diagnostics.is_empty(), "{:?}", off.diagnostics);
+    assert!(!off.appearance.dock_badge);
+    let wrong = Config::from_toml("[appearance]\ndock_badge = \"no\"\n", None, MAC);
+    assert!(
+        messages(&wrong, Severity::Error)
+            .iter()
+            .any(|e| e.contains("`appearance.dock_badge` must be true or false"))
+    );
+    assert!(wrong.appearance.dock_badge, "a bad value keeps the default");
+
     // auto follows the system, with the atom pair by default.
     let auto = Config::from_toml("[appearance]\ntheme = \"auto\"\n", None, MAC);
     assert!(auto.appearance.is_auto());

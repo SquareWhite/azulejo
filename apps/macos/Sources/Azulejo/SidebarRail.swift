@@ -57,13 +57,13 @@ final class SidebarRailView: NSView, WorkspaceDragHost {
 
     // MARK: Model
 
-    /// One agent's icon, ranked as the sidebar ranks a workspace: blocked,
-    /// then finished and not read, then working, else idle (a read finish
-    /// is idle even while herdr still says `done`).
+    /// One agent's icon, as its tile's header shows it: blocked, then
+    /// working, then finished and not read (or marked unread), else idle (a
+    /// read finish is idle even while herdr still says `done`).
     static func status(_ agent: AgentModel) -> Design.Status {
         if agent.status == .blocked { return .blocked }
-        if agent.attention { return .done }
-        return agent.status == .working ? .working : .idle
+        if agent.status == .working { return .working }
+        return agent.attention ? .done : .idle
     }
 
     /// A machine's letter: "L" for Local, else its label's first letter.

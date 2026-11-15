@@ -572,6 +572,7 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
 /// `{"theme":"atom-one-dark"|"auto","theme_light":…,"theme_dark":…,
 /// "terminal_colors":"theme"|"ghostty","terminal_colors_set":false,
 /// "ghostty_sets_colors":false,"tile_agent_badge":false,"app_icon":"light"|"dark"|"auto",
+/// "dock_badge":true,
 /// "themes":[{"id","name","appearance",
 /// "syntax","sidebar_material","builtin","path","inherits","colors":{token:
 /// "#rrggbb[aa]" | {"system","alpha"?,"hex"}},"terminal":{"background",…,
@@ -599,6 +600,7 @@ pub unsafe extern "C" fn azj_core_theme(core: *const AzjCore) -> *mut c_char {
         "ghostty_sets_colors": ghostty.sets_colors(),
         "tile_agent_badge": a.tile_agent_badge,
         "app_icon": a.app_icon.name(),
+        "dock_badge": a.dock_badge,
         "themes": config.themes.iter().map(|t| t.to_json()).collect::<Vec<_>>(),
     }))
 }
@@ -1000,6 +1002,7 @@ mod tests {
             assert_eq!(theme["terminal_colors_set"], false);
             assert_eq!(theme["tile_agent_badge"], false, "off by default");
             assert_eq!(theme["app_icon"], "light", "the light Dock icon by default");
+            assert_eq!(theme["dock_badge"], true, "the Dock badge on by default");
             let themes = theme["themes"].as_array().unwrap();
             assert_eq!(themes.len(), 4);
             assert_eq!(themes[0]["colors"]["window"], "#1b1d23");

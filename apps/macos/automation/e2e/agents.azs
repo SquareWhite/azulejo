@@ -28,7 +28,8 @@ until agents blocked!,working,idle,none 1000
 until tab.statuses blocked 1000
 until sidebar.statuses blocked 1000
 until sidebar.footer working=0,blocked=1,idle=0,done=0 1000
-until dock 1 1000
+# The Dock badge counts unread agent tiles, not blocked ones.
+expect dock none
 until tab.markers ●1 1000
 until sidebar.markers ●1 1000
 # Tile headers: working and blocked tiles show their status icon alone, no
@@ -51,7 +52,7 @@ key alt+w
 key alt+w
 until tiles 4 3000
 until agents blocked!,working,blocked!,none 2000
-expect dock 2
+expect dock none
 # --- looking doesn't answer a blocked agent (F11) ---
 # The window counts as in front from here (automation runs it behind).
 seen-visible on
@@ -86,6 +87,7 @@ expect sidebar.statuses done
 expect sidebar.footer working=0,blocked=0,idle=0,done=1
 expect tab.markers ●1
 expect sidebar.markers ●1
+expect dock 1
 expect header.agents none,done,none,none
 shot 02-done-unread
 # Reading it: focus tile 2 (through tile 3), hold for the dwell.
@@ -99,6 +101,7 @@ expect sidebar.statuses idle
 expect sidebar.footer working=0,blocked=0,idle=1,done=0
 expect tab.markers -
 expect sidebar.markers -
+expect dock none
 expect header.agents none,none,none,none
 # A new run that finishes while the user is already looking: the mark
 # shows, then clears after the dwell.

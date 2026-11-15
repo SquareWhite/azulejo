@@ -106,6 +106,13 @@ enum ContextMenus {
             app.send(["method": "workspace.focus", "params": ["workspace": id]])
             app.perform(action: "new_tab", target: target, in: controller)
         })
+        // Its unread agent tiles (finished, or marked unread), all at once.
+        if ws.tabs.flatMap(\.tiles).contains(where: { $0.agent?.isUnread == true }) {
+            menu.addItem(ContextMenuItem("Mark All as Read") { [weak controller] in
+                guard let controller else { return }
+                app.markAllRead(workspace: id, in: controller)
+            })
+        }
         if let folder {
             menu.addItem(.separator())
             if local {
@@ -231,6 +238,10 @@ enum ContextMenus {
         zoom.state = tab.zoomed == id ? .on : .off
         items.append(zoom)
         items.append(action("Rename…", "rename_tile", target, chords, controller))
+        // Agent tiles only: come back to it later, or drop the mark.
+        if let unread = AppController.unreadTitle(tile, menu: true) {
+            items.append(action(unread, "toggle_unread", target, chords, controller))
+        }
 
         items.append(.separator())
         let title = (tile.header?.title).flatMap { $0.isEmpty ? nil : $0 } ?? AppController.tileTitle(tile)

@@ -1,0 +1,215 @@
+# Mark as unread and the Dock badge (unread.sh). Two agent terminals in
+# workspace "alpha", one in "bravo"; herdr's agent states are faked with
+# `pane report-agent`. Folders are fixtures (@FX@, filled in by unread.sh).
+#
+# The rule: a tile marked unread looks like a finish nobody has read (done
+# mark in the header unless it's working or blocked, sidebar and tab
+# markers, footer, Dock badge). It stays while its tile stays focused, and
+# through any status change; once focus has moved to another tile, tab or
+# workspace, coming back to it for the read dwell (0.75 s, the window in
+# front) reads it.
+
+log unread
+delivery direct
+seen-visible off
+window-size 1100 640
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"alpha"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/alpha"}}
+key ctrl+cmd+t
+until tiles 2 3000
+wait 1500
+sh for p in {pane:1} {pane:2}; do {herdr} --session {session} pane run $p "cd @FX@/alpha; exec env PS1='$ ' /bin/sh"; done
+wait 500
+sh for p in {pane:1} {pane:2}; do {herdr} --session {session} pane run $p clear; done
+# Warm up herdr's agent subscriptions (they open once each tile is bound).
+sh for p in {pane:1} {pane:2}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state idle; done
+wait 400
+sh for p in {pane:1} {pane:2}; do {herdr} --session {session} pane report-agent $p --source e2e --agent claude --state idle; done
+until agents idle,idle 5000
+expect focus 2
+expect tile.unread read,read
+expect dock.badge none
+expect dock.badge.setting on
+expect header.agents none,none
+
+log === the header's menu: Mark as Unread on an agent tile
+menu tile
+expect menu.unread Mark as Unread
+menu shot 01-menu-mark-unread
+menu tile invoke Mark as Unread
+until tile.unread read,marked 1000
+# Looks like an unread finish everywhere.
+expect header.agents none,done
+expect agents idle,idle!
+expect sidebar.statuses done
+expect sidebar.footer working=0,blocked=0,idle=0,done=1
+expect tab.markers ●1
+expect sidebar.markers ●1
+expect unread.count 1
+until dock.badge 1 1000
+# It stays while its tile stays focused, the window in front.
+seen-visible on
+wait 1500
+expect tile.unread read,marked
+expect header.agents none,done
+shot 02-header-marked
+menu tile
+expect menu.unread Mark as Read
+menu shot 03-menu-mark-read
+seen-visible off
+
+log === coming back to it reads it, after the dwell
+key alt+h
+expect focus 1
+wait 200
+key alt+l
+expect focus 2
+wait 200
+key alt+h
+expect focus 1
+seen-visible on
+wait 1200
+expect tile.unread read,marked
+key alt+l
+expect focus 2
+wait 300
+expect tile.unread read,marked
+until tile.unread read,read 2000
+expect dock.badge none
+expect header.agents none,none
+expect sidebar.footer working=0,blocked=0,idle=1,done=0
+seen-visible off
+
+log === ⌘K: Mark tile as unread / read on the focused tile
+palette open >
+palette type mark tile as
+expect palette.top Mark tile as unread
+palette key enter
+until tile.unread read,marked 1000
+expect palette closed
+expect dock.badge 1
+palette open >
+palette type mark tile as
+expect palette.top Mark tile as read
+palette key enter
+until tile.unread read,read 1000
+expect dock.badge none
+
+log === Mark as Read from the menu
+menu tile invoke Mark as Unread
+until tile.unread read,marked 1000
+menu tile invoke Mark as Read
+until tile.unread read,read 1000
+
+log === a plain shell gets no mark
+key ctrl+cmd+t
+until tiles 3 3000
+wait 1000
+expect focus 3
+expect tile.unread read,read,none
+menu tile
+expect menu.unread none
+action toggle_unread
+expect hud.last Only agent tiles can be marked unread
+expect tile.unread read,read,none
+palette open >
+palette type mark tile as
+expect palette.top Mark tile as unread or read
+palette close
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 2 3000
+
+log === working and blocked agents: the mark survives, their icons lead
+key alt+h
+expect focus 1
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
+until agents working,idle 1000
+action toggle_unread
+until tile.unread marked,read 1000
+expect header.agents working,none
+expect dock.badge 1
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state blocked
+until agents blocked!,idle 1000
+expect header.agents blocked,none
+expect tile.unread marked,read
+expect dock.badge 1
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
+until agents working!,idle 1000
+expect tile.unread marked,read
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state idle
+until agents idle!,idle 1000
+expect header.agents done,none
+expect tile.unread marked,read
+expect dock.badge 1
+# A blocked agent nobody marked doesn't count on the Dock.
+sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent claude --state blocked
+until agents idle!,blocked! 1000
+expect tile.unread marked,read
+expect dock.badge 1
+# Quiet it (herdr keeps it as unknown): nothing unread there.
+sh {herdr} --session {session} pane release-agent {pane:2} --source e2e --agent claude
+until agents idle!,unknown 2000
+
+log === the Dock badge counts across workspaces
+action new_workspace
+until workspaces 2 5000
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"bravo"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/bravo"}}
+wait 1000
+sh {herdr} --session {session} pane run {pane:1} "cd @FX@/bravo; exec env PS1='$ ' /bin/sh"
+wait 500
+sh {herdr} --session {session} pane run {pane:1} clear
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent codex --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent codex --state working
+until agents working 5000
+# A finish nobody has read counts too.
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent codex --state idle
+until agents done! 2000
+expect tile.unread unread
+expect unread.count 2
+until dock.badge 2 1000
+expect sidebar.markers ●1|●1
+
+log === app_icon switches keep the badge
+sh cp {config} {config}.unread
+sh printf '\n[appearance]\napp_icon = "dark"\n' >> {config}
+until dockicon dark 4000
+expect dock.badge 2
+sh sed -i '' 's/^app_icon = .*/app_icon = "light"/' {config}
+until dockicon light 4000
+expect dock.badge 2
+
+log === dock_badge = false hides it; true brings it back
+sh printf 'dock_badge = false\n' >> {config}
+until dock.badge.setting off 4000
+expect dock.badge none
+expect unread.count 2
+sh sed -i '' 's/^dock_badge = .*/dock_badge = true/' {config}
+until dock.badge.setting on 4000
+expect dock.badge 2
+sh mv {config}.unread {config}
+wait 1000
+expect dock.badge.setting on
+expect dockicon light
+
+log === Mark All as Read on the workspace rows: the badge empties at 0
+menu workspace 2 invoke Mark All as Read
+until unread.count 1 1000
+expect dock.badge 1
+menu workspace 1 invoke Mark All as Read
+until unread.count 0 1000
+expect dock.badge none
+expect sidebar.markers -|-
+
+log === leave one mark for the relaunch, on the focused tile of alpha
+key cmd+1
+until workspace.active alpha 2000
+expect focus 1
+core {"method":"tile.mark_unread"}
+until unread.count 1 1000
+until dock.badge 1 1000
+wait 600
+shot 04-end
