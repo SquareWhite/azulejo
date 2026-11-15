@@ -435,6 +435,13 @@ pub enum Internal {
         machine: Machine,
         layout: Box<herdr::TabLayout>,
     },
+    /// A push found herdr's tab arranged otherwise, and no Azulejo op asked
+    /// to change it: the tab follows herdr's tree (ADR 0012, amendment).
+    MirrorFollow {
+        machine: Machine,
+        tab: azulejo_model::TabId,
+        layout: Box<herdr::TabLayout>,
+    },
 }
 
 impl Engine {
@@ -581,6 +588,18 @@ impl Engine {
             Internal::MirrorPulled { machine, layout } => {
                 let before = self.session.clone();
                 if !crate::mirror::absorb(&mut self.session, &machine, &layout) {
+                    return Vec::new();
+                }
+                debug_assert_eq!(self.session.check_invariants(), Ok(()));
+                self.changes_since(&before)
+            }
+            Internal::MirrorFollow {
+                machine,
+                tab,
+                layout,
+            } => {
+                let before = self.session.clone();
+                if !crate::mirror::follow(&mut self.session, &machine, tab, &layout) {
                     return Vec::new();
                 }
                 debug_assert_eq!(self.session.check_invariants(), Ok(()));

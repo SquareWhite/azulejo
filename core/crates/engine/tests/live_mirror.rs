@@ -1113,3 +1113,373 @@ fn rotating_a_tile_tab_four_times_is_followed_in_herdr() {
     assert_eq!(herdr.terminals(), terms, "nothing killed");
     core.shutdown();
 }
+
+// ---- bursts of splits made in herdr (the adopted-grid bug) -----------------
+
+/// A tab built in herdr: splits of earlier panes, by index (the workspace's
+/// first pane is 0, each split adds the next), as a person or an agent makes
+/// them in the TUI or the CLI.
+struct Recipe {
+    name: &'static str,
+    splits: &'static [(usize, SplitDirection)],
+}
+
+const RECIPES: &[Recipe] = &[
+    // herdr-grid.sh: right, then down in each column.
+    Recipe {
+        name: "2×2 grid",
+        splits: &[
+            (0, SplitDirection::Right),
+            (0, SplitDirection::Down),
+            (1, SplitDirection::Down),
+        ],
+    },
+    Recipe {
+        name: "three columns",
+        splits: &[(0, SplitDirection::Right), (1, SplitDirection::Right)],
+    },
+    Recipe {
+        name: "nested",
+        splits: &[
+            (0, SplitDirection::Right),
+            (1, SplitDirection::Down),
+            (2, SplitDirection::Right),
+            (0, SplitDirection::Down),
+        ],
+    },
+];
+
+/// The tree herdr makes from `recipe` over `panes`: each split puts the new
+/// pane second, at ½.
+fn recipe_tree(recipe: &Recipe, panes: &[String]) -> LayoutNode {
+    fn split_leaf(node: &mut LayoutNode, target: &str, dir: SplitDirection, new: &str) -> bool {
+        match node {
+            LayoutNode::Pane { pane_id } if pane_id.as_ref().is_some_and(|p| p.0 == target) => {
+                let leaf = node.clone();
+                *node = LayoutNode::split(dir, 0.5, leaf, LayoutNode::pane(new));
+                true
+            }
+            LayoutNode::Pane { .. } => false,
+            LayoutNode::Split { first, second, .. } => {
+                split_leaf(first, target, dir, new) || split_leaf(second, target, dir, new)
+            }
+        }
+    }
+    let mut root = LayoutNode::pane(panes[0].as_str());
+    for (i, (target, dir)) in recipe.splits.iter().enumerate() {
+        assert!(split_leaf(&mut root, &panes[*target], *dir, &panes[i + 1]));
+    }
+    root
+}
+
+/// The same tree: shape, panes, and ratios within 0.02 (herdr lays out
+/// whole cells; Azulejo keeps what it adopted).
+fn same_tree(a: &LayoutNode, b: &LayoutNode) -> bool {
+    azulejo_herdr::same_tree(a, b, 0.02)
+}
+
+fn pane_of_opt(s: &Session, tile: TileId) -> Option<HerdrRef> {
+    terminals(s)
+        .into_iter()
+        .find(|(t, _)| *t == tile)
+        .and_then(|(_, h)| h)
+}
+
+/// Azulejo's tree for a tab, in herdr pane IDs (terminals only).
+fn in_panes(s: &Session, node: &Node) -> Option<LayoutNode> {
+    Some(match node {
+        Node::Leaf { id } => LayoutNode::pane(pane_of_opt(s, *id)?.pane_id.as_str()),
+        Node::Split { axis, ratio, a, b } => LayoutNode::split(
+            match axis {
+                Axis::Horizontal => SplitDirection::Right,
+                Axis::Vertical => SplitDirection::Down,
+            },
+            *ratio,
+            in_panes(s, a)?,
+            in_panes(s, b)?,
+        ),
+    })
+}
+
+/// The Azulejo tab showing `pane`, and the pane's herdr ref there.
+fn tab_showing(s: &Session, pane: &str) -> Option<(azulejo_model::Tab, HerdrRef)> {
+    s.windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .flat_map(|w| &w.tabs)
+        .find_map(|t| {
+            t.tiles.iter().find_map(|tile| match &tile.content {
+                TileContent::Terminal {
+                    herdr: Some(h),
+                    ended: false,
+                    ..
+                } if h.pane_id == pane => Some((t.clone(), h.clone())),
+                _ => None,
+            })
+        })
+}
+
+/// Makes `recipe` in a new herdr workspace as fast as herdr takes it, through
+/// the API (`cli` false) or the CLI (≈ 95 ms a call, like herdr-grid.sh
+/// without its pauses). Returns the panes in recipe order.
+fn build_burst(herdr: &TempHerdr, recipe: &Recipe, label: &str, cli: bool) -> Vec<String> {
+    herdr.assert_throwaway();
+    let mut panes = Vec::new();
+    if cli {
+        let out = herdr.cli(&["workspace", "create", "--label", label]);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        panes.push(
+            v["result"]["root_pane"]["pane_id"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        );
+        for (target, dir) in recipe.splits {
+            let d = match dir {
+                SplitDirection::Right => "right",
+                SplitDirection::Down => "down",
+            };
+            let out = herdr.cli(&["pane", "split", &panes[*target], "--direction", d]);
+            let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+            panes.push(v["result"]["pane"]["pane_id"].as_str().unwrap().to_owned());
+        }
+    } else {
+        let (_, root) = herdr
+            .rt
+            .block_on(
+                herdr
+                    .client
+                    .create_workspace(&azulejo_herdr::WorkspaceSpec {
+                        label: Some(label.into()),
+                        cwd: None,
+                        env: Vec::new(),
+                    }),
+            )
+            .unwrap();
+        panes.push(root.pane_id.0.clone());
+        for (target, dir) in recipe.splits {
+            let made = herdr
+                .rt
+                .block_on(herdr.client.split_terminal(&azulejo_herdr::SplitSpec {
+                    target: PaneId(panes[*target].clone()),
+                    direction: *dir,
+                    ratio: None,
+                    cwd: None,
+                    env: Vec::new(),
+                }))
+                .unwrap();
+            panes.push(made.pane_id.0);
+        }
+    }
+    panes
+}
+
+/// Keeps the core busy while herdr changes: commands back to back from
+/// three threads (each diffs and publishes the session) and a pane whose
+/// title changes every few milliseconds (a `pane_updated` stream).
+struct Load {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    threads: Vec<std::thread::JoinHandle<()>>,
+    ticker: Option<String>,
+}
+
+impl Load {
+    fn start(herdr: &TempHerdr, core: &Arc<Core>) -> Load {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut threads = Vec::new();
+        for _ in 0..3 {
+            let (core, stop) = (core.clone(), stop.clone());
+            threads.push(std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = core.execute(Command::TileFocus(TileTarget { tile: None }));
+                    let _ = core.session();
+                }
+            }));
+        }
+        let s = core.session().unwrap();
+        let ticker = terminals(&s)
+            .into_iter()
+            .find_map(|(_, h)| h)
+            .map(|h| h.pane_id);
+        if let Some(pane) = &ticker {
+            herdr.cli(&[
+                "pane",
+                "run",
+                pane,
+                "sh -c 'i=0; while true; do i=$((i+1)); printf \"\\033]0;t%s\\007\" $i; sleep 0.005; done'",
+            ]);
+        }
+        Load {
+            stop,
+            threads,
+            ticker,
+        }
+    }
+
+    fn stop(&mut self, herdr: &TempHerdr) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        for t in self.threads.drain(..) {
+            let _ = t.join();
+        }
+        if let Some(pane) = self.ticker.take() {
+            let _ = herdr
+                .rt
+                .block_on(herdr.client.send_keys(&PaneId(pane), &["ctrl+c"]));
+        }
+    }
+}
+
+/// One round: `recipe` made in a burst, then checked once both sides have
+/// settled. The adopted tab must have herdr's tree, and herdr must still
+/// have the tree it was built with (no push rewrote it).
+fn burst_round(
+    herdr: &TempHerdr,
+    core: &Core,
+    recipe: &Recipe,
+    round: usize,
+    cli: bool,
+) -> Result<(), String> {
+    let panes = build_burst(herdr, recipe, &format!("burst-{round}"), cli);
+    let want = recipe_tree(recipe, &panes);
+    // Every pane adopted, all in one tab.
+    let adopted = wait("the burst adopted", Duration::from_secs(15), || {
+        let s = core.session().ok()?;
+        let (t, _) = tab_showing(&s, &panes[0])?;
+        panes
+            .iter()
+            .all(|p| tab_showing(&s, p).is_some_and(|(o, _)| o.id == t.id))
+            .then_some(t.id)
+    });
+    // Settled: both sides unchanged for 600 ms (4 s at most).
+    let mut last: Option<(Option<LayoutNode>, LayoutNode)> = None;
+    let mut stable_since = Instant::now();
+    let deadline = Instant::now() + Duration::from_secs(4);
+    let (ours, theirs) = loop {
+        std::thread::sleep(Duration::from_millis(50));
+        let s = core.session().unwrap();
+        let (tab, first) = tab_showing(&s, &panes[0]).expect("still adopted");
+        let ours = (tab.id == adopted)
+            .then(|| in_panes(&s, &tab.root))
+            .flatten();
+        let theirs = herdr.export(&first.tab_id).root;
+        let now = (ours, theirs);
+        if last.as_ref() != Some(&now) {
+            last = Some(now);
+            stable_since = Instant::now();
+        } else if stable_since.elapsed() >= Duration::from_millis(600) || Instant::now() > deadline
+        {
+            break now;
+        }
+    };
+    let mut wrong = Vec::new();
+    if !ours.as_ref().is_some_and(|o| same_tree(o, &want)) {
+        wrong.push(format!("adopted as {ours:?}"));
+    }
+    if !same_tree(&theirs, &want) {
+        wrong.push(format!("herdr rewritten to {theirs:?}"));
+    }
+    // Done with it: close the workspace in herdr, and the tiles go.
+    let s = core.session().unwrap();
+    let ws = s
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .find(|w| w.tabs.iter().any(|t| t.id == adopted))
+        .and_then(|w| w.herdr_workspace.clone());
+    if let Some(ws) = ws {
+        let _ = herdr.rt.block_on(
+            herdr
+                .client
+                .close_workspace(&azulejo_herdr::WorkspaceId(ws)),
+        );
+    }
+    wait_session(core, "the burst's tiles gone", |s| {
+        tab_showing(s, &panes[0]).is_none()
+    });
+    if wrong.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} ({}): want {want:?}; {}",
+            recipe.name,
+            if cli { "cli" } else { "api" },
+            wrong.join("; ")
+        ))
+    }
+}
+
+/// Rounds per recipe (`AZJ_BURST_ROUNDS`, default 20: 60 bursts a test).
+fn burst_rounds() -> usize {
+    std::env::var("AZJ_BURST_ROUNDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20)
+}
+
+fn burst_loop(load: bool, cli: bool) {
+    let herdr = TempHerdr::start();
+    let dir = tempfile::tempdir().unwrap();
+    let core = Arc::new(core(
+        &herdr,
+        &dir.path().join("state.json"),
+        LayoutKind::Manual,
+    ));
+    wait_session(&core, "first pane", |s| all_bound(s, 1));
+    let mut busy = load.then(|| Load::start(&herdr, &core));
+    let mut failures = Vec::new();
+    let mut total = 0;
+    for _ in 0..burst_rounds() {
+        for recipe in RECIPES {
+            total += 1;
+            if let Err(e) = burst_round(&herdr, &core, recipe, total, cli) {
+                eprintln!("burst {total}: {e}");
+                failures.push(e);
+            }
+        }
+    }
+    if let Some(busy) = busy.as_mut() {
+        busy.stop(&herdr);
+    }
+    drop(busy);
+    eprintln!(
+        "bursts ({}, {}): {} of {total} wrong",
+        if load { "under load" } else { "idle" },
+        if cli { "cli" } else { "api" },
+        failures.len()
+    );
+    match Arc::try_unwrap(core) {
+        Ok(core) => core.shutdown(),
+        Err(_) => panic!("the load threads still hold the core"),
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {total} bursts wrong:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// A grid, three columns and a nested tree split in herdr in a burst (no
+/// pauses) are adopted in herdr's shape, and herdr keeps it: the mirror
+/// never rewrites a tree made in herdr (ADR 0012, "herdr's structure").
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn bursts_of_splits_in_herdr_keep_herdrs_shape() {
+    burst_loop(false, false);
+}
+
+/// The same while the core is busy: commands back to back and a pane
+/// retitling itself every few milliseconds.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn bursts_of_splits_in_herdr_keep_herdrs_shape_under_load() {
+    burst_loop(true, false);
+}
+
+/// The same through herdr's CLI under load: a call every ≈ 95 ms, so
+/// surveys and pushes land mid-burst.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn cli_bursts_of_splits_in_herdr_keep_herdrs_shape_under_load() {
+    burst_loop(true, true);
+}

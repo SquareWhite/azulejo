@@ -470,9 +470,10 @@ fn zoom_and_odd_ratios_carry_over_safely() {
 }
 
 #[test]
-fn a_layout_that_disagrees_with_the_panes_falls_back() {
+fn a_layout_naming_a_pane_the_snapshot_lacks_is_taken_without_it() {
     let mut s = fixture();
-    // herdr's tree names a pane the snapshot doesn't have.
+    // herdr's tree names a pane the snapshot doesn't have: the tree without
+    // it, (p1 | (p2 / p3)) less p3.
     s.panes.retain(|p| p.pane_id.as_str() != "w1:p3");
     let mut engine = Engine::new();
     survey(&mut engine, &s);
@@ -642,4 +643,186 @@ fn a_survey_older_than_a_close_in_herdr_doesnt_bring_the_pane_back() {
     let later = crate::agent::now_ms() + 60_000;
     engine.apply_internal(Internal::Surveyed(None, Box::new(stale), later));
     assert!(tile_of_pane(engine.session(), "w1:p4").is_some());
+}
+
+// ---- bursts of splits made in herdr ----------------------------------------
+
+pub(crate) fn hp(id: &str) -> herdr::LayoutNode {
+    herdr::LayoutNode::pane(id)
+}
+
+pub(crate) fn hright(a: herdr::LayoutNode, b: herdr::LayoutNode) -> herdr::LayoutNode {
+    herdr::LayoutNode::split(herdr::SplitDirection::Right, 0.5, a, b)
+}
+
+pub(crate) fn hdown(a: herdr::LayoutNode, b: herdr::LayoutNode) -> herdr::LayoutNode {
+    herdr::LayoutNode::split(herdr::SplitDirection::Down, 0.5, a, b)
+}
+
+/// herdr running one workspace, `w9`, with one tab, `w9:t1`, holding
+/// `panes`, laid out as `root` (`layout.export`, read after the snapshot,
+/// may already hold panes the snapshot doesn't).
+pub(crate) fn one_tab(panes: &[&str], root: &herdr::LayoutNode) -> herdr::Survey {
+    herdr::Survey {
+        workspaces: vec![
+            serde_json::from_value(json!({
+                "workspace_id": "w9", "number": 1, "label": "burst", "active_tab_id": "w9:t1"
+            }))
+            .unwrap(),
+        ],
+        tabs: vec![
+            serde_json::from_value(json!({
+                "tab_id": "w9:t1", "workspace_id": "w9", "number": 1
+            }))
+            .unwrap(),
+        ],
+        panes: panes
+            .iter()
+            .map(|id| {
+                serde_json::from_value(json!({
+                    "pane_id": id,
+                    "terminal_id": format!("term_{}", id.replace(':', "_")),
+                    "workspace_id": "w9",
+                    "tab_id": "w9:t1",
+                }))
+                .unwrap()
+            })
+            .collect(),
+        // herdr exports a tree only for tabs with more than one pane.
+        layouts: (root.panes().len() > 1)
+            .then(|| herdr::TabLayout {
+                workspace_id: "w9".into(),
+                tab_id: "w9:t1".into(),
+                zoomed: false,
+                focused_pane_id: root.first_pane().cloned(),
+                root: root.clone(),
+            })
+            .into_iter()
+            .collect(),
+        focused_workspace_id: Some("w9".into()),
+    }
+}
+
+/// herdr's tree in [`shape`]'s notation.
+fn herdr_shape(node: &herdr::LayoutNode) -> String {
+    match node {
+        herdr::LayoutNode::Pane { pane_id } => pane_id.as_ref().unwrap().0.clone(),
+        herdr::LayoutNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => format!(
+            "({} {} {:.2} {})",
+            herdr_shape(first),
+            match direction {
+                herdr::SplitDirection::Right => "|",
+                herdr::SplitDirection::Down => "/",
+            },
+            ratio,
+            herdr_shape(second)
+        ),
+    }
+}
+
+/// herdr's tree after each split of a burst: (panes so far, tree).
+fn stages(splits: &[(usize, herdr::SplitDirection)]) -> Vec<(Vec<String>, herdr::LayoutNode)> {
+    fn split_leaf(node: &mut herdr::LayoutNode, target: &str, d: herdr::SplitDirection, new: &str) {
+        match node {
+            herdr::LayoutNode::Pane { pane_id } if pane_id.as_ref().unwrap().as_str() == target => {
+                *node = herdr::LayoutNode::split(d, 0.5, node.clone(), hp(new));
+            }
+            herdr::LayoutNode::Pane { .. } => {}
+            herdr::LayoutNode::Split { first, second, .. } => {
+                split_leaf(first, target, d, new);
+                split_leaf(second, target, d, new);
+            }
+        }
+    }
+    let mut panes = vec!["w9:p1".to_string()];
+    let mut root = hp("w9:p1");
+    let mut out = vec![(panes.clone(), root.clone())];
+    for (i, (target, d)) in splits.iter().enumerate() {
+        let new = format!("w9:p{}", i + 2);
+        split_leaf(&mut root, &panes[*target], *d, &new);
+        panes.push(new);
+        out.push((panes.clone(), root.clone()));
+    }
+    out
+}
+
+fn adopted_shape(engine: &Engine) -> String {
+    let s = engine.session();
+    let tab = s
+        .windows
+        .iter()
+        .flat_map(|w| &w.workspaces)
+        .find(|w| w.herdr_workspace.as_deref() == Some("w9"))
+        .map(|w| &w.tabs[0])
+        .expect("adopted");
+    shape(s, &tab.root)
+}
+
+/// A burst of splits (herdr-grid.sh without its pauses, a script, an agent)
+/// reaches a busy core's surveys half made: one survey sees the first pane
+/// alone, the next all of them. Placing each pane beside its sibling can't
+/// work then (two new siblings know nobody here); the tab still ends with
+/// herdr's tree, whichever stages the surveys caught. It once came in as
+/// "master on top over three across", and the mirror pushed that back.
+#[test]
+fn a_burst_seen_half_made_still_ends_in_herdrs_tree() {
+    use herdr::SplitDirection::{Down, Right};
+    let recipes: [&[(usize, herdr::SplitDirection)]; 3] = [
+        // 2×2 grid: right, then down in each column.
+        &[(0, Right), (0, Down), (1, Down)],
+        // Three columns.
+        &[(0, Right), (1, Right)],
+        // Nested.
+        &[(0, Right), (1, Down), (2, Right), (0, Down)],
+    ];
+    for splits in recipes {
+        let stages = stages(splits);
+        let last = stages.len() - 1;
+        // Every set of in-between stages the surveys could have caught.
+        for mask in 0..(1u32 << last) {
+            let mut engine = Engine::new();
+            let caught: Vec<usize> = (0..last)
+                .filter(|i| mask & (1 << i) != 0)
+                .chain([last])
+                .collect();
+            for &i in &caught {
+                let (panes, root) = &stages[i];
+                let panes: Vec<&str> = panes.iter().map(String::as_str).collect();
+                survey(&mut engine, &one_tab(&panes, root));
+                assert_eq!(engine.session().check_invariants(), Ok(()));
+            }
+            assert_eq!(
+                adopted_shape(&engine),
+                herdr_shape(&stages[last].1),
+                "stages {caught:?} of {splits:?}"
+            );
+        }
+    }
+}
+
+/// `layout.export` is read after the snapshot: a pane split off in between
+/// is in the tree but not in the panes. The tab takes herdr's tree without
+/// it, and the next survey brings it in, in place.
+#[test]
+fn a_tree_newer_than_the_snapshot_is_taken_without_the_newer_pane() {
+    let grid = hright(
+        hdown(hp("w9:p1"), hp("w9:p3")),
+        hdown(hp("w9:p2"), hp("w9:p4")),
+    );
+    let mut engine = Engine::new();
+    survey(&mut engine, &one_tab(&["w9:p1", "w9:p2", "w9:p3"], &grid));
+    assert_eq!(
+        adopted_shape(&engine),
+        "((w9:p1 / 0.50 w9:p3) | 0.50 w9:p2)"
+    );
+    survey(
+        &mut engine,
+        &one_tab(&["w9:p1", "w9:p2", "w9:p3", "w9:p4"], &grid),
+    );
+    assert_eq!(adopted_shape(&engine), herdr_shape(&grid));
 }

@@ -16,6 +16,15 @@
 //! own when they're known to belong elsewhere; an unknown one (split off in
 //! the TUI a moment ago) makes the push wait, since the core is about to
 //! adopt it.
+//!
+//! **herdr's own arrangement is never rewritten unasked** (ADR 0012,
+//! amendment "Only Azulejo changes herdr's structure"). Unless the target
+//! says [`MirrorTarget::restructure`], the push first compares the tab with
+//! the target over the panes both hold. If they sit in another shape or
+//! order, it writes nothing and fails with [`MirrorError::Diverged`]: the
+//! caller follows herdr instead. Without `restructure` a push still sets
+//! ratios and zoom, and still moves panes in and out of the tab (a merge, a
+//! pane closed here), which leaves the panes that stay where herdr has them.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -50,8 +59,14 @@ pub struct MirrorTarget {
     /// found in the tab they move out to a tab of their own.
     pub known: Vec<PaneId>,
     /// Move out unknown panes too, instead of waiting for them to be
-    /// adopted.
+    /// adopted. Only with `restructure`.
     pub park_unknown: bool,
+    /// The change comes from Azulejo (a user op or a command in the app), so
+    /// the push may rearrange the panes already in the tab: swap them, or
+    /// rebuild the tab in another shape. Without it, a tab whose panes sit
+    /// in another shape or order than the target's fails with
+    /// [`MirrorError::Diverged`] before anything is written.
+    pub restructure: bool,
 }
 
 /// What a push did.
@@ -73,6 +88,10 @@ pub enum MirrorError {
     Missing(PaneId),
     /// The target tab doesn't exist (any more).
     TabGone(TabId),
+    /// The tab's panes sit in another shape or order than the target's and
+    /// the target may not restructure: nothing was written. The layout is
+    /// the tab as herdr has it; the caller follows it.
+    Diverged(TabLayout),
     /// herdr refused a move.
     Refused {
         pane: PaneId,
@@ -87,6 +106,11 @@ impl std::fmt::Display for MirrorError {
             MirrorError::Unknown(p) => write!(f, "unknown panes in the tab: {p:?}"),
             MirrorError::Missing(p) => write!(f, "no pane {p}"),
             MirrorError::TabGone(t) => write!(f, "no tab {t}"),
+            MirrorError::Diverged(l) => write!(
+                f,
+                "herdr's tab {} is arranged differently and the change isn't Azulejo's",
+                l.tab_id
+            ),
             MirrorError::Refused { pane, reason } => {
                 write!(f, "herdr refused to move {pane}: {reason}")
             }
@@ -272,6 +296,36 @@ fn splits(node: &LayoutNode) -> Vec<(Vec<bool>, SplitDirection, f64)> {
     out
 }
 
+/// `node` with only the panes `keep` accepts; a split losing a side
+/// collapses into the other.
+pub fn prune_tree(node: &LayoutNode, keep: &dyn Fn(&PaneId) -> bool) -> Option<LayoutNode> {
+    match node {
+        LayoutNode::Pane { pane_id } => pane_id.as_ref().filter(|p| keep(p)).map(|_| node.clone()),
+        LayoutNode::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => match (prune_tree(first, keep), prune_tree(second, keep)) {
+            (Some(a), Some(b)) => Some(LayoutNode::split(*direction, *ratio, a, b)),
+            (one, None) | (None, one) => one,
+        },
+    }
+}
+
+/// Whether the panes `herdr` and `target` both hold sit in another shape or
+/// order in one than in the other: getting from one to the other takes a
+/// swap or a rebuild, not just ratios and panes coming or going.
+pub fn diverged(herdr: &LayoutNode, target: &LayoutNode) -> bool {
+    let theirs = herdr.panes();
+    let ours = target.panes();
+    let both = |p: &PaneId| theirs.contains(&p) && ours.contains(&p);
+    match (prune_tree(herdr, &both), prune_tree(target, &both)) {
+        (Some(h), Some(t)) => !same_shape(&h, &t) || h.panes() != t.panes(),
+        _ => false,
+    }
+}
+
 fn owned_panes(node: &LayoutNode) -> Vec<PaneId> {
     node.panes().into_iter().cloned().collect()
 }
@@ -369,8 +423,13 @@ impl<O: LayoutOps> Push<'_, O> {
             .filter(|p| !want.contains(p) && !target.known.contains(p))
             .cloned()
             .collect();
-        if !unknown.is_empty() && !target.park_unknown {
+        if !unknown.is_empty() && !(target.park_unknown && target.restructure) {
             return Err(MirrorError::Unknown(unknown));
+        }
+        // herdr's arrangement of the panes both hold stays unless Azulejo
+        // asked for another.
+        if !target.restructure && diverged(&cur.root, &target.root) {
+            return Err(MirrorError::Diverged(cur));
         }
 
         // The anchor first, so parking can't empty the tab.

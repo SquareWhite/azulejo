@@ -38,8 +38,8 @@ pub use machine::{
     MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
 };
 pub use mirror::{
-    ECHO_TOLERANCE, LayoutOps, MirrorError, MirrorOutcome, MirrorTarget, RATIO_TOLERANCE,
-    same_layout, same_shape, same_tree, satisfies,
+    ECHO_TOLERANCE, LayoutOps, MirrorError, MirrorOutcome, MirrorTarget, RATIO_TOLERANCE, diverged,
+    prune_tree, same_layout, same_shape, same_tree, satisfies,
 };
 pub use server::{Herdr, ServerOrigin, Session};
 pub use stream::{EventStream, StreamItem};

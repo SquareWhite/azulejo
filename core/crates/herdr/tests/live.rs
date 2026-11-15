@@ -576,6 +576,7 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
         label: None,
         known: Vec::new(),
         park_unknown: false,
+        restructure: true,
     };
     let ticks = last_tick(&client, &refs[1].pane_id).await;
     let t0 = std::time::Instant::now();
