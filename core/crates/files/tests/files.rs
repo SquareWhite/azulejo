@@ -176,6 +176,34 @@ fn ignore_file_edits_flag_rules_for_folders_below() {
     assert!(!c.contents_only);
 }
 
+/// FSEvents watches a tree as one path; inotify would need a watch per
+/// folder, so elsewhere a tree covers its root only.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_tree_reports_changes_anywhere_below_as_its_root() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("r");
+    fs::create_dir_all(root.join("a/b")).unwrap();
+    let (mut w, rx) = watcher();
+    w.watch(1, &root).unwrap();
+    w.watch_tree(1, &root).unwrap();
+    settle(&rx);
+    fs::write(root.join("a/b/deep.txt"), "").unwrap();
+    let (k, _, _) = wait_for(&rx, &root, |_| true);
+    assert_eq!(k, 1);
+
+    // Closing the folder keeps the tree.
+    w.unwatch(&1, &root);
+    settle(&rx);
+    fs::write(root.join("a/b/deeper.txt"), "").unwrap();
+    wait_for(&rx, &root, |_| true);
+
+    w.unwatch_all(&1);
+    settle(&rx);
+    fs::write(root.join("a/b/deepest.txt"), "").unwrap();
+    assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+}
+
 #[test]
 fn unwatch_stops_changes() {
     let t = tempfile::tempdir().unwrap();

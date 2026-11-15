@@ -1,6 +1,8 @@
 //! File browser tiles in a running core (F10): list folders off the engine's
 //! thread, watch the folders each tile has open, and keep git status for
-//! decorations.
+//! decorations. Once a tile's root turns out to be in a work tree, the whole
+//! root is watched too (macOS), so an edit in a closed folder still updates
+//! that folder's badge.
 //!
 //! What a tile has open, and whether it shows hidden entries, lives here and
 //! isn't saved: after a relaunch a tile shows its root, and shells expand
@@ -9,7 +11,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use azulejo_files::{Change, DirWatcher, GitState, GitStatus};
 use azulejo_model::{Session, TileContent, TileId};
@@ -23,6 +25,11 @@ use crate::{Engine, Outcome};
 
 /// How long a folder must be quiet after a change before shells hear of it.
 pub(crate) const DEBOUNCE: Duration = Duration::from_millis(40);
+
+/// The least time between two `git status` runs for one tile. The whole
+/// work tree is watched, so a build writing into an ignored `target/` would
+/// otherwise keep `git status` running back to back.
+const GIT_GAP: Duration = Duration::from_millis(500);
 
 /// Work finished off the engine's thread, handed back to it.
 pub(crate) enum Delivery {
@@ -56,6 +63,8 @@ struct TileState {
     git: Option<Arc<GitStatus>>,
     git_running: bool,
     git_again: bool,
+    /// When the last `git status` started (or will, after `GIT_GAP`).
+    git_started: Option<Instant>,
 }
 
 pub(crate) struct Files {
@@ -164,6 +173,7 @@ impl Files {
                 git: None,
                 git_running: false,
                 git_again: false,
+                git_started: None,
             },
         );
         self.watch(id, &root);
@@ -361,11 +371,17 @@ impl Files {
             return;
         }
         st.git_running = true;
+        let now = Instant::now();
+        let wait = st.git_started.map_or(Duration::ZERO, |t| {
+            (t + GIT_GAP).saturating_duration_since(now)
+        });
+        st.git_started = Some(now + wait);
         let root = st.root.clone();
         let deliver = self.deliver.clone();
         let spawned = std::thread::Builder::new()
             .name("azulejo-files-git".into())
             .spawn(move || {
+                std::thread::sleep(wait);
                 let status = azulejo_files::git_status(&root);
                 deliver(Delivery::Git(tile, root, status));
             });
@@ -382,24 +398,33 @@ impl Files {
             return Vec::new();
         }
         st.git_running = false;
-        let again = std::mem::take(&mut st.git_again);
+        let mut again = std::mem::take(&mut st.git_again);
         let changed = st.git.as_deref() != status.as_ref();
-        let first_git_dir = status
+        let first = st.git.is_none() && status.is_some();
+        let git_dir = status
             .as_ref()
-            .filter(|_| st.git.is_none())
             .map(|s| s.work_tree.join(".git"))
-            .filter(|d| d.is_dir());
+            .filter(|d| first && d.is_dir());
         st.git = status.map(Arc::new);
         let event = if changed {
             st.git.as_ref().map(|g| Event::FilesGit(git_event(tile, g)))
         } else {
             None
         };
-        // Commits and staging change status without touching the work tree.
-        if let (Some(dir), Some(w)) = (first_git_dir, &mut self.watcher)
-            && let Err(e) = w.watch(tile, &dir)
-        {
-            (self.log)(format!("can't watch {} ({e})", dir.display()));
+        if first && let Some(w) = &mut self.watcher {
+            // Edits in folders that aren't open change status too.
+            if let Err(e) = w.watch_tree(tile, root) {
+                (self.log)(format!("can't watch {} ({e})", root.display()));
+            }
+            // Commits and staging change status without touching the work tree.
+            if let Some(dir) = git_dir
+                && let Err(e) = w.watch(tile, &dir)
+            {
+                (self.log)(format!("can't watch {} ({e})", dir.display()));
+            }
+            // What changed between that read and the watches starting went
+            // unseen: read once more.
+            again = true;
         }
         if again {
             self.refresh_git(tile);
