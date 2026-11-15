@@ -109,6 +109,8 @@ Helpers in `scripts/herdr-probe/`:
 
 ## 6. Mapping app tiles to herdr
 
+> **Superseded (Nov 4, 2026).** herdr can be steered pane by pane after all, so Azulejo now mirrors its layout: one herdr tab per Azulejo tab, see question 10 and [ADR 0012](adr/0012-mirror-layout-into-herdr.md). The `layout.apply` finding below still holds.
+
 **Answer.** **One herdr tab per terminal tile**, inside the herdr workspace mapped 1:1 to the app workspace.
 
 - **Mirroring splits with `layout.apply` would kill processes.** Applying a layout to an existing tab created a *new* tab (t4 → t5) with fresh panes and closed the original. It ignored the `pane_id` I passed, so the original pane and its process were gone.
@@ -168,6 +170,32 @@ The two IDs behave differently:
 
 **Implication.** A terminal tile stores both IDs. It re-resolves `pane_id` from `terminal_id` (via `pane.list`) after any `pane.moved` event and on relaunch.
 
+## 10. Mirroring Azulejo's layout into a live tab (ADR 0012)
+
+Probed Nov 4, 2026 on herdr 0.9.1 in a throwaway session. Reproduce with `python3 scripts/herdr-probe/mirror.py` (session `azj-test-probe-mirror`, deleted afterwards; one JSON line per check).
+
+**Answer.** Everything a mirror needs works on live panes, without `layout.apply`:
+
+| What | How | Notes |
+| --- | --- | --- |
+| Split a pane in an existing tab | `pane.split {target_pane_id, direction: right\|down, ratio, cwd, env, focus: false}` | The new pane is always the **second** child; `ratio` is the **first** child's share. `env` reaches the shell (`AZULEJO_*` as with `tab.create`) |
+| Set a split's ratio | `layout.set_split_ratio {tab_id, path, ratio}` | `path` from the root: `[]` the root, `true` the second child, `false` the first. Replies with the whole tree. A bad path is `split_not_found` |
+| Resize like the TUI | `pane.resize {pane_id, direction, amount}` | Adds `amount` to the nearest split that way (0.6 → 0.7) |
+| Swap two panes | `pane.swap {source_pane_id, target_pane_id}` | Panes trade slots; ratios stay with the slots |
+| Move a pane | `pane.move {pane_id, destination: {type: tab, tab_id, split, target_pane_id, ratio} \| {type: new_tab, workspace_id, label}}` | Same process, same terminal ID, and an attached `terminal attach` client stays attached and keeps streaming at its own size. herdr closes a tab its last pane leaves. A move to another workspace changes the pane ID, not the terminal ID |
+| … refused | `changed: false, reason: same_tab` / `zoomed_tab` | No error: a move inside one tab, or out of a zoomed tab, just doesn't happen. Restructuring a tab therefore goes through another tab |
+| Zoom | `pane.zoom {pane_id, mode: on\|off\|toggle}` | Zooming focuses the pane. While zoomed herdr shows the **focused** pane: zooming another (`already_zoomed`) or focusing another switches what's shown. A split clears the zoom |
+| Read the tree | `layout.export {tab_id}` | `{zoomed, focused_pane_id, root}`; `pane.layout` adds rects in cells and split IDs like `split_2_01` (index, path) |
+| Events | `layout_updated` | Fires on every split, close, move, swap, ratio change, zoom and focus change, with `{workspace_id, tab_id, zoomed, focused_pane_id, area, panes[], splits[]}`. Moves also send `pane_moved`, closes `tab_closed` |
+| `layout.apply` on a live tab | — | Still builds a **new tab** with fresh panes and kills the old ones, even with every `pane_id` named. Never use it |
+| Server restart | — | Tree, ratios, zoom and pane IDs come back; processes and terminal IDs are new |
+
+Details that shaped ADR 0012:
+
+- Ratios are stored as `f32`: 1/3 reads back as 0.33333334. Comparing our own writes needs a tolerance (1e-4).
+- `tab_closed` for a tab emptied by a move arrives **before** that move's `pane_moved` on the lifecycle stream (seen in the engine's migration test; the probe's single subscriber saw them in the other order). Don't close a tile on `tab_closed` without checking its pane.
+- The headless server lays a tab out in a 120×40 area. With no client attached a pane's size follows its slot; an attached client keeps its own size whatever the slot.
+
 ## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
 
 | Situation | Exit status | Last stderr line |
@@ -194,6 +222,8 @@ The client always restores the host terminal (leaves the alt screen, turns mouse
 - **Measure both** in spike 0.4 (latency). If attach is within budget, ship it first.
 
 ### ADR: tile ↔ herdr mapping
+
+> Became ADR 0002, superseded by [ADR 0012](adr/0012-mirror-layout-into-herdr.md) after question 10: one herdr tab per Azulejo tab, splits mirrored both ways.
 
 **Decision: app workspace ↔ herdr workspace (1:1); each terminal tile ↔ its own herdr tab with one pane, labelled with the tile title and created with `--env` tile IDs.**
 

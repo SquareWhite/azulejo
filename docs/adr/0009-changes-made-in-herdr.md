@@ -1,6 +1,8 @@
 # 0009: Changes made in herdr: closed, exited, split and agent status
 
-Status: accepted · Nov 3, 2026 · M2 (PLAN 2.6, 2.7) · amends [0008](0008-use-the-users-herdr-session.md) · amended Nov 3, 2026: an exited shell closes its tile (see "Amendment")
+Status: accepted · Nov 3, 2026 · M2 (PLAN 2.6, 2.7) · amends [0008](0008-use-the-users-herdr-session.md) · amended Nov 3, 2026: an exited shell closes its tile (see "Amendment") · amended by [0012](0012-mirror-layout-into-herdr.md)
+
+> Amended by ADR 0012 (Nov 4, 2026): `tab_closed` no longer closes the tiles bound there on the spot. herdr also closes a tab when its last pane moves to another, and reports `tab_closed` before that `pane_moved`, so the core checks each pane first (one `pane.list`): gone closes the tile, moved rebinds it. Layout changes made in herdr (resize, swap, zoom, a different tree) now come back too.
 
 ## Context
 

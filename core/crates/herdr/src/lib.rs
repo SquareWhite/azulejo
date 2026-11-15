@@ -2,10 +2,13 @@
 //!
 //! Mapping (see `docs/herdr-notes.md`):
 //! - one app workspace ↔ one herdr workspace;
-//! - a terminal tile Azulejo creates gets its own herdr tab, made with
-//!   `--label` and the tile's env vars; a herdr tab that already exists is
-//!   adopted whole, as one Azulejo tab mirroring its split tree
-//!   ([`Client::survey`], ADR 0008); every tile stores a [`TerminalRef`];
+//! - one Azulejo tab ↔ one herdr tab, each terminal tile a pane in it, the
+//!   tab's split tree mirrored both ways (ADR 0012): the first terminal
+//!   makes the tab (`--label`, the tile's env vars), the rest split off the
+//!   pane beside them ([`Client::split_terminal`]), and [`Client::mirror`]
+//!   makes a tab match a target pane by pane; a herdr tab that already
+//!   exists is adopted whole ([`Client::survey`], ADR 0008); every tile
+//!   stores a [`TerminalRef`];
 //! - closing a tile detaches (the shell ends its attach process); killing
 //!   is the explicit [`Client::kill_terminal`];
 //! - `layout.apply` is never used: it replaces live panes.
@@ -19,6 +22,7 @@ mod env;
 mod error;
 mod event;
 mod machine;
+mod mirror;
 mod server;
 mod stream;
 mod transport;
@@ -32,6 +36,10 @@ pub use error::{Error, Result, needs_attention};
 pub use event::{HerdrEvent, Subscription};
 pub use machine::{
     MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
+};
+pub use mirror::{
+    ECHO_TOLERANCE, LayoutOps, MirrorError, MirrorOutcome, MirrorTarget, RATIO_TOLERANCE,
+    same_layout, same_shape, same_tree, satisfies,
 };
 pub use server::{Herdr, ServerOrigin, Session};
 pub use stream::{EventStream, StreamItem};

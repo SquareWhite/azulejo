@@ -376,3 +376,17 @@ Loads were 1.6–2.1.
 ### Also seen
 
 herdr 0.9.1 sometimes takes ~100–110 ms to pick up a new API connection. With a debug-logging server, our request was "received" 105 ms after we'd connected, while other clients got answers in between. When it hits the boot `ping`, core boot grows by that much. That's herdr's side; it's intermittent and the same in every build.
+
+## Layout mirror pushes (ADR 0012)
+
+macOS test environment, herdr 0.9.1, Nov 4, 2026. `cargo test -p azulejo-herdr --test live mirror_merges -- --ignored --nocapture`, 3 runs: a throwaway session, three one-pane tabs (a ticker in one, an attach client on another), then `Client::mirror` timed from the call to its read-back.
+
+| Push | Writes | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- | --- |
+| Merge three one-pane tabs into one (migration) | 2 moves | 114.5 ms | 4.4 ms | 3.1 ms |
+| Rebuild three panes into another shape through a staging tab, then zoom | 4 moves + 1 zoom | 4.4 ms | 4.4 ms | 3.1 ms |
+| Nothing to do (export and compare) | 0 | 1.5 ms | 2.2 ms | 2.5 ms |
+
+- The staging tab exists for the length of a rebuild, about 3–4 ms here: one TUI frame at most.
+- Run 1's merge is the first API call after the attach client started; herdr's occasional ~100 ms connection pickup (see "Also seen" above) fits.
+- Pushes wait for 150 ms of quiet per tab first (`mirror::PUSH_QUIET`), so a settled change reaches herdr 150–160 ms after the last model change.

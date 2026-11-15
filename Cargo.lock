@@ -116,6 +116,7 @@ dependencies = [
 name = "azulejo-herdr"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",

@@ -1,7 +1,9 @@
 # 0002: One herdr tab per terminal tile
 
-Status: accepted · Nov 3, 2026 · Gate G0 · amended by [0008](0008-use-the-users-herdr-session.md)
+Status: superseded by [0012](0012-mirror-layout-into-herdr.md) (one herdr tab per terminal tile) · Nov 3, 2026 · Gate G0 · amended by [0008](0008-use-the-users-herdr-session.md)
 
+> Superseded by ADR 0012 (Nov 4, 2026): one Azulejo tab is one herdr tab, each terminal tile a pane in it, and herdr's split tree mirrors the tab's, both ways. herdr can now be steered pane by pane (`pane.split`, `pane.move`, `pane.swap`, `layout.set_split_ratio`, `pane.zoom`) without `layout.apply`, which still kills and is still never used. The workspace mapping (1:1), the stored IDs and the per-pane agent subscriptions below still hold.
+>
 > Amended by ADR 0008: herdr tabs that already exist are adopted whole, so an adopted tab can hold several tiles mirroring herdr's splits. Tiles Azulejo creates still get one herdr tab each.
 
 ## Context

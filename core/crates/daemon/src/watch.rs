@@ -165,12 +165,13 @@ fn run(
 }
 
 /// Hands the core the settings it acts on itself (`[terminal] on_exit`,
-/// `[layout]`), from the config currently in force.
+/// `[layout]`, `[herdr] mirror_layout`), from the config currently in force.
 pub fn push_settings(core: &Core, shared: &SharedConfig) {
     if let Ok(config) = shared.read() {
         core.set_on_exit(config.terminal.on_exit);
         core.set_layout_prefs(config.layout.clone());
         core.set_sidebar_collapsed(config.sidebar.collapsed);
+        core.set_mirror_layout(config.herdr.mirror_layout);
     }
 }
 
@@ -187,10 +188,11 @@ pub fn reload(
     let mut diagnostics: Vec<ConfigDiagnostic> = fresh.diagnostics.iter().map(diagnostic).collect();
     {
         let mut current = shared.write().ok()?;
-        // Per-machine settings (`[herdr.machine.*]`) apply live; the rest
-        // of `[herdr]` picks connections made at start.
+        // Per-machine settings (`[herdr.machine.*]`) and `mirror_layout`
+        // apply live; the rest of `[herdr]` picks connections made at start.
         let restart_only = |h: &azulejo_config::HerdrConfig| azulejo_config::HerdrConfig {
             machine: Default::default(),
+            mirror_layout: true,
             ..h.clone()
         };
         if applied && restart_only(&current.herdr) != restart_only(&fresh.herdr) {

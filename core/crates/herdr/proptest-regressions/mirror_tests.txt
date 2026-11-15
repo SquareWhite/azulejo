@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 660f979e89ef584883348eb22d283489c8ffb6c76a83478f82d0ffbbe09ffebc # shrinks to (start, zooms, t) = ([Pane { pane_id: Some(PaneId("w1:p1")) }, Pane { pane_id: Some(PaneId("w1:p2")) }], [false, true], MirrorTarget { tab: None, root: Split { direction: Down, ratio: 0.1, first: Pane { pane_id: Some(PaneId("w1:p1")) }, second: Pane { pane_id: Some(PaneId("w1:p2")) } }, zoomed: None, label: None, known: [], park_unknown: false })

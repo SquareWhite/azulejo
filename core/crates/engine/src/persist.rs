@@ -22,6 +22,11 @@ pub const STATE_VERSION: u32 = 1;
 /// How long the session must stay unchanged before it's written.
 pub const SAVE_DEBOUNCE: Duration = Duration::from_millis(250);
 
+/// The longest a change waits while others keep coming, in debounce
+/// periods: a steady stream of changes (terminals starting, herdr panes
+/// moving into place) still gets saved.
+const SAVE_MAX_WAIT_PERIODS: u32 = 4;
+
 /// Where the session lives: `~/Library/Application Support/Azulejo/state.json`
 /// on macOS, `$XDG_STATE_HOME/azulejo/state.json` (default
 /// `~/.local/state/azulejo/state.json`) elsewhere.
@@ -202,6 +207,9 @@ fn run_saver(
     on_error: &dyn Fn(io::Error),
 ) {
     let mut pending: Option<Box<Session>> = None;
+    // When the oldest unwritten change came in.
+    let mut since: Option<std::time::Instant> = None;
+    let max_wait = debounce * SAVE_MAX_WAIT_PERIODS;
     let write = |pending: &mut Option<Box<Session>>| {
         if let Some(session) = pending.take()
             && let Err(e) = save(path, &session)
@@ -211,10 +219,12 @@ fn run_saver(
     };
     loop {
         let msg = if pending.is_some() {
-            match rx.recv_timeout(debounce) {
+            let left = since.map_or(max_wait, |t| max_wait.saturating_sub(t.elapsed()));
+            match rx.recv_timeout(debounce.min(left)) {
                 Ok(msg) => msg,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     write(&mut pending);
+                    since = None;
                     continue;
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -226,9 +236,17 @@ fn run_saver(
             }
         };
         match msg {
-            SaverMsg::Save(session) => pending = Some(session),
+            SaverMsg::Save(session) => {
+                pending = Some(session);
+                since.get_or_insert_with(std::time::Instant::now);
+                if since.is_some_and(|t| t.elapsed() >= max_wait) {
+                    write(&mut pending);
+                    since = None;
+                }
+            }
             SaverMsg::Flush(done) => {
                 write(&mut pending);
+                since = None;
                 let _ = done.send(());
             }
         }
@@ -344,6 +362,23 @@ mod tests {
             panic!("expected a session");
         };
         assert_eq!(loaded, last);
+    }
+
+    #[test]
+    fn a_steady_stream_of_changes_is_still_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let saver = Saver::with_debounce(path.clone(), Duration::from_millis(50), |e| {
+            panic!("save failed: {e}")
+        });
+        // A change every 20 ms never leaves 50 quiet ones; the save still
+        // lands within four debounce periods.
+        let start = std::time::Instant::now();
+        while !path.exists() {
+            assert!(start.elapsed() < Duration::from_millis(400), "never saved");
+            saver.schedule(sample());
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]

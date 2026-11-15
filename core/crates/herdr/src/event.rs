@@ -29,6 +29,8 @@ pub enum Subscription {
     PaneExited,
     PaneFocused,
     PaneMoved,
+    /// A tab's split tree, zoom or focus changed (ADR 0012).
+    LayoutUpdated,
     /// Agent status for one pane (herdr requires a pane ID).
     AgentStatus(PaneId),
     /// Scroll position for one pane (herdr requires a pane ID).
@@ -54,6 +56,7 @@ impl Subscription {
             PaneClosed,
             PaneExited,
             PaneMoved,
+            LayoutUpdated,
         ]
     }
 
@@ -75,6 +78,7 @@ impl Subscription {
             PaneExited => "pane.exited",
             PaneFocused => "pane.focused",
             PaneMoved => "pane.moved",
+            LayoutUpdated => "layout.updated",
             AgentStatus(pane) => {
                 return json!({"type": "pane.agent_status_changed", "pane_id": pane});
             }
@@ -144,6 +148,13 @@ pub enum HerdrEvent {
         workspace_id: WorkspaceId,
         agent: Option<String>,
         status: AgentStatus,
+    },
+    /// A tab's split tree, zoom or focus changed. Read the tree with
+    /// [`crate::Client::layout_export`].
+    LayoutUpdated {
+        workspace_id: WorkspaceId,
+        tab_id: TabId,
+        zoomed: bool,
     },
     ScrollChanged {
         pane_id: PaneId,
@@ -221,6 +232,17 @@ struct AgentData {
     #[serde(default)]
     agent: Option<String>,
     agent_status: AgentStatus,
+}
+#[derive(Deserialize)]
+struct LayoutData {
+    layout: LayoutHead,
+}
+#[derive(Deserialize)]
+struct LayoutHead {
+    workspace_id: WorkspaceId,
+    tab_id: TabId,
+    #[serde(default)]
+    zoomed: bool,
 }
 #[derive(Deserialize)]
 struct ScrollData {
@@ -340,6 +362,11 @@ fn parse_event(kind: &str, data: Value) -> HerdrEvent {
                 status: d.agent_status,
             })
         }
+        "layout_updated" => de::<LayoutData>(&data).map(|d| HerdrEvent::LayoutUpdated {
+            workspace_id: d.layout.workspace_id,
+            tab_id: d.layout.tab_id,
+            zoomed: d.layout.zoomed,
+        }),
         "pane_scroll_changed" => de::<ScrollData>(&data).map(|d| HerdrEvent::ScrollChanged {
             pane_id: d.pane_id,
             workspace_id: d.workspace_id,
@@ -433,11 +460,25 @@ mod tests {
 
     #[test]
     fn unknown_kinds_are_kept() {
-        let line = r#"{"event":"layout_updated","data":{"type":"layout_updated","layout":{}}}"#;
+        let line = r#"{"event":"pane_output_changed","data":{"type":"pane_output_changed","pane_id":"w1:p1"}}"#;
         assert!(matches!(
             parse_line(line).unwrap(),
-            Line::Event(HerdrEvent::Other { kind, .. }) if kind == "layout_updated"
+            Line::Event(HerdrEvent::Other { kind, .. }) if kind == "pane_output_changed"
         ));
+    }
+
+    #[test]
+    fn parses_layout_updated() {
+        // Captured from herdr 0.9.1 after a zoom (trimmed).
+        let line = r#"{"data":{"layout":{"area":{"height":40,"width":120,"x":0,"y":0},"focused_pane_id":"w1:p2","panes":[{"focused":true,"pane_id":"w1:p2","rect":{"height":10,"width":48,"x":72,"y":0}}],"splits":[{"direction":"right","id":"split_0_root","ratio":0.6,"rect":{"height":40,"width":120,"x":0,"y":0}}],"tab_id":"w1:t1","workspace_id":"w1","zoomed":true},"type":"layout_updated"},"event":"layout_updated"}"#;
+        assert_eq!(
+            parse_line(line).unwrap(),
+            Line::Event(HerdrEvent::LayoutUpdated {
+                workspace_id: "w1".into(),
+                tab_id: "w1:t1".into(),
+                zoomed: true,
+            })
+        );
     }
 
     #[test]

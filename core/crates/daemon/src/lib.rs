@@ -742,6 +742,15 @@ mod tests {
             r.diagnostics.iter().any(|d| d.message.contains("restart")),
             "{r:?}"
         );
+        // `mirror_layout` does apply live (ADR 0012): no restart warning.
+        std::fs::write(
+            &path,
+            "[herdr]\nsession = \"elsewhere\"\nmirror_layout = false\n",
+        )
+        .unwrap();
+        let r = next_reload(&events);
+        assert!(r.applied);
+        assert!(r.diagnostics.is_empty(), "{r:?}");
 
         app.shutdown();
         let _ = std::fs::remove_dir_all(dir);
