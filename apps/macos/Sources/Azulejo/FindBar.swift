@@ -19,17 +19,17 @@ extension Findable {
 /// previous, next and close. The tile's finder does the searching; the bar
 /// only reports what's typed and pressed.
 ///
-/// Keys: while the field has the keyboard, the key router hands it enter
-/// (next), shift+enter (previous), ⌘G / ⌘⇧G and escape (close) before the
-/// keymap sees them, and resolves other chords with no tile context, so ⌘A
-/// selects the query rather than toggling the sidebar. Everything else is
-/// typing. The field sits inside the tile, so the tile itself keeps refreshes
+/// Keys: while the field has the keyboard the key router resolves chords in
+/// the `find_bar` context (`find_next`: enter, ⌘G; `find_previous`:
+/// shift+enter, ⌘⇧G; `find_close`: escape, by default) and hands those
+/// actions here. Other chords resolve with no tile context, so ⌘A selects the
+/// query rather than toggling the sidebar. Everything else is typing. The field sits inside the tile, so the tile itself keeps refreshes
 /// (TileFocus) from taking the keyboard out of it; see `holdsKeyboard`.
 /// When something outside the tile takes the keyboard (the ⌘K menu, another
 /// tab, the sidebar) the bar remembers it had it (`keepsKeyboard`), and the
 /// tile gets it back into the bar when it's focused again (TileFocus).
 @MainActor
-final class FindBar: NSView {
+final class FindBar: NSView, KeyScope {
     static let height = Design.Space.browserChromeHeight
 
     /// The query changed (every edit; the finder debounces).
@@ -178,28 +178,18 @@ final class FindBar: NSView {
         needsLayout = true
     }
 
-    /// Bar keys while the field has the keyboard; false for anything else.
-    func handle(chord: String) -> Bool {
-        switch chord {
-        case "enter", "cmd+g": onStep?(true)
-        case "shift+enter", "cmd+shift+g": onStep?(false)
-        case "escape": onClose?()
+    /// The `find_bar` actions (KeyScope).
+    func perform(keyAction name: String, event: NSEvent?) -> Bool {
+        switch name {
+        case "find_next": onStep?(true)
+        case "find_previous": onStep?(false)
+        case "find_close": onClose?()
         default: return false
         }
         return true
     }
 
-    /// The bar whose field has the keyboard in `window`, if any.
-    static func focused(in window: NSWindow?) -> FindBar? {
-        guard let editor = window?.firstResponder as? NSTextView, editor.isFieldEditor,
-              let field = (editor.delegate as? NSView) as? FindField else { return nil }
-        var view = field.superview
-        while let v = view {
-            if let bar = v as? FindBar { return bar }
-            view = v.superview
-        }
-        return nil
-    }
+    var keyScope: String { "find_bar" }
 
     // MARK: Layout
 
@@ -297,11 +287,14 @@ extension FindBar: NSTextFieldDelegate {
     }
 
     /// Enter and escape when the key router didn't see them (a key path
-    /// that skips the local monitor).
+    /// that skips the local monitor). When it saw them and let them through,
+    /// the keymap leaves them unbound here: they do nothing (AppKit's own
+    /// escape would start word completion).
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        let unbound = KeyRouter.letThroughCurrentKey()
         switch selector {
-        case #selector(NSResponder.insertNewline(_:)): onStep?(true)
-        case #selector(NSResponder.cancelOperation(_:)): onClose?()
+        case #selector(NSResponder.insertNewline(_:)): if !unbound { onStep?(true) }
+        case #selector(NSResponder.cancelOperation(_:)): if !unbound { onClose?() }
         default: return false
         }
         return true

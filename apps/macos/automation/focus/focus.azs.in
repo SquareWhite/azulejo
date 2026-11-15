@@ -173,9 +173,9 @@ expect key.last action:focus_tile_right
 until responder browser-page
 expect responder.focused yes
 
-log === S19 cmd+l (a browser chord the keymap leaves alone) focuses the address bar
+log === S19 cmd+l (the browser context's browser_focus_address) focuses the address bar
 key cmd+l
-expect key.last passed
+expect key.last action:browser_focus_address
 expect responder browser-address
 expect tile.address_focused yes
 
@@ -221,7 +221,7 @@ until responder files-tree 10000
 until tile.rows 4
 expect tile.selected sub
 key j
-expect key.last passed
+expect key.last action:files_down
 expect tile.selected alpha.txt
 key j
 expect tile.selected beta.txt
@@ -240,7 +240,7 @@ expect tile.selected alpha.txt
 
 log === S26 / opens the files filter; typing filters; escape goes back to the tree
 key /
-expect key.last passed
+expect key.last action:files_filter
 expect responder files-filter
 type gam
 until tile.rows 1

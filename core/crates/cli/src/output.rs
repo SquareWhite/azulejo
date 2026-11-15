@@ -113,6 +113,7 @@ pub fn human(result: &Value) -> String {
                 );
             }
         }
+        Some("keys") => render_keys(result, &mut out),
         Some("layout") => {
             let _ = writeln!(
                 out,
@@ -134,6 +135,65 @@ pub fn human(result: &Value) -> String {
         }
     }
     out
+}
+
+/// `config.keys`: one row per action and context, user overrides marked.
+fn render_keys(result: &Value, out: &mut String) {
+    let chords = |v: &Value| {
+        let list: Vec<&str> = v
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        if list.is_empty() {
+            "-".to_owned()
+        } else {
+            list.join(", ")
+        }
+    };
+    let rows: Vec<[String; 5]> = result["keys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|k| {
+            [
+                scalar(&k["action"]),
+                scalar(&k["context"]),
+                chords(&k["default"]),
+                chords(&k["current"]),
+                scalar(&k["source"]),
+            ]
+        })
+        .collect();
+    let header = ["ACTION", "CONTEXT", "DEFAULT", "CURRENT", "SOURCE"].map(str::to_owned);
+    let mut width = [0usize; 4];
+    for row in std::iter::once(&header).chain(&rows) {
+        for (w, cell) in width.iter_mut().zip(row) {
+            *w = (*w).max(cell.chars().count());
+        }
+    }
+    let path = result["path"].as_str().unwrap_or("none, defaults only");
+    let _ = writeln!(
+        out,
+        "{} keymap; config: {path}{}",
+        scalar(&result["platform"]),
+        result["prefix"]
+            .as_str()
+            .map(|p| format!("; prefix {p}"))
+            .unwrap_or_default()
+    );
+    for row in std::iter::once(&header).chain(&rows) {
+        let mut line = String::new();
+        for (i, cell) in row.iter().enumerate() {
+            if i < 4 {
+                let _ = write!(line, "{cell:<w$}  ", w = width[i]);
+            } else {
+                line.push_str(cell);
+            }
+        }
+        let _ = writeln!(out, "{}", line.trim_end());
+    }
 }
 
 fn scalar(v: &Value) -> String {

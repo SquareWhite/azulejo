@@ -9,8 +9,13 @@ import WebKit
 /// then the first responder's `keyDown`.
 @MainActor
 enum KeyDelivery {
+    /// The keyDown being delivered by hand (it isn't `NSApp.currentEvent`).
+    private(set) static var delivering: NSEvent?
+
     static func deliver(_ event: NSEvent, window: NSWindow?) {
         guard let window else { return }
+        delivering = event
+        defer { delivering = nil }
         let flags = event.modifierFlags.intersection([.command, .control])
         if !flags.isEmpty {
             if window.performKeyEquivalent(with: event) { return }
@@ -132,6 +137,8 @@ enum FocusAutomation {
             "responder": kind,
             "responder.tile": tile.map(Short.id) ?? "-",
             "key.last": app.lastKeyOutcome,
+            "key.context": app.lastKeyContext,
+            "keys.resizing": app.keysResizing ? "yes" : "no",
             "keywindow": NSApp.keyWindow === window ? "yes" : "no",
             "palette.query": controller.palette.isOpen ? controller.palette.field.stringValue : "-",
             "clipboard": TerminalRuntime.pasteboard.string(forType: .string) ?? "-",

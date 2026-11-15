@@ -22,10 +22,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use azulejo_config::{Action, Chord, KeyOutcome, KeyRouter, Target};
+use azulejo_config::{Action, Chord, KeyContext, KeyOutcome, KeyRouter, Target};
 use azulejo_daemon::{App, GhosttyFiles, HerdrChoice, Options};
 use azulejo_herdr::Session as HerdrSession;
-use azulejo_protocol::{Command, Event, TileKind};
+use azulejo_protocol::{Command, Event};
 use serde_json::{Value, json};
 
 mod terminal;
@@ -284,9 +284,11 @@ pub unsafe extern "C" fn azj_core_execute(
 }
 
 /// Routes one key chord through the user's keymap, keeping prefix state
-/// between calls. `request_json` is `{"chord":"alt+h","tile":"terminal"}`
-/// (`tile` is the focused tile's kind, or null), or `{"reset":true}` to drop
-/// an armed prefix. Returns, as JSON, one of:
+/// between calls. `request_json` is `{"chord":"alt+h","context":"terminal"}`
+/// (`context` is the focused tile's kind, or the mode that has the keyboard:
+/// `palette`, `find_bar`, `resize`; null for none; `tile` is an older
+/// spelling of it), or `{"reset":true}` to drop an armed prefix. Returns, as
+/// JSON, one of:
 ///
 /// - `{"outcome":"action","action":"focus_tile_left","index":null,
 ///   "method":"layout.focus","command":{…}}`: run it. `method` is null for
@@ -335,14 +337,17 @@ fn route_key(router: &mut KeyRouter, app: &App, request: &Value) -> Value {
         Ok(chord) => chord,
         Err(e) => return json!({"outcome": "error", "message": e}),
     };
-    let tile = match &request["tile"] {
+    let scope = match request.get("context").unwrap_or(&request["tile"]) {
         Value::Null => None,
-        v => match serde_json::from_value::<TileKind>(v.clone()) {
-            Ok(kind) => Some(kind),
-            Err(e) => return json!({"outcome": "error", "message": format!("`tile`: {e}")}),
+        Value::String(name) => match KeyContext::from_name(name) {
+            Some(context) => Some(context),
+            None => {
+                return json!({"outcome": "error", "message": format!("unknown context `{name}`")});
+            }
         },
+        _ => return json!({"outcome": "error", "message": "`context` must be a string or null"}),
     };
-    match router.handle(&app.config().keymap, chord, tile) {
+    match router.handle(&app.config().keymap, chord, scope) {
         KeyOutcome::Action(action) => action_json(action),
         KeyOutcome::PrefixArmed => json!({"outcome": "prefix_armed"}),
         KeyOutcome::PrefixCancelled => json!({"outcome": "prefix_cancelled"}),
@@ -365,6 +370,9 @@ fn action_json(action: Action) -> Value {
         "index": action.index(),
         "method": method,
         "command": command,
+        // Set for actions that only work in one context (`browser_back`):
+        // the shell hands those to the view that has the keyboard.
+        "context": action.context().map(|c| c.name()),
     })
 }
 
@@ -402,10 +410,13 @@ pub unsafe extern "C" fn azj_core_action(
     out(result)
 }
 
-/// The global keymap (no tile-specific overrides) as JSON, for menus and the
-/// palette: `{"platform":"macos","prefix":"cmd+b"|null,"bindings":
-/// [{"action":"split_right","index":null,"chord":"ctrl+cmd+v"},…]}`. Chords use
-/// the same syntax `azj_core_key` takes. Free with `azj_string_free`.
+/// The keymap as JSON, for menus, badges and the palette:
+/// `{"platform":"macos","prefix":"cmd+b"|null,"bindings":
+/// [{"action":"split_right","index":null,"chord":"ctrl+cmd+v"},…],
+/// "contexts":{"browser":[…],…}}`. `bindings` are the global ones;
+/// `contexts` has every binding that applies in each context (globals
+/// included, unless the context overrides them). Chords use the same syntax
+/// `azj_core_key` takes. Free with `azj_string_free`.
 ///
 /// # Safety
 /// `core` must come from `azj_core_new*` and not be freed.
@@ -417,22 +428,36 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
     let config = app.config();
     let keymap = &config.keymap;
     let platform = keymap.platform();
-    let bindings: Vec<Value> = keymap
-        .bindings(None)
-        .map(|(chord, action)| {
-            json!({
-                "action": action.name(),
-                "index": action.index(),
-                "chord": chord.display(platform),
+    let list = |context: Option<KeyContext>| -> Vec<Value> {
+        let mut bindings: Vec<_> = keymap.bindings(context).collect();
+        bindings.sort_by_key(|(chord, _)| *chord);
+        bindings
+            .into_iter()
+            .map(|(chord, action)| {
+                json!({
+                    "action": action.name(),
+                    "index": action.index(),
+                    "chord": chord.display(platform),
+                })
             })
-        })
+            .collect()
+    };
+    let bindings = list(None);
+    let contexts: serde_json::Map<String, Value> = KeyContext::ALL
+        .into_iter()
+        .map(|c| (c.name().to_owned(), Value::Array(list(Some(c)))))
         .collect();
     let prefix = keymap
         .prefix_enabled()
         .then(|| keymap.prefix_key())
         .flatten()
         .map(|c| c.display(platform));
-    out(json!({"platform": platform.name(), "prefix": prefix, "bindings": bindings}))
+    out(json!({
+        "platform": platform.name(),
+        "prefix": prefix,
+        "bindings": bindings,
+        "contexts": contexts,
+    }))
 }
 
 /// The current `[animation]` settings, as JSON: `{"enabled":true,
@@ -664,6 +689,10 @@ mod tests {
         }
     }
 
+    fn focus_context(key: &dyn Fn(&CStr) -> Value) -> Value {
+        key(c"{\"chord\":\"alt+h\",\"context\":\"terminal\"}")["context"].clone()
+    }
+
     #[test]
     fn keys_route_through_the_keymap() {
         unsafe {
@@ -691,6 +720,28 @@ mod tests {
                 assert_eq!(browser["outcome"], "unhandled");
             }
 
+            // Modes and tile-local actions: `context`.
+            let palette = key(c"{\"chord\":\"ctrl+j\",\"context\":\"palette\"}");
+            assert_eq!(palette["action"], "palette_next");
+            assert_eq!(palette["method"], Value::Null);
+            let resize = key(c"{\"chord\":\"h\",\"context\":\"resize\"}");
+            assert_eq!(resize["action"], "resize_tile_left");
+            assert_eq!(resize["command"]["method"], "layout.resize");
+            let find = key(c"{\"chord\":\"escape\",\"context\":\"find_bar\"}");
+            assert_eq!(find["action"], "find_close");
+            let files = key(c"{\"chord\":\"j\",\"context\":\"files\"}");
+            assert_eq!(files["action"], "files_down");
+            assert_eq!(files["context"], "files");
+            assert_eq!(focus_context(&key), Value::Null);
+            assert_eq!(
+                key(c"{\"chord\":\"j\",\"context\":null}")["outcome"],
+                "unhandled"
+            );
+            assert_eq!(
+                key(c"{\"chord\":\"j\",\"context\":\"nowhere\"}")["outcome"],
+                "error"
+            );
+
             assert_eq!(key(c"{\"chord\":\"x\"}")["outcome"], "unhandled");
             assert_eq!(key(c"{\"chord\":\"cmd+bogus\"}")["outcome"], "error");
             assert_eq!(
@@ -709,6 +760,20 @@ mod tests {
             assert_eq!(action(c"{\"action\":\"nope\"}")["outcome"], "error");
 
             let keymap = take(azj_core_keymap(core));
+            let browser = keymap["contexts"]["browser"].as_array().unwrap();
+            assert!(
+                browser
+                    .iter()
+                    .any(|b| b["action"] == "browser_reload" && b["index"] == Value::Null)
+            );
+            assert!(
+                keymap["contexts"]["resize"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|b| b["action"] != "quick_open"),
+                "resize mode only has its own keys"
+            );
             let bindings = keymap["bindings"].as_array().unwrap();
             assert!(bindings.iter().any(|b| b["action"] == "split_auto"));
             assert_eq!(

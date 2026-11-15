@@ -1085,3 +1085,28 @@ final class TerminalOverlay: NSView {
         onButton?(actions[sender.tag])
     }
 }
+
+// MARK: - Keys
+
+extension TerminalTileView: KeyScope {
+    var keyScope: String { keyContext }
+
+    /// The terminal's keymap actions (`[keys.<platform>.terminal]`):
+    /// `send_herdr_prefix` types its chord twice so herdr's attach client
+    /// passes one on (`ctrl+b q` never detaches), and `take_over` presses
+    /// Take over / Take back on a read-only view.
+    func perform(keyAction name: String, event: NSEvent?) -> Bool {
+        switch name {
+        case "send_herdr_prefix":
+            guard let event, let surface, !surface.readOnly else { return false }
+            surface.typeTwice(event)
+            return true
+        case "take_over":
+            guard case .observing = phase else { return false }
+            overlayAction(.takeOver)
+            return true
+        default:
+            return false
+        }
+    }
+}

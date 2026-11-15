@@ -7,6 +7,10 @@ license.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "azj-keys-doc"
+path = "src/bin/azj-keys-doc.rs"
+
 [dependencies]
 azulejo-protocol.workspace = true
 toml = { version = "1", default-features = false, features = ["std", "parse"] }

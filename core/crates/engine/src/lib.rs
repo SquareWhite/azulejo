@@ -27,7 +27,7 @@ use azulejo_protocol::{
 use serde_json::json;
 
 pub use diff::diff;
-pub use driver::{CommandsFn, Core, CoreOptions, LogFn};
+pub use driver::{CommandsFn, ConfigRepliesFn, Core, CoreOptions, LogFn};
 pub use link::{Effect, HerdrPort, Internal};
 
 /// The result of a successful command.
@@ -605,11 +605,18 @@ impl Engine {
                 toml: layout_file::export(s, focus, &p)?,
                 path: p.path,
             },
-            // The palette's entries come from the config, which `Core` holds.
+            // The palette's entries and the keymap come from the config,
+            // which `Core` holds.
             Command::CommandsList => {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
                     "the command list needs a running core with a config",
+                ));
+            }
+            Command::ConfigKeys | Command::ConfigDefaults => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "the keymap needs a running core with a config",
                 ));
             }
             // Machines are links `Core` holds (ADR 0011).

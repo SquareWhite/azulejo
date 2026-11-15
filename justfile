@@ -15,10 +15,15 @@ lint:
     cargo fmt --all --check
     cargo clippy --all-targets -- -D warnings
     scripts/design-tokens --check
+    cargo run -q -p azulejo-config --bin azj-keys-doc -- --check docs/keybindings.md
 
 # Regenerate the macOS shell's Design.swift from shared/design/tokens.json
 design-tokens:
     scripts/design-tokens
+
+# Regenerate the keybinding reference in docs/keybindings.md from shared/config/keymap.default.toml
+keys-doc:
+    cargo run -q -p azulejo-config --bin azj-keys-doc -- docs/keybindings.md
 
 # herdr adapter and engine integration tests against a real herdr in throwaway sessions
 test-herdr:
@@ -80,6 +85,10 @@ mac-layouts: mac
 # menu, layouts, tabs, herdr changes and input methods; in-process, dev profile
 mac-focus: mac
     apps/macos/automation/focus/focus.sh
+
+# Live rebinding of every keymap context through the dev profile's config file (no restart)
+mac-rebind: mac
+    apps/macos/automation/rebind.sh
 
 # The designer mockup's scene with fixture data, captured for docs/design (D.9)
 mac-mockup: mac

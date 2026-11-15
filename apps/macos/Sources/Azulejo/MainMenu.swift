@@ -1,20 +1,16 @@
 import AppKit
 
-/// The menu bar. Azulejo items run keymap actions by name, and show the
-/// user's current chord for them (from the core's keymap, so config overrides
-/// show up). The key router consumes bound chords before menus see them, so
-/// the shortcuts shown here never fire twice; standard items (⌘Q, ⌘C, ⌘V, …)
-/// only fire for chords the keymap leaves unbound.
+/// The menu bar. Azulejo items (Quit, Hide and Minimize included) run keymap
+/// actions by name, and show the user's current chord for them (from the
+/// core's keymap, so config overrides show up). The key router consumes bound
+/// chords before menus see them, so the shortcuts shown here never fire
+/// twice. Only the Edit menu's text-editing items (⌘Z, ⌘C, ⌘V, ⌘A…) keep
+/// AppKit's fixed chords: they serve every text field and the terminals'
+/// copy and paste, and they only fire for chords the keymap leaves unbound.
 @MainActor
 enum MainMenu {
     static func build(app: AppController, keymap: [String: Any]) -> NSMenu {
-        var chords: [String: String] = [:]
-        for binding in keymap["bindings"] as? [[String: Any]] ?? [] {
-            guard let action = binding["action"] as? String, binding["index"] is NSNull || binding["index"] == nil,
-                  let chord = binding["chord"] as? String, chords[action] == nil
-            else { continue }
-            chords[action] = chord
-        }
+        let chords = chords(in: keymap)
         let target = MenuTarget.shared
         target.app = app
 
@@ -49,11 +45,11 @@ enum MainMenu {
                 return i
             }(),
             .separator(),
-            std("Hide Azulejo", #selector(NSApplication.hide(_:)), "h"),
-            std("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Hide Azulejo", "hide"),
+            item("Hide Others", "hide_others"),
             std("Show All", #selector(NSApplication.unhideAllApplications(_:)), ""),
             .separator(),
-            std("Quit Azulejo", #selector(NSApplication.terminate(_:)), "q"),
+            item("Quit Azulejo", "quit"),
         ]))
         // ⌘W closes the workspace and ⌘⇧W the tab (keymap), so Close Window
         // has no chord of its own unless `close_window` is bound.
@@ -109,7 +105,7 @@ enum MainMenu {
             item("Rename Workspace…", "rename_workspace"),
         ]))
         let windowMenu = menu("Window", [
-            std("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Minimize", "minimize"),
             std("Zoom", #selector(NSWindow.performZoom(_:)), ""),
             .separator(),
             item("Next Workspace", "next_workspace"),
@@ -127,6 +123,20 @@ enum MainMenu {
         main.addItem(windowMenu)
         NSApp.windowsMenu = windowMenu.submenu
         return main
+    }
+
+    /// The first chord of each non-indexed action in `keymap`
+    /// (`azj_core_keymap`): the global bindings, or a context's.
+    static func chords(in keymap: [String: Any], context: String? = nil) -> [String: String] {
+        let list = context.map { (keymap["contexts"] as? [String: Any])?[$0] } ?? keymap["bindings"]
+        var chords: [String: String] = [:]
+        for binding in list as? [[String: Any]] ?? [] {
+            guard let action = binding["action"] as? String, binding["index"] is NSNull || binding["index"] == nil,
+                  let chord = binding["chord"] as? String, chords[action] == nil
+            else { continue }
+            chords[action] = chord
+        }
+        return chords
     }
 
     /// Shows a keymap chord (`"ctrl+cmd+v"`) as the item's key equivalent.

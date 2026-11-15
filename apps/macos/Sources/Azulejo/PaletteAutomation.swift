@@ -45,8 +45,14 @@ enum ShellAutomation {
                 controller.palette.setQuery(rest)
                 controller.layoutChrome()
             case "key":
+                // The chord through the keymap's `palette` context, as the
+                // key router resolves it.
                 guard controller.palette.isOpen else { return "palette isn't open" }
-                if !controller.palette.handle(chord: rest) { return "palette ignored \(rest)" }
+                let outcome = app.core.key(chord: rest, context: "palette")
+                guard outcome["context"] as? String == "palette", let name = outcome["action"] as? String else {
+                    return "palette ignored \(rest)"
+                }
+                controller.palette.perform(keyAction: name)
                 controller.layoutChrome()
             case "close":
                 controller.palette.close()
@@ -118,6 +124,7 @@ enum ShellAutomation {
             s["palette"] = palette.isOpen ? palette.scope.rawValue : "closed"
         }
         s["palette.count"] = "\(palette.results.count)"
+        s["palette.index"] = palette.isOpen ? "\(palette.selected)" : "-"
         s["palette.top"] = palette.results.first?.item.title ?? "-"
         s["palette.topkind"] = palette.results.first?.item.kind.label ?? "-"
         var kinds: [String] = []

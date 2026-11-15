@@ -283,6 +283,14 @@ pub enum Command {
     /// replies `commands`.
     #[serde(rename = "commands.list")]
     CommandsList,
+    /// Every keymap action with its context, default and current chords, and
+    /// whether the user's config set it; replies `keys`.
+    #[serde(rename = "config.keys")]
+    ConfigKeys,
+    /// A commented `[keys]` template with every action and its default
+    /// chords, ready to paste into the config file; replies `text`.
+    #[serde(rename = "config.defaults")]
+    ConfigDefaults,
 
     // ----- machines (F17, ADR 0011) -----
     /// Local plus herdr's saved machines and their connection state;
@@ -364,6 +372,8 @@ pub const METHODS: &[&str] = &[
     "layout.apply",
     "layout.export",
     "commands.list",
+    "config.keys",
+    "config.defaults",
     "machines.list",
 ];
 

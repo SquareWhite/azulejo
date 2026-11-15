@@ -35,6 +35,11 @@ pub type LogFn = Arc<dyn Fn(String) + Send + Sync>;
 /// (`commands.list`); see [`Core::set_commands`].
 pub type CommandsFn = Arc<dyn Fn() -> Vec<azulejo_protocol::CommandEntry> + Send + Sync>;
 
+/// Answers the config's own methods (`config.keys`, `config.defaults`) from
+/// the current config; `None` for anything else. See
+/// [`Core::set_config_replies`].
+pub type ConfigRepliesFn = Arc<dyn Fn(&Command) -> Option<Reply> + Send + Sync>;
+
 pub struct CoreOptions {
     /// Where to load and save the session; `None` keeps it in memory only.
     pub state_path: Option<PathBuf>,
@@ -81,6 +86,7 @@ enum Msg {
     /// An event from outside the engine (a config reload) for every listener.
     Broadcast(Event),
     SetCommands(CommandsFn),
+    SetConfigReplies(ConfigRepliesFn),
     SetOnExit(azulejo_model::OnExit),
     SetLayoutPrefs(azulejo_model::LayoutPrefs),
     SetSidebarCollapsed(azulejo_model::SidebarState),
@@ -202,6 +208,12 @@ impl Core {
     /// answers `unavailable`.
     pub fn set_commands(&self, commands: CommandsFn) {
         let _ = self.tx.send(Msg::SetCommands(commands));
+    }
+
+    /// Where `config.keys` and `config.defaults` get their answers. Until
+    /// this is called they answer `unavailable`.
+    pub fn set_config_replies(&self, replies: ConfigRepliesFn) {
+        let _ = self.tx.send(Msg::SetConfigReplies(replies));
     }
 
     /// What terminal tiles do when their process exits, unless a tile says
@@ -348,6 +360,7 @@ fn run<P: HerdrPort>(
 
     let mut listeners: Vec<mpsc::Sender<Event>> = Vec::new();
     let mut commands: Option<CommandsFn> = None;
+    let mut config_replies: Option<ConfigRepliesFn> = None;
     let mut on_exit = azulejo_model::OnExit::default();
     let publish = |engine: &Engine,
                    events: &[Event],
@@ -480,6 +493,19 @@ fn run<P: HerdrPort>(
                         }
                     }
                 }
+            }
+            Msg::Command(command @ (Command::ConfigKeys | Command::ConfigDefaults), reply) => {
+                let result = match config_replies.as_ref().and_then(|answer| answer(&command)) {
+                    Some(r) => Ok(Outcome {
+                        reply: r,
+                        events: Vec::new(),
+                    }),
+                    None => Err(Error::new(
+                        ErrorCode::Unavailable,
+                        "this core has no config to list keys from",
+                    )),
+                };
+                let _ = reply.send(result);
             }
             Msg::Command(Command::CommandsList, reply) => {
                 let result = match &commands {
@@ -727,6 +753,7 @@ fn run<P: HerdrPort>(
             Msg::Subscribe(listener) => listeners.push(listener),
             Msg::Broadcast(event) => listeners.retain(|l| l.send(event.clone()).is_ok()),
             Msg::SetCommands(list) => commands = Some(list),
+            Msg::SetConfigReplies(answer) => config_replies = Some(answer),
             Msg::SetOnExit(policy) => on_exit = policy,
             Msg::SetSidebarCollapsed(collapsed) => {
                 let events = engine.set_sidebar_collapsed(collapsed);

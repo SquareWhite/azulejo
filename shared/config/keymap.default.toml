@@ -18,9 +18,15 @@
 #   action = ""                     explicitly unbound
 # Sections:
 #   [keys.macos] / [keys.linux]     per platform
-#   [keys.<platform>.<context>]     only while that tile kind is focused
-#                                   (terminal | browser | preview | files);
-#                                   wins over the platform section
+#   [keys.<platform>.<context>]     only in that context; wins over the
+#                                   platform section there. Tile kinds while
+#                                   focused (terminal | browser | preview |
+#                                   files), or a mode with the keyboard:
+#                                   palette (quick open), find_bar (a find bar or
+#                                   the files filter), resize (resize mode,
+#                                   which ignores every other binding)
+#   Actions that only work in one context (palette_next, browser_back, …)
+#   land there even when written in [keys] or [keys.<platform>].
 #   [prefix] / [prefix.keys]        optional herdr-style prefix mode
 # Chords match the physical key, not the shifted character: "ctrl+shift+minus"
 # stays "minus", never "underscore".
@@ -99,11 +105,77 @@ quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/til
 find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers and previews, the files filter
 new_window      = "cmd+n"
 open_config     = "cmd+,"
-# Deliberately unbound: cmd+h, cmd+m, cmd+` (macOS). cmd+k takes over Ghostty's
-# clear_screen; ctrl+l still clears (docs/keybindings.md).
+# The app menu's own chords; the menu bar shows whatever is bound here.
+quit            = "cmd+q"
+hide            = "cmd+h"
+hide_others     = "alt+cmd+h"
+minimize        = "cmd+m"
+# Deliberately unbound: cmd+` (macOS window cycling). cmd+k takes over
+# Ghostty's clear_screen; ctrl+l still clears (docs/keybindings.md). Text
+# fields keep AppKit's editing keys (cmd+a/c/v/x/z) through the Edit menu.
 
 [keys.macos.terminal]
-toggle_sidebar = "cmd+a"              # herdr binding; terminal-only so cmd+a stays select-all elsewhere
+toggle_sidebar    = "cmd+a"           # herdr binding; terminal-only so cmd+a stays select-all elsewhere
+send_herdr_prefix = "ctrl+b"          # typed twice so herdr's attach client never sees ctrl+b q (detach)
+# take_over: Take over / Take back on a read-only terminal; unbound (the button)
+
+[keys.macos.browser]
+browser_focus_address      = "cmd+l"
+browser_reload             = "cmd+r"
+browser_reload_from_origin = "cmd+shift+r"
+browser_back               = "cmd+["
+browser_forward            = "cmd+]"
+browser_stop               = "cmd+period"
+browser_zoom_in            = "cmd+equal"
+browser_zoom_out           = "cmd+minus"
+browser_zoom_reset         = "cmd+0"
+browser_inspector          = "alt+cmd+i"
+
+[keys.macos.preview]
+preview_toggle_source = "alt+cmd+u"   # Preview | Source (Safari's View Source chord)
+
+[keys.macos.files]
+# Files tiles and the sidebar's Files view, while the list has the keyboard.
+# left/right stay AppKit's (collapse/expand); the filter field is [find_bar].
+files_down          = ["j", "down"]
+files_up            = ["k", "up"]
+files_open          = "enter"         # open in a preview beside, or open/close the folder
+files_expand        = "l"             # expand the folder, or open the file
+files_collapse      = "h"             # collapse the folder, or go to the parent
+files_open_external = "cmd+down"      # default app (folders expand)
+files_parent        = "cmd+up"
+files_quick_look    = "space"
+files_filter        = "/"
+files_toggle_hidden = "."
+files_leave         = "escape"        # sidebar Files view: back to the tiles
+
+[keys.macos.palette]
+# Quick open (cmd+k). Typing goes to its field; ">" and "@" at the start of
+# the query scope it (text, not keys). Global chords still run quick_open,
+# command_palette and goto; anything else is typing.
+palette_close     = "escape"
+palette_run       = "enter"
+palette_next      = ["down", "ctrl+n", "ctrl+j"]
+palette_previous  = ["up", "ctrl+p", "ctrl+k"]
+palette_page_down = "pagedown"
+palette_page_up   = "pageup"
+palette_complete  = "tab"             # complete the query with the selected row
+
+[keys.macos.find_bar]
+# A find bar's field (terminal, browser, preview), or the files filter. Other
+# chords resolve without the tile's context here, so cmd+a selects the query.
+find_next     = ["enter", "cmd+g"]
+find_previous = ["shift+enter", "cmd+shift+g"]
+find_close    = "escape"
+
+[keys.macos.resize]
+# Resize mode (resize_mode, ctrl+alt+r): only these work; other keys are
+# swallowed until resize_mode_exit. Any action can be bound here.
+resize_tile_left  = ["h", "left"]
+resize_tile_down  = ["j", "down"]
+resize_tile_up    = ["k", "up"]
+resize_tile_right = ["l", "right"]
+resize_mode_exit  = ["escape", "enter"]
 
 [keys.linux]
 # cmd maps to Super, so the macOS chords carry over one for one. The window
@@ -166,9 +238,61 @@ quick_open      = "super+k"
 find            = "super+f"
 new_window      = "super+n"
 open_config     = "super+comma"
+quit            = "ctrl+shift+q"      # GTK terminals' chord; hide/minimize are the WM's
 
 [keys.linux.terminal]
-toggle_sidebar = "super+a"            # terminal-only, like macOS
+toggle_sidebar    = "super+a"         # terminal-only, like macOS
+send_herdr_prefix = "ctrl+b"
+
+[keys.linux.browser]
+# Linux browser conventions here, not super: super+l locks the screen.
+browser_focus_address      = "ctrl+l"
+browser_reload             = "ctrl+r"
+browser_reload_from_origin = "ctrl+shift+r"
+browser_back               = "alt+left"
+browser_forward            = "alt+right"
+browser_stop               = ""        # no Linux convention besides escape, which pages need
+browser_zoom_in            = "ctrl+equal"
+browser_zoom_out           = "ctrl+minus"
+browser_zoom_reset         = "ctrl+0"
+browser_inspector          = "ctrl+shift+i"
+
+[keys.linux.preview]
+preview_toggle_source = "ctrl+u"      # View Source in Linux browsers
+
+[keys.linux.files]
+files_down          = ["j", "down"]
+files_up            = ["k", "up"]
+files_open          = "enter"
+files_expand        = "l"
+files_collapse      = "h"
+files_open_external = "alt+down"      # GNOME Files' chords
+files_parent        = "alt+up"
+files_quick_look    = "space"
+files_filter        = "/"
+files_toggle_hidden = "."
+files_leave         = "escape"
+
+[keys.linux.palette]
+palette_close     = "escape"
+palette_run       = "enter"
+palette_next      = ["down", "ctrl+n", "ctrl+j"]
+palette_previous  = ["up", "ctrl+p", "ctrl+k"]
+palette_page_down = "pagedown"
+palette_page_up   = "pageup"
+palette_complete  = "tab"
+
+[keys.linux.find_bar]
+find_next     = ["enter", "ctrl+g"]
+find_previous = ["shift+enter", "ctrl+shift+g"]
+find_close    = "escape"
+
+[keys.linux.resize]
+resize_tile_left  = ["h", "left"]
+resize_tile_down  = ["j", "down"]
+resize_tile_up    = ["k", "up"]
+resize_tile_right = ["l", "right"]
+resize_mode_exit  = ["escape", "enter"]
 
 # Optional prefix mode: mirrors herdr's prefix sequences for everything without
 # a direct chord. Off by default. The prefix is cmd+b (super+b on Linux),

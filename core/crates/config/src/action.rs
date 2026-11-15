@@ -5,6 +5,7 @@
 //! mode). Actions that need session state to pick a target, such as "switch to
 //! tab 3", name their method but leave building the command to the shell.
 
+use crate::keymap::KeyContext;
 use azulejo_protocol::{
     Command, DEFAULT_MASTER_RATIO_STEP, DEFAULT_RESIZE_STEP, Direction, LayoutCycle, LayoutFocus,
     LayoutKind, LayoutMasterRatio, LayoutMasters, LayoutMove, LayoutMoveOrder, LayoutResize,
@@ -92,6 +93,63 @@ pub enum Action {
     EditScrollback,
     /// Arms prefix mode; the next chord is looked up in the prefix keymap.
     EnterPrefix,
+    // App menu (macOS conventions; menus show these chords)
+    Quit,
+    Hide,
+    HideOthers,
+    Minimize,
+    // Terminal tiles
+    /// Types the chord into the pane twice, so herdr's attach client passes
+    /// one on and never starts its detach sequence (`ctrl+b q`).
+    SendHerdrPrefix,
+    /// Take over a terminal another client holds (read-only view), or give
+    /// it back.
+    TakeOver,
+    // Quick open (the ⌘K menu)
+    PaletteClose,
+    PaletteRun,
+    PaletteNext,
+    PalettePrevious,
+    PalettePageDown,
+    PalettePageUp,
+    /// Completes the field with the selected row's title.
+    PaletteComplete,
+    // Find bars (and the files filter)
+    FindNext,
+    FindPrevious,
+    FindClose,
+    // Resize mode
+    ResizeModeExit,
+    // Browser tiles
+    BrowserFocusAddress,
+    BrowserReload,
+    BrowserReloadFromOrigin,
+    BrowserBack,
+    BrowserForward,
+    BrowserStop,
+    BrowserZoomIn,
+    BrowserZoomOut,
+    BrowserZoomReset,
+    BrowserInspector,
+    // Preview tiles
+    PreviewToggleSource,
+    // Files tiles and the sidebar's Files view
+    FilesDown,
+    FilesUp,
+    /// Opens a file (preview) or a folder, like a double-click.
+    FilesOpen,
+    /// Expands a folder, or opens a file.
+    FilesExpand,
+    /// Collapses a folder, or goes to the parent.
+    FilesCollapse,
+    /// Opens in the default app (expands a folder).
+    FilesOpenExternal,
+    FilesParent,
+    FilesQuickLook,
+    FilesFilter,
+    FilesToggleHidden,
+    /// The sidebar's Files view hands the keyboard back to the tiles.
+    FilesLeave,
 }
 
 /// Where an action ends up.
@@ -188,6 +246,45 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("reload_config", ReloadConfig),
         ("toggle_sidebar", ToggleSidebar),
         ("edit_scrollback", EditScrollback),
+        ("quit", Quit),
+        ("hide", Hide),
+        ("hide_others", HideOthers),
+        ("minimize", Minimize),
+        ("send_herdr_prefix", SendHerdrPrefix),
+        ("take_over", TakeOver),
+        ("palette_close", PaletteClose),
+        ("palette_run", PaletteRun),
+        ("palette_next", PaletteNext),
+        ("palette_previous", PalettePrevious),
+        ("palette_page_down", PalettePageDown),
+        ("palette_page_up", PalettePageUp),
+        ("palette_complete", PaletteComplete),
+        ("find_next", FindNext),
+        ("find_previous", FindPrevious),
+        ("find_close", FindClose),
+        ("resize_mode_exit", ResizeModeExit),
+        ("browser_focus_address", BrowserFocusAddress),
+        ("browser_reload", BrowserReload),
+        ("browser_reload_from_origin", BrowserReloadFromOrigin),
+        ("browser_back", BrowserBack),
+        ("browser_forward", BrowserForward),
+        ("browser_stop", BrowserStop),
+        ("browser_zoom_in", BrowserZoomIn),
+        ("browser_zoom_out", BrowserZoomOut),
+        ("browser_zoom_reset", BrowserZoomReset),
+        ("browser_inspector", BrowserInspector),
+        ("preview_toggle_source", PreviewToggleSource),
+        ("files_down", FilesDown),
+        ("files_up", FilesUp),
+        ("files_open", FilesOpen),
+        ("files_expand", FilesExpand),
+        ("files_collapse", FilesCollapse),
+        ("files_open_external", FilesOpenExternal),
+        ("files_parent", FilesParent),
+        ("files_quick_look", FilesQuickLook),
+        ("files_filter", FilesFilter),
+        ("files_toggle_hidden", FilesToggleHidden),
+        ("files_leave", FilesLeave),
     ];
     out.extend(
         plain
@@ -242,11 +339,89 @@ impl Action {
         }
     }
 
+    /// Where the action works. `None`: anywhere (global sections, or any
+    /// context section to override it there). `Some`: only in that context,
+    /// so a global section binds it there.
+    pub fn context(self) -> Option<KeyContext> {
+        use Action::*;
+        Some(match self {
+            SendHerdrPrefix | TakeOver => KeyContext::Terminal,
+            PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
+            | PalettePageUp | PaletteComplete => KeyContext::Palette,
+            FindNext | FindPrevious | FindClose => KeyContext::Find,
+            ResizeModeExit => KeyContext::Resize,
+            BrowserFocusAddress
+            | BrowserReload
+            | BrowserReloadFromOrigin
+            | BrowserBack
+            | BrowserForward
+            | BrowserStop
+            | BrowserZoomIn
+            | BrowserZoomOut
+            | BrowserZoomReset
+            | BrowserInspector => KeyContext::Browser,
+            PreviewToggleSource => KeyContext::Preview,
+            FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
+            | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => {
+                KeyContext::Files
+            }
+            _ => return None,
+        })
+    }
+
     pub fn target(self) -> Target {
         use Action::*;
         let method = match self {
-            ResizeMode | QuickOpen | CommandPalette | Goto | Find | OpenConfig | ReloadConfig
-            | ToggleSidebar | EnterPrefix => return Target::Shell,
+            ResizeMode
+            | QuickOpen
+            | CommandPalette
+            | Goto
+            | Find
+            | OpenConfig
+            | ReloadConfig
+            | ToggleSidebar
+            | EnterPrefix
+            | Quit
+            | Hide
+            | HideOthers
+            | Minimize
+            | SendHerdrPrefix
+            | TakeOver
+            | PaletteClose
+            | PaletteRun
+            | PaletteNext
+            | PalettePrevious
+            | PalettePageDown
+            | PalettePageUp
+            | PaletteComplete
+            | FindNext
+            | FindPrevious
+            | FindClose
+            | ResizeModeExit
+            | BrowserFocusAddress
+            | BrowserReload
+            | BrowserReloadFromOrigin
+            | BrowserBack
+            | BrowserForward
+            | BrowserStop
+            | BrowserZoomIn
+            | BrowserZoomOut
+            | BrowserZoomReset
+            | BrowserInspector
+            | FilesDown
+            | FilesUp
+            | FilesOpen
+            | FilesExpand
+            | FilesCollapse
+            | FilesOpenExternal
+            | FilesParent
+            | FilesQuickLook
+            | FilesFilter
+            | FilesLeave => return Target::Shell,
+            // The shell sends these for the tile (or sidebar panel) that has
+            // the keyboard, so they carry no command of their own.
+            PreviewToggleSource => "preview.set_mode",
+            FilesToggleHidden => "files.toggle_hidden",
             FocusTile(_) => "layout.focus",
             SwapTile(_) => "layout.swap",
             MoveTile(_) => "layout.move",

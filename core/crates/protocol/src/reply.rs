@@ -72,6 +72,18 @@ pub enum Reply {
     Commands {
         commands: Vec<crate::project::CommandEntry>,
     },
+    /// The keymap, from `config.keys`.
+    Keys {
+        /// `macos` or `linux`.
+        platform: String,
+        /// The config file, if any.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        /// The prefix key while prefix mode is on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prefix: Option<String>,
+        keys: Vec<crate::project::KeyBinding>,
+    },
     /// herdr machines, Local first, from `machines.list`.
     Machines {
         machines: Vec<crate::machines::MachineInfo>,

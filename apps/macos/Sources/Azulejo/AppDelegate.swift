@@ -307,6 +307,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Automation: keyDowns the monitor has seen, and a way in when it can't.
     var keysSeen: Int { keys.seen }
     var lastKeyOutcome: String { keys.lastOutcome }
+    var lastKeyContext: String { keys.lastContext }
+    var keysResizing: Bool { keys.resizing }
     func routeDirectly(_ event: NSEvent) {
         keys.markRoutedDirectly(event)
         // Unbound chords go on as AppKit would deliver them: key equivalents,
@@ -457,7 +459,19 @@ final class AppController: NSObject, NSApplicationDelegate {
             // The core reads the file and sends `config.reloaded` (banner).
             let reply = core.reloadConfig()
             if reply["path"] == nil { controller.flash("no config file (defaults only)") }
+        case "quit": NSApp.terminate(nil)
+        case "hide": NSApp.hide(nil)
+        case "hide_others": NSApp.hideOtherApplications(nil)
+        case "minimize": controller.window.performMiniaturize(nil)
         default:
+            // Context-only actions (browser_back, files_toggle_hidden…) from a
+            // menu or quick open: the focused tile runs them, if it can.
+            if outcome["context"] is String {
+                if KeyScopes.focusedTile(in: controller)?.perform(keyAction: name, event: nil) != true {
+                    controller.flash("\(name) doesn't apply here")
+                }
+                return
+            }
             controller.flash("\(name) isn't wired yet")
         }
     }
@@ -559,17 +573,30 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// `open_config` (⌘,): the config file, created from the core's
+    /// commented `[keys]` template (`config.defaults`) when it's missing. A
+    /// background run (automation, dev profiles) creates it but opens no
+    /// editor.
     private func openConfig(in controller: WindowController) {
         guard let path = core.info()["config_path"] as? String else {
             return controller.flash("no config file (defaults only)")
         }
-        guard !env.background else { return controller.flash("config: \(path)") }
         let url = URL(fileURLWithPath: path)
         if !FileManager.default.fileExists(atPath: path) {
-            try? FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? "# Azulejo config. See docs/keybindings.md.\n".write(to: url, atomically: true, encoding: .utf8)
+            var template = "# Azulejo config. See docs/keybindings.md.\n"
+            if case .success(let reply) = send(["method": "config.defaults"]), let text = reply["text"] as? String {
+                template = text
+            }
+            do {
+                try FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try template.write(to: url, atomically: true, encoding: .utf8)
+                log("open_config: wrote the template to \(path)")
+            } catch {
+                return controller.flash("can't create \(path): \(error.localizedDescription)")
+            }
         }
+        guard !env.background else { return controller.flash("config: \(path)") }
         NSWorkspace.shared.open(url)
     }
 
