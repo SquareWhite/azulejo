@@ -9,7 +9,11 @@ import QuartzCore
 /// at the start — one PTY resize per terminal, hidden under its snapshot
 /// (ADR 0004) — and a transform carries it there visually. A change that
 /// arrives mid-motion starts from where every tile appears on screen, so
-/// holding a key never queues up motion.
+/// holding a key never queues up motion. The container's own size changes
+/// with the window chrome (the sidebar) the same way (`setChromeFrame`).
+///
+/// Focus shows by dimming every unfocused tile (`applyDim`); there's no
+/// outline round the focused one.
 @MainActor
 final class TileContainerView: NSView {
     static let gap = Design.Space.gutter
@@ -20,7 +24,6 @@ final class TileContainerView: NSView {
     private var tab: TabModel?
     /// Where the active tab sits, for the direction of a slide.
     private var position: (workspace: Int, tab: Int) = (0, 0)
-    private let ring = FocusRingView()
 
     /// Views fading out: closed tiles (removed for good) and tiles leaving the
     /// screen (zoom). Never hit-tested.
@@ -31,8 +34,9 @@ final class TileContainerView: NSView {
     /// the latest.
     private var generation = 0
     private var motionEnds: CFTimeInterval = 0
-    /// Per-terminal resize counts at the start of the current motion chain.
-    private var resizeCheck: [String: (start: Int, expected: Int)] = [:]
+    /// Per terminal over the current motion chain: its resize count and size
+    /// at the start, and how many of the chain's motions changed its size.
+    private var resizeCheck: [String: (start: Int, expected: Int, size: CGSize)] = [:]
     private var resizeKind = ""
 
     let clock = MotionClock()
@@ -48,8 +52,6 @@ final class TileContainerView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = Design.Color.window.cgColor
-        addSubview(ring)
-        ring.layer?.zPosition = 2  // over moving tiles and outline ghosts
         clock.onChange = { [weak self] in self?.wake() }
     }
 
@@ -73,7 +75,6 @@ final class TileContainerView: NSView {
 
         // Where everything appears right now (mid-motion: the presentation).
         let before = animate && sameTab ? Perf.measure("tiles.visual") { visualFrames() } : [:]
-        let ringBefore = ring.isHidden ? nil : visual(ring)
         let previousFocus = tab?.focused
         let tilesBefore = tab?.tiles.count ?? 0
         let zoomBefore = tab?.zoomed
@@ -116,7 +117,7 @@ final class TileContainerView: NSView {
         for (id, view) in views {
             if visible.contains(id) {
                 if view.superview !== self {
-                    addSubview(view, positioned: .below, relativeTo: ring)
+                    addSubview(view)
                     appearing.insert(id)
                 }
             } else if view.superview === self {
@@ -137,14 +138,12 @@ final class TileContainerView: NSView {
             }
             Perf.measure("tiles.runMotion") {
                 runMotion(kind: kind, before: before, appearing: appearing, created: created,
-                          closing: closing, hiding: hiding,
-                          ringBefore: ringBefore, focusChanged: previousFocus != tab?.focused, t0: t0)
+                          closing: closing, hiding: hiding, t0: t0)
             }
         } else {
             cancelMotion()
             needsLayout = true
             layoutSubtreeIfNeeded()
-            if !animate, previousFocus != tab?.focused { ring.layer?.removeAllAnimations() }
         }
 
         Perf.measure("tiles.focus") {
@@ -158,7 +157,36 @@ final class TileContainerView: NSView {
                 view.setFocused(id == tab.focused)
             }
         }
-        Perf.measure("tiles.dim") { applyDim(animate: animate) }
+        // A tab switch cross-fades the whole container; its tiles take their
+        // dim at once under it.
+        Perf.measure("tiles.dim") { applyDim(animate: animate && sameTab) }
+    }
+
+    /// The tile area's new frame as the chrome around it changes (the
+    /// sidebar opening or closing). `animated`: a layout motion like any
+    /// other. Every tile starts from where it shows on screen now, takes its
+    /// final frame at once (one PTY resize per terminal, under its snapshot,
+    /// ADR 0004) and moves there with the motion's style, curve and length,
+    /// in step with the chrome's own motion. Otherwise, or with motion off,
+    /// the tiles jump.
+    func setChromeFrame(_ new: NSRect, animated: Bool) {
+        let old = frame
+        guard animated, Motion.active, window != nil, tab != nil, !Self.close(old, new),
+              old.width > 1, old.height > 1, new.width > 1, new.height > 1
+        else {
+            if frame != new { frame = new }
+            return
+        }
+        let t0 = CACurrentMediaTime()
+        // Tiles sit in this view's coordinates, and this view moves: where
+        // they show now, in its new coordinates.
+        let shift = CGPoint(x: old.minX - new.minX, y: old.minY - new.minY)
+        // A closing tile's fade lives in the old coordinates: finish it.
+        finishLeaving()
+        let before = visualFrames().mapValues { $0.offsetBy(dx: shift.x, dy: shift.y) }
+        frame = new
+        runMotion(kind: "sidebar", before: before, appearing: [], created: [], closing: [], hiding: [],
+                  shift: shift, t0: t0)
     }
 
     /// Tile IDs on screen: the zoomed tile alone, the focused one in a
@@ -207,20 +235,15 @@ final class TileContainerView: NSView {
         super.layout()
         let frames = tileFrames()
         for (id, frame) in frames { views[id]?.frame = frame }
-        if let tab, let focused = frames[tab.focused], visibleTiles.count > 1 || tab.zoomed != nil {
-            ring.isHidden = false
-            ring.frame = focused.insetBy(dx: -Design.Border.focus, dy: -Design.Border.focus)
-            ring.zoomed = tab.zoomed != nil
-        } else {
-            ring.isHidden = true
-        }
     }
 
     // MARK: Motion
 
+    /// `shift`: how far this view itself moved since `before` was taken
+    /// (a chrome change), so where a snapshot shows can be found.
     private func runMotion(kind: String, before: [String: CGRect], appearing: Set<String>, created: Set<String>,
                            closing: [(NSView, CGRect)], hiding: [(NSView, CGRect)],
-                           ringBefore: CGRect?, focusChanged: Bool, t0: CFTimeInterval) {
+                           shift: CGPoint = .zero, t0: CFTimeInterval) {
         let shown = Set(visibleTiles)
         let frames = tileFrames().filter { shown.contains($0.key) }
 
@@ -245,8 +268,9 @@ final class TileContainerView: NSView {
             }
         }
         let layoutMoves = !movers.isEmpty || !closing.isEmpty || !hiding.isEmpty
-        guard layoutMoves || focusChanged else {
-            // Nothing moves (a title, a URL): don't disturb motion in flight.
+        guard layoutMoves else {
+            // Nothing moves (a title, a URL, focus alone: the dim cross-fades
+            // on its own): don't disturb motion in flight.
             Perf.measure("tiles.idle-layout") {
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
@@ -258,7 +282,7 @@ final class TileContainerView: NSView {
         }
         let retarget = CACurrentMediaTime() < motionEnds
         if retarget { MotionStats.shared.retargeted() } else { resizeCheck = [:]; resizeKind = kind }
-        let duration = layoutMoves ? Motion.duration : Motion.focusDuration
+        let duration = Motion.duration
         let style = Motion.style
 
         // 1. Snapshot every terminal that ends at a new size, before it resizes.
@@ -273,16 +297,18 @@ final class TileContainerView: NSView {
             guard Perf.measure("motion.snapshot", { aware.motionWillStart(freeze: true, fill: style == .scale) })
             else { continue }
             let shown = showing ?? aware.snapshotFrame ?? CGRect(origin: .zero, size: m.view.bounds.size)
-            snapshotAt[m.id] = Motion.toContainer(shown, frame: frame, bounds: bounds, flipped: m.view.isFlipped)
+            snapshotAt[m.id] = Motion.toContainer(shown, frame: frame.offsetBy(dx: shift.x, dy: shift.y),
+                                                  bounds: bounds, flipped: m.view.isFlipped)
             frozen[ObjectIdentifier(aware)] = aware
             if resizeCheck[m.id] == nil {
-                resizeCheck[m.id] = (aware.surfaceResizes, 0)
+                resizeCheck[m.id] = (aware.surfaceResizes, 0, m.view.frame.size)
             }
-            resizeCheck[m.id]?.expected = 1
+            // One resize per motion that changes its size, retargets too.
+            resizeCheck[m.id]?.expected += 1
         }
         for m in movers where !m.new {
             if let aware = m.view as? MotionAware, resizeCheck[m.id] == nil {
-                resizeCheck[m.id] = (aware.surfaceResizes, 0)
+                resizeCheck[m.id] = (aware.surfaceResizes, 0, m.view.frame.size)
             }
         }
 
@@ -297,7 +323,7 @@ final class TileContainerView: NSView {
         }
 
         // The z positions set below (leaving tiles under the rest, a zoomed
-        // tile over its neighbours, the ring on top) in the subview order
+        // tile over its neighbours) in the subview order
         // too: anything that draws the layer tree in list order, as the app's
         // own captures do (`render(in:)` ignores zPosition), would otherwise
         // show a fading tile over the one growing into its space (V20).
@@ -332,33 +358,21 @@ final class TileContainerView: NSView {
         }
         for (view, from) in closing { leave(view, from: from, closed: true, frames: frames, duration: duration) }
         for (view, from) in hiding { leave(view, from: from, closed: false, frames: frames, duration: duration) }
-        // The ring rides with the focused tile when it moves (a new tile
-        // sweeping in, a neighbour growing into a closed tile's space): an
-        // independent path from the old focus cut across the other cards.
-        var ringFrom = ringBefore
-        var ringFades = ringBefore == nil
-        if layoutMoves, !(style == .crop && kind == "rotate"),
-           let focused = tab?.focused, let m = movers.first(where: { $0.id == focused }) {
-            ringFrom = m.from.insetBy(dx: -Design.Border.focus, dy: -Design.Border.focus)
-            ringFades = ringFades || m.new
-        }
-        animateRing(from: ringFrom, fadeIn: ringFades, duration: focusChanged || layoutMoves ? duration : 0)
         CATransaction.commit()
 
         MotionStats.shared.started(kind: kind, setup: CACurrentMediaTime() - t0)
         wake()
     }
 
-    /// Reorders the subviews: `back` first, `front` just under the ring, the
-    /// ring last. Setting `subviews` to the same views reorders them without
-    /// removing any, so first responder and surfaces stay put.
+    /// Reorders the subviews: `back` first, `front` last. Setting `subviews`
+    /// to the same views reorders them without removing any, so first
+    /// responder and surfaces stay put.
     private func restack(back: [NSView], front: NSView?) {
         let backIDs = Set(back.map(ObjectIdentifier.init))
         let current = subviews
         var ordered = current.filter { backIDs.contains(ObjectIdentifier($0)) }
-        ordered += current.filter { !backIDs.contains(ObjectIdentifier($0)) && $0 !== front && $0 !== ring }
+        ordered += current.filter { !backIDs.contains(ObjectIdentifier($0)) && $0 !== front }
         if let front, front.superview === self, !backIDs.contains(ObjectIdentifier(front)) { ordered.append(front) }
-        if ring.superview === self { ordered.append(ring) }
         guard ordered.count == current.count, !zip(ordered, current).allSatisfy({ $0 === $1 }) else { return }
         subviews = ordered
     }
@@ -631,33 +645,6 @@ final class TileContainerView: NSView {
         ghostByTile = [:]
     }
 
-    private func animateRing(from: CGRect?, fadeIn: Bool, duration: CFTimeInterval) {
-        guard let layer = ring.layer else { return }
-        layer.removeAnimation(forKey: Self.motionKey)
-        guard !ring.isHidden, duration > 0 else { return }
-        let to = ring.frame
-        let a = layer.anchorPoint
-        let group = CAAnimationGroup()
-        group.animations = []
-        if let from {
-            let bounds = CABasicAnimation(keyPath: "bounds.size")
-            bounds.fromValue = NSValue(size: from.size)
-            bounds.toValue = NSValue(size: to.size)
-            let position = CABasicAnimation(keyPath: "position")
-            position.fromValue = NSValue(point: CGPoint(x: from.minX + a.x * from.width, y: from.minY + a.y * from.height))
-            position.toValue = NSValue(point: CGPoint(x: to.minX + a.x * to.width, y: to.minY + a.y * to.height))
-            group.animations?.append(contentsOf: [bounds, position])
-        }
-        if fadeIn {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0
-            fade.toValue = 1
-            group.animations?.append(fade)
-        }
-        Motion.configure(group, duration: duration)
-        layer.add(group, forKey: Self.motionKey)
-    }
-
     /// Drops a tile's motion, its corner caps' included.
     private func stopMotion(_ view: NSView) {
         view.layer?.removeAnimation(forKey: Self.motionKey)
@@ -672,12 +659,16 @@ final class TileContainerView: NSView {
         }
         finishLeaving()
         removeGhosts()
-        for view in subviews where view !== ring { view.layer?.zPosition = 0 }
+        for view in subviews { view.layer?.zPosition = 0 }
         for aware in frozen.values { aware.motionDidEnd(clock: clock) }
         frozen = [:]
         for (id, check) in resizeCheck {
-            guard let aware = views[id] as? MotionAware else { continue }
-            MotionStats.shared.resizes(tile: id, expected: check.expected,
+            guard let view = views[id], let aware = view as? MotionAware else { continue }
+            // A chain that ends where it began (a double toggle) may have
+            // had its resizes merged away.
+            let resized = abs(view.frame.width - check.size.width) >= 0.5
+                || abs(view.frame.height - check.size.height) >= 0.5
+            MotionStats.shared.resizes(tile: id, expected: check.expected, minimum: resized ? 1 : 0,
                                        actual: aware.surfaceResizes - check.start, kind: resizeKind)
         }
         resizeCheck = [:]
@@ -687,11 +678,10 @@ final class TileContainerView: NSView {
     private func cancelMotion() {
         generation += 1
         motionEnds = 0
-        for view in subviews where view !== ring {
+        for view in subviews {
             stopMotion(view)
             view.layer?.zPosition = 0
         }
-        ring.layer?.removeAnimation(forKey: Self.motionKey)
         removeGhosts()
         finishLeaving()
         for aware in frozen.values { aware.motionCancelled() }
@@ -736,22 +726,33 @@ final class TileContainerView: NSView {
         wake()
     }
 
+    /// The focus indicator: every unfocused tile on screen dims
+    /// (`Motion.dimStrength` of `Motion.dimFill` over it, header strip
+    /// included); the focused one stays at full brightness. Nothing dims
+    /// when one tile is on screen (a lone tile, Monocle, zoom). It follows
+    /// the core's focused tile, not the keyboard, so ⌘K, the sidebar's
+    /// Files panel or the search field leave the last focused tile bright,
+    /// and it doesn't change when the window isn't key (as in Ghostty).
+    /// Focus moving cross-fades it (`Motion.dimDuration`).
     private func applyDim(animate: Bool) {
         guard let tab else { return }
-        let dim = Motion.settings.dimInactive && visibleTiles.count > 1
-        for id in visibleTiles {
-            guard let view = views[id] else { continue }
-            let alpha: CGFloat = dim && id != tab.focused ? Design.Alpha.unfocusedTile : 1
-            guard view.alphaValue != alpha else { continue }
-            if animate {
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = Motion.focusDuration
-                    view.animator().alphaValue = alpha
-                }
-            } else {
-                view.alphaValue = alpha
-            }
+        let shown = visibleTiles
+        let strength = shown.count > 1 ? Motion.dimStrength : 0
+        for id in shown {
+            guard let frame = views[id] as? TileFrame else { continue }
+            frame.setDim(id == tab.focused ? 0 : strength, duration: animate ? Motion.dimDuration : 0)
         }
+    }
+
+    /// Automation: which tiles on screen are dimmed, by their place in the
+    /// tab's order ("2,3,4"), or "none".
+    var dimmedTiles: String {
+        guard let tab else { return "none" }
+        let shown = Set(visibleTiles)
+        let dimmed = tab.order.enumerated().filter { _, id in
+            shown.contains(id) && ((views[id] as? TileFrame)?.dimLevel ?? 0) > 0
+        }.map { "\($0.offset + 1)" }
+        return dimmed.isEmpty ? "none" : dimmed.joined(separator: ",")
     }
 
     /// Automation: what each visible terminal shows right now (live surface
@@ -767,11 +768,17 @@ final class TileContainerView: NSView {
     }
 
     /// Automation: each tile's on-screen frame right now (mid-motion: the
-    /// presentation), as "x,y,w,h" by tile id suffix.
+    /// presentation), as "x,y,w,h" by tile id suffix, then the focused
+    /// tile's suffix and the dimmed ones ("focus=ab12 dim=cd34,ef56").
     var describeVisualFrames: String {
         func text(_ r: CGRect) -> String { "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))" }
         var parts = visualFrames().sorted { $0.key < $1.key }.map { id, r in "\(id.suffix(4))=\(text(r))" }
-        if !ring.isHidden { parts.append("ring=\(text(visual(ring)))") }
+        if let tab {
+            parts.append("focus=\(tab.focused.suffix(4))")
+            let dimmed = views.filter { $0.value.superview === self && (($0.value as? TileFrame)?.dimLevel ?? 0) > 0 }
+                .keys.sorted().map { String($0.suffix(4)) }
+            parts.append("dim=\(dimmed.isEmpty ? "-" : dimmed.joined(separator: ","))")
+        }
         return parts.joined(separator: " ")
     }
 
@@ -852,7 +859,6 @@ final class TileContainerView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        if hit === ring { return nil }
         if let hit, leaving.contains(where: { hit === $0.view || hit.isDescendant(of: $0.view) }) { return self }
         return hit
     }
@@ -874,31 +880,4 @@ extension LayoutNode {
         if case .split(let axis, _, _, _) = self { return axis }
         return nil
     }
-}
-
-/// The border around the focused tile (`Design.Color.focus`, `Design.Border.focus`;
-/// pending designer confirmation, see docs/design/README.md). A layer border, so moving and
-/// resizing it is cheap and stays crisp.
-@MainActor
-final class FocusRingView: NSView {
-    var zoomed = false { didSet { if zoomed != oldValue { needsDisplay = true } } }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        isHidden = true
-        layer?.cornerRadius = Design.Radius.tile + Design.Border.focus
-        layer?.borderWidth = Design.Border.focus
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        layer?.borderColor = (zoomed ? Design.Color.zoom : Design.Color.focus).cgColor
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

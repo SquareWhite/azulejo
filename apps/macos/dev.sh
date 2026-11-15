@@ -117,8 +117,13 @@ fi
 
 # The app reads these; AZULEJO_PROFILE=dev makes it refuse herdr's default
 # session on its own too.
-options="$(printf '{"config_path":"%s","state_path":"%s","socket_path":"%s","herdr_session":"%s","api_required":true}' \
-  "$config" "$state" "$socket" "$session")"
+# The Ghostty settings Azulejo honours itself (unfocused-split-opacity and
+# -fill) come from the profile's own Ghostty file, which may not exist: dev
+# runs never depend on the user's Ghostty config for them. libghostty still
+# reads the user's Ghostty config for the terminals' fonts and colours.
+ghostty="$dev/config/ghostty/config"
+options="$(printf '{"config_path":"%s","ghostty_config_path":"%s","state_path":"%s","socket_path":"%s","herdr_session":"%s","api_required":true}' \
+  "$config" "$ghostty" "$state" "$socket" "$session")"
 envs=(--env "AZULEJO_PROFILE=dev" --env "AZULEJO_CORE_OPTIONS=$options" --env "AZULEJO_PIDFILE=$pidfile")
 if [[ $bg -eq 1 ]]; then envs+=(--env "AZULEJO_BACKGROUND=1"); fi
 if [[ -n "$automation" ]]; then

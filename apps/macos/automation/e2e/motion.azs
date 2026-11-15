@@ -1,4 +1,4 @@
-# C6: slowed focus-ring morph and tab-switch fade, captured mid-motion
+# C6: slowed focus dim cross-fade and tab-switch fade, captured mid-motion
 # (in-app renders of the presentation layers; `capture` also asks for a
 # system capture, which needs an unlocked screen).
 log C6 motion polish
@@ -13,6 +13,8 @@ key alt+h
 capture 01-focus-a 300
 capture 01-focus-b 750
 wait 1900
+expect focus 1
+expect dimmed 2
 capture 01-focus-c 0
 wait 300
 key cmd+shift+t

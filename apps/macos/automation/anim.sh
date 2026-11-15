@@ -5,7 +5,10 @@
 #   apps/macos/automation/anim.sh            # 50+ animations at the configured speed:
 #                                            #   frame pacing, one PTY resize per terminal
 #                                            #   per motion, no garbage after the stress
-#   apps/macos/automation/anim.sh --slow     # slow motion with mid-animation captures
+#   apps/macos/automation/anim.sh --slow     # slow motion with mid-animation captures,
+#                                            #   checked by outside.py (nothing drawn
+#                                            #   outside the cards) and for STALE frames
+#   Both include the sidebar opening and closing, and a toggle turned round mid-motion.
 #   AZJ_ANIM_STYLE=outline apps/macos/automation/anim.sh   # one style (crop, scale,
 #                                            #   outline) instead of the configured one
 #
@@ -53,7 +56,17 @@ if [[ "$mode" == "--slow" ]]; then
   step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
   step 06c-monocle alt+backslash               # tile -> monocle
   step 06d-three-column alt+backslash          # monocle -> three column
-  step 07-focus alt+k
+  step 07-focus alt+k                          # the dim cross-fades
+  # The sidebar (cmd+a in a terminal): the card slides out and back while
+  # the tile area grows and shrinks with it; then a toggle that turns round
+  # mid-motion (close, and open again 500 ms in).
+  step 07b-sidebar-close cmd+a
+  emit "expect sidebar hidden"
+  step 07c-sidebar-open cmd+a
+  emit "expect sidebar visible"
+  emit "key cmd+a" "wait 500" "key cmd+a" "capture 07d-sidebar-double-a-mid 300" \
+    "capture 07d-sidebar-double-b-mid 900" "wait 1800" "capture 07d-sidebar-double-c-end 0" "wait 400"
+  emit "expect sidebar visible"
   step 08-close alt+w
   emit "wait 1200" "anim stats slow-stats"
 else
@@ -80,6 +93,12 @@ else
       n=$((n + 1))
     done
   done
+  # The sidebar closes and opens (every terminal resizes once each way),
+  # then closes and opens again 150 ms apart (each step waits 150 ms): the
+  # second toggle turns the first round mid-motion (a retarget), so each
+  # terminal resizes twice in one chain.
+  emit "key cmd+a" "wait $settle" "expect sidebar hidden" "key cmd+a" "wait $settle" "expect sidebar visible"
+  emit "key cmd+a" "key cmd+a" "wait $settle" "expect sidebar visible"
   # Close and split again (a terminal fades out, a new one grows in).
   emit "key alt+w" "wait 1000" "key ctrl+cmd+t" "wait 1500"
   # Tab switch: a new tab, then back (cross-fade).
@@ -129,6 +148,18 @@ if [[ "${asked:-0}" -gt 0 ]]; then
 fi
 stale="$(grep -c '  STALE ' "$out/automation.log" 2>/dev/null || true)"
 [[ "${stale:-0}" -gt 0 ]] && echo "stale terminal frames in captures: $stale (STALE lines in automation.log)"
+if [[ "$mode" == "--slow" ]]; then
+  # Mid-motion captures: nothing drawn outside the cards (tiles and the
+  # sidebar card where they show at that instant), and no stale frames.
+  if python3 "$here/outside.py" "$out" >"$out/outside.txt"; then
+    tail -n 1 "$out/outside.txt"
+  else
+    tail -n 1 "$out/outside.txt"
+    grep -v ' outside-bright=0 ' "$out/outside.txt" | sed 's/^/  /'
+    status=1
+  fi
+  [[ "${stale:-0}" -gt 0 ]] && status=1
+fi
 true
 "$root/apps/macos/dev.sh" --reset >/dev/null 2>&1 || true
 echo "stats: $out/anim-stats.json"

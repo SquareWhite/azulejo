@@ -43,9 +43,23 @@ pub enum HerdrChoice {
     Session(HerdrSession),
 }
 
+/// Which Ghostty config files the core reads for the settings it shares
+/// with Ghostty (`unfocused-split-opacity`, `unfocused-split-fill`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GhosttyFiles {
+    /// Ghostty's own default locations.
+    Default,
+    /// This file only (a dev profile's); a missing file sets nothing.
+    Only(PathBuf),
+    /// None: Azulejo's own defaults.
+    Off,
+}
+
 pub struct Options {
     /// The user's config file; `None` uses the bundled defaults only.
     pub config_path: Option<PathBuf>,
+    /// Where the Ghostty settings Azulejo honours come from.
+    pub ghostty: GhosttyFiles,
     /// Where the session is saved; `None` keeps it in memory.
     pub state_path: Option<PathBuf>,
     /// The API socket; `None` runs without one.
@@ -64,6 +78,7 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             config_path: azulejo_config::config_path(),
+            ghostty: GhosttyFiles::Default,
             state_path: Some(persist::default_state_path()),
             socket_path: Some(azulejo_api::socket_path()),
             api_required: false,
@@ -174,6 +189,7 @@ pub struct App {
     machines: Option<MachineSync>,
     socket: Option<PathBuf>,
     state_path: Option<PathBuf>,
+    ghostty_files: GhosttyFiles,
 }
 
 impl App {
@@ -305,6 +321,7 @@ impl App {
             machines,
             socket,
             state_path: opts.state_path,
+            ghostty_files: opts.ghostty,
         };
         if let Some(server) = server {
             let dispatcher = WithInfo::new(CoreDispatcher::new(core), app.info());
@@ -331,6 +348,17 @@ impl App {
         match self.config.read() {
             Ok(c) => c.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// The Ghostty settings Azulejo shares with Ghostty, read now (so a
+    /// config reload picks up edits to Ghostty's file too).
+    pub fn ghostty(&self) -> azulejo_config::ghostty::GhosttyConfig {
+        use azulejo_config::ghostty;
+        match &self.ghostty_files {
+            GhosttyFiles::Default => ghostty::load(self.platform),
+            GhosttyFiles::Only(path) => ghostty::load_from(std::slice::from_ref(path)),
+            GhosttyFiles::Off => ghostty::GhosttyConfig::default(),
         }
     }
 
@@ -473,6 +501,7 @@ mod tests {
     fn in_memory() -> Options {
         Options {
             config_path: None,
+            ghostty: GhosttyFiles::Off,
             state_path: None,
             socket_path: None,
             api_required: true,
@@ -490,6 +519,32 @@ mod tests {
         assert!(!app.core().session().unwrap().windows.is_empty());
         assert_eq!(app.info()["herdr_session"], Value::Null);
         app.shutdown();
+    }
+
+    #[test]
+    fn ghostty_settings_come_from_the_chosen_file() {
+        let app = App::start(in_memory()).unwrap();
+        assert_eq!(
+            app.ghostty().unfocused_split_opacity,
+            None,
+            "off: nothing set"
+        );
+        app.shutdown();
+
+        let dir = std::env::temp_dir().join(format!("azj-daemon-gh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("config");
+        let app = App::start(Options {
+            ghostty: GhosttyFiles::Only(file.clone()),
+            ..in_memory()
+        })
+        .unwrap();
+        assert_eq!(app.ghostty().unfocused_split_opacity, None, "missing file");
+        // Read on each ask, so an edit shows on the next config reload.
+        std::fs::write(&file, "unfocused-split-opacity = 0.6\n").unwrap();
+        assert_eq!(app.ghostty().unfocused_split_opacity, Some(0.6));
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

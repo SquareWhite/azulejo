@@ -281,6 +281,21 @@ Nov 3, 2026, Apple Silicon, 120 Hz built-in display, screen unlocked (display li
 
 One run, not six, so the ≥ 5-of-6 target above stays open. The inner tile views no longer round and mask their own corners (terminal radius 4, tile radius 6 before), so no layer in a tile is masked with a radius now; crop motion's clip is rectangular. GPU-side offscreen passes can't be counted without Instruments (full Xcode).
 
+## Sidebar motion and the focus dim: crop stress
+
+Nov 4, 2026, macOS test environment, 120 Hz display, screen unlocked, load average about 2. `apps/macos/automation/anim.sh`, crop style, one run, on the feedback branch: the focus ring is gone, unfocused tiles carry a dim layer (one more sublayer per card, cross-fading on focus moves), and the stress adds the sidebar closing and opening plus a toggle turned round 150 ms in (a retarget, so each terminal resizes twice in that chain).
+
+| Measure | Result |
+| --- | --- |
+| Animations | 48 (4 sidebar, 1 retarget); focus moves no longer count, the ring that moved is gone |
+| Display-link ticks | 1,156 |
+| Dropped ticks | 1, a single missed tick in a sidebar motion (median and p99 interval 8.33 ms, max 16.67 ms) |
+| PTY resizes expected / actual | 131 / 131 |
+| Main-thread passes while moving | 4,112; 6 over half a frame, 0 over a frame; max 5.45 ms, p99 1.05 ms |
+| Setup before the first frame | 6.4 ms median, 20.3 ms max |
+
+A chain of motions that retarget each other now expects one resize per motion that changes a terminal's size, rather than one per chain; motions under 50 ms apart may merge (the terminal's resize coalescing), so such a chain only has to stay between one (when it ends at a new size) and that count.
+
 ## herdr reconnect after the e2e pass: cause and fix
 
 **Date:** Nov 4, 2026

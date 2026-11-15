@@ -23,8 +23,11 @@ enum Motion {
         var curve = "ease_out"
         var style = "crop"
         var tabSwitch = "fade"
-        var dimInactive = false
         var reduceMotion = "system"
+        /// Ghostty's `unfocused-split-opacity` and `-fill`, when its config
+        /// sets them (the core reads them; nil otherwise).
+        var unfocusedOpacity: Double?
+        var unfocusedFill: NSColor?
     }
 
     private(set) static var settings = Settings()
@@ -56,9 +59,37 @@ enum Motion {
         if let v = json["curve"] as? String { s.curve = v }
         if let v = json["style"] as? String { s.style = v }
         if let v = json["tab_switch"] as? String { s.tabSwitch = v }
-        if let v = json["dim_inactive"] as? Bool { s.dimInactive = v }
         if let v = json["reduce_motion"] as? String { s.reduceMotion = v }
+        if let v = json["unfocused_split_opacity"] as? Double { s.unfocusedOpacity = v }
+        if let v = json["unfocused_split_fill"] as? String { s.unfocusedFill = color(hex: v) }
         settings = s
+    }
+
+    private static func color(hex: String) -> NSColor? {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard digits.count == 6, let v = UInt32(digits, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255,
+                       blue: CGFloat(v & 0xff) / 255, alpha: 1)
+    }
+
+    // MARK: Focus dim
+
+    /// How strongly unfocused tiles dim (the focus indicator): the opacity
+    /// of `dimFill` laid over them. Ghostty's `unfocused-split-opacity` when
+    /// its config sets one (Ghostty dims by 1 − that), else the token, which
+    /// turns the mockup's focused colours into its unfocused ones.
+    static var dimStrength: CGFloat {
+        settings.unfocusedOpacity.map { CGFloat(1 - $0) } ?? Design.Alpha.unfocusedDim
+    }
+
+    /// What unfocused tiles fade towards: Ghostty's `unfocused-split-fill`,
+    /// else the window colour, so they recede into the gutters.
+    static var dimFill: NSColor { settings.unfocusedFill ?? Design.Color.dimFill }
+
+    /// The dim's cross-fade when focus moves: quick and fixed, whatever the
+    /// layout motion's length (slowed in step with it for automation).
+    static var dimDuration: CFTimeInterval {
+        durationOverride.map { $0 * 0.6 } ?? Design.Motion.focus
     }
 
     /// Whether layout changes animate right now.
@@ -71,10 +102,8 @@ enum Motion {
         return true
     }
 
-    /// Layout motion (split, close, move, resize, zoom).
+    /// Layout motion (split, close, move, resize, zoom, the sidebar).
     static var duration: CFTimeInterval { durationOverride ?? Double(settings.durationMs) / 1000 }
-    /// The focus ring moving on its own (focus changes with no layout change).
-    static var focusDuration: CFTimeInterval { duration * 0.6 }
     /// Tab and workspace switches.
     static var tabDuration: CFTimeInterval { duration * 0.75 }
 
@@ -314,11 +343,17 @@ final class MotionStats {
         lastCallback = nil
     }
 
-    func resizes(tile: String, expected: Int, actual: Int, kind: String) {
+    /// One terminal's resizes over a motion chain: one per motion that
+    /// changed its size (`expected`). Motions that retarget each other
+    /// faster than the terminal's 50 ms resize coalescing can merge, so a
+    /// chain needs at least `minimum` (1 when it ends at a new size) and at
+    /// most `expected`; a chain of one motion is exact.
+    func resizes(tile: String, expected: Int, minimum: Int, actual: Int, kind: String) {
         expectedResizes += expected
         actualResizes += actual
-        if expected != actual {
-            mismatches.append("\(kind) \(Short.id(tile)): expected \(expected) resize(s), saw \(actual)")
+        if actual > expected || actual < min(minimum, expected) {
+            let want = minimum < expected ? "\(minimum) to \(expected)" : "\(expected)"
+            mismatches.append("\(kind) \(Short.id(tile)): expected \(want) resize(s), saw \(actual)")
         }
     }
 

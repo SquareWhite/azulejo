@@ -27,7 +27,6 @@
 //! curve = "ease_out"     # or "ease_in_out", "linear"
 //! style = "crop"         # moving tiles: "crop" (content at 1:1, revealed or cut off), "scale", "outline"
 //! tab_switch = "fade"    # tab/workspace switches: "fade", "slide" or "none"
-//! dim_inactive = false   # dim tiles without focus
 //! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
 //!
 //! [herdr]
@@ -82,7 +81,6 @@ pub struct Animation {
     pub curve: Curve,
     pub style: Style,
     pub tab_switch: TabSwitch,
-    pub dim_inactive: bool,
     pub reduce_motion: ReduceMotion,
 }
 
@@ -98,7 +96,6 @@ impl Default for Animation {
             curve: Curve::EaseOut,
             style: Style::Crop,
             tab_switch: TabSwitch::Fade,
-            dim_inactive: false,
             reduce_motion: ReduceMotion::System,
         }
     }
@@ -419,7 +416,12 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
     for (key, value) in table.iter() {
         match (key.get_ref().as_ref(), value.get_ref()) {
             ("enabled", DeValue::Boolean(b)) => out.enabled = *b,
-            ("dim_inactive", DeValue::Boolean(b)) => out.dim_inactive = *b,
+            // Unfocused tiles always dim now: dimming is the focus indicator.
+            ("dim_inactive", _) => sink.warn(
+                key.span(),
+                "`animation.dim_inactive` is gone: unfocused tiles always dim now \
+                 (set `unfocused-split-opacity = 1` in Ghostty's config to turn that off)",
+            ),
             ("duration_ms", DeValue::Integer(i)) => {
                 match i64::from_str_radix(i.as_str(), i.radix()) {
                     Ok(ms) if (0..=i64::from(Animation::MAX_DURATION_MS)).contains(&ms) => {
@@ -467,10 +469,6 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                 &mut out.reduce_motion,
             ),
             ("enabled", _) => sink.error(value.span(), "`animation.enabled` must be true or false"),
-            ("dim_inactive", _) => sink.error(
-                value.span(),
-                "`animation.dim_inactive` must be true or false",
-            ),
             ("duration_ms", _) => sink.error(
                 value.span(),
                 "`animation.duration_ms` must be a whole number",

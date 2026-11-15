@@ -295,7 +295,7 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 
 - [x] **D.1 Design tokens.** Colours, radii, gutters, type scale and status iconography from the mockup in one Swift file, mirrored in `shared/design/tokens.json` so the Linux shell (M3) uses the same values. Dark theme first.
   **Done when** no view hard-codes a colour or radius.
-  **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: 1 pt accent outline at 45 %, pending designer confirmation (docs/design/README.md).
+  **Result:** `shared/design/tokens.json` → `Design.swift` via `scripts/design-tokens` (stale check in `just lint`). Every colour, font and corner radius in the shell goes through `Design.*`; colours are the mockup's One Dark values, radii and spacing still today's (D.5 moves them). Blocked is now yellow, as in the mockup. Focus indicator: was a 1 pt accent outline at 45 %; since Nov 4 there's no outline and unfocused tiles dim instead (25 % of the window colour, `alpha.unfocusedDim`; Ghostty's `unfocused-split-opacity` wins when set), see docs/design/README.md.
 
 - [x] **D.2 Window chrome.** Full-size content view with a hidden title bar; traffic lights inside the sidebar card; the toolbar row holds the tab strip and the search field.
   **Done when** a screenshot matches the mockup's chrome layout at 1440 × 900.
@@ -311,7 +311,7 @@ The designer's mockup is `docs/design/mockup-v1.png` (local capture), described 
 
 - [x] **D.5 Tile cards and headers.** Gutters and corner radius from the tokens; a header strip per tile (kind icon, bold title, muted "— subtitle"); the focus indicator agreed with the designer (the mockup shows none).
   **Done when** all four tile kinds sit in cards with headers, and animations (2.1) still hold their frame budget.
-  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Focus indicator still pending the designer. Mid-motion captures (the app's render, `anim.sh --slow`) show caps and headers moving with the tiles and no content outside any card; the ring now rides with the focused tile, and cross-fade ghosts stay in their old card (5eabfc9).
+  **Result:** 8 pt gutters, 10 pt cards with corner caps (no rounded masks), focused header a shade lighter as in the mockup, terminal text 8 pt in. Crop stress with the screen on: 55 animations, 0 dropped ticks at 120 Hz, 115/115 PTY resizes; no main-thread pass over a frame (max 6.3 ms). Mid-motion captures (the app's render, `anim.sh --slow`) show caps and headers moving with the tiles and no content outside any card; cross-fade ghosts stay in their old card (5eabfc9). Focus indicator decided Nov 4 (the maintainer): no outline; every unfocused tile dims, header strip included, which also gives the lighter focused header and body of the mockup, so the header strips are one colour now.
 
 - [x] **D.6 Browser chrome.** Restyle 1.8's controls: chevrons, rounded URL field with a globe icon, reload on the right, sunken chrome background.
   **Done when** it matches the mockup's browser tile.
@@ -348,7 +348,6 @@ D.1–D.9 ticked; the side-by-side comparison signed off.
 **Status (Nov 3, 2026):** D.1–D.9 ticked; waiting for sign-off on [compare-v1.md](docs/design/compare-v1.md).
 
 **Pending the designer:**
-- The focus indicator (a 1 pt accent outline today; the mockup shows none) and whether the focused tile's body gets the mockup's lighter tint (terminals draw their own body from the Ghostty theme).
 - The agent badge in the tile corner ("claude · working"): keep, limit to blocked or finished, or drop.
 - Which state a workspace row shows when its tabs disagree (the mockup: working, with a blocked tab).
 - The default terminal font size when the user's Ghostty config sets none.
@@ -358,6 +357,10 @@ D.1–D.9 ticked; the side-by-side comparison signed off.
 - Crop motion "snapshot past the edge" (5eabfc9): the snapshot was clipped all along; the focus ring was the edge it crossed. It went from the old focused tile straight to the new one, so mid-split it cut across the shrinking tile (and across both cards on a close). It now follows the focused tile's own path. Cross-fade ghosts (rotate, Tile → Three Column) drew a tile's last frame unclipped, past the container's edge for a tile back from Monocle; they're clipped to the old card and only for tiles that were on screen. Slowed captures of split, resize, swap, zoom, rotate, Monocle, Three Column and close: no bright pixel outside the logged tile and ring frames (was 3–5,840 per capture). Crop stress: 55 animations, PTY resizes 115/115, 0 dropped ticks, but with the screen locked (0 display-link ticks; 1 of 1,436 main-thread passes over a frame), so the screen-on run stays a deferred check.
 - Traffic lights in the scene's capture (5dc9fef): the capture method. `capture-v1.png` is the app's render of its content view, and the lights live in the title bar outside it; both in-app renders draw them now (grey: the automation window is never key). Recaptured; compare-v1 items 5 and 6 fixed.
 - Preview headings about twice the mockup's size (9002409): body 13 px, heading 18 px semibold, code 11 px, mockup colours in dark.
+
+**the maintainer's feedback (Nov 4, 2026):**
+- **Focus indicator** (was pending the designer): no outline round the focused tile; every unfocused tile dims instead, header strip included, at 25 % of the window colour (`alpha.unfocusedDim`, `color.dimFill`), which turns the mockup's focused body and header into its unfocused ones. Ghostty's `unfocused-split-opacity` and `-fill` win when its config sets them (read by the core). Nothing dims with one tile on screen (a lone tile, Monocle, zoom); the keyboard leaving the tiles (⌘K, search, the Files panel) and the window losing key change nothing, as in Ghostty. The dim cross-fades in 120 ms on focus moves. The ring, its morph and the zoom outline are gone; `[animation] dim_inactive` only warns. `apps/macos/automation/e2e/dim.sh` checks it on the captures' pixels.
+- **The sidebar opens and closes with motion** (`toggle_sidebar`): the card slides and fades while the tile area grows or shrinks with it, through the tiles' own layout motion (crop rules, one PTY resize per terminal, style, curve and length from `[animation]`, instant when off or under Reduce Motion); a toggle mid-motion turns it round. The traffic lights stay put, open or closed. `anim.sh` has sidebar steps in the stress (131/131 PTY resizes with a retarget, 0 main-thread passes over a frame) and in `--slow`, whose captures `apps/macos/automation/outside.py` checks for content outside the cards (0 in 43 captures, 0 STALE).
 
 ### E2E status
 
