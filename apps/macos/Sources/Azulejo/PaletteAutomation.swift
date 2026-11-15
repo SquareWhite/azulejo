@@ -31,7 +31,8 @@ import AppKit
 /// `badges` (`ABCD=blocked!,…` or `none`: agent state on tiles), `agents`
 /// (each tile's agent in reading order: `blocked!,none`), `header.agents`
 /// (what each tile's header strip carries, in reading order: `badge`, `dot`
-/// (a narrow tile's badge), `blocked` (the blocked icon) or `none`),
+/// (a narrow tile's badge), the status icon's state (`blocked`, `done`,
+/// `working`) or `none`),
 /// `tile.badge.setting` (`[appearance] tile_agent_badge`: `on` / `off`), `sidebar.markers` / `tab.markers` (`●2|-`),
 /// `tab.label`, `dock`, `sidebar.machines` (group headers: `Local ●|dev-server ●
 /// Reconnecting…`), `machines` (`Local=connected,dev-server=reconnecting`),

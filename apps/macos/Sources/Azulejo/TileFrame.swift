@@ -415,7 +415,7 @@ extension TileFrame: AutomatableTile {
         state["tile.header.subtitle"] = header.subtitleText
         state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
-        // Room the strip keeps clear at its right end (the badge; 0 without).
+        // Room the strip keeps clear at its right end (status icon or badge; 0 without).
         state["tile.header.inset"] = "\(Int(header.trailingInset.rounded()))"
         state["tile.dim"] = dimLevel > 0 ? "yes" : "no"
         state["tile.overlays.top"] = subviews.last === overlays && layer?.sublayers?.last === overlays.layer
@@ -490,9 +490,9 @@ final class TileHeaderView: NSView, ThemeAware {
         render()
     }
 
-    /// The agent badge, or a blocked tile's icon (the attention overlay makes
-    /// and fills it), at the strip's right end; the title keeps clear of it.
-    /// None by default: the title gets the whole strip. A subview, so it
+    /// The agent's status icon, or its badge (the attention overlay makes
+    /// and fills either), at the strip's right end; the title keeps clear of
+    /// it. None without an agent: the title gets the whole strip. A subview, so it
     /// rides with the strip when the strip follows a crop clip mid-motion (F6).
     var badge: NSView? {
         didSet {

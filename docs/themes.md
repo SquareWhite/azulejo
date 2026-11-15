@@ -62,14 +62,22 @@ With Ghostty's colours, a Ghostty `theme = light:…,dark:…` follows Azulejo's
 
 ## Agent state in tile headers
 
-Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. Terminal tile headers stay quiet by default: no "● claude · working" badge, so the title gets the whole strip. A blocked agent still marks its own tile, so you can find it at a glance in a busy tab: the blocked icon (yellow `exclamationmark.circle.fill`, no text, the agent's name in its tooltip) at the right end of the header strip, as long as the agent stays blocked. A blocked tile also gets the yellow attention border until the agent moves on: looking doesn't answer it. A finished agent shows the green checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`.
+Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. A terminal tile whose agent is working, blocked or finished (and not read yet) shows a small status icon at the right end of its header strip: no text (the agent's name and state sit in its tooltip) and no coloured border round the tile. The icons and colours match the tab strip and sidebar:
+
+| State | Icon | Colour |
+| --- | --- | --- |
+| working | the working ring (turns slowly while layout motion is on) | `statusWorking` |
+| blocked (waiting for input) | `exclamationmark.circle.fill` | `statusBlocked` |
+| done, not read yet | `checkmark.circle` | `statusDone` |
+
+A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show no icon, so the title gets the whole strip.
 
 ```toml
 [appearance]
 tile_agent_badge = true    # the badge in every agent tile's header (default false)
 ```
 
-On, every terminal with an agent shows its name and state at the right end of its header ("● codex · blocked"; just the dot in a narrow tile) instead of the blocked icon. It applies live when you save the config.
+On, every terminal with an agent shows its name and state at the right end of its header ("● codex · blocked"; just the dot in a narrow tile) instead of the status icon. It applies live when you save the config.
 
 ## App icon
 

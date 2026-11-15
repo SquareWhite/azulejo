@@ -865,7 +865,8 @@ pub struct AppearanceConfig {
     pub terminal_colors: Option<TerminalColors>,
     /// The agent badge ("● claude · working") at the right end of terminal
     /// tile headers. Off by default: the sidebar, rail, tab strip, ⌘K and
-    /// Dock show agent state, and a blocked tile keeps its own mark.
+    /// Dock show agent state, and a working, blocked or unread-done agent's
+    /// tile header shows its status icon alone.
     pub tile_agent_badge: bool,
     /// The Dock icon while the app runs: light (the default), dark, or auto.
     pub app_icon: AppIcon,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Captures for the visual polish fixes from the Nov 3 e2e pass (polish.azs.in):
-# long cwd subtitles, agent state in headers (no badge; the blocked icon), the
+# long cwd subtitles, agent state in headers (no badge; status icons), the
 # config banner, a new terminal's
 # placeholder, a failed browser load, every tile kind at the minimum window,
 # and twelve tabs. In-process, on its own dev instance (AZJ_DEV_NAME=polish-g,

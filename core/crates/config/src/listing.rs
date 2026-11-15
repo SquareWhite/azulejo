@@ -346,8 +346,8 @@ pub fn keys_template(platform: Platform) -> String {
     out.push_str(&block);
     out.push_str(
         "\n# Agent state lives in the sidebar, rail, tab strip, ⌘K and Dock. Set this\n\
-         # to also show \"● claude · working\" in terminal tile headers (off, a\n\
-         # blocked tile still gets a yellow mark there). docs/themes.md.\n\
+         # to also show \"● claude · working\" in terminal tile headers (off, a busy\n\
+         # agent's tile shows a status icon alone). docs/themes.md.\n\
          # [appearance]\n\
          # tile_agent_badge = false\n\
          # The Dock icon while Azulejo runs: \"light\", \"dark\" or \"auto\" (follows\n\

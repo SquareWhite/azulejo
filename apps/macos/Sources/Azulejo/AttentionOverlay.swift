@@ -11,7 +11,7 @@ enum AttentionStyle {
 
     /// `[appearance] tile_agent_badge` (off by default): the full badge
     /// ("● claude · working") in terminal tile headers. Off, a header shows
-    /// only the blocked icon, on blocked tiles. Follows config reloads.
+    /// the agent's status icon alone. Follows config reloads.
     static var tileBadge = false {
         didSet {
             if tileBadge != oldValue { NotificationCenter.default.post(name: tileBadgeChanged, object: nil) }
@@ -29,6 +29,17 @@ enum AttentionStyle {
         case .idle: return agent.attention ? done : nil
         case .unknown: return nil
         }
+    }
+
+    /// The status icon in a tile's header: blocked, then a finish nobody has
+    /// read, then working. Nil for a quiet agent (idle, or a finish already
+    /// read, whatever herdr still calls it), without an agent, or once herdr
+    /// lets go of it: the title keeps the whole strip.
+    static func status(for tile: TileModel) -> Design.Status? {
+        guard let agent = tile.agent else { return nil }
+        if agent.status == .blocked { return .blocked }
+        if agent.attention { return .done }
+        return agent.status == .working ? .working : nil
     }
 
     /// Per-scope rollup for the sidebar and tab bar.
@@ -65,10 +76,11 @@ enum AttentionStyle {
     }
 }
 
-/// Agent state on the tiles: a thin coloured border on tiles that need a
-/// look, and at the right end of a terminal tile's header strip either the
-/// blocked icon (blocked tiles only; the default) or, with `[appearance]
-/// tile_agent_badge = true`, the agent's name and state on every agent tile.
+/// Agent state on the tiles, at the right end of a terminal tile's header
+/// strip: the agent's status icon while it's working, blocked or finished and
+/// unread (the default; the same symbols and colours as the tab strip and
+/// sidebar) or, with `[appearance] tile_agent_badge =
+/// true`, the agent's name and state. No coloured border round the tile.
 /// Either sits clear of the terminal's text: it's the strip's subview, so it
 /// moves with it and the title keeps clear of it. The overlay lies over the
 /// tile container and passes every click through.
@@ -79,13 +91,13 @@ final class AttentionOverlayView: NSView, ThemeAware {
     /// Badges by tile (`tile_agent_badge` on); each lives in its tile's
     /// header strip.
     private var badges: [String: AgentBadgeView] = [:]
-    /// Blocked icons by tile (`tile_agent_badge` off), in the header strips.
+    /// Status icons by tile (`tile_agent_badge` off), in the header strips.
     private var marks: [String: StatusIconView] = [:]
-    private var borders: [String: NSView] = [:]
     /// Agent state, for automation: tile id → "blocked!" / "working" / …
     private(set) var shown: [String: String] = [:]
     /// What each tile's header carries, for automation: tile id → "badge",
-    /// "dot" (a narrow tile's badge) or "blocked" (the blocked icon).
+    /// "dot" (a narrow tile's badge) or the status icon's state ("blocked",
+    /// "done", "working").
     private(set) var inHeader: [String: String] = [:]
 
     override init(frame: NSRect) {
@@ -106,7 +118,7 @@ final class AttentionOverlayView: NSView, ThemeAware {
     private var tab: TabModel?
     private var frames: [String: CGRect] = [:]
 
-    /// Borders and badge dots take their colours again.
+    /// Badge dots take their colours again (status icons redraw themselves).
     func applyTheme() { apply(tab, frames: frames) }
 
     /// Puts the badges where the tiles are now (window resized, motion ended).
@@ -117,7 +129,6 @@ final class AttentionOverlayView: NSView, ThemeAware {
     func apply(_ tab: TabModel?, frames: [String: CGRect]) {
         self.tab = tab
         self.frames = frames
-        var seen = Set<String>()
         var withBadge = Set<String>(), withMark = Set<String>()
         var state: [String: String] = [:]
         var carried: [String: String] = [:]
@@ -125,7 +136,6 @@ final class AttentionOverlayView: NSView, ThemeAware {
             guard let tile = tab?.tile(id), let agent = tile.agent,
                   agent.status != .unknown || agent.attention
             else { continue }
-            seen.insert(id)
             if AttentionStyle.tileBadge {
                 withBadge.insert(id)
                 let badge = badges[id] ?? AgentBadgeView()
@@ -136,34 +146,20 @@ final class AttentionOverlayView: NSView, ThemeAware {
                 if badge.fittingSize.width > frame.width * 0.45 { badge.compact = true }
                 place(badge, tile: id, frame: frame)
                 carried[Short.id(id)] = badge.compact ? "dot" : "badge"
-            } else if agent.status == .blocked {
-                // F11: a blocked agent can be found at a glance in a busy
-                // tab, attention seen or not. The icon alone, no text.
+            } else if let status = AttentionStyle.status(for: tile) {
+                // F11: a busy agent tile carries its state in the header, so a
+                // blocked or finished one can be found at a glance in a busy
+                // tab. The icon alone, no text; quiet agents show none.
                 withMark.insert(id)
-                let mark = marks[id] ?? StatusIconView(.blocked) { Self.blockedIcon() }
+                if let old = marks[id], old.status != status {
+                    unplace(old, tile: id)
+                    marks[id] = nil
+                }
+                let mark = marks[id] ?? StatusIconView(status) { Self.headerIcon(status) }
                 marks[id] = mark
-                mark.toolTip = "\(agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent") · blocked"
+                mark.toolTip = "\(agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent") · \(status.rawValue)"
                 place(mark, tile: id, frame: frame)
-                carried[Short.id(id)] = "blocked"
-            }
-
-            let focused = tab?.focused == id
-            if agent.attention, !focused || agent.status == .blocked {
-                let border = borders[id] ?? {
-                    let v = NSView()
-                    v.wantsLayer = true
-                    v.layer?.cornerRadius = Design.Radius.focus
-                    v.layer?.borderWidth = Design.Border.attention
-                    addSubview(v, positioned: .below, relativeTo: nil)
-                    borders[id] = v
-                    return v
-                }()
-                // theme: apply() runs again from applyTheme().
-                border.layer?.borderColor = (agent.status == .blocked
-                    ? AttentionStyle.blocked : AttentionStyle.done).withAlphaComponent(Design.Alpha.attentionBorder).cgColor
-                border.frame = frame.insetBy(dx: -1, dy: -1)
-            } else if let border = borders.removeValue(forKey: id) {
-                border.removeFromSuperview()
+                carried[Short.id(id)] = status.rawValue
             }
             state[Short.id(id)] = agent.status.rawValue + (agent.attention ? "!" : "")
         }
@@ -175,19 +171,18 @@ final class AttentionOverlayView: NSView, ThemeAware {
             unplace(mark, tile: id)
             marks[id] = nil
         }
-        for (id, border) in borders where !seen.contains(id) {
-            border.removeFromSuperview()
-            borders[id] = nil
-        }
         shown = state
         inHeader = carried
     }
 
-    /// The blocked symbol as the tab strip draws it: the "!" in the strip's
-    /// colour (the window's when the strip is see-through), the disc in the
-    /// status colour. A one-colour palette would fill the "!" in too.
-    private static func blockedIcon() -> NSImage? {
-        let status = Design.Status.blocked
+    /// A state's icon at the header's symbol size, drawn as the tab strip
+    /// draws it. Filled symbols (blocked) get their mark in the strip's colour
+    /// (the window's when the strip is see-through) on the status colour: a
+    /// one-colour palette would fill the "!" in too.
+    private static func headerIcon(_ status: Design.Status) -> NSImage? {
+        guard status.symbol.hasSuffix(".fill") else {
+            return Design.StatusIcon.image(status, pointSize: Design.Symbol.header)
+        }
         let strip = Theme.resolved(Design.Color.header)
         let mark = strip.alphaComponent < 1 ? Theme.resolved(Design.Color.window) : strip
         let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.header, weight: .bold)

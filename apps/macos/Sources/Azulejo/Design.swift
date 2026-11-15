@@ -592,7 +592,6 @@ enum Design {
         static let window: CGFloat = 12
         static let card: CGFloat = 12
         static let tile: CGFloat = 10
-        static let focus: CGFloat = 11
         static let terminal: CGFloat = 4
         static let overlay: CGFloat = 4
         static let ghost: CGFloat = 4
@@ -616,14 +615,12 @@ enum Design {
 
     /// Border widths, in points.
     enum Border {
-        static let attention: CGFloat = 2
         static let hairline: CGFloat = 1
         static let drop: CGFloat = 2
     }
 
     /// Opacities (0 to 1) applied on top of colour tokens.
     enum Alpha {
-        static let attentionBorder: CGFloat = 0.85
         static let workingMarker: CGFloat = 0.6
         static let rowHover: CGFloat = 0.45
         static let footerZero: CGFloat = 0.45
