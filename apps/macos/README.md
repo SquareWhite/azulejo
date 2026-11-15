@@ -124,18 +124,37 @@ keeps a closed workspace's panes, and that a relaunch doesn't bring it back.
 Layout changes animate: split, close, move, swap, resize, zoom, the tall
 actions and the sidebar opening or closing (`toggle_sidebar`: the card slides
 and fades while the tile area grows or shrinks with it, a gutter apart), plus
-tab/workspace switches. Every tile goes to its
-final frame at the start of a motion and Core Animation carries it there
-visually, so nothing re-lays out per frame. A terminal that changes size first
-covers itself with an IOSurface copy of its last frame, resizes its PTY once
-(ADR 0004; at most one per 50 ms while a key repeats), and shows the live
-surface again on the first fresh frame at the new size, or 250 ms after the
-motion at the latest. A change that arrives mid-motion starts from where every
-tile appears on screen.
+tab/workspace switches. A change that arrives mid-motion starts from where
+every tile appears on screen.
 
 `style` picks what content does on the way:
 
-- `crop` (default): the tile's frame is a clip. Its bounds and position
+- `reflow` (default): content lays out live, like a window being
+  drag-resized. Each moving tile's frame steps along the curve once per
+  display frame, and a terminal's grid follows it 100 ms ahead: its PTY
+  resizes to the size the tile will have 100 ms on, when that's a whole cell
+  more or less and the last resize was 33 ms ago, and takes the exact final
+  size once that's within reach, before the motion ends (ADR 0004, Nov 4
+  reflow and reflow-lead amendments). The lead covers the redraw's trip
+  through libghostty and herdr (herdr's attach client only looks at its size
+  every 100 ms), so text lands with the frame (median 18 ms ahead, at worst
+  ~55 ms behind) instead of 50–160 ms behind it, and the last redraw lands
+  with the motion's end. `apps/macos/automation/reflow-lag.sh` measures it.
+  So text rewraps and TUIs redraw as the tile moves, one or two times per
+  motion (herdr's 100 ms poll caps it). libghostty's
+  renderer thread draws each new size, so the main thread never waits on the
+  GPU; until it has, the last frame stays at the top left. A terminal whose
+  pane starts mid-motion (a split) is born at its final size. Closing tiles
+  and the ones Monocle hides leave as in `crop`. herdr sees no layout change
+  from any of this (pane sizes come from the attach client), so the mirror
+  stays quiet.
+- `crop`: every tile goes to its final frame at the start of a motion and
+  Core Animation carries it there visually, so nothing re-lays out per frame.
+  A terminal that changes size first covers itself with an IOSurface copy of
+  its last frame, resizes its PTY once (ADR 0004; at most one per 50 ms while
+  a key repeats), and shows the live surface again on the first fresh frame
+  at the new size, or 250 ms after the motion at the latest. The tile's
+  frame is a clip. Its bounds and position
   animate; content stays at 1:1 and sticks to the edge that moves least, so
   the moving edge reveals or cuts it off. A shrinking terminal shows its
   snapshot at 1:1 until the motion ends; a growing one shows live content as
@@ -155,7 +174,7 @@ tile appears on screen.
 enabled = true            # false: changes are instant
 duration_ms = 200         # 0–1000
 curve = "ease_out"        # "ease_out", "ease_in_out", "linear"
-style = "crop"            # "crop", "scale", "outline"
+style = "reflow"          # "reflow", "crop", "scale", "outline"
 tab_switch = "fade"       # tab and workspace switches: "fade", "slide", "none"
 reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on; "ignore"
 ```
@@ -182,7 +201,7 @@ is retired: it only warns now.
 Changes apply on save (config hot reload). `apps/macos/automation/anim.sh`
 runs a 60-animation stress on a dev instance (frame pacing from the display
 link, PTY resizes per motion, a capture after the stress); `--slow` runs
-1.5 s motions with mid-motion window captures. `AZJ_ANIM_STYLE=crop|scale|outline`
+1.5 s motions with mid-motion window captures. `AZJ_ANIM_STYLE=reflow|crop|scale|outline`
 runs one style regardless of the config. The app can't run
 `screencapture` itself, so `capture` lines drop a request the script takes.
 

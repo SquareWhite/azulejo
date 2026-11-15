@@ -273,6 +273,8 @@ expect key.last action:toggle_layout_monocle
 expect kind monocle
 expect visible 1
 until responder.focused yes
+# The switch lands mid-motion (the hidden terminal still fading out): it
+# comes back in place at the tab's size, so neither switch resizes it.
 remember resizes
 key alt+l
 until responder.focused yes
@@ -281,6 +283,7 @@ unchanged resizes
 key alt+l
 until responder.focused yes
 unchanged focused.id
+unchanged resizes
 
 log === S30 closing in Monocle shows the next tile with first responder
 key alt+w

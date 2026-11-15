@@ -1242,7 +1242,7 @@ fn animation_style_settings() {
     use azulejo_config::{Curve, ReduceMotion, Style, TabSwitch};
     let defaults = user("", MAC);
     assert_eq!(defaults.animation.curve, Curve::EaseOut);
-    assert_eq!(defaults.animation.style, Style::Crop);
+    assert_eq!(defaults.animation.style, Style::Reflow);
     assert_eq!(defaults.animation.tab_switch, TabSwitch::Fade);
     assert_eq!(defaults.animation.reduce_motion, ReduceMotion::System);
 
@@ -1255,6 +1255,9 @@ fn animation_style_settings() {
     assert_eq!(config.animation.style, Style::Outline);
     let scale = user("[animation]\nstyle = \"scale\"\n", MAC);
     assert_eq!(scale.animation.style, Style::Scale);
+    // The old default, kept for whoever prefers it.
+    let crop = user("[animation]\nstyle = \"crop\"\n", MAC);
+    assert_eq!(crop.animation.style, Style::Crop);
     assert_eq!(config.animation.tab_switch, TabSwitch::Slide);
     assert_eq!(config.animation.reduce_motion, ReduceMotion::Ignore);
 
@@ -1265,7 +1268,7 @@ fn animation_style_settings() {
     );
     assert_eq!(errors(&bad).len(), 3);
     assert_eq!(bad.animation.curve, Curve::EaseOut);
-    assert_eq!(bad.animation.style, Style::Crop);
+    assert_eq!(bad.animation.style, Style::Reflow);
     assert_eq!(bad.animation.tab_switch, TabSwitch::Fade);
     assert!(errors(&bad)[0].contains("\"ease_out\""));
 

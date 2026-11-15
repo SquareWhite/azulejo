@@ -4,15 +4,17 @@
 #
 #   apps/macos/automation/anim.sh            # 50+ animations at the configured speed:
 #                                            #   frame pacing, one PTY resize per terminal
-#                                            #   per motion, no garbage after the stress
+#                                            #   per motion (reflow: one plus at most
+#                                            #   Motion.maxLiveResizes live ones), no
+#                                            #   garbage after the stress
 #   apps/macos/automation/anim.sh --slow     # slow motion with mid-animation captures,
 #                                            #   checked by outside.py (nothing drawn
 #                                            #   outside the cards) and for STALE frames
 #   Both include the sidebar collapsing to its rail and opening again, and a
 #   toggle turned round mid-motion; --slow also hides it ([sidebar] collapsed
 #   = "hidden").
-#   AZJ_ANIM_STYLE=outline apps/macos/automation/anim.sh   # one style (crop, scale,
-#                                            #   outline) instead of the configured one
+#   AZJ_ANIM_STYLE=outline apps/macos/automation/anim.sh   # one style (reflow, crop,
+#                                            #   scale, outline) instead of the configured one
 #   AZJ_ANIM_THEME=atom-one-light apps/macos/automation/anim.sh --slow   # in a theme
 #                                            #   (docs/themes.md) other than the default
 #
