@@ -1003,6 +1003,13 @@ extension TerminalTileView: MotionAware {
     /// Automation: the libghostty surface, for hit-test probes at its edges.
     var surfaceView: NSView? { surface }
 
+    /// Automation: what libghostty shows (its grid's text and size) and the
+    /// herdr pane it's attached to.
+    var screen: (pane: String, grid: (cols: Int, rows: Int)?, text: String)? {
+        guard let surface, let text = surface.viewportText else { return nil }
+        return (attachedPane, surface.gridSize, text)
+    }
+
     func liveResizeDidEnd() {
         guard reflow != nil else { return }
         reflow = nil

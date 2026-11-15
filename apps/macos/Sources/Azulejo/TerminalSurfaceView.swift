@@ -54,6 +54,22 @@ final class TerminalSurfaceView: NSView {
         return CGSize(width: CGFloat(size.cell_width_px) / scale, height: CGFloat(size.cell_height_px) / scale)
     }
 
+    /// Automation: libghostty's own visible text, one line per row (what's
+    /// on screen, not herdr's copy of the pane).
+    var viewportText: String? {
+        guard let surface else { return nil }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(
+                tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let ptr = text.text else { return "" }
+        return String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(text.text_len)), as: UTF8.self)
+    }
+
     /// Creates the surface and starts `command`. Call only once the view has a
     /// non-zero frame: the PTY takes the surface's size before the child runs
     /// (herdr's attach rejects a zero-sized PTY; ADR 0006).

@@ -23,6 +23,10 @@ import AppKit
 ///     divider hover …                move an in-app pointer over the tiles,
 ///                                    with AppKit's tracking events
 ///                                    (`DividerHoverAutomation`)
+///     divider screens NAME           every terminal's text as libghostty
+///                                    shows it → <out>/NAME-<pane>.txt (pane
+///                                    `w1:p2` → `w1_p2`), to hold against
+///                                    herdr's `pane read` of the same pane
 ///
 /// `expect` keys: `dividers` (how many), `divider.PATH` (that split's ratio,
 /// `divider.-` for the root), `rect.N` (the Nth tile in the tab's order,
@@ -82,6 +86,18 @@ enum DividerAutomation {
             return (check(tiles), 0)
         case "hover":
             return (DividerHoverAutomation.run(Array(parts.dropFirst()), tiles: tiles, note: note), 0)
+        case "screens":
+            let name = parts.count > 1 ? parts[1] : "screen"
+            var shown = 0
+            for (_, view) in tiles.liveTileViews {
+                guard let terminal = (view as? TileFrame)?.content as? TerminalTileView,
+                      let screen = terminal.screen, !screen.pane.isEmpty else { continue }
+                let file = out.appendingPathComponent("\(name)-\(screen.pane.replacingOccurrences(of: ":", with: "_")).txt")
+                try? screen.text.write(to: file, atomically: true, encoding: .utf8)
+                note("screen \(screen.pane) \(screen.grid.map { "\($0.cols)x\($0.rows)" } ?? "?") → \(file.lastPathComponent)")
+                shown += 1
+            }
+            return (shown == 0 ? "no terminal shows anything" : nil, 0)
         case "stats":
             let name = parts.count > 1 ? parts[1] : "drag-stats"
             let stats = tiles.lastDividerDrag

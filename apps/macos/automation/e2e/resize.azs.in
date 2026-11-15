@@ -1,0 +1,40 @@
+# R1: vertical divider drags must leave no stale rows. After each drag the
+# text libghostty shows in every terminal (`divider screens`) has to match
+# herdr's own copy of the pane (`pane read --source visible`); resize.sh
+# compares them. {FX} is a fixture folder resize.sh fills in.
+log R1 vertical resize: shell, vim and a bottom-anchored redraw
+delivery direct
+until terminal.phase attached 10000
+core {"method":"layout.split","params":{"direction":"down"}}
+until tiles 2 3000
+core {"method":"layout.split","params":{"direction":"right"}}
+until tiles 3 3000
+wait 2500
+# Top: a shell with a screenful of output. Bottom left: vim. Bottom right:
+# a program that redraws a block at the bottom on every SIGWINCH with
+# relative cursor moves, like Claude Code's prompt area (Ink).
+sh {herdr} --session {session} pane run {pane:1} "seq -f 'shell line %g' 1 300"
+sh {herdr} --session {session} pane run {pane:2} "cd {FX} && vim -u NONE -c 'set nu' lines.txt"
+sh {herdr} --session {session} pane run {pane:3} "python3 {FX}/inkish.py 12 {FX}/winch.log"
+wait 2000
+divider list
+SCREENS start
+divider drag - 0.30 400
+wait 900
+SCREENS d1
+divider drag - 0.75 400
+wait 900
+SCREENS d2
+divider drag - 0.40 300 200
+wait 900
+SCREENS d3
+# Quick wiggles: down and back up before herdr looks at its size.
+divider drag - 0.55 120
+wait 300
+divider drag - 0.40 120
+wait 900
+SCREENS d4
+divider drag - 0.65 600
+wait 900
+SCREENS d5
+shot settled

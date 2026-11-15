@@ -223,6 +223,32 @@ Checked Nov 9, 2026 on herdr 0.9.5 (protocol 22) in a throwaway session (`azulej
 - `workspace.close {workspace_id}` closes every tab and pane in it (their processes end) and sends `workspace_closed`. CLI: `herdr workspace close <id>`.
 - Both answer `workspace_not_found` once the workspace is gone.
 
+## 13. Stale rows ("trash lines") after a vertical resize
+
+Probed Nov 9, 2026 on herdr 0.9.5. Reproduce with `apps/macos/automation/e2e/resize.sh` (Azulejo, three terminals, root divider dragged up and down), or without Azulejo: run `apps/macos/automation/e2e/inkish.py 12` in a pane of a throwaway session, attach with `scripts/herdr-probe/attach_pty.py … --cols 46 --rows 14 --resize-after 0.8 46 6 --resize-after 1.5 46 18`, then `pane read --source visible`.
+
+**Answer.** The stale rows live in herdr's own copy of the pane, not in libghostty. No Ghostty config option changes them: Azulejo's libghostty only hosts the attach client, which runs on the alt screen.
+
+- **Azulejo's side is exact.** After every drag (150 ms after the release and later), the text libghostty shows (`divider screens`) matches `pane read --source visible` row for row, in a shell, vim and an Ink-style program. The attach client sends a full repaint (every cell, no `ED 2`) on every signalled resize, even when the size comes back to where it was, and it reads the size after taking the signal flag, so it never misses one. libghostty resizes its grid and the PTY together, under the lock its output parser takes.
+- **The pane's side.** A program that redraws a bottom-anchored block with relative cursor moves (Ink: erase the lines it drew, draw them again) can't reach rows that went into scrollback. When the pane shrinks below the block's height, the top of the old block scrolls off and stays there; the redraw draws a new block under it. herdr's emulator is libghostty-vt, which pulls scrollback back into view when the pane grows: old blocks stacked above the new one.
+- **Not seen:** a shell (fish, two-line prompt; libghostty-vt clears the prompt on resize for OSC 133 shells), vim, or an Ink-style block that never gets taller than its pane. Claude Code wasn't run (it needs the user's credentials); its renderer erases the visible rows and redraws on a viewport shrink, so it lands in the same class whenever its live area is taller than the pane.
+
+**Turning the pull off.** Newer Ghostty (`vendor/ghostty`) has a switch for it: `Terminal.flags.resize_pull_scrollback`, set only through the C API (`GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK = 40`), no escape sequence. A throwaway C harness fed `inkish.py`'s byte stream (CRLF, as a PTY delivers it) into that libghostty-vt at the repro's sizes, once with the switch on and once off:
+
+| Case | Pull on (herdr today) | Pull off |
+| --- | --- | --- |
+| Ink block (12 rows), 14 → 6 → 18 | Two blocks on screen: the stale 14-row one (top cut) above the live one. Matches herdr exactly | One clean block at the top, 6 blank rows under it, cursor on row 12. Both stale copies stay in scrollback |
+| Every size the e2e run fed the pane (24 resizes) | Up to 2 blocks on screen | Never more than 1 on screen; 4–6 stale copies in scrollback (2–5 with pull on) |
+| Ink block never taller than the pane | Clean | Clean; blank rows under the block after a grow |
+| Shell, 300 lines then a prompt, 14 → 6 → 18 | History comes back above the prompt, prompt on the bottom row | No history comes back: the prompt stays on row 6 with 12 blank rows under it, and the next command's output carries on from there (only scrolling up shows the earlier lines) |
+| Little output (content at the top) | Unchanged | Unchanged |
+
+So off fixes what's on screen, but stale copies remain in scrollback, and every grow leaves content top-aligned with blank rows at the bottom, shells included. Not tested: Claude Code's own renderer. After a grow it assumes the viewport shows the bottom rows of its frame, as a pulling terminal does, so with the pull off its incremental redraw may land in the wrong rows.
+
+**herdr 0.9.5 can't be told to turn it off.** Its vendored libghostty-vt (1.3.2-HEAD +44f2a44df, `vendor/libghostty-vt`) predates the switch: it always pulls, and option 40 there is `KITTY_IMAGE_PRESERVE_PNG`. There's no config key (`config/model.rs` has only `scrollback_limit_bytes`), no env var, no CLI flag (`terminal attach` takes only `--takeover`) and nothing in `herdr api schema --json`. A fork would need the newer libghostty-vt (or a backport of its `PageList`/`Screen`/`Terminal`/C API change) plus one `ghostty_terminal_set` call next to `SCROLLBACK_MAX_BYTES` in `crates/ghostty-vt/src/lib.rs` (~line 911). It would also have to check `Pane::resize` (`src/pane/terminal.rs` ~1681), which replays recent output when a resize leaves the bottom blank. herdr is Apache-2.0, github.com/herdrdev/herdr.
+
+**Implication.** Azulejo can only avoid giving a pane sizes it doesn't need: a divider drag that overshoots and comes back feeds the program the smaller sizes on the way (live reflow), as a window drag does in any terminal. The pane-side fix is herdr's (upstream ask 8), and it's a trade, not a pure win.
+
 ## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
 
 | Situation | Exit status | Last stderr line |
@@ -278,6 +304,7 @@ The client always restores the host terminal (leaves the alt screen, turns mouse
 5. `layout.apply` that reuses live `pane_id`s instead of replacing the tab.
 6. Clearer exit messages than "server shut down" for take-over and pane-ended cases (or a JSON exit reason).
 7. Wake the attach client's size poll on SIGWINCH. `resize_poll_loop` (`src/client/terminal_geometry.rs`, 0.9.1 and still on master) sleeps a fixed 100 ms between looks at the terminal size; the signal handler only sets a flag. A PTY resize reaches the pane 4–103 ms later (uniform, median 57–66 ms), and the pane sees at most one size per 100 ms however often the host resizes. That's most of the reflow motion lag (ADR 0004, reflow-lead amendment). No config knob; a signal-driven wake (or a ~10 ms poll while signalled) would cut it to a few ms. Also: the frame carrying the pane's first output after a resize reaches the client about 19 ms later (17–21 ms), against ~1.5 ms for the same output without a resize.
+8. Make pulling scrollback back into view on a pane resize optional (newer libghostty-vt's `GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK`; 0.9.5's vendored copy has no such switch), or stop pulling rows that a bottom-anchored redraw has already replaced. Today a pane that shrinks below an Ink-style program's live area and grows back shows the old copies of that area above the new one (question 13).
 
 ### Not determined
 
