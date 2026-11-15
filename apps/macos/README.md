@@ -310,21 +310,156 @@ runs one style regardless of the config. The app can't run
 
 In a terminal, press **⌘S** (`select_visible_item`) to label selectable items
 across the current window's visible terminal panes. Zoom and Monocle exclude
-hidden panes. Each label sits just outside its item, left of the item's first
-cell (on the first row of a multi-row item), one terminal cell per letter. It
-joins the item's highlight as one box, rounded on the label's side (colours
-`hintBadge` and `hintBadgeText`). A label never covers its own item; it covers
-the cells just before it, usually a space and the end of the previous word.
-With no room on the left (column 0) it goes on the right instead. Labels
-never overlap each other and stay off other items' text, except a command's
-text: a path inside a command takes the cells before it. Only when neither
-side is free (`192.0.2.1 198.51.100.2`) does a label cover a neighbouring
-item's text. Type a label, then choose **C Copy**, **O Open**, or **R Run in
-New Pane**. A small popup appears beside the selection, staying inside its
-terminal pane. Each icon has a shortcut bubble using the item-label styling;
-hovering shows its action and keystroke. Run appears for commands only.
-Escape or a click outside the popup exits the mode. Backspace removes a
-partially typed item label.
+hidden panes.
+
+Everything that reads the screen lives in the Rust core, `core/crates/hints`
+([ADR 0016](../../docs/adr/0016-smart-select-in-the-core.md)), so a Linux shell
+gets the same items: detection (`src/detect`), labels, paragraphs, grow and
+shrink, arrows and range text (`src/select.rs`) and callout placement
+(`src/callout.rs`). The overlay (`TerminalHintOverlay.swift`) reads the rows
+and styled snapshot from Ghostty, makes one `azj_hints_detect` call per pane
+(JSON in and out, UTF-16 offsets), keeps the returned pane handle for the
+selection keys (`azj_hints_pane_*`) and draws. `TerminalHints.swift` is the
+glue. Whether a path exists goes through the crate's `Filesystem` trait
+(`std::fs` in the app, a fake in tests); `/home` and `/net` are never
+checked, and each pass checks a path once. A full 60×120 screen with
+filesystem checks takes about 0.8 ms, JSON both ways included.
+
+Labels are Homerow-style callouts: a small rounded pill with
+bold dark letters on yellow, a thin outline and a soft shadow (`hintCallout`,
+`hintCalloutBorder`, `hintCalloutText`, `hintCalloutShadow`), with a short
+tail pointing at the item's first cell. Placement
+(`azj_hints_place_callouts`, `callout::place`) runs per pane in reading order
+and is deterministic:
+
+- A pill sits below the first cell (over the row underneath, tail up), above
+  it (tail down), or before it on its own row, in the blank margin left of an
+  indented item (tail pointing right). It may hang into the pane's padding.
+- It tries those sides in that order (above first on the last row), keeping
+  to blank space first: no text at all, then no item text (it may cover plain
+  output), then nothing but a paragraph's text. So a callout covers another
+  item's text only when no blank or plain-text spot exists on any side.
+- Below or above, a pill slides sideways only as far as keeps its tail's foot
+  within half a cell of the first cell's middle: tails stay nearly upright,
+  never a long slant across a row. Too far: another side instead.
+- Never over another pill or another item's first cell. When no side works (a
+  column of paths at the pane's left edge, one per row), the pill sits over
+  its own item's first cells, no tail, before it would cover anyone else's.
+- With nowhere free at all it sits centred below and counts as a clash
+  (`hints.callout.flagged`).
+
+**Labels say what the item is.** A label's first letter is its kind: `l` link
+(URL), `p` path, `c` command, `t` text paragraph, `i` IP address, `d` domain,
+`h` hash, `u` UUID, `b` branch. When only one item of a kind is visible, that
+letter alone selects it; otherwise the letter is followed by home-row letters
+(`pa`, `ps`, `pd`…; three letters past 26 of a kind). Labels of one kind share
+a length, so none is a prefix of another. Labels are numbered pane by pane in
+reading order.
+
+**Repeats get one label.** When a pane shows the same item several times
+(same kind and value: a prompt's `~/proj` on every prompt line), only the
+newest copy, the lowest on screen, gets a label
+(`azj_hints_labels`, `select::older_repeats`). The older copies stay unlabelled and
+unhighlighted while choosing; they light up while their labelled copy is
+selected, and the arrows can still move to them.
+
+**Typing filters.** After each letter, items whose labels no longer match fade
+out (`motion.hintFilter`, 80 ms; instant with `[animation]` off or Reduce
+Motion). The callouts that still match show the letters typed so far greyed
+(`hintCalloutTyped`, a lighter weight) and the rest bold: after `c`, `CD`
+shows a dim `C` and a bold `D`. Letters that match nothing are ignored.
+Backspace takes the last letter back; Esc (or a click outside) leaves the
+mode. A complete label selects its item.
+
+**Arrows pick without typing the whole label.** While choosing, with or
+without letters typed, the arrow keys move a focus ring across the items still
+shown: ⌘S, `c`, then ↑ a few times walks the commands only. The focused item
+gets a thicker ring just outside its highlight and its callout turns a deeper
+amber with a ring of its own (`hintFocus`, `hintCalloutFocus`), so it never
+looks selected. Return selects it, exactly as if its label had been typed;
+with nothing focused, Return does nothing.
+
+- The first arrow starts at the focused tile's terminal cursor (libghostty's
+  IME point), usually where the latest output ends: ↑ the closest item on the
+  rows above it, ↓ the first one below it or else the last one, ← the last one
+  before it, → the first one after it or else the last one.
+- After that, ↑ ↓ go to the nearest shown item on the rows above or below,
+  closest in column; ← → to the previous or next shown item in reading order.
+  ← → past a pane's first or last shown item go on to the previous or next
+  pane's; ↑ ↓ stay in the pane.
+- Typing more letters still filters. If the focused item drops out, the ring
+  moves to the nearest item left in its pane (fewest rows apart, then
+  columns), or goes away when there's none. A complete label still selects its
+  item at once, whatever is focused.
+- ⇧ + arrow starts a range from the focused item: it selects it and extends,
+  as ⇧ + arrow does once selected. ⌥↑ / ⌥↓ do nothing while choosing.
+- Backspace from a selection goes back to choosing with the ring on that item.
+
+The core does the moving (`select::focus_step`, `select::nearest`, through
+`azj_hints_pane_focus` and `azj_hints_pane_nearest`): the neighbour logic the
+selection's arrows use, restricted to the shown items.
+
+**Text paragraphs (`t`)** are runs of non-blank rows that read as prose: a row
+of three or more words, at least half of them plain words, with no column
+gaps, plus the rows below it at the same indent while they read as prose too
+or the row above fills most of the pane (a wrapped sentence's tail). A list
+marker (`- `, `* `, `1. `) starts a new paragraph, and a "Label: value" row
+(`Session UUID: <uuid>`) isn't prose. Rows a command covers (half
+the row, or from its start) are never prose, nor is anything below a command in
+the same block (its output). Paragraphs are drawn as a dashed outline round
+their rows. The heuristic lives in `select::paragraphs`.
+
+**Once an item is selected**, the keys act on the selection (letters no longer
+type a label):
+
+| Key | Does |
+| --- | --- |
+| `c` (or ⌘C) | Copy |
+| `o` | Open (URLs and existing local paths) |
+| `r` | Run in a new pane (commands) |
+| ← → | Previous / next item in reading order (a command comes before the paths inside it) |
+| ↑ ↓ | The nearest item on the row above / below, closest to the selection's first column |
+| ⇧ + arrow | Extend the selection from its anchor |
+| ⇧ + a label | Extend the selection from the anchor to that item (same pane) |
+| ⌥↑ | Grow: the smallest item around the selection (a path → its command), then the rows it's on, its paragraph, its block of non-blank rows, the whole screen; steps that add nothing are skipped |
+| ⌥↓ | Shrink back the way ⌥↑ came; with nothing to go back to, the first item inside (a line that is exactly one item becomes that item) |
+| Backspace | Back to choosing, one letter short of the anchor's label (or the last ⇧ letter) |
+| Esc | Leave the mode |
+
+Arrows move at the selection's level: between items, between paragraphs,
+between lines (non-blank rows) or between blocks, whatever ⌥↑ last grew to.
+Moving starts a new ⌥↓ history. Once an item is selected the other labels
+hide; arrows and ⌥↑ / ⌥↓ need none. Holding ⇧ shows the ones outside the
+selection, for ⇧ + label, after a moment (`motion.hintExtendDelay`, 100 ms, so
+⇧ + arrow doesn't flash them), with a quick fade (`motion.hintExtend`, 80 ms);
+letting ⇧ go without a label fades them out again. The first ⇧ letter keeps
+the matching ones, that letter greyed as when choosing, and hides the rest.
+
+Copying one item copies its value (a command without continuation backslashes,
+a quoted path without its quotes). Copying a range, line, block, paragraph or
+screen copies the text as a terminal selection would: rows joined with
+newlines (soft-wrapped rows without one), trailing blanks dropped, indents of
+later rows kept. Open and Run only apply to a single item.
+
+A small popup beside the selection has the Copy / Open / Run buttons for the
+mouse, staying inside its terminal pane. Each icon has its shortcut keycap;
+hovering shows its action and keystroke. It shows only the actions that apply,
+never a greyed-out one: Open for a single URL or existing local path, Run for a
+command with a known working directory.
+
+The **legend** lists the keys that apply right now: the kind letters present
+while choosing, then ↑↓←→ move and, once something is focused, ⏎ select; and
+copy, open, run, move, extend, grow/shrink while selected
+(only the ones that apply). It lives in the focused tile's header strip,
+centred in place of the title, or of the tabs in Monocle
+(`TileHeaderView.overrideContent`), clear of the agent badge, so it never
+covers terminal text and never moves during a session. It fades in, and on
+Esc fades out over the title or tabs coming back (`motion.hintFilter`). Keys are small rounded keycaps (`hintBadge`,
+`hintBadgeBorder`, `hintBadgeText`, `font.hintKey`) with a quiet word beside
+each (`textMuted`, `font.hintLegend`); a kind letter is a little yellow callout,
+like the labels it picks. In a narrow tile it drops items from the end, keeping
+Esc. Only a tile without a header strip gets a bar at the bottom of the pane
+instead.
 
 URLs, absolute and relative paths, existing local filenames, the workspace's
 current branch, plain `git branch` listings, shell commands, IPv4 and IPv6
@@ -348,45 +483,117 @@ addresses, domains, UUIDs and hashes remain copy-only.
 Run applies only to commands with a known working directory; it creates a pane
 on the source machine in that directory, leaving the original pane untouched.
 The new shell starts with its normal environment, not the source shell's
-unexported variables or temporary state.
+unexported variables or temporary state. A single-line command is typed into
+that shell as it is. A multi-line one (a heredoc, or a `\` continuation from a
+coding agent's tool call) runs through `/bin/sh` instead
+(`azj_hints_run_line`): one line,
+`/bin/sh -c 'eval "$(printf %s <base64> | base64 -d)"'`, that POSIX shells and
+fish parse alike, since typing it line by line breaks in fish (no `<<`) and
+typed tabs trigger completion. `hints.sh` runs these with fish (without your
+config) as the login shell when fish is installed.
 
-Recognition uses visible text and terminal foreground colors, not a shell
-parser. Commands after a `$`, `%`, `❯`, or `➜` prompt followed by a space, or
-a coding-agent `!` marker with optional space (`!cargo test` or `! cargo test`),
-do not need a known executable name. The agent marker is excluded from copying
-and execution.
+Recognition uses visible text and terminal foreground colors, not a full shell
+parser. A prompt marker followed by a space (`$`, `%`, `❯`, `➜`, or `#` and `>`
+attached to a prompt such as `root@host:/etc#` or `~/proj>`) starts a command
+that needs no known executable name. The text before the marker must look like
+a prompt: a user@host, a path, a bracketed segment (`(venv)`, `[user@host
+dir]`, `(main)`), a shell version (`bash-5.2`), a lone host or folder (`host% `)
+or glyphs (starship, powerlevel10k, Kali's `└─$`). oh-my-zsh's `➜  dir
+git:(main) ✗` segments, cmd.exe's `C:\dir>` and PowerShell's `PS C:\dir>` are
+skipped too, and a right-hand prompt (time, duration) after a wide gap is cut
+off. `>>>`, `irb>`, `postgres=#`, `mysql>` and numbered menus (`❯ 1. Yes`) are
+not shells. A coding-agent `!` marker with optional space (`!cargo test`,
+`! cargo test`, or `> !cargo test` as Claude Code echoes it) works the same way;
+the marker is excluded from copying and execution.
+
+Coding-agent screens get their own rules. Claude Code's `● Bash(…)` tool call is
+one command, without the wrapper, across every row it takes up to its closing
+parenthesis (quotes, heredocs and `$(…)` inside it included); a call cut short
+with `…` is not offered. The command under a permission prompt's "Bash command"
+title is one too, without the description line below it. Borders of boxes
+(`│ … │`) are ignored, `⎿` output rows are never commands, and a table cell is
+read on its own. Codex's `• Ran …` lines count as well. The command Claude
+Code shows while or after running it (`⎿  $ cmd`, the elbow sometimes drawn as
+`└`) is one command across its indented rows: a word the agent broke at the
+edge rejoins without a space, and the elapsed time (`(4m 29s)`) and the
+`(ctrl+b to run in background)` hint stay out. Neither a tool call cut short
+with `…` nor such a row ever yields a command from its words ("gh run watch"
+has no cue). In an agent's transcript `❯` starts the user's own messages
+(`❯ merged`): only a line that reads as a command on its own counts there,
+never a single word. oh-my-zsh's folder is skipped even when it's named like a
+command (`➜  dash git:(main) npm run build`).
 
 Unprompted commands use a built-in vocabulary of common Unix, Linux, macOS,
-Windows, and PowerShell command names, independent of the local `PATH`.
-They must start an unstyled standalone/list-item line, a backtick-delimited code
-span, or a foreground-color run. For example, an inline colored `sudo bash ./setup.sh`
-gets a full-command hint as well as a separate path hint; adjacent prose stays
-outside the command. Palette and RGB colors work without assuming a particular
-theme. Color alone does not make arbitrary text runnable. Recognition is a
-heuristic, not an execution safety check or proof that a command is installed;
-Run passes the displayed command to the source machine's shell without OS
-translation.
+Windows, and PowerShell command names (developer tools included), independent
+of the local `PATH`. They start a standalone or list-item line, a
+backtick-delimited code span, a foreground-color run, a line in a shell code
+fence (```` ```sh ````; `console` fences need prompts), or follow a cue in a
+sentence ("open a tunnel with ssh -L …", "run it with npx vitest run upload",
+"Clone the repo: git clone …"); the command then ends at a function word or
+the sentence's punctuation. Names that are also ordinary words (`find`, `test`,
+`kill`, `open`, `export`…) need the shape of a command on a line of their own:
+a flag, a path, an operator or an assignment, and no English function words.
+Windows names match in lower or upper case or as Verb-Noun cmdlets, never
+capitalised like a sentence ("Copy the file"). A line is not a command when it
+reads as prose (function words such as "the", "you", "to", or a final word with
+a full stop), is tabular output (gaps of three spaces), a log line (`npm WARN`,
+`test result: ok`), a usage synopsis (`[-v]`, `<command>`), a diff line, a
+compiler location (`src/main.rs:4:5:`) or a single word; a lone tool name in
+backticks counts only after a cue ("run `make`"). For example, an inline colored
+`sudo bash ./setup.sh` gets a full-command hint as well as a separate path hint;
+adjacent prose stays outside the command. On a row with colors, a whole line
+counts only when its first word is a distinctive command name or carries a
+color of its own (syntax highlighting). Palette and RGB colors work without
+assuming a particular theme. Color alone does not make arbitrary text runnable.
+Recognition is a heuristic, not an execution safety check or proof that a
+command is installed; Run passes the displayed command to the source machine's
+shell without OS translation. `core/crates/hints/data/hints-corpus.txt` holds
+fictional screens (shells, coding agents, prose, output) with the commands each
+should yield; `cargo test -p azulejo-hints --test corpus` scores recall and
+precision on it (99.4% and 100%, one known miss).
 
 Full-width token continuations, including colored commands, can span rows.
 Commands also continue across rows an application wrapped itself, such as a
-coding agent's indented answer: a prompted command carries on while a row ends
-with `\`, `|`, `&&` or `||`, a quote opens that a later row closes, or the
-next row has the same non-zero indent and its first word wouldn't have fitted
-on this row (within two cells of the pane's right edge, since wrappers often
-keep a margin). Shell secondary prompts (`> `, `pipe> `) are skipped. URLs and paths
-cut at the right edge of such a block rejoin the same way. A multi-row item
-gets one label and a highlight on every row; Copy and Run use the command
-joined with single spaces, without indent, prompt marker or line-continuation
-backslashes.
+coding agent's indented answer: a command carries on while a row ends with
+`\`, `|`, `&&` or `||`, a quote, heredoc, `$(…)` or `do`/`then` block opens
+that a later row closes (blank rows inside included, except at a prompt), or
+the next row has the same non-zero indent and its first word wouldn't have
+fitted on this row (within two cells of the pane's right edge, or a box's
+border, since wrappers often keep a margin). Shell secondary prompts (`> `,
+`pipe> `, `dquote> `) are skipped. URLs and paths cut at the right edge of such
+a block rejoin the same way. A multi-row item gets one label and a highlight on
+every row. Copy and Run use the command as it would run: wrapped rows joined
+with single spaces; real line breaks (heredoc bodies, multi-line strings, rows
+of a tool call or code block, rows after a trailing `\`) kept, minus the
+block's own indent; at a shell prompt, `\` continuations and unechoed quote
+continuations joined with single spaces as the shell would see them.
 Terminal frames freeze while choosing, so live output cannot retarget a label.
 Scroll, resize, tab/focus changes, and source-directory or binding changes
 cancel the mode. `just ghostty` applies the styled-text bridge patch on both
 Xcode and runtime-Metal builds; rebuild GhosttyKit after changing that patch.
 
+A second pass (`[hints] row_classifier`, on by default; `false` turns it
+off) labels every visible row with a small model in the Rust core
+(`core/crates/hints`): prompt plus command, continuation, code, output, prose,
+chrome or blank. Commands shown in output count as code (make's echoed
+lines, `RUN` steps, scripts and workflows printed by `cat`). Where the model
+is sure a row is output or chrome, it drops a command that fills the row
+(`jq 1.7 -> 1.7.1` from an upgrade list, a diff's context line); commands in
+backticks or after a prompt, `RUN` or a cue stay. It may add a command the
+detector missed on a command or code row, if it starts with a known command
+and reads as one. It runs inside `azj_hints_detect`, no second call. URLs, paths and the other items never change. The model is
+a linear-chain perceptron over hashed row features, trained on synthetic
+screens only (`just hints-model`), and labels and refines a 50-row screen in
+about 0.1 ms. On every scored set it matches or beats the detector alone:
+identical on `hints-corpus.txt`, higher command precision with the same
+recall on hand-written screens it never saw.
+
 Rebind or disable `select_visible_item` under `[keys.macos.terminal]`. Other
 tile kinds and text fields retain their save shortcuts. The command also
-appears in quick open. `apps/macos/automation/hints.sh` checks recognition
-boundaries and drives the GUI in an isolated dev session. Copy uses the private
+appears in quick open. `apps/macos/automation/hints.sh` runs the core's checks
+(`cargo test -p azulejo-hints`: recognition boundaries, the corpus, kind-letter
+labels, paragraphs, grow/shrink, arrow neighbours, callouts) and drives the GUI
+in an isolated dev session, in a dark and a light theme. Copy uses the private
 automation pasteboard; Open records its dispatch target without launching an
 external application; Run executes a fixture command in a real new pane.
 

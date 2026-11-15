@@ -335,6 +335,30 @@ fn the_layout_is_mirrored_into_herdr_unless_turned_off() {
 }
 
 #[test]
+fn the_hints_row_classifier_is_on_unless_switched_off() {
+    assert!(Config::defaults(MAC).hints.row_classifier);
+
+    let config = user("[hints]\nrow_classifier = false\n", MAC);
+    assert!(!config.hints.row_classifier);
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+
+    let config = user("[hints]\nrow_classifier = \"no\"\n", MAC);
+    assert!(config.has_errors());
+    assert!(config.hints.row_classifier, "a bad value keeps the default");
+
+    let config = user("[hints]\nlabels = 3\n", MAC);
+    assert!(!config.has_errors());
+    assert!(
+        config
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown setting `hints.labels`")),
+        "{:?}",
+        config.diagnostics
+    );
+}
+
+#[test]
 fn a_collapsed_sidebar_is_a_rail_unless_hidden() {
     use azulejo_protocol::SidebarState;
     assert_eq!(Config::defaults(MAC).sidebar.collapsed, SidebarState::Rail);

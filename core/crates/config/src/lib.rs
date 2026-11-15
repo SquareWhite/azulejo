@@ -281,6 +281,25 @@ pub struct TerminalConfig {
     pub on_exit: OnExit,
 }
 
+/// The `[hints]` settings: visible-terminal hints (⌘S).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HintsConfig {
+    /// Run the row classifier (crate `azulejo-hints`) after the regex
+    /// detector: where it is sure a row is output or chrome, it drops a
+    /// command that fills the row (`jq 1.7 -> 1.7.1`, a diff's context
+    /// line). On by default: on every scored set it matches or beats the
+    /// detector alone (core/crates/hints/tools/model.sh prints the table).
+    pub row_classifier: bool,
+}
+
+impl Default for HintsConfig {
+    fn default() -> Self {
+        HintsConfig {
+            row_classifier: true,
+        }
+    }
+}
+
 /// The `[sidebar]` settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SidebarConfig {
@@ -319,6 +338,7 @@ pub struct Config {
     /// The built-in themes plus the user's (`<config dir>/themes/*.toml`).
     pub themes: Themes,
     pub sidebar: SidebarConfig,
+    pub hints: HintsConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -355,6 +375,7 @@ impl Config {
             .map(|dir| dir.join("themes"));
         let themes = Themes::load(themes_dir.as_deref(), &mut diagnostics);
         let mut sidebar = SidebarConfig::default();
+        let mut hints = HintsConfig::default();
 
         parse_layer(
             DEFAULT_KEYMAP,
@@ -389,6 +410,10 @@ impl Config {
                     }
                     "sidebar" => {
                         parse_sidebar(sink, value, &mut sidebar);
+                        true
+                    }
+                    "hints" => {
+                        parse_hints(sink, value, &mut hints);
                         true
                     }
                     "layout" => {
@@ -437,6 +462,7 @@ impl Config {
             appearance,
             themes,
             sidebar,
+            hints,
             path,
             diagnostics,
         }
@@ -640,6 +666,22 @@ fn parse_terminal(
                 "`terminal.on_exit` must be \"close\" or \"keep\"",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `terminal.{other}`")),
+        }
+    }
+}
+
+fn parse_hints(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut HintsConfig) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`hints` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("row_classifier", DeValue::Boolean(b)) => out.row_classifier = *b,
+            ("row_classifier", _) => {
+                sink.error(value.span(), "`hints.row_classifier` must be true or false")
+            }
+            (other, _) => sink.warn(key.span(), format!("unknown setting `hints.{other}`")),
         }
     }
 }

@@ -167,8 +167,16 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `textOnAccent` | text on HUDs, badges and coloured fills | `#ffffff` | `#ffffff` | alternateSelectedControlTextColor | alternateSelectedControlTextColor |
 | `accent` | progress bars, highlights, drop targets, drag slots | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
 | `accentText` | the accent as text: links, matched characters in ⌘K | `#61afef` | `#3a52dc` | linkColor | `#0058c4` |
-| `hintBadge` | visible-item hint labels and action keys, joined to the item's highlight | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
-| `hintBadgeText` | letters on hint labels (black or white instead when they'd read under 4.5:1, as on some accent colours) | `#282c34` | `#ffffff` | `#1e1e1e` | alternateSelectedControlTextColor |
+| `hintBadge` | ⌘S keycaps: the legend's keys (in the tile's header strip) and the action popup's shortcuts | `#2c313a` | `#fbfbfb` | `#323232` | `#ffffff` |
+| `hintBadgeText` | letters on ⌘S keycaps | `#c5cad3` | `#383a42` | `#d4d4d4` | `#3a3a3a` |
+| `hintBadgeBorder` | thin outline round a ⌘S keycap | `#ffffff1f` | `#00000024` | `#ffffff1f` | `#00000024` |
+| `hintCallout` | ⌘S label callouts (Homerow style): the pill hanging under an item's first cell | `#f9dc6b` | `#fde68a` | `#f9dc6b` | `#fde68a` |
+| `hintCalloutBorder` | thin outline round a label callout and its tail | `#c8a02a` | `#8f6b00` | `#c8a02a` | `#8f6b00` |
+| `hintCalloutText` | letters on a label callout | `#2a2200` | `#2a2200` | `#2a2200` | `#2a2200` |
+| `hintCalloutTyped` | letters already typed on a label callout (the rest of the label stays `hintCalloutText`) | `#7a6620` | `#7a6620` | `#7a6620` | `#7a6620` |
+| `hintCalloutFocus` | the focused item's label callout while choosing (arrow keys move the focus, Return selects it) | `#ffb85c` | `#ffb85c` | `#ffb85c` | `#ffb85c` |
+| `hintFocus` | the focus ring the arrow keys move while choosing: round the focused item and its callout | `#ff9f43` | `#b85400` | `#ff9f43` | `#b85400` |
+| `hintCalloutShadow` | soft shadow under a label callout | `#00000080` | `#00000040` | `#00000080` | `#00000040` |
 | `dimFill` | what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it | `#1b1d23` | `#e1e1e3` | `#000000` | `#ececec` |
 | `statusWorking` | working agents (azulejo.ring) | `#61afef` | `#2558cc` | linkColor | `#0058c4` |
 | `statusBlocked` | agents waiting for input | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |

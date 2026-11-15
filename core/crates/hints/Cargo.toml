@@ -1,0 +1,22 @@
+[package]
+name = "azulejo-hints"
+description = "Row classifier for visible-terminal hints: labels screen rows, finds commands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "azj-hints-train"
+path = "src/bin/azj-hints-train.rs"
+
+[[bin]]
+name = "azj-hints-eval"
+path = "src/bin/azj-hints-eval.rs"
+
+[dependencies]
+fancy-regex = { version = "0.16", default-features = false, features = ["std", "unicode", "perf"] }
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation = "1"

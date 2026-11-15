@@ -1,0 +1,6 @@
+e380bfdb326a756bfc2dcfc2568d4343eb152beb1063b078a3af1b8da915afc5  core/crates/hints/tools/generate.py
+35fe14a07758f7f52805e6782f11ca693bdb57d2f75eaf2a878ee9a195144638  core/crates/hints/src/features.rs
+9d375612807859641fbc28e11f577512515c6409abad4faa06d9f7a741811b0f  core/crates/hints/src/text.rs
+4f0b06ae0b8dacf55d5c8ec84dd1890c1d315b44138044978669dc2a1a093d31  core/crates/hints/src/model.rs
+2d47b08d3bd5cb628776efa64679f235db90adbe042de5ca79cc428114592fb7  core/crates/hints/src/bin/azj-hints-train.rs
+fa2dc9e3e79e2c560cd80aa2fa30ea8b3c5e690912ca0378ac63f933853df391  core/crates/hints/model/rows.json

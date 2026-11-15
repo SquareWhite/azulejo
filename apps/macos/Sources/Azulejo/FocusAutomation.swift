@@ -125,8 +125,10 @@ enum FocusAutomation {
             return controller.terminalHints.automationClick(rest)
         case ("hints", "opened-file"):
             return controller.terminalHints.automationOpenedFile(rest)
-        case ("hints", "badge"):
-            return controller.terminalHints.automationBadge(rest)
+        case ("hints", "label"):
+            return controller.terminalHints.automationLabel(rest)
+        case ("hints", "callout"):
+            return controller.terminalHints.automationCallout(rest)
         case ("hints", "click-away"):
             return controller.terminalHints.automationClickAway(chrome: rest == "chrome")
         case ("terminal", _):

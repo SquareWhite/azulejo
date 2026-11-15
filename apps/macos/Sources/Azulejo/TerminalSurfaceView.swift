@@ -608,27 +608,21 @@ final class TerminalSurfaceView: NSView {
         return (value, CGFloat(text.tl_px_x), CGFloat(text.tl_px_y))
     }
 
-    /// One styled viewport snapshot. Accept only rows that match the plain
-    /// capture, so output arriving between reads cannot move a color boundary
-    /// onto different text. Trailing padding has no selectable content.
-    func hintColors(rows: [String], columns: Int) -> [TerminalHintColorSpan] {
-        guard let surface, !rows.isEmpty, columns > 0 else { return [] }
+    /// One styled viewport snapshot (SGR colours) of the first `rows` rows.
+    /// The hint detector keeps colours only on rows that match the plain
+    /// capture, so output arriving between reads can't move a boundary.
+    func hintSnapshot(rows: Int, columns: Int) -> String? {
+        guard let surface, rows > 0, columns > 0 else { return nil }
         let selection = ghostty_selection_s(
             top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: 0),
             bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_EXACT,
-                                         x: UInt32(columns - 1), y: UInt32(rows.count - 1)),
+                                         x: UInt32(columns - 1), y: UInt32(rows - 1)),
             rectangle: true)
         let text = ghostty_surface_read_text_vt(surface, selection)
         defer { ghostty_string_free(text) }
-        guard let pointer = text.ptr else { return [] }
+        guard let pointer = text.ptr else { return nil }
         let bytes = UnsafeBufferPointer(start: UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self), count: Int(text.len))
-        let snapshot = TerminalHints.styledRows(String(decoding: bytes, as: UTF8.self))
-        let matchingRows = Set(zip(rows, snapshot.rows).enumerated().compactMap { row, pair -> Int? in
-            let (plain, styled) = pair
-            guard plain.hasPrefix(styled), plain.dropFirst(styled.count).allSatisfy({ $0 == " " }) else { return nil }
-            return row
-        })
-        return snapshot.colors.filter { matchingRows.contains($0.row) && NSMaxRange($0.range) <= rows[$0.row].utf16.count }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     /// Locate a UTF-16 boundary using Ghostty's own cell interpretation,
@@ -642,6 +636,24 @@ final class TerminalSurfaceView: NSView {
             if length > offset { high = mid } else { low = mid + 1 }
         }
         return low
+    }
+
+    /// The terminal cursor's cell on screen, as a row and a UTF-16 offset in
+    /// that row's text (`hintRow`), for ⌘S's first arrow key. libghostty
+    /// reports the cursor cell's middle and bottom, top down, in points.
+    func hintCursor() -> TerminalTextPos? {
+        guard let surface, let grid = gridSize, let cell = cellSize, let origin = hintRow(0, through: 0) else { return nil }
+        var x = 0.0, y = 0.0, width = 0.0, height = 0.0
+        ghostty_surface_ime_point(surface, &x, &y, &width, &height)
+        // Row 0's top: `hintRow` gives its left edge and text baseline, which
+        // sits 0.78 of a cell below the top (as the overlay places rows).
+        let top = origin.baseline - cell.height * 0.78
+        let row = Int(((CGFloat(y) - cell.height - top) / cell.height).rounded())
+        let column = Int(((CGFloat(x) - origin.x) / cell.width - 0.5).rounded())
+        guard (0..<grid.rows).contains(row) else { return nil }
+        let clamped = min(max(column, 0), grid.cols)
+        let offset = clamped == 0 ? 0 : hintRow(row, through: clamped - 1)?.text.utf16.count ?? clamped
+        return TerminalTextPos(row: row, offset: offset)
     }
 
     /// The middle of a visible cell, in view coordinates (automation).

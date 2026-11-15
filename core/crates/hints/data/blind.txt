@@ -1,0 +1,285 @@
+# Blind screens for the terminal row classifier: same format and labels as
+# heldout.txt. Written after tools/generate.py, on purpose around formats the
+# generator doesn't draw (man pages, htop, editors, other agents' TUIs, MOTDs,
+# Ansible, Terraform prompts, Go and Node crashes, mid-sentence commands), and
+# not used while choosing features or training settings. Fictional throughout.
+
+=== codex-ran cols=90 | another coding agent: › prompt, • Ran lines with └ output
+P| › run the linter and fix what it finds
+B|
+P| • I'll run the linter first.
+B|
+C| • Ran npm run lint -- --fix
+O|   └ > web@2.0.0 lint
+O|     > eslint . --fix
+O|     ✔ No problems found
+B|
+P| • All clean. I also checked the types:
+B|
+C| • Ran npx tsc --noEmit
+O|   └ (no output)
+B|
+T| ─ Worked for 41s ──────────────────────────────────────────────────────────────────────
+B|
+T| ›
+--- command: npm run lint -- --fix
+--- command: npx tsc --noEmit
+
+=== gemini-box cols=80 | an agent that boxes its shell tool calls
+P| ✦ I'll run the unit tests to see what's failing.
+B|
+T| ╭──────────────────────────────────────────────────────────────────────────────╮
+C| │ ✔  Shell npm test -- src/cart (run the cart tests)                            │
+T| │                                                                              │
+O| │    PASS  src/cart/total.test.ts                                              │
+O| │    FAIL  src/cart/discount.test.ts                                           │
+T| ╰──────────────────────────────────────────────────────────────────────────────╯
+B|
+P| ✦ The discount test fails because the loyalty rate is applied twice.
+--- command: npm test -- src/cart
+
+=== man-ls cols=90 | man page in less
+T| LS(1)                                User Commands                               LS(1)
+B|
+P| NAME
+P|        ls - list directory contents
+B|
+P| SYNOPSIS
+P|        ls [OPTION]... [FILE]...
+B|
+P| DESCRIPTION
+P|        List  information  about  the FILEs (the current directory by default).  Sort
+P|        entries alphabetically if none of -cftuvSUX nor --sort is specified.
+B|
+P|        -a, --all
+P|               do not ignore entries starting with .
+B|
+T|  Manual page ls(1) line 1 (press h for help or q to quit)
+
+=== htop cols=96 | htop: meters, process table with command lines, function bar
+O|     0[|||||||                23.4%]   Tasks: 112, 431 thr; 2 running
+O|     1[||||                   11.0%]   Load average: 0.52 0.61 0.58
+O|   Mem[|||||||||||||   1.92G/7.68G]   Uptime: 3 days, 04:11:52
+O|   Swp[                  0K/2.00G]
+B|
+O|     PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+O|    1423 user       20   0 1.2G  210M  48M S 12.0  2.7  1:02.33 node server.js --port 3000
+O|     981 postgres   20   0  220M  31M  29M S  1.3  0.4  0:20.11 postgres: checkpointer
+O|    2210 user       20   0  18M   6M   4M R  0.7  0.1  0:00.42 htop
+T| F1Help  F2Setup F3SearchF4FilterF5Tree  F6SortByF7Nice -F8Nice +F9Kill  F10Quit
+
+=== rebase-todo cols=90 | git rebase todo in vim
+O| pick 9f3c2a1 Fix token refresh race
+O| squash 4b7e0d9 Add retry to upload client
+O| pick c81a5f2 Bump parser to 2.4
+B|
+O| # Rebase 0d93e6b..c81a5f2 onto 0d93e6b (3 commands)
+O| #
+O| # Commands:
+O| # p, pick <commit> = use commit
+O| # s, squash <commit> = use commit, but meld into previous commit
+T| ~
+T| ~
+T| "~/src/webapp/.git/rebase-merge/git-rebase-todo" 21L, 812B
+
+=== cc-midsentence cols=104 | Claude Code: commands named mid-sentence, no backticks
+P| ● The fastest check is git diff --stat main...HEAD which lists every file the branch touched. If you
+P|   only care about the API, narrow it with git diff --stat main...HEAD -- src/api and compare the counts.
+B|
+P| ● Done. I left the old flag in place so nothing breaks before the release.
+--- command: git diff --stat main...HEAD
+--- command: git diff --stat main...HEAD -- src/api
+
+=== npm-audit cols=100 | npm audit report with an inline and an indented fix command
+C| user@devbox:~/src/shop$ npm audit
+O| # npm audit report
+B|
+O| semver  <7.5.2
+O| Severity: moderate
+O| semver vulnerable to Regular Expression Denial of Service - https://advisories.example.invalid/GHSA-0000
+O| fix available via `npm audit fix`
+O| node_modules/semver
+B|
+O| 1 moderate severity vulnerability
+B|
+O| To address all issues, run:
+K|   npm audit fix
+T| user@devbox:~/src/shop$
+--- command: npm audit
+--- command: npm audit fix
+
+=== go-panic cols=100 | fish prompt, go run, a panic with a stack
+C| user@devbox ~/w/gateway (main)> go run ./cmd/server
+O| 2026/11/12 10:02:11 listening on :8080
+O| panic: runtime error: invalid memory address or nil pointer dereference
+O| [signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x6b2f1a]
+B|
+O| goroutine 34 [running]:
+O| example.invalid/gateway/internal/proxy.(*Pool).Get(0x0)
+O|         /home/user/w/gateway/internal/proxy/pool.go:41 +0x1a
+O| exit status 2
+T| user@devbox ~/w/gateway (main) [1]>
+--- command: go run ./cmd/server
+
+=== tf-apply cols=96 | terraform apply asking for confirmation
+C| user@devbox:~/infra$ terraform apply
+O| aws_s3_bucket.assets: Refreshing state... [id=assets-example]
+B|
+O| Do you want to perform these actions?
+O|   Terraform will perform the actions described above.
+O|   Only 'yes' will be accepted to approve.
+B|
+O|   Enter a value: yes
+B|
+O| aws_s3_bucket.logs: Creating...
+O| aws_s3_bucket.logs: Creation complete after 2s [id=logs-example]
+B|
+O| Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+T| user@devbox:~/infra$
+--- command: terraform apply
+
+=== gh-checks cols=110 | gh pr checks and a failed run log
+C| user@laptop ~/src/webapp % gh pr checks
+O| Some checks were not successful
+O| 1 failing, 3 successful, 0 skipped, and 0 pending checks
+B|
+O| X  lint     1m2s   https://ci.example.invalid/team/webapp/actions/runs/1/job/2
+O| ✓  build    3m11s  https://ci.example.invalid/team/webapp/actions/runs/1/job/3
+O| ✓  test     4m40s  https://ci.example.invalid/team/webapp/actions/runs/1/job/4
+C| user@laptop ~/src/webapp % gh run view 1 --log-failed | tail -3
+O| lint  Run npm run lint  src/cart.ts:12:5  error  'total' is never reassigned  prefer-const
+O| lint  Run npm run lint  ✖ 1 problem (1 error, 0 warnings)
+O| lint  Run npm run lint  ##[error]Process completed with exit code 1.
+T| user@laptop ~/src/webapp %
+--- command: gh pr checks
+--- command: gh run view 1 --log-failed | tail -3
+
+=== ansible cols=96 | ansible-playbook run
+C| ops@bastion:~/ansible$ ansible-playbook -i hosts.ini site.yml --limit web
+B|
+O| PLAY [web] ************************************************************************************
+B|
+O| TASK [Gathering Facts] ************************************************************************
+O| ok: [web-01.example.invalid]
+B|
+O| TASK [nginx : install packages] ***************************************************************
+O| changed: [web-01.example.invalid] => (item=nginx)
+B|
+O| PLAY RECAP ************************************************************************************
+O| web-01.example.invalid     : ok=2    changed=1    unreachable=0    failed=0    skipped=0
+--- command: ansible-playbook -i hosts.ini site.yml --limit web
+
+=== cc-loop cols=100 | Claude Code: answer with a multi-line shell loop
+P| ● Here's a one-off loop that re-tags the images:
+B|
+K|   for svc in api web worker; do
+c|     docker tag registry.example.invalid/team/$svc:1.4 registry.example.invalid/team/$svc:stable
+c|     docker push registry.example.invalid/team/$svc:stable
+c|   done
+B|
+P|   It only touches the stable tag, so running it twice is harmless.
+--- command: for svc in api web worker; do docker tag registry.example.invalid/team/$svc:1.4 registry.example.invalid/team/$svc:stable docker push registry.example.invalid/team/$svc:stable done
+
+=== cc-wrapped-tick cols=56 | narrow Claude Code answer: a backticked command wraps
+P| ● Add the flag to the service file, then run
+P|   `sudo systemctl daemon-reload && sudo systemctl
+P|   restart api` so systemd picks it up.
+--- command: sudo systemctl daemon-reload && sudo systemctl restart api
+
+=== watch-header cols=96 | watch: a header that names a command, then a table
+T| Every 2.0s: kubectl get pods -n shop                         devbox: Wed Nov 12 10:20:01 2026
+B|
+O| NAME                        READY   STATUS    RESTARTS   AGE
+O| cart-7d9f8b6c5d-x2k4p       1/1     Running   0          3d
+O| checkout-5c8d7e6f4b-q9w8e   1/1     Running   2          51m
+
+=== rprompt-typed cols=100 | a typed command with a right-hand prompt, not yet run
+O| Already up to date.
+C| ~/src/webapp main* ❯ git push --force-with-lease origin feature/login-form              10:44:02
+--- command: git push --force-with-lease origin feature/login-form
+
+=== node-crash cols=96 | node: module not found, then an install
+C| user@devbox:~/src/api$ node server.js
+O| node:internal/modules/cjs/loader:1228
+O|   throw err;
+O|   ^
+B|
+O| Error: Cannot find module 'express'
+O| Require stack:
+O| - /home/user/src/api/server.js
+O|     at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+O|     at Module._load (node:internal/modules/cjs/loader:1051:27) {
+O|   code: 'MODULE_NOT_FOUND',
+O| }
+B|
+O| Node.js v22.11.0
+C| user@devbox:~/src/api$ npm i express
+--- command: node server.js
+--- command: npm i express
+
+=== docs-numbered cols=90 | docs: a numbered list of bare commands
+P| Installation
+B|
+K|   1. brew tap example/tools
+K|   2. brew install shipit
+K|   3. shipit init --org example
+B|
+P| Then open the dashboard at https://dash.example.invalid and sign in.
+--- command: brew tap example/tools
+--- command: brew install shipit
+--- command: shipit init --org example
+
+=== ssh-motd cols=96 | ssh login with a message of the day, then sudo
+C| user@laptop ~ % ssh deploy@203.0.113.40
+O| Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-45-generic x86_64)
+B|
+O|  * Documentation:  https://help.example.invalid
+O|  * Management:     https://landscape.example.invalid
+B|
+O|   System load:  0.08               Processes:             121
+O|   Usage of /:   41.2% of 38.58GB   Users logged in:       0
+B|
+O| Last login: Tue Nov 11 18:02:44 2026 from 198.51.100.4
+C| deploy@app-03:~$ sudo -i
+T| root@app-03:~#
+--- command: ssh deploy@203.0.113.40
+--- command: sudo -i
+
+=== cc-todos-error cols=96 | Claude Code: todo list rows without ⎿, a failing Bash call
+T| ● Update Todos
+O|   ⎿  ☒ Reproduce the failure
+O|      ☐ Fix the off-by-one in pagination
+O|      ☐ Run the suite again
+B|
+C| ● Bash(pytest -q tests/test_pagination.py)
+O|   ⎿  Error: 1 failed, 7 passed in 0.31s
+O|      FAILED tests/test_pagination.py::test_last_page - assert 9 == 10
+B|
+P| ● The last page drops one row: the slice end is exclusive. Fixing it in src/pagination.py.
+--- command: pytest -q tests/test_pagination.py
+
+=== prisma-hint cols=96 | CLI output that tells you what to run next
+C| user@devbox:~/src/webapp$ npx prisma migrate dev
+O| Environment variables loaded from .env
+O| Prisma schema loaded from prisma/schema.prisma
+B|
+O| ✔ Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 81ms
+B|
+O| Run the following to apply pending migrations in production:
+K|   npx prisma migrate deploy
+T| user@devbox:~/src/webapp$
+--- command: npx prisma migrate dev
+--- command: npx prisma migrate deploy
+
+=== tmux-split-log cols=80 | a plain $ prompt, a log tail, a tmux status bar
+C| $ tail -n 4 logs/worker.log
+O| [10:01:12] job 812 started (queue=emails)
+O| [10:01:13] job 812 done in 940ms
+O| [10:01:20] job 813 started (queue=reports)
+O| [10:01:24] job 813 failed: timeout after 4000ms; retrying
+C| $ grep -c failed logs/worker.log
+O| 3
+T| $
+T| [work] 0:bash* 1:vim-                                   "devbox" 10:02 12-Nov-26
+--- command: tail -n 4 logs/worker.log
+--- command: grep -c failed logs/worker.log

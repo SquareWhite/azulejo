@@ -1,0 +1,221 @@
+# Second blind set for the terminal row classifier: same format and labels as
+# heldout.txt. Written after the generator's second round, which used
+# blind.txt's failures; nothing was tuned against this file. A mix of
+# everyday screens and odd ones. Fictional throughout.
+
+=== stash-pop cols=90 | bash: git stash list, a stash pop with a conflict
+C| user@devbox:~/src/webapp$ git stash list
+O| stash@{0}: On feature/login-form: half-done validation
+O| stash@{1}: WIP on main: 9f3c2a1 Fix token refresh race
+C| user@devbox:~/src/webapp$ git stash pop
+O| Auto-merging src/forms/login.ts
+O| CONFLICT (content): Merge conflict in src/forms/login.ts
+O| On branch feature/login-form
+O| Unmerged paths:
+O|   (use "git restore --staged <file>..." to unstage)
+O|   (use "git add <file>..." to mark resolution)
+O|         both modified:   src/forms/login.ts
+B|
+O| The stash entry is kept in case you need it again.
+T| user@devbox:~/src/webapp$
+--- command: git stash list
+--- command: git stash pop
+
+=== vite-warn cols=100 | oh-my-zsh: npm run build with a chunk-size warning that reads like prose
+C| ➜  dash git:(main) npm run build
+B|
+O| > dash@0.9.0 build
+O| > vite build
+B|
+O| vite v5.4.10 building for production...
+O| ✓ 1288 modules transformed.
+O| dist/index.html                   0.46 kB │ gzip:   0.30 kB
+O| dist/assets/index-8c1f2a.js     612.04 kB │ gzip: 190.11 kB
+B|
+O| (!) Some chunks are larger than 500 kB after minification. Consider:
+O| - Using dynamic import() to code-split the application
+O| - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+O| ✓ built in 4.12s
+T| ➜  dash git:(main)
+--- command: npm run build
+
+=== fish-compose cols=110 | fish: docker compose ps and a restart
+C| user@devbox ~/w/shop (main)> docker compose ps
+O| NAME            IMAGE                 COMMAND                  SERVICE   CREATED       STATUS                   PORTS
+O| shop-db-1       postgres:16           "docker-entrypoint.s…"   db        2 hours ago   Up 2 hours (healthy)     5432/tcp
+O| shop-web-1      shop-web              "npm start"              web       2 hours ago   Restarting (1) 4s ago
+C| user@devbox ~/w/shop (main)> docker compose restart web && docker compose logs --tail 5 web
+O|  Container shop-web-1  Restarting
+O|  Container shop-web-1  Started
+O| web-1  | > shop@1.2.0 start
+O| web-1  | > node dist/server.js
+O| web-1  | Listening on http://0.0.0.0:3000
+T| user@devbox ~/w/shop (main)>
+--- command: docker compose ps
+--- command: docker compose restart web && docker compose logs --tail 5 web
+
+=== cc-branch-summary cols=96 | Claude Code: question, git log call, summary list, input box
+P| > what's on this branch that isn't on main?
+B|
+C| ● Bash(git log --oneline main..HEAD)
+O|   ⎿  5d2e8a1 Reset quotas at midnight UTC
+O|      8b17c0e Count quota per API key
+O|      e44a913 Add quota table migration
+B|
+P| ● Three commits, all about quotas:
+B|
+P|   1. A migration that adds the quota table
+P|   2. Per-key counting in src/quota/counter.rs
+P|   3. The midnight reset, which runs from the scheduler
+B|
+T| ────────────────────────────────────────────────────────────────────────────────────────────────
+T| >
+T| ────────────────────────────────────────────────────────────────────────────────────────────────
+T|   ? for shortcuts
+--- command: git log --oneline main..HEAD
+
+=== cc-bash-heredoc cols=88 | Claude Code: a Bash call that writes a file with a heredoc
+P| ● I'll add a smoke test script.
+B|
+C| ● Bash(cat > scripts/smoke.sh <<'EOF'
+c|       #!/usr/bin/env bash
+c|       curl -sf http://localhost:3000/healthz
+c|       EOF)
+O|   ⎿  (No content)
+B|
+C| ● Bash(chmod +x scripts/smoke.sh && ./scripts/smoke.sh)
+O|   ⎿  {"status":"ok"}
+--- command: cat > scripts/smoke.sh <<'EOF' #!/usr/bin/env bash curl -sf http://localhost:3000/healthz EOF
+--- command: chmod +x scripts/smoke.sh && ./scripts/smoke.sh
+
+=== http-server cols=100 | python http.server with request logs
+C| user@laptop ~/site % python3 -m http.server 8000
+O| Serving HTTP on :: port 8000 (http://[::]:8000/) ...
+O| ::1 - - [12/Nov/2026 10:12:01] "GET / HTTP/1.1" 200 -
+O| ::1 - - [12/Nov/2026 10:12:01] "GET /style.css HTTP/1.1" 200 -
+O| ::1 - - [12/Nov/2026 10:12:02] code 404, message File not found
+O| ::1 - - [12/Nov/2026 10:12:02] "GET /favicon.ico HTTP/1.1" 404 -
+--- command: python3 -m http.server 8000
+
+=== make-help cols=80 | make help: a list of targets
+C| user@devbox:~/src/tiny-http$ make help
+O| Usage: make <target>
+B|
+O|   build      Build the server binary
+O|   test       Run the unit tests
+O|   install    Copy the binary to /usr/local/bin
+O|   clean      Remove build output
+T| user@devbox:~/src/tiny-http$
+--- command: make help
+
+=== k8s-describe cols=110 | kubectl describe: events with back-off messages
+C| user@devbox:~$ kubectl -n shop describe pod checkout-5c8d7e6f4b-q9w8e | tail -8
+O| Events:
+O|   Type     Reason     Age                  From               Message
+O|   ----     ------     ----                 ----               -------
+O|   Normal   Scheduled  12m                  default-scheduler  Successfully assigned shop/checkout to node-b
+O|   Normal   Pulled     11m (x4 over 12m)    kubelet            Container image "registry.example.invalid/shop/checkout:2.1" already present
+O|   Warning  BackOff    2m (x41 over 11m)    kubelet            Back-off restarting failed container checkout
+T| user@devbox:~$
+--- command: kubectl -n shop describe pod checkout-5c8d7e6f4b-q9w8e | tail -8
+
+=== bat-readme cols=90 | bat with a line-number gutter: prose and a code block
+T| ───────┬──────────────────────────────────────────────────────────────────────────────────
+T|        │ File: README.md
+T| ───────┼──────────────────────────────────────────────────────────────────────────────────
+P|    1   │ # tiny-http
+P|    2   │
+P|    3   │ A small HTTP server for local testing. It serves a folder and logs each request.
+P|    4   │
+P|    5   │ ## Build
+P|    6   │
+K|    7   │     make && sudo make install
+P|    8   │
+P|    9   │ The binary lands in /usr/local/bin.
+T| ───────┴──────────────────────────────────────────────────────────────────────────────────
+--- command: make && sudo make install
+
+=== cc-permission-flat cols=90 | Claude Code: an unboxed permission prompt
+P| ● The branch is rebased. Pushing it now.
+B|
+T|  Bash command
+B|
+K|    git push --force-with-lease origin feat/quota
+P|    Push the rebased branch
+B|
+T|  Do you want to proceed?
+T|  ❯ 1. Yes
+T|    2. No, and tell Claude what to do differently (esc)
+--- command: git push --force-with-lease origin feat/quota
+
+=== ssh-hostkey cols=100 | ssh host-key confirmation prompt
+C| user@laptop ~ % ssh ops@web-04.example.invalid
+O| The authenticity of host 'web-04.example.invalid (192.0.2.44)' can't be established.
+O| ED25519 key fingerprint is SHA256:Qm5b2x9V0Lk1nT4pYc8RwE3sJf7hGd6aZ0uXyBvNo1E.
+O| This key is not known by any other names.
+O| Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+O| Warning: Permanently added 'web-04.example.invalid' (ED25519) to the list of known hosts.
+C| ops@web-04:~$ uptime
+O|  10:31:07 up 12 days,  3:02,  1 user,  load average: 0.10, 0.12, 0.09
+T| ops@web-04:~$
+--- command: ssh ops@web-04.example.invalid
+--- command: uptime
+
+=== just-list cols=80 | just --list: recipes with comments
+C| user@devbox:~/src/azul$ just --list
+O| Available recipes:
+O|     build   # Build the core
+O|     lint    # Lint: formatting and clippy
+O|     test    # Run core tests
+O|     mac     # Build the macOS app
+T| user@devbox:~/src/azul$
+--- command: just --list
+
+=== cc-two-steps cols=84 | Claude Code: an answer with two code steps, one hard-wrapped
+P| ● You need a token first. Export it in the shell you'll test from:
+B|
+K|   export API_TOKEN=tok_example_0000
+B|
+P|   Then call the endpoint and check that it returns your user:
+B|
+K|   curl -sS -H "Authorization: Bearer $API_TOKEN" https://api.example.invalid/v1/me |
+c|   jq '.name, .email'
+B|
+P|   If you get a 401, the token has expired; create a new one in the dashboard.
+--- command: export API_TOKEN=tok_example_0000
+--- command: curl -sS -H "Authorization: Bearer $API_TOKEN" https://api.example.invalid/v1/me | jq '.name, .email'
+
+=== softwrap-60 cols=60 | bash at 60 columns: a long rsync soft-wraps, so does its output
+C~| user@devbox:~$ rsync -avz --delete --exclude node_modules
+c~|  ./site/ deploy@web-01.example.invalid:/srv/site/releases/
+c| 2026-11-12
+O| sending incremental file list
+O~| ./index.html
+O| assets/app-4f9a2c.js
+O~| sent 184,392 bytes  received 1,204 bytes  123,730.67 bytes/s
+O| ec
+O| total size is 1,902,113  speedup is 10.25
+T| user@devbox:~$
+--- command: rsync -avz --delete --exclude node_modules ./site/ deploy@web-01.example.invalid:/srv/site/releases/2026-11-12
+
+=== cc-narrow-bash cols=50 | Claude Code at 50 columns: a Bash call over three rows
+C| ● Bash(npx playwright test tests/login.spec.ts
+c|       --project=chromium --reporter=line
+c|       --retries=0)
+O|   ⎿  Running 4 tests using 2 workers
+O|      4 passed (9.8s)
+B|
+P| ● All four login tests pass in Chromium.
+--- command: npx playwright test tests/login.spec.ts --project=chromium --reporter=line --retries=0
+
+=== history-tail cols=80 | history output: numbered commands are output
+C| user@devbox:~$ history | tail -4
+O|   501  git status
+O|   502  cargo test -p limiter
+O|   503  git commit -am "Fix the refill rate"
+O|   504  history | tail -4
+C| user@devbox:~$ cargo test -p limiter
+O|     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+T| user@devbox:~$
+--- command: history | tail -4
+--- command: cargo test -p limiter

@@ -1,0 +1,1159 @@
+# Visible-item hint corpus: what terminals and coding agents show on screen.
+# Fictional throughout: example.invalid hosts, documentation IPs, /home/user paths.
+# Scored by tests/corpus.rs (cargo test -p azulejo-hints --test corpus) through detect::detect.
+#
+# @@ fixture <name> | <category> | cols <n>   starts a screen; rows follow verbatim.
+#    Rows longer than <n> soft-wrap like a terminal; \e in a row is ESC (SGR colour).
+# @@ cmd <value>      an expected command; "@@ + <text>" adds a newline and <text>.
+# @@ item <kind> <v>  a non-command item that must be found too.
+# @@ xfail <why>      a known miss: reported, not fatal.
+# Every command found that is not listed counts as a false positive.
+
+@@ fixture bash-user-host | prompts | cols 80
+user@devbox:~/proj$ git status --short
+ M src/main.rs
+?? notes.txt
+user@devbox:~/proj$ ls -la
+total 16
+drwxr-xr-x  4 user user 4096 Nov 12 10:00 .
+-rw-r--r--  1 user user  220 Nov 12 10:00 notes.txt
+user@devbox:~/proj$ 
+@@ cmd git status --short
+@@ cmd ls -la
+@@ item path src/main.rs
+
+@@ fixture bash-root | prompts | cols 80
+root@devbox:/etc# apt update && apt upgrade -y
+Hit:1 http://deb.example.invalid/debian stable InRelease
+Reading package lists... Done
+sh-3.2# whoami
+root
+/ # ls /srv
+app  data
+@@ cmd apt update && apt upgrade -y
+@@ cmd whoami
+@@ cmd ls /srv
+
+@@ fixture bash-plain-dollar | prompts | cols 80
+$ cargo test --workspace
+   Compiling proj v0.1.0 (/home/user/proj)
+$ echo $SHELL
+/bin/bash
+bash-5.2$ make -j8 all
+@@ cmd cargo test --workspace
+@@ cmd echo $SHELL
+@@ cmd make -j8 all
+
+@@ fixture zsh-percent | prompts | cols 80
+user@devbox proj % brew upgrade
+==> Upgrading 2 outdated packages:
+devbox% make -j8
+make: Nothing to be done for `all'.
+% npm run lint
+@@ cmd brew upgrade
+@@ cmd make -j8
+@@ cmd npm run lint
+
+@@ fixture zsh-robbyrussell | prompts | cols 90
+➜  webapp git:(main) ✗ ls -la ./scripts
+total 24
+drwxr-xr-x   5 user  staff   160 Nov  3 10:12 .
+-rwxr-xr-x   1 user  staff  1203 Nov  3 10:12 deploy.sh
+➜  webapp git:(main) ✗ ./scripts/deploy.sh --dry-run staging
+[dry-run] would upload build/ to deploy@staging.example.invalid:/srv/webapp
+➜  webapp git:(main) npm run dev
+➜  ~ cd webapp
+➜  webapp git:(main) ✗ 
+@@ cmd ls -la ./scripts
+@@ cmd ./scripts/deploy.sh --dry-run staging
+@@ cmd npm run dev
+@@ cmd cd webapp
+@@ item path /srv/webapp
+
+@@ fixture fish | prompts | cols 100
+user@devbox ~/proj> cargo fmt --all
+user@devbox ~/w/api (feature/rate-limit)> cargo build --release
+   Compiling api v0.3.1 (/home/user/w/api)
+error[E0425]: cannot find value `bucket` in this scope
+  --> src/limiter.rs:42:17
+   |
+42 |         let n = bucket.take(1);
+   |                 ^^^^^^ not found in this scope
+
+error: could not compile `api` (bin "api") due to 1 previous error
+user@devbox ~/w/api (feature/rate-limit) [101]> 
+~> ls
+@@ cmd cargo fmt --all
+@@ cmd cargo build --release
+@@ cmd ls
+@@ item path src/limiter.rs:42:17
+
+@@ fixture starship-two-line | prompts | cols 90
+proj on  main [!?] via 🦀 v1.82.0
+❯ cargo test -p core
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+
+proj on  main [!?] via 🦀 v1.82.0 took 4s
+❯ git push -u origin feature/hints
+(.venv) ❯ python -m pytest -q
+..........                                                               [100%]
+@@ cmd cargo test -p core
+@@ cmd git push -u origin feature/hints
+@@ cmd python -m pytest -q
+
+@@ fixture starship-right-prompt | prompts | cols 90
+❯ cargo build --release                                                         10:42:07
+   Compiling proj v0.1.0
+~/proj main ?1                                                              ✔  10:42:09
+❯ just lint                                                          took 12s  10:42:21
+@@ cmd cargo build --release
+@@ cmd just lint
+
+@@ fixture p10k | prompts | cols 90
+╭─   ~/proj    main ?1 ······································· ✔  at 10:42:07 
+╰─ git status
+On branch main
+  ~/proj   main ❯ git pull --rebase
+Already up to date.
+┌──(user㉿devbox)-[~/proj]
+└─$ nmap -sV 192.0.2.10
+@@ cmd git status
+@@ cmd git pull --rebase
+@@ cmd nmap -sV 192.0.2.10
+
+@@ fixture venv-and-brackets | prompts | cols 90
+(venv) user@devbox:~/proj$ pip install -r requirements.txt
+Collecting requests==2.32.3
+[user@devbox proj]$ docker compose up -d
+~/proj (main)$ git log --oneline -5
+9f3c2a1 Fix token refresh race
+[10:42:07] user@devbox:~/proj$ uv run pytest
+@@ cmd pip install -r requirements.txt
+@@ cmd docker compose up -d
+@@ cmd git log --oneline -5
+@@ cmd uv run pytest
+
+@@ fixture windows-prompts | prompts | cols 90
+PS C:\Users\user\proj> Get-ChildItem -Recurse -Filter *.log
+C:\Users\user\proj>dir /b
+notes.txt
+PS C:\Users\user\proj> winget upgrade --all
+@@ cmd Get-ChildItem -Recurse -Filter *.log
+@@ cmd dir /b
+@@ cmd winget upgrade --all
+
+@@ fixture ssh-remote | prompts | cols 90
+user@devbox:~$ ssh ops@192.0.2.10
+Last login: Mon Nov  3 09:58:12 2026 from 198.51.100.4
+ops@web-01:~$ sudo systemctl status nginx --no-pager | head -4
+● nginx.service - A high performance web server and a reverse proxy server
+     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-11-03 08:01:44 UTC; 1h 57min ago
+ops@web-01:~$
+@@ cmd ssh ops@192.0.2.10
+@@ cmd sudo systemctl status nginx --no-pager | head -4
+@@ item ip 192.0.2.10
+@@ item path /lib/systemd/system/nginx.service
+
+@@ fixture chain-typo | prompts | cols 90
+user@devbox:~/src/webapp$ gti pull
+zsh: command not found: gti
+user@devbox:~/src/webapp$ git pull --rebase && npm ci && npm run build
+Already up to date.
+added 812 packages in 9s
+
+> webapp@2.3.0 build
+> vite build
+
+✓ 214 modules transformed.
+dist/assets/index-4f9a2c.js   182.40 kB │ gzip: 58.11 kB
+user@devbox:~/src/webapp$
+@@ cmd gti pull
+@@ cmd git pull --rebase && npm ci && npm run build
+@@ item path dist/assets/index-4f9a2c.js
+
+@@ fixture prompt-output-mix | prompts | cols 100
+user@devbox:~$ kubectl -n shop get pods -o wide
+NAME                        READY   STATUS             RESTARTS   AGE   IP            NODE
+cart-7d9f8b6c5d-x2k4p       1/1     Running            0          3d    10.42.1.17    node-a
+checkout-5c8d7e6f4b-q9w8e   0/1     CrashLoopBackOff   14         52m   10.42.2.9     node-b
+user@devbox:~$ kubectl -n shop logs checkout-5c8d7e6f4b-q9w8e --previous | tail -3
+panic: dial tcp 10.43.0.12:6379: connect: connection refused
+goroutine 1 [running]:
+main.main() /src/cmd/checkout/main.go:57 +0x1a4
+user@devbox:~$ ping -c 2 gateway.example.invalid
+PING gateway.example.invalid (192.0.2.1): 56 data bytes
+64 bytes from 192.0.2.1: icmp_seq=0 ttl=64 time=1.912 ms
+user@devbox:~$ dig +short AAAA api.example.invalid
+2001:db8:10::25
+user@devbox:~/tools$ python3 report.py --month 2026-10
+Traceback (most recent call last):
+  File "/home/user/tools/report.py", line 88, in <module>
+    main()
+FileNotFoundError: [Errno 2] No such file or directory: 'data/2026-10.csv'
+@@ cmd kubectl -n shop get pods -o wide
+@@ cmd kubectl -n shop logs checkout-5c8d7e6f4b-q9w8e --previous | tail -3
+@@ cmd ping -c 2 gateway.example.invalid
+@@ cmd dig +short AAAA api.example.invalid
+@@ cmd python3 report.py --month 2026-10
+@@ item ip 10.43.0.12:6379
+@@ item path /src/cmd/checkout/main.go:57
+@@ item path data/2026-10.csv
+
+@@ fixture not-a-shell | prompts | cols 80
+>>> import os
+>>> os.listdir('.')
+['notes.txt']
+... print(x)
+In [1]: import pandas as pd
+irb(main):001:0> puts 1
+postgres=# SELECT count(*) FROM orders;
+mysql> SHOW TABLES;
+sqlite> .tables
+(gdb) run --verbose
+> const x = 1
+Progress: 50% done
+Total: $ 42
+price$ 42
+100% complete
+
+@@ fixture menus-not-prompts | prompts | cols 80
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No, and tell Claude what to do differently (esc)
+❯ Opus 4.1
+  Sonnet 4.5
+
+@@ fixture backticks | inline | cols 100
+To run the tests use `just test` or `cargo test --workspace`, then push.
+Set `RUST_LOG=debug` before running; the `--release` flag is optional.
+Call `detect()` from the overlay, not `TerminalHints`.
+Build with `npm ci && npm run build` and serve with `npx serve dist`.
+Run `./scripts/ssh-standin.sh` to fake a remote host.
+Try `RUST_BACKTRACE=1 cargo run -- --help` if it panics.
+@@ cmd just test
+@@ cmd cargo test --workspace
+@@ cmd npm ci && npm run build
+@@ cmd npx serve dist
+@@ cmd ./scripts/ssh-standin.sh
+@@ cmd RUST_BACKTRACE=1 cargo run -- --help
+
+@@ fixture markdown-lists | inline | cols 90
+Steps:
+
+- git checkout -b feature/hints
+- cargo build --release
+* npm install
+1. brew install jq
+2) ./configure --prefix=/usr/local
+3. Run the tests and push the branch.
+4. Move the retry limit into config
+5. Copy the file to the server
+- [ ] docker compose pull
+@@ cmd git checkout -b feature/hints
+@@ cmd cargo build --release
+@@ cmd npm install
+@@ cmd brew install jq
+@@ cmd ./configure --prefix=/usr/local
+@@ cmd docker compose pull
+
+@@ fixture indented-code | inline | cols 90
+Install it like this:
+
+    brew install node@22
+    ./scripts/setup.sh --with-fixtures
+    export PATH="$HOME/.local/bin:$PATH"
+
+and you're done.
+@@ cmd brew install node@22
+@@ cmd ./scripts/setup.sh --with-fixtures
+@@ cmd export PATH="$HOME/.local/bin:$PATH"
+
+@@ fixture fenced-visible | inline | cols 90
+The migration failed because the column already exists. Roll it back first:
+
+```sh
+npx prisma migrate resolve --rolled-back 20261102_add_status
+npx prisma migrate deploy
+azj tile list
+# then check it
+```
+
+```rust
+let x = find(path);
+```
+
+```bash
+for f in *.log; do gzip "$f"; done
+```
+@@ cmd npx prisma migrate resolve --rolled-back 20261102_add_status
+@@ cmd npx prisma migrate deploy
+@@ cmd azj tile list
+@@ cmd for f in *.log; do gzip "$f"; done
+
+@@ fixture prose-commands | inline | cols 90
+The setup script writes a local config to ~/.config/webapp/config.toml. To reach the
+staging API from your machine, open an SSH tunnel first with ssh -L 8443:localhost:443
+deploy@bastion.example.invalid and keep it running. Full docs live at
+https://docs.example.invalid/webapp/setup.
+
+Next I'll add the test in tests/upload/retry.test.ts and run it with npx vitest run upload.
+Then check the table with psql "postgres://app@db.example.invalid/app" -c '\d orders'.
+You can also use git log --oneline to see the history, or the git history panel.
+If it hangs, stop it with kill -9 1234 and retry.
+@@ cmd ssh -L 8443:localhost:443 deploy@bastion.example.invalid
+@@ cmd npx vitest run upload
+@@ cmd psql "postgres://app@db.example.invalid/app" -c '\d orders'
+@@ cmd git log --oneline
+@@ cmd kill -9 1234
+@@ item path ~/.config/webapp/config.toml
+@@ item path tests/upload/retry.test.ts
+
+@@ fixture readme-pager | inline | cols 90
+GETTING STARTED
+
+Clone the repository and install dependencies. You need Node 22 or later; on macOS the
+quickest route is to install it with Homebrew and then run the setup script:
+
+    brew install node@22
+    ./scripts/setup.sh --with-fixtures
+
+README.md lines 1-14/220 6%
+@@ cmd brew install node@22
+@@ cmd ./scripts/setup.sh --with-fixtures
+
+@@ fixture styled-inline | inline | cols 90
+  Run \e[38;5;153mjust test\e[39m to check, then \e[38;5;153mgit push\e[39m.
+  The \e[38;5;153mTerminalHints.detect\e[39m function does the work.
+  \e[34mgit commit -m \e[32m"fix the parser"\e[39m
+@@ cmd just test
+@@ cmd git push
+@@ cmd git commit -m "fix the parser"
+
+@@ fixture cc-bash-log | claude | cols 100
+● I'll look at the recent history to see when the regression came in.
+
+● Bash(git log --oneline -5)
+  ⎿  9f3c2a1 Fix token refresh race
+     4b7e0d9 Add retry to upload client
+     c81a5f2 Bump parser to 2.4
+
+● The retry change in 4b7e0d9 touches the same code path. Let me check that diff.
+
+● Bash(git show 4b7e0d9 --stat)
+  ⎿  src/upload/client.ts | 31 +++++++++++++++++++++++++------
+     1 file changed, 25 insertions(+), 6 deletions(-)
+@@ cmd git log --oneline -5
+@@ cmd git show 4b7e0d9 --stat
+@@ item hash 9f3c2a1
+@@ item path src/upload/client.ts
+
+@@ fixture cc-bash-chain | claude | cols 100
+> run the tests and fix whatever fails
+
+● Bash(git status && cargo test -p azulejo-core)
+  ⎿  On branch main
+     test result: ok. 42 passed; 0 failed
+
+⏺ Bash(cargo test -p azulejo-core 2>&1 | tail -5)
+  ⎿  test result: ok. 42 passed; 0 failed
+@@ cmd git status && cargo test -p azulejo-core
+@@ cmd cargo test -p azulejo-core 2>&1 | tail -5
+
+@@ fixture cc-bash-wrapped-6 | claude | cols 80
+● Now I'll run the integration tests against the local stack.
+
+● Bash(DATABASE_URL=postgres://app:app@127.0.0.1:5432/app_test npm run test:int
+      -- --runInBand --testPathPattern 'upload|session' 2>&1 | tail -40)
+  ⎿  PASS tests/int/session.test.ts (4.1 s)
+     PASS tests/int/upload.test.ts (7.9 s)
+     … +12 lines (ctrl+o to expand)
+
+● Both integration suites pass.
+@@ cmd DATABASE_URL=postgres://app:app@127.0.0.1:5432/app_test npm run test:int -- --runInBand --testPathPattern 'upload|session' 2>&1 | tail -40
+@@ item ip 127.0.0.1:5432
+
+@@ fixture cc-bash-wrapped-2 | claude | cols 80
+● Bash(cd /home/user/proj && cargo build --release --manifest-path
+  shared/Cargo.toml --features "hints,mirror" && ls -lah target/release)
+  ⎿  Finished `release` profile [optimized] target(s) in 41.20s
+@@ cmd cd /home/user/proj && cargo build --release --manifest-path shared/Cargo.toml --features "hints,mirror" && ls -lah target/release
+
+@@ fixture cc-bash-wrapped-narrow | claude | cols 60
+● Bash(find . -type f -name "*.swift" -not -path
+      "./vendor/*" -exec grep -l "TerminalHint" {} + |
+      xargs wc -l | sort -n | tail -20)
+  ⎿  120 ./apps/macos/Sources/Azulejo/TerminalHintOverlay.swift
+@@ cmd find . -type f -name "*.swift" -not -path "./vendor/*" -exec grep -l "TerminalHint" {} + | xargs wc -l | sort -n | tail -20
+
+@@ fixture cc-heredoc-commit | claude | cols 90
+● Committing the fix.
+
+● Bash(git add -A && git commit -m "$(cat <<'EOF'
+      Fix the layout cycle off-by-one
+
+      The picker skipped the last layout when cycling backwards.
+
+      Co-Authored-By: Example Bot <bot@example.invalid>
+      EOF
+      )")
+  ⎿  [main 1a2b3c4] Fix the layout cycle off-by-one
+      1 file changed, 2 insertions(+), 1 deletion(-)
+@@ cmd git add -A && git commit -m "$(cat <<'EOF'
+@@ + Fix the layout cycle off-by-one
+@@ + 
+@@ + The picker skipped the last layout when cycling backwards.
+@@ + 
+@@ + Co-Authored-By: Example Bot <bot@example.invalid>
+@@ + EOF
+@@ + )"
+
+@@ fixture cc-heredoc-file | claude | cols 80
+● Bash(cat > /tmp/proj-notes.txt <<'EOF'
+  first line
+    indented line
+  EOF)
+  ⎿  (No content)
+@@ cmd cat > /tmp/proj-notes.txt <<'EOF'
+@@ + first line
+@@ +   indented line
+@@ + EOF
+
+@@ fixture cc-backslash | claude | cols 80
+● Bash(docker run --rm -it \
+        -p 8080:8080 \
+        -v /home/user/svc/config:/etc/svc:ro \
+        registry.example.invalid/team/svc:1.4.2)
+  ⎿  svc listening on 0.0.0.0:8080
+@@ cmd docker run --rm -it \
+@@ + -p 8080:8080 \
+@@ + -v /home/user/svc/config:/etc/svc:ro \
+@@ + registry.example.invalid/team/svc:1.4.2
+@@ item path /home/user/svc/config
+
+@@ fixture cc-pipe-lines | claude | cols 80
+● Bash(rg -l "TODO" src |
+        xargs wc -l |
+        sort -n)
+  ⎿  12 src/a.rs
+@@ cmd rg -l "TODO" src |
+@@ + xargs wc -l |
+@@ + sort -n
+
+@@ fixture cc-quoted-multiline | claude | cols 80
+● Bash(python3 -c "
+      import json
+      print(json.dumps({'ok': True}))
+      ")
+  ⎿  {"ok": true}
+@@ cmd python3 -c "
+@@ + import json
+@@ + print(json.dumps({'ok': True}))
+@@ + "
+
+@@ fixture cc-truncated | claude | cols 80
+● Bash(git add -A && git commit -m "$(cat <<'EOF'
+      Fix the parser…)
+  ⎿  [main 1a2b3c4] Fix the parser
+
+● Bash(cd /home/user/proj && cargo build --release --manifest-path shared/Cargo.toml …)
+  ⎿  Finished
+
+@@ fixture cc-permission-box | claude | cols 82
+╭────────────────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                                   │
+│                                                                                │
+│   git push --force-with-lease origin feature/hints                             │
+│   Force-push the rebased branch                                                │
+│                                                                                │
+│ Do you want to proceed?                                                        │
+│ ❯ 1. Yes                                                                       │
+│   2. Yes, and don't ask again for git push commands in /home/user/proj         │
+│   3. No, and tell Claude what to do differently (esc)                          │
+╰────────────────────────────────────────────────────────────────────────────────╯
+@@ cmd git push --force-with-lease origin feature/hints
+@@ item path /home/user/proj
+
+@@ fixture cc-permission-heredoc | claude | cols 82
+──────────────────────────────────────────────────────────────────────────────────
+ Bash command
+
+   cat <<'EOF' > /tmp/check.sh
+   #!/bin/sh
+   echo ok
+   EOF
+   Write a tiny check script
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No, and tell Claude what to do differently (esc)
+@@ cmd cat <<'EOF' > /tmp/check.sh
+@@ + #!/bin/sh
+@@ + echo ok
+@@ + EOF
+
+@@ fixture cc-permission-wrapped | claude | cols 80
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                                 │
+│                                                                              │
+│   npm run test:int -- --runInBand --testPathPattern 'upload|session'         │
+│   --coverage --coverageReporters=text-summary                                │
+│   Run the integration tests with coverage                                    │
+│                                                                              │
+│ Do you want to proceed?                                                      │
+│ ❯ 1. Yes                                                                     │
+│   2. No, and tell Claude what to do differently (esc)                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+@@ cmd npm run test:int -- --runInBand --testPathPattern 'upload|session' --coverage --coverageReporters=text-summary
+
+@@ fixture cc-input-bang | claude | cols 80
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ! git log --oneline -5                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ! for bash mode · / for commands
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ > !just test                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+────────────────────────────────────────────────────────────────────────────────
+! cargo clippy --all-targets
+────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts
+@@ cmd git log --oneline -5
+@@ cmd just test
+@@ cmd cargo clippy --all-targets
+
+@@ fixture cc-input-prose | claude | cols 80
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ > run the tests and fix whatever fails                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ? for shortcuts                                              ◯ auto-accept off
+> please fix the bug in the parser
+
+@@ fixture cc-transcript-bang | claude | cols 80
+> !git status --short
+  ⎿   M src/main.rs
+
+> ! ls -la target
+  ⎿  total 8
+@@ cmd git status --short
+@@ cmd ls -la target
+
+@@ fixture cc-answer-code | claude | cols 90
+● Here's how to rebuild from scratch:
+
+  cargo clean
+  cargo build --release
+  ./target/release/azj --version
+
+  If that fails, try `cargo update -p ghostty` first.
+@@ cmd cargo clean
+@@ cmd cargo build --release
+@@ cmd ./target/release/azj --version
+@@ cmd cargo update -p ghostty
+
+@@ fixture cc-answer-multiline-code | claude | cols 90
+● Run these two:
+
+  docker run --rm \
+    -v "$PWD":/work \
+    example/image:latest
+
+  cargo fmt --all &&
+    cargo clippy -- -D warnings &&
+    cargo test
+
+  cat <<'EOF' > notes.txt
+  hello
+  EOF
+@@ cmd docker run --rm \
+@@ +   -v "$PWD":/work \
+@@ +   example/image:latest
+@@ cmd cargo fmt --all &&
+@@ +   cargo clippy -- -D warnings &&
+@@ +   cargo test
+@@ cmd cat <<'EOF' > notes.txt
+@@ + hello
+@@ + EOF
+
+@@ fixture cc-answer-wrapped-code | claude | cols 70
+● Run:
+
+  cd /home/user/proj && cargo build --release --manifest-path
+  shared/Cargo.toml --features "hints,mirror" && ls -lah
+  target/release
+
+  That builds and lists the release folder.
+@@ cmd cd /home/user/proj && cargo build --release --manifest-path shared/Cargo.toml --features "hints,mirror" && ls -lah target/release
+
+@@ fixture cc-prose-inline | claude | cols 90
+● Done. The watcher now ignores generated files. To try it, run `npm run dev` and then
+  edit any file under `src/`; the reload should take under a second. If it still loops,
+  clear the cache with `rm -rf .cache/vite` and restart.
+
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                                      │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+  ? for shortcuts                                                        ◯ auto-accept off
+@@ cmd npm run dev
+@@ cmd rm -rf .cache/vite
+@@ item path .cache/vite
+
+@@ fixture cc-plan-and-edit | claude | cols 100
+● Plan:
+  1. Move the retry limit into config
+  2. Read it in the upload client
+  3. Add a test for the limit
+
+● Update(src/upload/client.ts)
+  ⎿  Updated src/upload/client.ts with 2 additions and 1 removal
+       12    import { backoff } from "../util/backoff";
+       13 -  const MAX_RETRIES = 3;
+       13 +  import { config } from "../config";
+
+● Read(shared/core/src/layout.rs)
+  ⎿  Read 220 lines (ctrl+o to expand)
+@@ item path src/upload/client.ts
+
+@@ fixture cc-table | claude | cols 80
+● Here are the checks:
+
+  ┌──────────────┬──────────────────────────┐
+  │ Command      │ What it does             │
+  ├──────────────┼──────────────────────────┤
+  │ just lint    │ fmt, clippy, tokens      │
+  │ cargo test   │ unit tests               │
+  └──────────────┴──────────────────────────┘
+@@ cmd just lint
+@@ cmd cargo test
+
+@@ fixture cc-todos | claude | cols 80
+● Update Todos
+  ⎿  ☒ Run just lint
+     ☐ Fix the clippy warnings
+     ☐ Push the branch
+
+✻ Thinking… (esc to interrupt)
+@@ cmd just lint
+
+@@ fixture codex-ran | claude | cols 80
+• Ran git status --short
+  └  M src/main.rs
+
+• Running cargo test -p core
+@@ cmd git status --short
+@@ cmd cargo test -p core
+
+@@ fixture shell-backslash-ps2 | multiline | cols 90
+user@devbox:~/svc$ docker run --rm -it \
+>   -p 8080:8080 \
+>   -v /home/user/svc/config:/etc/svc:ro \
+>   registry.example.invalid/team/svc:1.4.2
+Unable to find image 'registry.example.invalid/team/svc:1.4.2' locally
+svc listening on 0.0.0.0:8080
+@@ cmd docker run --rm -it -p 8080:8080 -v /home/user/svc/config:/etc/svc:ro registry.example.invalid/team/svc:1.4.2
+@@ item path /home/user/svc/config
+@@ item ip 0.0.0.0:8080
+
+@@ fixture shell-heredoc-ps2 | multiline | cols 80
+user@devbox:~/svc$ cat <<'EOF' > config.toml
+> [server]
+> host = "0.0.0.0"
+> port = 8080
+> upstream = "https://auth.example.invalid"
+> EOF
+user@devbox:~/svc$ wc -l config.toml
+4 config.toml
+@@ cmd cat <<'EOF' > config.toml
+@@ + [server]
+@@ + host = "0.0.0.0"
+@@ + port = 8080
+@@ + upstream = "https://auth.example.invalid"
+@@ + EOF
+@@ cmd wc -l config.toml
+@@ item url https://auth.example.invalid
+
+@@ fixture shell-softwrap | multiline | cols 80
+user@devbox:~$ curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-Type: application/json' -d '{"name":"nightly-reports","schedule":"0 3 * * *"}' | jq .
+{
+  "id": "3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b",
+}
+@@ cmd curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-Type: application/json' -d '{"name":"nightly-reports","schedule":"0 3 * * *"}' | jq .
+@@ item uuid 3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b
+
+@@ fixture shell-pipe-ps2 | multiline | cols 80
+$ cat access.log |
+pipe> grep -c error
+17
+$ make build &&
+cmdand> make test
+@@ cmd cat access.log | grep -c error
+@@ cmd make build && make test
+
+@@ fixture shell-quote-ps2 | multiline | cols 80
+$ git commit -m "Fix the parser
+dquote> 
+dquote> Handles nested quotes now."
+[main 1a2b3c4] Fix the parser
+@@ cmd git commit -m "Fix the parser
+@@ + 
+@@ + Handles nested quotes now."
+
+@@ fixture cargo-test-output | negatives | cols 100
+user@devbox ~/w/api (main)> cargo test -p limiter
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.21s
+     Running unittests src/lib.rs (target/debug/deps/limiter-2c9f1e7a8b3d4c5e)
+
+running 3 tests
+test bucket::tests::refills ... ok
+test bucket::tests::rejects_when_empty ... ok
+test bucket::tests::burst ... FAILED
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+@@ cmd cargo test -p limiter
+@@ item path src/lib.rs
+
+@@ fixture git-output | negatives | cols 90
+On branch feature/login-form
+Your branch is up to date with 'origin/feature/login-form'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+        modified:   src/components/LoginForm.tsx
+diff --git a/src/main.rs b/src/main.rs
+index 1a2b3c4..4d5e6f7 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,4 +1,5 @@
++    echo "$ foo"
+commit 3faa39c85c5ddb7c242f5cb134d0130113ff0c79
+Author: Example Dev <dev@example.invalid>
+@@ item path src/components/LoginForm.tsx
+
+@@ fixture logs | negatives | cols 110
+2026-11-03T10:21:04Z INFO  req=6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b ip=203.0.113.24 GET /api/items 200 12ms
+2026-11-03T10:21:09Z ERROR upstream https://auth.example.invalid/token timed out after 5000ms
+[INFO] Building webapp 2.3.0
+npm WARN deprecated inflight@1.0.6: This module is not supported
+npm ERR! code ENOENT
+make: *** [Makefile:12: all] Error 1
+make[1]: Entering directory '/home/user/proj/build'
+git: 'stauts' is not a git command. See 'git --help'.
+zsh: command not found: foo
+#5 [2/4] RUN apt-get update && apt-get install -y curl
+@@ cmd apt-get update && apt-get install -y curl
+@@ item uuid 6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b
+@@ item url https://auth.example.invalid/token
+
+@@ fixture compiler-errors | negatives | cols 100
+error[E0308]: mismatched types
+  --> src/main.rs:12:5
+   |
+12 |     let x: u32 = "five";
+   |                  ^^^^^^ expected `u32`, found `&str`
+/home/user/proj/Sources/App/main.swift:12:5: error: cannot find 'foo' in scope
+./main.go:12:5: undefined: foo
+src/app.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+/usr/bin/ld: cannot find -lfoo
+@@ item path src/main.rs:12:5
+@@ item path ./main.go:12:5
+
+@@ fixture prose | negatives | cols 90
+● The fix is in. I kept the old behaviour for plain shells and only changed how the
+  detector treats agent output, so make sure the tests pass before you merge. If you
+  want, find the old version in the history and compare; it's mostly the same.
+  test suite passes.
+  open source tools work well here.
+  find out more at https://docs.example.invalid/hints
+  Copy the file to the server and start it.
+  Type something to continue.
+  watch out for the race in the scheduler.
+  Date: 2026-11-12
+  Time: 12.4s
+  Path: /home/user/proj
+@@ item url https://docs.example.invalid/hints
+@@ item path /home/user/proj
+
+@@ fixture listings | negatives | cols 100
+total 48
+drwxr-xr-x   5 user  staff   160 Nov  3 10:12 .
+-rwxr-xr-x   1 user  staff  1203 Nov  3 10:12 deploy.sh
+.
+├── Cargo.toml
+├── src
+│   ├── main.rs
+│   └── lib.rs
+└── tests
+PID   COMMAND      %CPU TIME     #TH
+  501 git          0.0  00:00.01 1
+NAME                        READY   STATUS    RESTARTS   AGE
+web-6f5e4d3c2b-m7n6b        1/1     Running   0          3d
+
+@@ fixture lazygit-box | negatives | cols 80
+┌─ Branches ──────────────────────────┐┌─ Commits ────────────────────────────┐
+│ * main                              ││ 9f3c2a1 Fix token refresh race       │
+│   feature/login-form                ││ 4b7e0d9 Add retry to upload client   │
+│   release/2026.11                   ││ c81a5f2 Bump parser to 2.4           │
+└─────────────────────────────────────┘└──────────────────────────────────────┘
+ p: pull  P: push  c: commit  b: branches  ?: help
+@@ item hash 9f3c2a1
+
+@@ fixture markdown-tables | negatives | cols 90
+| Option | Default | Notes |
+|--------|---------|-------|
+| git    | 2.40    | needs the git binary |
+| test   | true    | runs on save |
+
+@@ fixture script-listing | negatives | cols 90
+#!/usr/bin/env bash
+# install deps and build
+# Installation
+set -euo pipefail
+cd "$(dirname "$0")"
+@@ cmd set -euo pipefail
+@@ cmd cd "$(dirname "$0")"
+
+@@ fixture h-docker-root | prompts | cols 80
+root@3f2a9c1b7d4e:/app# npm ci --omit=dev
+added 120 packages in 4s
+root@3f2a9c1b7d4e:/app# node server.js
+Listening on :3000
+@@ cmd npm ci --omit=dev
+@@ cmd node server.js
+
+@@ fixture h-zsh-git-prompt | prompts | cols 90
+user@devbox ~/proj (main) % git stash pop
+On branch main
+user@devbox ~/proj (main) % git diff --stat HEAD~1
+ src/main.rs | 4 ++--
+@@ cmd git stash pop
+@@ cmd git diff --stat HEAD~1
+
+@@ fixture h-fish-default | prompts | cols 80
+user@devbox ~> set -x EDITOR nvim
+user@devbox ~> functions -n | head
+abbr
+alias
+@@ cmd set -x EDITOR nvim
+@@ cmd functions -n | head
+
+@@ fixture h-pure | prompts | cols 80
+~/proj main*
+❯ npm test
+
+ PASS  src/app.test.ts
+~/proj main*
+❯ 
+@@ cmd npm test
+
+@@ fixture h-starship-node | prompts | cols 90
+proj on  feat/x is 📦 v1.2.0 via  v22.1.0
+❯ pnpm install --frozen-lockfile
+Lockfile is up to date, resolution step is skipped
+@@ cmd pnpm install --frozen-lockfile
+
+@@ fixture h-docs-dollar | prompts | cols 90
+Install the CLI:
+
+  $ curl -fsSL https://get.example.invalid/install.sh | sh
+  $ export API_KEY=example-key
+
+Then restart nginx as root:
+
+  # systemctl restart nginx
+
+# Configure the server
+@@ cmd curl -fsSL https://get.example.invalid/install.sh | sh
+@@ cmd export API_KEY=example-key
+@@ cmd systemctl restart nginx
+
+@@ fixture h-pwsh-unix | prompts | cols 100
+PS /home/user> Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
+ NPM(K)    PM(M)      WS(M)     CPU(s)      Id  SI ProcessName
+@@ cmd Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
+
+@@ fixture h-inline-mixed | inline | cols 90
+Use `docker compose logs -f api` to follow the API, or `make logs`.
+The `make` target is defined in `Makefile`.
+@@ cmd docker compose logs -f api
+@@ cmd make logs
+
+@@ fixture h-numbered-steps | inline | cols 90
+1. Clone the repo: git clone https://github.example.invalid/acme/app.git
+2. Install deps with `pnpm install`.
+3. Start the dev server: pnpm dev
+@@ cmd git clone https://github.example.invalid/acme/app.git
+@@ cmd pnpm install
+@@ cmd pnpm dev
+
+@@ fixture h-console-fence | inline | cols 80
+```console
+$ make test
+ok   example/pkg  0.012s
+```
+@@ cmd make test
+
+@@ fixture h-colored-code-block | inline | cols 80
+  \e[33mexport\e[39m RUST_LOG=debug
+  cargo run \e[32m--release\e[39m
+@@ cmd export RUST_LOG=debug
+@@ cmd cargo run --release
+
+@@ fixture h-cc-running | claude | cols 80
+● Bash(npm run build)
+  ⎿  Running…
+
+● Bash(sed -n '1,40p' src/main.rs)
+  ⎿  use std::env;
+@@ cmd npm run build
+@@ cmd sed -n '1,40p' src/main.rs
+
+@@ fixture h-cc-python-heredoc | claude | cols 80
+● Bash(python3 - <<'PY'
+      import json, sys
+      data = json.load(open("report.json"))
+      print(len(data["items"]))
+      PY)
+  ⎿  42
+@@ cmd python3 - <<'PY'
+@@ + import json, sys
+@@ + data = json.load(open("report.json"))
+@@ + print(len(data["items"]))
+@@ + PY
+
+@@ fixture h-cc-permission-backslash | claude | cols 80
+ Bash command
+
+   cd /home/user/proj && \
+     just test
+   Run the test suite
+
+ Do you want to proceed?
+ ❯ 1. Yes
+@@ cmd cd /home/user/proj && \
+@@ +   just test
+
+@@ fixture h-cc-prose | claude | cols 90
+● You can run cargo test -p core to check just the core crate, then just lint.
+@@ cmd cargo test -p core
+@@ cmd just lint
+
+@@ fixture h-cc-bang-output | claude | cols 80
+> !npm outdated
+  ⎿  Package  Current  Wanted  Latest
+     vite     5.4.1    5.4.8   6.0.1
+@@ cmd npm outdated
+
+@@ fixture h-cc-other-tools | claude | cols 90
+● Task(Explore the codebase)
+  ⎿  Done (12 tool uses · 30k tokens · 41s)
+● Write(src/new.rs)
+  ⎿  Wrote 12 lines to src/new.rs
+● Search(pattern: "TODO", path: "src")
+  ⎿  Found 3 files
+
+@@ fixture h-shell-for-ps2 | multiline | cols 80
+$ for f in *.log; do
+> gzip "$f"
+> done
+@@ cmd for f in *.log; do
+@@ + gzip "$f"
+@@ + done
+
+@@ fixture h-shell-python-quote | multiline | cols 80
+$ python3 -c '
+> import sys
+> print(sys.version)'
+3.12.1 (main, Jan  1 2026, 00:00:00)
+@@ cmd python3 -c '
+@@ + import sys
+@@ + print(sys.version)'
+
+@@ fixture h-npm-fund | negatives | cols 80
+added 812 packages, and audited 813 packages in 9s
+
+found 0 vulnerabilities
+  run `npm fund` for details
+@@ cmd npm fund
+
+@@ fixture h-help-output | negatives | cols 90
+usage: git [-v | --version] [-h | --help] [-C <path>] <command> [<args>]
+
+   clone     Clone a repository into a new directory
+   init      Create an empty Git repository or reinitialize an existing one
+
+See 'git help <command>' to read about a specific subcommand
+
+@@ fixture h-man-page | negatives | cols 90
+GREP(1)                      General Commands Manual                      GREP(1)
+
+NAME
+     grep, egrep, fgrep – file pattern searcher
+
+SYNOPSIS
+     grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
+
+@@ fixture h-yaml-run | negatives | cols 80
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm test
+@@ cmd npm test
+
+@@ fixture h-prose-vocab | negatives | cols 90
+  The make target and the test runner both read config from disk.
+  Run time was 12s and the cache hit rate 91%.
+  Use less memory by streaming.
+
+@@ fixture h-diff-lines | negatives | cols 80
+-    run: npm test
++    run: npm ci && npm test
+
+@@ fixture h-ls-colors | negatives | cols 80
+-rw-r--r--  1 user  staff  12 Nov 12 10:00 \e[32mrun.sh\e[39m
+drwxr-xr-x  3 user  staff  96 Nov 12 10:00 \e[34mscripts\e[39m
+
+@@ fixture b-bash-git-ps1 | prompts | cols 80
+user@devbox:~/proj (feature/x *)$ git add -p
+diff --git a/src/main.rs b/src/main.rs
+(1/1) Stage this hunk [y,n,q,a,d,e,?]? y
+@@ cmd git add -p
+
+@@ fixture b-zsh-rprompt | prompts | cols 80
+proj % make release                                            [main] 14:02
+cc -O2 -Wall -c main.c -o main.o
+cc -O2 -o app main.o util.o
+@@ cmd make release
+@@ cmd cc -O2 -Wall -c main.c -o main.o
+@@ cmd cc -O2 -o app main.o util.o
+
+@@ fixture b-cc-multi-tool | claude | cols 80
+● Bash(ls -la)
+  ⎿  total 8
+
+● Bash(cat package.json | jq '.scripts')
+  ⎿  {
+       "test": "vitest run"
+     }
+
+● Bash(cd apps/macos && AZJ_DEV_NAME=cc just mac-dev --bg)
+  ⎿  Interrupted by user
+@@ cmd ls -la
+@@ cmd cat package.json | jq '.scripts'
+@@ cmd cd apps/macos && AZJ_DEV_NAME=cc just mac-dev --bg
+
+@@ fixture b-cc-answer-lists | claude | cols 80
+● To verify:
+  - `just lint`
+  - `just test`
+  - cargo build -p azulejo-core
+
+  The fastest check is git diff --stat main...HEAD which lists touched files.
+@@ cmd just lint
+@@ cmd just test
+@@ cmd cargo build -p azulejo-core
+@@ cmd git diff --stat main...HEAD
+@@ xfail a command mid-sentence without a cue word (run, use, with, a label's colon) stays prose
+
+@@ fixture b-cc-wrapped-70 | claude | cols 70
+● Bash(rg --files -g '*.swift' apps/macos/Sources | xargs grep -n
+  'TerminalHints' | sort | uniq -c | sort -rn | head)
+  ⎿  3 apps/macos/Sources/Azulejo/TerminalHintOverlay.swift
+@@ cmd rg --files -g '*.swift' apps/macos/Sources | xargs grep -n 'TerminalHints' | sort | uniq -c | sort -rn | head
+
+@@ fixture b-heredoc-tee | multiline | cols 80
+$ sudo tee /etc/example.conf >/dev/null <<EOF
+> key=value
+> EOF
+$ cat /etc/example.conf
+key=value
+@@ cmd sudo tee /etc/example.conf >/dev/null <<EOF
+@@ + key=value
+@@ + EOF
+@@ cmd cat /etc/example.conf
+
+@@ fixture b-docker-build | negatives | cols 90
+Step 3/7 : RUN pip install -r requirements.txt
+ ---> Running in 1a2b3c4d5e6f
+Successfully installed requests-2.32.3
+[notice] To update, run: pip install --upgrade pip
+@@ cmd pip install -r requirements.txt
+@@ cmd pip install --upgrade pip
+
+@@ fixture b-git-graph | negatives | cols 80
+* 9f3c2a1 (HEAD -> main) Fix token refresh race
+| * 4b7e0d9 Add retry to upload client
+|/
+* c81a5f2 Bump parser to 2.4
+
+@@ fixture b-brew-caveats | inline | cols 100
+To start postgresql@16 now and restart at login:
+  brew services start postgresql@16
+Or, if you don't want/need a background service you can just run:
+  LC_ALL="C" /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16
+@@ cmd brew services start postgresql@16
+@@ cmd LC_ALL="C" /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16
+
+@@ fixture b-rust-panic | negatives | cols 90
+thread 'main' panicked at src/main.rs:4:5:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+@@ fixture b-prose | negatives | cols 90
+  This will open the file in your editor and watch for changes.
+  We kill the old worker before starting a new one.
+  find the logs under ~/Library/Logs
+  Host example-box
+    HostName 192.0.2.10
+    User deploy
+
+@@ fixture cc-shown-bash | claude | cols 90
+● Bash(gh run watch 4321 --interval 30 --exit-status > /dev/null 2>&1; echo "exit=$?"; gh r…)
+  ⎿  $ gh run watch 4321 --interval 30 --exit-status > /dev/null 2>&1; echo "exit=$?"; gh
+     run view 4321 --json conclusion,jobs -q
+     '{c:.conclusion,jobs:[.jobs[]|{n:.name,c:.conclusion}]}' (4m 29s)
+     (ctrl+b to run in background)
+@@ cmd gh run watch 4321 --interval 30 --exit-status > /dev/null 2>&1; echo "exit=$?"; gh run view 4321 --json conclusion,jobs -q '{c:.conclusion,jobs:[.jobs[]|{n:.name,c:.conclusion}]}'
+
+@@ fixture cc-shown-bash-narrow | claude | cols 52
+  └  $ gh run watch 4321 --interval 30 --exit-status
+     > /dev/null 2>&1; echo "exit=$?"; gh run view
+     4321 --json conclusion,jobs -q '{c:.conclusion,
+     jobs:[.jobs[]|{n:.name,c:.conclusion}]}'
+     (4m 29s)
+     (ctrl+b to run in background)
+@@ cmd gh run watch 4321 --interval 30 --exit-status > /dev/null 2>&1; echo "exit=$?"; gh run view 4321 --json conclusion,jobs -q '{c:.conclusion,jobs:[.jobs[]|{n:.name,c:.conclusion}]}'
+
+@@ fixture cc-shown-bash-softwrap | claude | cols 60
+  ⎿  $ npm run test:int -- --runInBand --testPathPattern upload 2>&1 | tail -40 (12s)
+     (ctrl+b to run in background)
+
+● The integration tests pass.
+@@ cmd npm run test:int -- --runInBand --testPathPattern upload 2>&1 | tail -40
+
+@@ fixture cc-user-messages | claude | cols 80
+❯ merged
+  ⎿  Ran 1 shell command
+
+● Ran 1 shell command
+● The branch is merged into main and the worktree is gone.
+
+❯ thanks, looks good
+❯ git push origin main
+  ⎿  Ran 1 shell command
+@@ cmd git push origin main
+
+@@ fixture omz-folder-named-like-a-command | prompts | cols 80
+➜  dash git:(main) npm run build
+> dash@0.9.0 build
+> vite build
+➜  make git:(feature/x) ✗ make test
+@@ cmd npm run build
+@@ cmd make test
+
+@@ fixture docker-build-timings | negatives | cols 100
+ => [2/6] RUN apt-get update && apt-get install -y --no-install-recommends curl          18.4s
+ => [3/6] WORKDIR /app                                                                    0.0s
+ => [5/6] RUN pip install --no-cache-dir -r requirements.txt                             17.9s
+@@ cmd apt-get update && apt-get install -y --no-install-recommends curl
+@@ cmd pip install --no-cache-dir -r requirements.txt

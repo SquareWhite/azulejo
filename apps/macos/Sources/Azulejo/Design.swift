@@ -42,10 +42,26 @@ enum Design {
         static let accent = Theme.token("accent")
         /// the accent as text: links, matched characters in ⌘K
         static let accentText = Theme.token("accentText")
-        /// visible-item hint labels, joined to the item's highlight
+        /// ⌘S keycaps: the legend's keys (in the tile's header strip) and the action popup's shortcuts
         static let hintBadge = Theme.token("hintBadge")
-        /// letters on hint labels
+        /// letters on ⌘S keycaps
         static let hintBadgeText = Theme.token("hintBadgeText")
+        /// thin outline round a ⌘S keycap
+        static let hintBadgeBorder = Theme.token("hintBadgeBorder")
+        /// ⌘S label callouts (Homerow style): the pill hanging under an item's first cell
+        static let hintCallout = Theme.token("hintCallout")
+        /// thin outline round a label callout and its tail
+        static let hintCalloutBorder = Theme.token("hintCalloutBorder")
+        /// letters on a label callout
+        static let hintCalloutText = Theme.token("hintCalloutText")
+        /// letters already typed on a label callout (the rest of the label stays hintCalloutText)
+        static let hintCalloutTyped = Theme.token("hintCalloutTyped")
+        /// the focused item's label callout while choosing (arrow keys move the focus, Return selects it)
+        static let hintCalloutFocus = Theme.token("hintCalloutFocus")
+        /// the focus ring the arrow keys move while choosing: round the focused item and its callout
+        static let hintFocus = Theme.token("hintFocus")
+        /// soft shadow under a label callout
+        static let hintCalloutShadow = Theme.token("hintCalloutShadow")
         /// what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it
         static let dimFill = Theme.token("dimFill")
         /// working agents (azulejo.ring)
@@ -171,6 +187,14 @@ enum Design {
             "accentText",
             "hintBadge",
             "hintBadgeText",
+            "hintBadgeBorder",
+            "hintCallout",
+            "hintCalloutBorder",
+            "hintCalloutText",
+            "hintCalloutTyped",
+            "hintCalloutFocus",
+            "hintFocus",
+            "hintCalloutShadow",
             "dimFill",
             "statusWorking",
             "statusBlocked",
@@ -242,8 +266,16 @@ enum Design {
                     "textOnAccent": .rgba(0xffffffff),
                     "accent": .rgba(0x61afefff),
                     "accentText": .rgba(0x61afefff),
-                    "hintBadge": .rgba(0x61afefff),
-                    "hintBadgeText": .rgba(0x282c34ff),
+                    "hintBadge": .rgba(0x2c313aff),
+                    "hintBadgeText": .rgba(0xc5cad3ff),
+                    "hintBadgeBorder": .rgba(0xffffff1f),
+                    "hintCallout": .rgba(0xf9dc6bff),
+                    "hintCalloutBorder": .rgba(0xc8a02aff),
+                    "hintCalloutText": .rgba(0x2a2200ff),
+                    "hintCalloutTyped": .rgba(0x7a6620ff),
+                    "hintCalloutFocus": .rgba(0xffb85cff),
+                    "hintFocus": .rgba(0xff9f43ff),
+                    "hintCalloutShadow": .rgba(0x00000080),
                     "dimFill": .rgba(0x1b1d23ff),
                     "statusWorking": .rgba(0x61afefff),
                     "statusBlocked": .rgba(0xe5c07bff),
@@ -319,8 +351,16 @@ enum Design {
                     "textOnAccent": .rgba(0xffffffff),
                     "accent": .rgba(0x4760efff),
                     "accentText": .rgba(0x3a52dcff),
-                    "hintBadge": .rgba(0x4760efff),
-                    "hintBadgeText": .rgba(0xffffffff),
+                    "hintBadge": .rgba(0xfbfbfbff),
+                    "hintBadgeText": .rgba(0x383a42ff),
+                    "hintBadgeBorder": .rgba(0x00000024),
+                    "hintCallout": .rgba(0xfde68aff),
+                    "hintCalloutBorder": .rgba(0x8f6b00ff),
+                    "hintCalloutText": .rgba(0x2a2200ff),
+                    "hintCalloutTyped": .rgba(0x7a6620ff),
+                    "hintCalloutFocus": .rgba(0xffb85cff),
+                    "hintFocus": .rgba(0xb85400ff),
+                    "hintCalloutShadow": .rgba(0x00000040),
                     "dimFill": .rgba(0xe1e1e3ff),
                     "statusWorking": .rgba(0x2558ccff),
                     "statusBlocked": .rgba(0x935a00ff),
@@ -396,8 +436,16 @@ enum Design {
                     "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
                     "accentText": .system("linkColor", alpha: nil, fallback: 0x419cffff),
-                    "hintBadge": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
-                    "hintBadgeText": .rgba(0x1e1e1eff),
+                    "hintBadge": .rgba(0x323232ff),
+                    "hintBadgeText": .rgba(0xd4d4d4ff),
+                    "hintBadgeBorder": .rgba(0xffffff1f),
+                    "hintCallout": .rgba(0xf9dc6bff),
+                    "hintCalloutBorder": .rgba(0xc8a02aff),
+                    "hintCalloutText": .rgba(0x2a2200ff),
+                    "hintCalloutTyped": .rgba(0x7a6620ff),
+                    "hintCalloutFocus": .rgba(0xffb85cff),
+                    "hintFocus": .rgba(0xff9f43ff),
+                    "hintCalloutShadow": .rgba(0x00000080),
                     "dimFill": .rgba(0x000000ff),
                     "statusWorking": .system("linkColor", alpha: nil, fallback: 0x419cffff),
                     "statusBlocked": .system("systemYellow", alpha: nil, fallback: 0xffd600ff),
@@ -473,8 +521,16 @@ enum Design {
                     "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
                     "accentText": .rgba(0x0058c4ff),
-                    "hintBadge": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
-                    "hintBadgeText": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
+                    "hintBadge": .rgba(0xffffffff),
+                    "hintBadgeText": .rgba(0x3a3a3aff),
+                    "hintBadgeBorder": .rgba(0x00000024),
+                    "hintCallout": .rgba(0xfde68aff),
+                    "hintCalloutBorder": .rgba(0x8f6b00ff),
+                    "hintCalloutText": .rgba(0x2a2200ff),
+                    "hintCalloutTyped": .rgba(0x7a6620ff),
+                    "hintCalloutFocus": .rgba(0xffb85cff),
+                    "hintFocus": .rgba(0xb85400ff),
+                    "hintCalloutShadow": .rgba(0x00000040),
                     "dimFill": .rgba(0xecececff),
                     "statusWorking": .rgba(0x0058c4ff),
                     "statusBlocked": .rgba(0xa64400ff),
@@ -616,7 +672,7 @@ enum Design {
         static let searchBadge: CGFloat = 4
         static let sidebarSegment: CGFloat = 7
         static let badgeDot: CGFloat = 4
-        static let hintBadge: CGFloat = 3
+        static let hintBadge: CGFloat = 4
         static let machineDot: CGFloat = 3
     }
 
@@ -736,6 +792,8 @@ enum Design {
         nonisolated(unsafe) static let rowSelected: NSFont = .systemFont(ofSize: 12, weight: .semibold)
         nonisolated(unsafe) static let detail: NSFont = .systemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let caption: NSFont = .systemFont(ofSize: 10, weight: .regular)
+        nonisolated(unsafe) static let hintKey: NSFont = .systemFont(ofSize: 10, weight: .semibold)
+        nonisolated(unsafe) static let hintLegend: NSFont = .systemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let groupLabel: NSFont = .systemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .light)
         nonisolated(unsafe) static let sidebarBranch: NSFont = .systemFont(ofSize: 12, weight: .regular)
@@ -860,5 +918,8 @@ enum Design {
         static let drag: TimeInterval = 0.15
         static let sidebarHint: TimeInterval = 0.08
         static let sidebarHintDelay: TimeInterval = 0.1
+        static let hintFilter: TimeInterval = 0.08
+        static let hintExtendDelay: TimeInterval = 0.1
+        static let hintExtend: TimeInterval = 0.08
     }
 }

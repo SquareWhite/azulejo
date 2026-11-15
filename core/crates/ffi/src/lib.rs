@@ -30,7 +30,14 @@ use azulejo_herdr::Session as HerdrSession;
 use azulejo_protocol::{Command, Event};
 use serde_json::{Value, json};
 
+mod hints;
 mod terminal;
+pub use hints::{
+    AzjHintRange, AzjHintUnit, AzjHintsPane, azj_core_hints, azj_hints_detect, azj_hints_labels,
+    azj_hints_pane_focus, azj_hints_pane_free, azj_hints_pane_grow, azj_hints_pane_keep,
+    azj_hints_pane_nearest, azj_hints_pane_neighbour, azj_hints_pane_shrink,
+    azj_hints_pane_targets, azj_hints_pane_text, azj_hints_place_callouts, azj_hints_run_line,
+};
 pub use terminal::{azj_core_attach_exit, azj_core_terminal_command};
 
 /// Called once per event with a NUL-terminated JSON string, valid only for the call.

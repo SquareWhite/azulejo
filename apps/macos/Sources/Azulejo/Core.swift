@@ -168,6 +168,12 @@ final class Core {
         return take(azj_core_animation(handle)) ?? [:]
     }
 
+    /// `[hints]` settings (`azj_core_hints`); follows config reloads.
+    func hints() -> [String: Any] {
+        if freed { return [:] }
+        return take(azj_core_hints(handle)) ?? [:]
+    }
+
     func info() -> [String: Any] {
         if freed { return [:] }
         return take(azj_core_info(handle)) ?? [:]

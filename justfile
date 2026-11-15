@@ -20,6 +20,7 @@ lint:
     scripts/theme-contrast
     scripts/check-theme-colours
     scripts/icon/build.sh --check
+    core/crates/hints/tools/model.sh --check
 
 # Regenerate the macOS shell's Design.swift from shared/design/tokens.json
 design-tokens:
@@ -28,6 +29,10 @@ design-tokens:
 # Regenerate the app icon (apps/macos/Resources/AppIcon.icns) and docs/design/icon from scripts/icon/draw.swift
 icon:
     scripts/icon/build.sh
+
+# Regenerate the terminal row classifier (core/crates/hints/model/rows.json): synthetic screens, training, held-out scores
+hints-model:
+    core/crates/hints/tools/model.sh
 
 # Regenerate the keybinding reference in docs/keybindings.md from shared/config/keymap.default.toml
 keys-doc:

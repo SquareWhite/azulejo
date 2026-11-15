@@ -1,0 +1,674 @@
+# Held-out screens for the terminal row classifier. Hand-written and fictional:
+# hosts use example.invalid and documentation IP ranges, paths use /home/user.
+# The synthetic generator (tools/generate.py) never reads this file; the
+# classifier trains on synthetic screens only and is scored here.
+# The first 21 screens come from the smart-select spike; the rest were written
+# for the classifier, before the generator.
+#
+# Screen header:  === <id> cols=<n> | <description>
+# Row line:       <label>[~]| <text>      (text starts after "| "; "B|" is blank)
+#   labels: C prompt + command (shell prompt, `● Bash(` tool call, `!` agent command)
+#           c continuation of the command above (wrap, `\`, PS2, heredoc body)
+#           K command with no prompt (code block, indented example, permission box, or a
+#             command shown in output: make's echoed lines, a build's RUN steps, a
+#             script or workflow printed by cat; the value skips "RUN " and "run: ")
+#           O program output     P prose     T chrome (frames, status lines, bare prompts)
+#           B blank
+#   "~" after the label: the row soft-wraps into the next (terminal wrap flag)
+# Expected spans: "--- <kind>: <value>"; command values compare with all
+#   whitespace removed and "\" line joins dropped.
+
+=== bash-git cols=80 | bash prompt, git status output
+C| user@devbox:~/src/webapp$ git status
+O| On branch feature/login-form
+O| Your branch is up to date with 'origin/feature/login-form'.
+B|
+O| Changes not staged for commit:
+O|   (use "git add <file>..." to update what will be committed)
+O|         modified:   src/components/LoginForm.tsx
+O|         modified:   src/api/session.ts
+B|
+O| Untracked files:
+O|         docs/notes/login-flow.md
+B|
+T| user@devbox:~/src/webapp$
+--- command: git status
+--- branch: feature/login-form
+--- path: src/components/LoginForm.tsx
+--- path: src/api/session.ts
+--- path: docs/notes/login-flow.md
+
+=== zsh-ls cols=90 | oh-my-zsh arrow prompt, ls -la
+C| ➜  webapp git:(main) ✗ ls -la ./scripts
+O| total 24
+O| drwxr-xr-x   5 user  staff   160 Nov  3 10:12 .
+O| drwxr-xr-x  18 user  staff   576 Nov  3 10:10 ..
+O| -rwxr-xr-x   1 user  staff  1203 Nov  3 10:12 deploy.sh
+O| -rw-r--r--   1 user  staff   412 Nov  2 17:40 seed-db.sql
+C| ➜  webapp git:(main) ✗ ./scripts/deploy.sh --dry-run staging
+O| [dry-run] would upload build/ to deploy@staging.example.invalid:/srv/webapp
+O| [dry-run] done in 0.4s
+T| ➜  webapp git:(main) ✗
+--- command: ls -la ./scripts
+--- command: ./scripts/deploy.sh --dry-run staging
+--- path: ./scripts
+--- path: ./scripts/deploy.sh
+--- domain: staging.example.invalid
+--- path: /srv/webapp
+
+=== fish-cargo cols=100 | fish prompt with branch, cargo build errors
+C| user@devbox ~/w/api (feature/rate-limit)> cargo build --release
+O|    Compiling api v0.3.1 (/home/user/w/api)
+O| error[E0425]: cannot find value `bucket` in this scope
+O|   --> src/limiter.rs:42:17
+O|    |
+O| 42 |         let n = bucket.take(1);
+O|    |                 ^^^^^^ not found in this scope
+B|
+O| error: could not compile `api` (bin "api") due to 1 previous error
+T| user@devbox ~/w/api (feature/rate-limit) [101]>
+--- command: cargo build --release
+--- branch: feature/rate-limit
+--- path: /home/user/w/api
+--- path: src/limiter.rs:42:17
+
+=== cc-bash-log cols=100 | Claude Code TUI: prose, Bash tool call, collapsed output
+P| ● I'll look at the recent history to see when the regression came in.
+B|
+C| ● Bash(git log --oneline -5)
+O|   ⎿  9f3c2a1 Fix token refresh race
+O|      4b7e0d9 Add retry to upload client
+O|      c81a5f2 Bump parser to 2.4
+O|      0d93e6b Split settings screen
+O|      7aa1c40 Initial import
+B|
+P| ● The retry change in 4b7e0d9 touches the same code path. Let me check that diff.
+B|
+C| ● Bash(git show 4b7e0d9 --stat)
+O|   ⎿  src/upload/client.ts | 31 +++++++++++++++++++++++++------
+O|      1 file changed, 25 insertions(+), 6 deletions(-)
+--- command: git log --oneline -5
+--- command: git show 4b7e0d9 --stat
+--- hash: 9f3c2a1
+--- hash: 4b7e0d9
+--- hash: c81a5f2
+--- hash: 0d93e6b
+--- hash: 7aa1c40
+--- path: src/upload/client.ts
+
+=== cc-bash-multiline cols=80 | Claude Code TUI: long Bash tool call wrapped over rows
+P| ● Now I'll run the integration tests against the local stack.
+B|
+C| ● Bash(DATABASE_URL=postgres://app:app@127.0.0.1:5432/app_test npm run test:int
+c|       -- --runInBand --testPathPattern 'upload|session' 2>&1 | tail -40)
+O|   ⎿  PASS tests/int/session.test.ts (4.1 s)
+O|      PASS tests/int/upload.test.ts (7.9 s)
+O|      Tests:       38 passed, 38 total
+O|      … +12 lines (ctrl+o to expand)
+B|
+P| ● Both integration suites pass.
+--- command: DATABASE_URL=postgres://app:app@127.0.0.1:5432/app_test npm run test:int -- --runInBand --testPathPattern 'upload|session' 2>&1 | tail -40
+--- path: tests/int/session.test.ts
+--- path: tests/int/upload.test.ts
+--- ip: 127.0.0.1:5432
+
+=== cc-prose-inline cols=90 | Claude Code TUI: prose with inline commands, input box
+P| ● Done. The watcher now ignores generated files. To try it, run `npm run dev` and then
+P|   edit any file under `src/`; the reload should take under a second. If it still loops,
+P|   clear the cache with `rm -rf .cache/vite` and restart.
+B|
+T| ╭────────────────────────────────────────────────────────────────────────────────────────╮
+T| │ > _                                                                                    │
+T| ╰────────────────────────────────────────────────────────────────────────────────────────╯
+T|   ? for shortcuts                                                        ◯ auto-accept off
+--- command: npm run dev
+--- command: rm -rf .cache/vite
+--- path: src/
+--- path: .cache/vite
+
+=== curl-softwrap cols=80 | long curl soft-wrapped by the terminal, JSON output
+C~| user@devbox:~$ curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-
+c~| Type: application/json' -d '{"name":"nightly-reports","schedule":"0 3 * * *"}' |
+c| jq .
+O| {
+O|   "id": "3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b",
+O|   "status": "queued",
+O|   "url": "https://api.example.invalid/v2/jobs/3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b"
+O| }
+T| user@devbox:~$
+--- command: curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-Type: application/json' -d '{"name":"nightly-reports","schedule":"0 3 * * *"}' | jq .
+--- uuid: 3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b
+--- url: https://api.example.invalid/v2/jobs/3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b
+
+=== docker-backslash cols=90 | backslash continuation with PS2 prompts
+C| user@devbox:~/svc$ docker run --rm -it \
+c| >   -p 8080:8080 \
+c| >   -v /home/user/svc/config:/etc/svc:ro \
+c| >   registry.example.invalid/team/svc:1.4.2
+O| Unable to find image 'registry.example.invalid/team/svc:1.4.2' locally
+O| 1.4.2: Pulling from team/svc
+O| Digest: sha256:5e1f0c3a9b8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f
+O| svc listening on 0.0.0.0:8080
+--- command: docker run --rm -it -p 8080:8080 -v /home/user/svc/config:/etc/svc:ro registry.example.invalid/team/svc:1.4.2
+--- path: /home/user/svc/config
+--- ip: 0.0.0.0:8080
+--- domain: registry.example.invalid
+
+=== heredoc cols=80 | heredoc with PS2 body
+C| user@devbox:~/svc$ cat <<'EOF' > config.toml
+c| > [server]
+c| > host = "0.0.0.0"
+c| > port = 8080
+c| > upstream = "https://auth.example.invalid"
+c| > EOF
+C| user@devbox:~/svc$ wc -l config.toml
+O| 4 config.toml
+T| user@devbox:~/svc$
+--- command: cat <<'EOF' > config.toml [server] host = "0.0.0.0" port = 8080 upstream = "https://auth.example.invalid" EOF
+--- command: wc -l config.toml
+--- path: config.toml
+--- url: https://auth.example.invalid
+
+=== logs cols=110 | service log tail with ips, uuids, urls
+C| user@devbox:~$ tail -n 8 /var/log/webapp/access.log
+O| 2026-11-03T10:21:04Z INFO  req=6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b ip=203.0.113.24 GET /api/items 200 12ms
+O| 2026-11-03T10:21:05Z INFO  req=0a9b8c7d-6e5f-4a3b-9c1d-2e3f4a5b6c7d ip=203.0.113.24 GET /api/items/41 200 4ms
+O| 2026-11-03T10:21:07Z WARN  req=1f2e3d4c-5b6a-4978-8a1b-2c3d4e5f6a7b ip=198.51.100.7 POST /login 429 1ms
+O| 2026-11-03T10:21:09Z ERROR upstream https://auth.example.invalid/token timed out after 5000ms
+O| 2026-11-03T10:21:09Z INFO  retrying in 2s (attempt 2/5)
+O| 2026-11-03T10:21:11Z INFO  upstream recovered
+O| 2026-11-03T10:21:12Z INFO  req=7c6b5a49-3827-4615-9a0b-c1d2e3f4a5b6 ip=2001:db8::1f GET /healthz 200 0ms
+--- command: tail -n 8 /var/log/webapp/access.log
+--- path: /var/log/webapp/access.log
+--- uuid: 6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b
+--- uuid: 0a9b8c7d-6e5f-4a3b-9c1d-2e3f4a5b6c7d
+--- uuid: 1f2e3d4c-5b6a-4978-8a1b-2c3d4e5f6a7b
+--- uuid: 7c6b5a49-3827-4615-9a0b-c1d2e3f4a5b6
+--- ip: 203.0.113.24
+--- ip: 198.51.100.7
+--- ip: 2001:db8::1f
+--- url: https://auth.example.invalid/token
+
+=== kubectl cols=100 | kubectl table output
+C| user@devbox:~$ kubectl -n shop get pods -o wide
+O| NAME                        READY   STATUS             RESTARTS   AGE   IP            NODE
+O| cart-7d9f8b6c5d-x2k4p       1/1     Running            0          3d    10.42.1.17    node-a
+O| checkout-5c8d7e6f4b-q9w8e   0/1     CrashLoopBackOff   14         52m   10.42.2.9     node-b
+O| web-6f5e4d3c2b-m7n6b        1/1     Running            0          3d    10.42.1.23    node-a
+C| user@devbox:~$ kubectl -n shop logs checkout-5c8d7e6f4b-q9w8e --previous | tail -3
+O| panic: dial tcp 10.43.0.12:6379: connect: connection refused
+O| goroutine 1 [running]:
+O| main.main() /src/cmd/checkout/main.go:57 +0x1a4
+--- command: kubectl -n shop get pods -o wide
+--- command: kubectl -n shop logs checkout-5c8d7e6f4b-q9w8e --previous | tail -3
+--- ip: 10.42.1.17
+--- ip: 10.42.2.9
+--- ip: 10.42.1.23
+--- ip: 10.43.0.12:6379
+--- path: /src/cmd/checkout/main.go:57
+
+=== readme-prose cols=90 | README in a pager: prose with inline commands
+P| GETTING STARTED
+B|
+P| Clone the repository and install dependencies. You need Node 22 or later; on macOS the
+P| quickest route is to install it with Homebrew and then run the setup script:
+B|
+K|     brew install node@22
+K|     ./scripts/setup.sh --with-fixtures
+B|
+P| The setup script writes a local config to ~/.config/webapp/config.toml. To reach the
+P| staging API from your machine, open an SSH tunnel first with ssh -L 8443:localhost:443
+P| deploy@bastion.example.invalid and keep it running. Full docs live at
+P| https://docs.example.invalid/webapp/setup.
+T| README.md lines 1-14/220 6%
+--- command: brew install node@22
+--- command: ./scripts/setup.sh --with-fixtures
+--- command: ssh -L 8443:localhost:443 deploy@bastion.example.invalid
+--- path: ~/.config/webapp/config.toml
+--- domain: bastion.example.invalid
+--- url: https://docs.example.invalid/webapp/setup
+
+=== git-branch cols=80 | git branch -a listing
+C| user@devbox:~/src/webapp$ git branch -a
+O|   feature/login-form
+O| * main
+O|   release/2026.11
+O|   remotes/origin/HEAD -> origin/main
+O|   remotes/origin/feature/login-form
+O|   remotes/origin/main
+T| user@devbox:~/src/webapp$
+--- command: git branch -a
+--- branch: feature/login-form
+--- branch: main
+--- branch: release/2026.11
+
+=== py-traceback cols=100 | python traceback
+C| user@devbox:~/tools$ python3 report.py --month 2026-10
+O| Traceback (most recent call last):
+O|   File "/home/user/tools/report.py", line 88, in <module>
+O|     main()
+O|   File "/home/user/tools/report.py", line 71, in main
+O|     rows = load_rows(args.month)
+O|   File "/home/user/tools/lib/loader.py", line 19, in load_rows
+O|     with open(path) as f:
+O| FileNotFoundError: [Errno 2] No such file or directory: 'data/2026-10.csv'
+T| user@devbox:~/tools$
+--- command: python3 report.py --month 2026-10
+--- path: /home/user/tools/report.py
+--- path: /home/user/tools/lib/loader.py
+--- path: data/2026-10.csv
+
+=== net cols=90 | ping and dig output
+C| user@devbox:~$ ping -c 2 gateway.example.invalid
+O| PING gateway.example.invalid (192.0.2.1): 56 data bytes
+O| 64 bytes from 192.0.2.1: icmp_seq=0 ttl=64 time=1.912 ms
+O| 64 bytes from 192.0.2.1: icmp_seq=1 ttl=64 time=2.044 ms
+C| user@devbox:~$ dig +short AAAA api.example.invalid
+O| 2001:db8:10::25
+--- command: ping -c 2 gateway.example.invalid
+--- command: dig +short AAAA api.example.invalid
+--- domain: gateway.example.invalid
+--- domain: api.example.invalid
+--- ip: 192.0.2.1
+--- ip: 2001:db8:10::25
+
+=== cc-edit-diff cols=100 | Claude Code TUI: plan list, Update tool call with diff
+P| ● Plan:
+P|   1. Move the retry limit into config
+P|   2. Read it in the upload client
+P|   3. Add a test for the limit
+B|
+T| ● Update(src/upload/client.ts)
+O|   ⎿  Updated src/upload/client.ts with 2 additions and 1 removal
+O|        12    import { backoff } from "../util/backoff";
+O|        13 -  const MAX_RETRIES = 3;
+O|        13 +  import { config } from "../config";
+O|        14 +  const MAX_RETRIES = config.upload.maxRetries;
+B|
+P| ● Next I'll add the test in tests/upload/retry.test.ts and run it with npx vitest run upload.
+--- path: src/upload/client.ts
+--- path: tests/upload/retry.test.ts
+--- command: npx vitest run upload
+
+=== chain-typo cols=90 | several commands, chains, a typo
+C| user@devbox:~/src/webapp$ gti pull
+O| zsh: command not found: gti
+C| user@devbox:~/src/webapp$ git pull --rebase && npm ci && npm run build
+O| Already up to date.
+O| added 812 packages in 9s
+O| > webapp@2.3.0 build
+O| > vite build
+O| ✓ 214 modules transformed.
+O| dist/assets/index-4f9a2c.js   182.40 kB │ gzip: 58.11 kB
+T| user@devbox:~/src/webapp$
+--- command: gti pull
+--- command: git pull --rebase && npm ci && npm run build
+--- path: dist/assets/index-4f9a2c.js
+
+=== agent-fence cols=90 | agent chat with a fenced code block
+P| assistant: The migration failed because the column already exists. Roll it back first:
+B|
+T| ```sh
+K| npx prisma migrate resolve --rolled-back 20261102_add_status
+K| npx prisma migrate deploy
+T| ```
+B|
+P| Then check the table with psql "postgres://app@db.example.invalid/app" -c '\d orders'.
+--- command: npx prisma migrate resolve --rolled-back 20261102_add_status
+--- command: npx prisma migrate deploy
+--- command: psql "postgres://app@db.example.invalid/app" -c '\d orders'
+
+=== cargo-test cols=100 | cargo test output
+C| user@devbox ~/w/api (main)> cargo test -p limiter
+O|     Finished `test` profile [unoptimized + debuginfo] target(s) in 3.21s
+O|      Running unittests src/lib.rs (target/debug/deps/limiter-2c9f1e7a8b3d4c5e)
+B|
+O| running 3 tests
+O| test bucket::tests::refills ... ok
+O| test bucket::tests::rejects_when_empty ... ok
+O| test bucket::tests::burst ... FAILED
+B|
+O| test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+--- command: cargo test -p limiter
+--- branch: main
+--- path: src/lib.rs
+--- path: target/debug/deps/limiter-2c9f1e7a8b3d4c5e
+
+=== lazygit-box cols=80 | box-bordered TUI with branches and commits
+T| ┌─ Branches ──────────────────────────┐┌─ Commits ────────────────────────────┐
+O| │ * main                              ││ 9f3c2a1 Fix token refresh race       │
+O| │   feature/login-form                ││ 4b7e0d9 Add retry to upload client   │
+O| │   release/2026.11                   ││ c81a5f2 Bump parser to 2.4           │
+T| └─────────────────────────────────────┘└──────────────────────────────────────┘
+T|  p: pull  P: push  c: commit  b: branches  ?: help
+--- branch: main
+--- branch: feature/login-form
+--- branch: release/2026.11
+--- hash: 9f3c2a1
+--- hash: 4b7e0d9
+--- hash: c81a5f2
+
+=== ssh-remote cols=90 | ssh into a host, remote prompt
+C| user@devbox:~$ ssh ops@192.0.2.10
+O| Last login: Mon Nov  3 09:58:12 2026 from 198.51.100.4
+C| ops@web-01:~$ sudo systemctl status nginx --no-pager | head -4
+O| ● nginx.service - A high performance web server and a reverse proxy server
+O|      Loaded: loaded (/lib/systemd/system/nginx.service; enabled; preset: enabled)
+O|      Active: active (running) since Mon 2026-11-03 08:01:44 UTC; 1h 57min ago
+T| ops@web-01:~$
+--- command: ssh ops@192.0.2.10
+--- command: sudo systemctl status nginx --no-pager | head -4
+--- ip: 192.0.2.10
+--- ip: 198.51.100.4
+--- path: /lib/systemd/system/nginx.service
+
+=== p10k-jest cols=100 | powerlevel10k two-line prompt, npm test with jest output
+T| ╭─ ~/src/shop  main ⇡1 !2 ··································· ✔  10:42:07
+C| ╰─❯ npm test -- --watch=false src/cart
+B|
+O| > shop@1.8.0 test
+O| > jest --watch=false src/cart
+B|
+O|  PASS  src/cart/total.test.ts
+O|  FAIL  src/cart/discount.test.ts
+O|   ● applies the loyalty discount once
+B|
+O|     expect(received).toBe(expected) // Object.is equality
+B|
+O|     Expected: 90
+O|     Received: 81
+B|
+O| Tests:       1 failed, 11 passed, 12 total
+O| Time:        2.31 s
+O| Ran all test suites matching /src\/cart/i.
+T| ╭─ ~/src/shop  main ⇡1 !2 ································· ✘ 1  10:42:15
+T| ╰─❯
+--- command: npm test -- --watch=false src/cart
+
+=== starship-cargo cols=96 | starship prompt, cargo test with result lines, a commit
+T| api on  feature/quota [!] is 📦 v0.4.0 via 🦀 v1.82.0
+C| ❯ cargo test quota
+O|    Compiling api v0.4.0 (/home/user/w/api)
+O|     Finished `test` profile [unoptimized + debuginfo] target(s) in 4.87s
+O|      Running unittests src/lib.rs (target/debug/deps/api-91c2e4f0a7b3d815)
+B|
+O| running 4 tests
+O| test quota::tests::resets_daily ... ok
+O| test quota::tests::counts_per_key ... ok
+O| test quota::tests::rejects_over_limit ... ok
+O| test quota::tests::persists ... ignored
+B|
+O| test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 21 filtered out; finished in 0.02s
+B|
+T| api on  feature/quota [!] is 📦 v0.4.0 via 🦀 v1.82.0 took 5s
+C| ❯ git add -p src/quota.rs && git commit -m "Reset quotas at midnight UTC"
+O| [feature/quota 5d2e8a1] Reset quotas at midnight UTC
+O|  1 file changed, 14 insertions(+), 3 deletions(-)
+--- command: cargo test quota
+--- command: git add -p src/quota.rs && git commit -m "Reset quotas at midnight UTC"
+
+=== cc-plan-cargo cols=100 | Claude Code: numbered plan with inline commands, Bash calls with cargo output
+P| ● Here's the plan:
+B|
+P|   1. Add a `max_burst` field to `LimiterConfig` and default it to 10
+P|   2. Thread it through `Bucket::new`
+P|   3. Run `cargo test -p limiter` and then `cargo clippy --all-targets`
+P|   4. Update the changelog
+B|
+C| ● Bash(cargo test -p limiter 2>&1 | tail -15)
+O|   ⎿  running 5 tests
+O|      test bucket::tests::burst ... ok
+O|      test bucket::tests::refills ... ok
+O|      test bucket::tests::max_burst_default ... ok
+O|      … +6 lines (ctrl+o to expand)
+B|
+P| ● All five pass. Moving on to clippy.
+B|
+C| ● Bash(cargo clippy --all-targets -- -D warnings)
+O|   ⎿  Running…
+B|
+T| ✳ Clippying… (12s · ↓ 1.2k tokens · esc to interrupt)
+B|
+T| ────────────────────────────────────────────────────────────────────────────────────────────────────
+T| >
+T| ────────────────────────────────────────────────────────────────────────────────────────────────────
+T|   ⏵⏵ accept edits on (shift+tab to cycle)
+--- command: cargo test -p limiter
+--- command: cargo clippy --all-targets
+--- command: cargo test -p limiter 2>&1 | tail -15
+--- command: cargo clippy --all-targets -- -D warnings
+
+=== cc-permission cols=92 | Claude Code: wrapped Bash call and a boxed permission prompt
+P| ● I'll clear the stale incremental cache, which is what keeps the old symbols around.
+B|
+C| ● Bash(rm -rf target/debug/incremental && cargo build -p api --features "metrics,tracing"
+c|       --message-format short)
+B|
+T| ╭────────────────────────────────────────────────────────────────────────────────────────╮
+T| │ Bash command                                                                           │
+T| │                                                                                        │
+K| │   rm -rf target/debug/incremental && cargo build -p api --features "metrics,tracing"   │
+c| │   --message-format short                                                               │
+P| │   Clear stale incremental build output and rebuild                                     │
+T| │                                                                                        │
+T| │ Do you want to proceed?                                                                │
+T| │ ❯ 1. Yes                                                                               │
+T| │   2. Yes, and don't ask again for rm commands in /home/user/w/api                      │
+T| │   3. No, and tell Claude what to do differently (esc)                                  │
+T| ╰────────────────────────────────────────────────────────────────────────────────────────╯
+--- command: rm -rf target/debug/incremental && cargo build -p api --features "metrics,tracing" --message-format short
+
+=== root-nginx cols=100 | root shell, nginx config test, reload and a soft-wrapped log line
+C| root@web-02:/etc/nginx# nginx -t
+O| nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+O| nginx: configuration file /etc/nginx/nginx.conf test is successful
+C| root@web-02:/etc/nginx# systemctl reload nginx && journalctl -u nginx -n 3 --no-pager
+O| Nov 12 09:14:02 web-02 systemd[1]: Reloading nginx.service - A high performance web server...
+O| Nov 12 09:14:02 web-02 nginx[48211]: 2026/11/12 09:14:02 [notice] 48211#48211: signal process
+O| Nov 12 09:14:02 web-02 systemd[1]: Reloaded nginx.service - A high performance web server.
+C| root@web-02:/etc/nginx# tail -f /var/log/nginx/error.log
+O~| 2026/11/12 09:15:40 [error] 48212#48212: *91 connect() failed (111: Connection refused) while co
+O| nnecting to upstream, client: 203.0.113.50, server: shop.example.invalid
+O| ^C
+T| root@web-02:/etc/nginx#
+--- command: nginx -t
+--- command: systemctl reload nginx && journalctl -u nginx -n 3 --no-pager
+--- command: tail -f /var/log/nginx/error.log
+
+=== venv-pip cols=100 | (venv) bash prompt, pip install, pytest failure
+C| (venv) user@devbox:~/src/reports$ pip install -r requirements.txt
+O| Collecting pandas==2.2.3 (from -r requirements.txt (line 1))
+O|   Using cached pandas-2.2.3-cp312-cp312-macosx_11_0_arm64.whl.metadata (89 kB)
+O| Requirement already satisfied: numpy>=1.26.0 in ./.venv/lib/python3.12/site-packages (2.1.2)
+O| Installing collected packages: pandas
+O| Successfully installed pandas-2.2.3
+C| (venv) user@devbox:~/src/reports$ pytest -q tests/test_monthly.py -k "not slow"
+O| ..F.                                                                                     [100%]
+O| =================================== FAILURES ===================================
+O| ____________________________ test_rounds_totals _____________________________
+O|     def test_rounds_totals():
+O| >       assert monthly.total([1.005, 2.0]) == 3.01
+O| E       assert 3.0 == 3.01
+O| tests/test_monthly.py:18: AssertionError
+O| 1 failed, 3 passed, 2 deselected in 0.41s
+T| (venv) user@devbox:~/src/reports$
+--- command: pip install -r requirements.txt
+--- command: pytest -q tests/test_monthly.py -k "not slow"
+
+=== zsh-percent-brew cols=80 | default macOS zsh prompt, brew and defaults
+C| user@laptop ~ % brew update && brew upgrade --greedy
+O| ==> Updating Homebrew...
+O| Already up-to-date.
+O| ==> Upgrading 2 outdated packages:
+O| jq 1.7 -> 1.7.1
+O| ripgrep 14.1.0 -> 14.1.1
+O| ==> Pouring jq--1.7.1.arm64_sequoia.bottle.tar.gz
+O| 🍺  /opt/homebrew/Cellar/jq/1.7.1: 19 files, 1.4MB
+C| user@laptop ~ % defaults read com.example.notes ShowLineNumbers
+O| 1
+C| user@laptop ~ % which jq rg
+O| /opt/homebrew/bin/jq
+O| /opt/homebrew/bin/rg
+T| user@laptop ~ %
+--- command: brew update && brew upgrade --greedy
+--- command: defaults read com.example.notes ShowLineNumbers
+--- command: which jq rg
+
+=== zsh-heredoc cols=90 | zsh heredoc> and dquote> continuations
+C| user@devbox ~/svc % cat > .env.local <<EOF
+c| heredoc> DATABASE_URL=postgres://app:app@127.0.0.1:5432/app
+c| heredoc> REDIS_URL=redis://127.0.0.1:6379/0
+c| heredoc> EOF
+C| user@devbox ~/svc % echo "first line
+c| dquote> second line" > notes.txt
+C| user@devbox ~/svc % wc -l .env.local notes.txt
+O|        2 .env.local
+O|        2 notes.txt
+O|        4 total
+T| user@devbox ~/svc %
+--- command: cat > .env.local <<EOF DATABASE_URL=postgres://app:app@127.0.0.1:5432/app REDIS_URL=redis://127.0.0.1:6379/0 EOF
+--- command: echo "first line second line" > notes.txt
+--- command: wc -l .env.local notes.txt
+
+=== make-gcc cols=104 | make with gcc warnings and errors; make echoes its compile lines
+C| user@devbox:~/src/tiny-http$ make -j8 CFLAGS="-O2 -Wall"
+K| cc -O2 -Wall -c -o src/server.o src/server.c
+K| cc -O2 -Wall -c -o src/parse.o src/parse.c
+O| src/parse.c: In function 'parse_header':
+O| src/parse.c:42:13: warning: unused variable 'len' [-Wunused-variable]
+O|    42 |     size_t len = strlen(line);
+O|       |             ^~~
+O| src/server.c:118:5: error: implicit declaration of function 'close_conn' [-Wimplicit-function-decl]
+O|   118 |     close_conn(fd);
+O|       |     ^~~~~~~~~~
+O| make: *** [Makefile:14: src/server.o] Error 1
+T| user@devbox:~/src/tiny-http$
+--- command: make -j8 CFLAGS="-O2 -Wall"
+--- command: cc -O2 -Wall -c -o src/server.o src/server.c
+--- command: cc -O2 -Wall -c -o src/parse.o src/parse.c
+
+=== git-diff cols=90 | git diff of a shell script: + and - lines that look like commands
+C| user@devbox:~/src/webapp$ git diff scripts/release.sh
+O| diff --git a/scripts/release.sh b/scripts/release.sh
+O| index 3c1d9e2..8f7a0b4 100755
+O| --- a/scripts/release.sh
+O| +++ b/scripts/release.sh
+O| @@ -12,7 +12,8 @@ set -euo pipefail
+O|  version=$(cat VERSION)
+O| -npm run build
+O| +npm ci
+O| +npm run build -- --mode production
+O|  git tag "v$version"
+O|  git push origin "v$version"
+T| user@devbox:~/src/webapp$
+--- command: git diff scripts/release.sh
+
+=== cli-help cols=90 | a made-up CLI's --help output with option rows and an example
+C| user@devbox:~$ deployctl --help
+O| Deploy services to the example cluster.
+B|
+O| Usage: deployctl [OPTIONS] <COMMAND>
+B|
+O| Commands:
+O|   push     Build and push an image
+O|   rollout  Roll out a pushed image
+O|   status   Show rollout status
+O|   help     Print this message or the help of the given subcommand(s)
+B|
+O| Options:
+O|   -c, --cluster <NAME>  Target cluster [default: staging]
+O|   -v, --verbose         Print more detail
+O|   -h, --help            Print help
+B|
+O| Example:
+K|   deployctl push --tag v1.4.2 && deployctl rollout web
+T| user@devbox:~$
+--- command: deployctl --help
+--- command: deployctl push --tag v1.4.2 && deployctl rollout web
+
+=== cc-wrapped-tools cols=80 | Claude Code: three-row Bash call, Read and Search tool rows
+T| ● Read(src/upload/client.ts)
+O|   ⎿  Read 142 lines (ctrl+o to expand)
+B|
+T| ● Search(pattern: "MAX_RETRIES", path: "src")
+O|   ⎿  Found 3 files (ctrl+o to expand)
+B|
+C| ● Bash(find src -name "*.ts" -newer package.json -not -path "*/generated/*"
+c|       -print0 | xargs -0 grep -l "MAX_RETRIES" | sort | uniq -c | sort -rn |
+c|       head -20)
+O|   ⎿  src/upload/client.ts
+O|      src/upload/retry.ts
+O|      src/config/defaults.ts
+B|
+P| ● Three files define it. I'll keep the one in src/config/defaults.ts and import
+P|   it from the other two.
+B|
+T| ───────────────────────────────────────────────────────────────────────────────
+T| >
+T| ───────────────────────────────────────────────────────────────────────────────
+T|   ? for shortcuts                           Context left until auto-compact: 12%
+--- command: find src -name "*.ts" -newer package.json -not -path "*/generated/*" -print0 | xargs -0 grep -l "MAX_RETRIES" | sort | uniq -c | sort -rn | head -20
+
+=== narrow-softwrap cols=48 | narrow pane: a chained command soft-wraps twice
+C~| user@devbox:~/w/api$ git fetch origin && git reb
+c~| ase -i origin/main && cargo test --workspace --
+c| quiet
+O~| Successfully rebased and updated refs/heads/mai
+O| n.
+O| test result: ok. 41 passed; 0 failed; 0 ignored
+C| user@devbox:~/w/api$ ls
+O| Cargo.lock  Cargo.toml  README.md  src  target
+T| user@devbox:~/w/api$
+--- command: git fetch origin && git rebase -i origin/main && cargo test --workspace --quiet
+--- command: ls
+
+=== glow-readme cols=92 | rendered Markdown: heading, prose, a $-prompted code block, bullets
+P|   # Local setup
+B|
+P|   You need Docker and a recent Node. Start the database first, then run the API in watch
+P|   mode. The API reads its settings from .env.local.
+B|
+C|     $ docker compose up -d db
+C|     $ npm run dev:api
+B|
+P|   • If port 5432 is taken, stop the other Postgres or set PGPORT.
+P|   • To reset the data, run npm run db:reset and restart the API.
+B|
+P|   See the troubleshooting page for more.
+--- command: docker compose up -d db
+--- command: npm run dev:api
+--- command: npm run db:reset
+
+=== docker-build cols=100 | docker build: RUN steps echo commands inside output
+C| user@devbox:~/svc$ docker build -t registry.example.invalid/team/svc:1.5.0 .
+O| [+] Building 41.2s (9/11)
+O|  => [internal] load build definition from Dockerfile                                       0.0s
+O|  => [1/6] FROM docker.io/library/python:3.12-slim                                         2.1s
+K|  => [2/6] RUN apt-get update && apt-get install -y --no-install-recommends curl          18.4s
+O|  => [3/6] WORKDIR /app                                                                    0.0s
+O|  => [4/6] COPY requirements.txt .                                                         0.1s
+K|  => [5/6] RUN pip install --no-cache-dir -r requirements.txt                             17.9s
+K|  => ERROR [6/6] RUN python -m compileall -q .                                             0.9s
+O| ERROR: failed to solve: process "/bin/sh -c python -m compileall -q ." did not complete
+T| user@devbox:~/svc$
+--- command: docker build -t registry.example.invalid/team/svc:1.5.0 .
+--- command: apt-get update && apt-get install -y --no-install-recommends curl
+--- command: pip install --no-cache-dir -r requirements.txt
+--- command: python -m compileall -q .
+
+=== cc-answer-code cols=90 | Claude Code: answer with an unfenced code block and numbered notes
+P| ● The certificate expired yesterday. To renew it and reload the proxy:
+B|
+K|   sudo certbot renew --cert-name shop.example.invalid
+K|   sudo systemctl reload haproxy
+B|
+P|   Then check the new expiry date:
+B|
+K|   echo | openssl s_client -connect shop.example.invalid:443 2>/dev/null | openssl x509
+c|   -noout -enddate
+B|
+P|   1. If renew fails with a rate limit, wait an hour; don't retry in a loop.
+P|   2. Make sure port 80 is open, since the HTTP challenge needs it.
+--- command: sudo certbot renew --cert-name shop.example.invalid
+--- command: sudo systemctl reload haproxy
+--- command: echo | openssl s_client -connect shop.example.invalid:443 2>/dev/null | openssl x509 -noout -enddate

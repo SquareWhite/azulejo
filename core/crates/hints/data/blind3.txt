@@ -1,0 +1,158 @@
+# Third blind set for the terminal row classifier: same format and labels as
+# heldout.txt, under the convention that commands shown in output count
+# (make's echoed lines, RUN steps, scripts and workflows printed by cat).
+# Written before the model trained on that convention and scored once.
+# Fictional throughout.
+
+=== cat-deploy-script cols=90 | bash: cat of a deploy script, then running it
+C| user@devbox:~/src/site$ cat scripts/deploy.sh
+O| #!/usr/bin/env bash
+O| # Build the site and copy it to the web host.
+K| set -euo pipefail
+K| npm run build
+K| rsync -az --delete dist/ deploy@web-03.example.invalid:/srv/site/
+K| ssh deploy@web-03.example.invalid 'sudo systemctl reload nginx'
+C| user@devbox:~/src/site$ ./scripts/deploy.sh
+O| > site@1.2.0 build
+O| > astro build
+O| 12 page(s) built in 2.31s
+T| user@devbox:~/src/site$
+--- command: cat scripts/deploy.sh
+--- command: set -euo pipefail
+--- command: npm run build
+--- command: rsync -az --delete dist/ deploy@web-03.example.invalid:/srv/site/
+--- command: ssh deploy@web-03.example.invalid 'sudo systemctl reload nginx'
+--- command: ./scripts/deploy.sh
+
+=== workflow-yaml cols=80 | zsh: a CI workflow printed with cat
+C| user@laptop webapp % cat .github/workflows/test.yml
+O| name: test
+O| on: [push]
+O| jobs:
+O|   unit:
+O|     runs-on: ubuntu-latest
+O|     steps:
+O|       - uses: actions/checkout@v4
+K|       - run: npm ci
+K|       - run: npm test -- --coverage
+T| user@laptop webapp %
+--- command: cat .github/workflows/test.yml
+--- command: npm ci
+--- command: npm test -- --coverage
+
+=== dockerfile-cat cols=80 | fish: a Dockerfile printed with cat
+C| user@devbox ~/w/api (main)> cat Dockerfile
+O| FROM golang:1.23 AS build
+O| WORKDIR /src
+O| COPY . .
+K| RUN go build -o /out/api ./cmd/api
+O| FROM gcr.example.invalid/distroless/base
+O| COPY --from=build /out/api /api
+O| ENTRYPOINT ["/api"]
+T| user@devbox ~/w/api (main)>
+--- command: cat Dockerfile
+--- command: go build -o /out/api ./cmd/api
+
+=== make-echo cols=96 | make: the recipe lines it runs, then a link error
+C| user@devbox:~/src/ray$ make
+K| cc -std=c11 -O2 -c -o build/vec.o src/vec.c
+K| cc -std=c11 -O2 -c -o build/main.o src/main.c
+K| cc -o build/ray build/vec.o build/main.o -lm
+O| Undefined symbols for architecture arm64:
+O|   "_trace", referenced from:
+O|       _main in main.o
+O| make: *** [Makefile:9: build/ray] Error 1
+T| user@devbox:~/src/ray$
+--- command: make
+--- command: cc -std=c11 -O2 -c -o build/vec.o src/vec.c
+--- command: cc -std=c11 -O2 -c -o build/main.o src/main.c
+--- command: cc -o build/ray build/vec.o build/main.o -lm
+
+=== buildkit-steps cols=100 | docker build with BuildKit step lines
+C| user@devbox:~/svc$ docker build --progress=plain -t svc:dev .
+O| #1 [internal] load build definition from Dockerfile
+O| #1 DONE 0.0s
+K| #6 [2/4] RUN apk add --no-cache git
+O| #6 DONE 3.2s
+K| #7 [3/4] RUN go mod download
+O| #7 DONE 11.8s
+O| #9 exporting to image
+T| user@devbox:~/svc$
+--- command: docker build --progress=plain -t svc:dev .
+--- command: apk add --no-cache git
+--- command: go mod download
+
+=== cc-shown-running cols=86 | Claude Code: a running command shown under the tool call
+P| ● I'll wait for the deploy to finish before checking the logs.
+B|
+C| ● Bash(kubectl -n shop rollout status deploy/web --timeout=5m)
+O|   ⎿  Waiting for deployment "web" rollout to finish: 1 of 3 updated replicas are available...
+O|      Waiting for deployment "web" rollout to finish: 2 of 3 updated replicas are available...
+O|      (ctrl+b to run in background)
+B|
+T| ✶ Waiting… (41s · esc to interrupt)
+--- command: kubectl -n shop rollout status deploy/web --timeout=5m
+
+=== cc-user-turns cols=90 | Claude Code transcript: user messages after ❯
+P| ❯ looks good, ship it
+B|
+C| ● Bash(git push origin feat/quota)
+O|   ⎿  To https://git.example.invalid/team/api.git
+O|       * [new branch]      feat/quota -> feat/quota
+B|
+P| ● Pushed. Open a pull request when you're ready.
+B|
+P| ❯ done
+B|
+P| ● Great.
+--- command: git push origin feat/quota
+
+=== pnpm-workspace cols=100 | pnpm across a workspace, with a hint to run
+C| ❯ pnpm -r --filter "./packages/**" test
+O| Scope: 3 of 5 workspace projects
+O| packages/ui test$ vitest run
+O| packages/ui test:  ✓ src/button.test.ts (4 tests) 12ms
+O| packages/ui test: Done
+O| packages/api test$ vitest run
+O| packages/api test:  ✓ src/routes.test.ts (9 tests) 41ms
+O| packages/api test: Done
+--- command: pnpm -r --filter "./packages/**" test
+
+=== cc-plan-run cols=96 | Claude Code: numbered plan, then an answer with a short code block
+P| ● Here's what I'd do:
+B|
+P|   1. Reproduce the timeout locally with the slow-network profile
+P|   2. Raise the client timeout from 5s to 15s in src/config.ts
+P|   3. Re-run the integration suite
+B|
+P|   To reproduce it:
+B|
+K|   NETWORK_PROFILE=slow npm run test:int -- --grep upload
+--- command: NETWORK_PROFILE=slow npm run test:int -- --grep upload
+
+=== tar-and-scp cols=80 | bash: packing a folder and copying it, long command soft-wraps
+C~| user@devbox:~$ tar -czf reports-2026-11.tar.gz reports/2026-11 && scp report
+c| s-2026-11.tar.gz backup@nas.example.invalid:/volume1/archive/
+O| reports-2026-11.tar.gz                        100%   18MB  42.1MB/s   00:00
+T| user@devbox:~$
+--- command: tar -czf reports-2026-11.tar.gz reports/2026-11 && scp reports-2026-11.tar.gz backup@nas.example.invalid:/volume1/archive/
+
+=== pip-notice cols=96 | pip output with a notice that names a command
+C| (.venv) user@devbox:~/tools$ pip install -U httpx
+O| Requirement already satisfied: httpx in ./.venv/lib/python3.12/site-packages (0.27.0)
+O| Collecting httpx
+O|   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+O| Successfully installed httpx-0.28.1
+O| [notice] A new release of pip is available: 24.2 -> 24.3.1
+O| [notice] To update, run: pip install --upgrade pip
+T| (.venv) user@devbox:~/tools$
+--- command: pip install -U httpx
+--- command: pip install --upgrade pip
+
+=== journal-follow cols=100 | root: journalctl follow with service log lines
+C| root@db-2:~# journalctl -u postgresql -f
+O| Nov 12 11:02:10 db-2 postgres[2211]: LOG:  checkpoint starting: time
+O| Nov 12 11:02:41 db-2 postgres[2211]: LOG:  checkpoint complete: wrote 812 buffers (5.0%)
+O| Nov 12 11:04:03 db-2 postgres[2290]: ERROR:  relation "orders_archive" does not exist at character 15
+O| Nov 12 11:04:03 db-2 postgres[2290]: STATEMENT:  select * from orders_archive limit 1
+--- command: journalctl -u postgresql -f
