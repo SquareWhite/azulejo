@@ -370,6 +370,94 @@ fn workspace_move_reorders_the_window_and_the_numbers_follow() {
     assert_eq!(engine.session().check_invariants(), Ok(()));
 }
 
+/// Numbers follow the sidebar: Local's group, then herdr's machines in
+/// `machines.list` order, then machines herdr no longer lists. A workspace
+/// made on a machine joins the end of its group, never the end of the list.
+#[test]
+fn workspaces_stay_grouped_by_machine_so_numbers_follow_the_sidebar() {
+    let mut engine = Engine::new();
+    engine.set_machine_order(vec!["m-bravo".into(), "m-tango".into()]);
+    engine
+        .execute(Command::WorkspaceRename(WorkspaceRename {
+            workspace: None,
+            name: "l1".into(),
+        }))
+        .unwrap();
+    let mut ids = std::collections::HashMap::new();
+    ids.insert("l1", engine.session().focus().workspace.unwrap());
+    let mut create = |engine: &mut Engine, name: &'static str, machine: Option<&str>| {
+        engine
+            .execute(Command::WorkspaceCreate(WorkspaceCreate {
+                name: Some(name.into()),
+                machine: machine.map(Into::into),
+                ..Default::default()
+            }))
+            .unwrap();
+        ids.insert(name, engine.session().focus().workspace.unwrap());
+    };
+    create(&mut engine, "l2", None);
+    create(&mut engine, "t1", Some("m-tango"));
+    create(&mut engine, "b1", Some("m-bravo"));
+    create(&mut engine, "l3", None);
+    create(&mut engine, "local-by-name", Some("local"));
+    let numbered = |names: &[&str]| -> Vec<(String, usize)> {
+        names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_string(), i + 1))
+            .collect()
+    };
+    assert_eq!(
+        listed(&mut engine),
+        numbered(&["l1", "l2", "l3", "local-by-name", "b1", "t1"])
+    );
+
+    // A move past its group's edge stops there: a workspace stays on its
+    // machine.
+    engine
+        .execute(Command::WorkspaceMove(WorkspaceMove {
+            workspace: Some(ids["l1"]),
+            index: 99,
+        }))
+        .unwrap();
+    assert_eq!(
+        listed(&mut engine),
+        numbered(&["l2", "l3", "local-by-name", "l1", "b1", "t1"])
+    );
+
+    // herdr stops listing bravo: its group goes last, as in the sidebar,
+    // and comes back to its place with the machine.
+    let events = engine.set_machine_order(vec!["m-tango".into()]);
+    assert_eq!(names(&events), ["workspace.reordered"]);
+    assert_eq!(
+        listed(&mut engine),
+        numbered(&["l2", "l3", "local-by-name", "l1", "t1", "b1"])
+    );
+    engine.set_machine_order(vec!["m-bravo".into(), "m-tango".into()]);
+    assert_eq!(
+        listed(&mut engine),
+        numbered(&["l2", "l3", "local-by-name", "l1", "b1", "t1"])
+    );
+    assert!(
+        engine
+            .set_machine_order(vec!["m-bravo".into(), "m-tango".into()])
+            .is_empty()
+    );
+
+    // A saved session from before workspaces were grouped comes back
+    // grouped: Local first, the rest in the order they first appear.
+    let mut session = engine.session().clone();
+    let window = &mut session.windows[0];
+    let t1 = window.workspaces.remove(5);
+    window.workspaces.insert(0, t1);
+    let mut engine = Engine::with_session(session);
+    assert_eq!(
+        listed(&mut engine),
+        numbered(&["l2", "l3", "local-by-name", "l1", "t1", "b1"])
+    );
+    assert_eq!(engine.session().check_invariants(), Ok(()));
+}
+
 #[test]
 fn tile_list_and_get_report_location_and_focus() {
     let mut engine = Engine::new();

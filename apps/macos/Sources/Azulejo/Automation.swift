@@ -724,7 +724,7 @@ final class Automation {
                 DropAutomation.state(controller: controller, tab: tab)
             },
             Source([
-                "sidebar.mode", "sidebar.statuses", "sidebar.footer", "workspace.active",
+                "sidebar.mode", "sidebar.statuses", "sidebar.footer", "sidebar.numbers", "workspace.active",
                 "drag.last", "drag.landed", "drag.active", "drag.slot", "drag.rows", "drag.indicator",
             ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
             Source(["theme", "terminal.attaches"], prefixes: ["theme."]) { ThemeAutomation.state(controller) },

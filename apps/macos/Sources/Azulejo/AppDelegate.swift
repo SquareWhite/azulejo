@@ -434,7 +434,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         let name = outcome["action"] as? String ?? ""
         let index = outcome["index"] as? Int
         guard let window = session?.window(controller.windowID) else { return }
-        let workspaces = window.workspaces
+        // In the sidebar's order, so ⌘N goes to the row showing N.
+        let workspaces = SidebarView.ordered(window, machines: machines)
         let ws = window.workspace
         let tabs = ws?.tabs ?? []
 

@@ -523,7 +523,9 @@ pub struct WorkspaceMove {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceId>,
     /// New position within its window, from 0, counted once the workspace
-    /// has left its old place; past the end means last.
+    /// has left its old place; past the end means last. A workspace stays in
+    /// its machine's group (the window's list is grouped by machine, as the
+    /// sidebar shows it), so a place past the group's edge stops there.
     pub index: usize,
 }
 

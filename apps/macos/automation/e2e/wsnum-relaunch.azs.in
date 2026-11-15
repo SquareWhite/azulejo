@@ -1,0 +1,52 @@
+# After a relaunch (wsnum.sh, after wsnum.azs): the numbers come back the
+# same; a machine reconnecting keeps them; a machine leaving herdr's list
+# moves its group last, as the sidebar shows it, and back when it returns.
+# wsnum.sh fills in @SIDE@ (the ssh stand-in's folder) and @RT@ (tango's
+# herdr session).
+
+log wsnum relaunch
+seen-visible off
+until machines Local=connected,bravo=connected,tango=connected 20000
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 b1|8 adopted-b|9 t1 10000
+expect workspace.names l2|l1|l4|l5|l6|adopted|b1|adopted-b|t1
+key cmd+7
+until workspace.active b1 2000
+
+# tango's "SSH link" drops: it reconnects, nothing renumbers.
+sh touch @SIDE@/tango.fail
+sh pkill -f '@RT@ remote-api-bridge' || true
+until machines Local=connected,bravo=connected,tango=reconnecting 10000
+expect sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 b1|8 adopted-b|9 t1
+sh rm -f @SIDE@/tango.fail
+until machines Local=connected,bravo=connected,tango=connected 40000
+
+# bravo leaves herdr's list: its workspaces stay, in a group after tango's.
+sh cp @SIDE@/machines-tango.json @SIDE@/machines.json
+action reload_config
+until machines Local=connected,tango=connected 10000
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 t1|8 b1|9 adopted-b 5000
+expect workspace.names l2|l1|l4|l5|l6|adopted|t1|b1|adopted-b
+key cmd+7
+until workspace.active t1 2000
+key cmd+9
+until workspace.active adopted-b 2000
+action toggle_sidebar
+until sidebar rail 3000
+wait 600
+expect rail.groups L:connected|T:connected|B:gone
+expect rail.rows 1:idle|2:idle|3:idle|4:idle|5:idle|6:idle|7:idle|8:idle~|9:idle*~
+shot 04-rail-bravo-gone
+action toggle_sidebar
+until sidebar visible 3000
+
+# bravo comes back: its group takes its place again.
+sh cp @SIDE@/machines-all.json @SIDE@/machines.json
+action reload_config
+until machines Local=connected,bravo=connected,tango=connected 20000
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 b1|8 adopted-b|9 t1 5000
+expect workspace.names l2|l1|l4|l5|l6|adopted|b1|adopted-b|t1
+key cmd+9
+until workspace.active t1 2000
+wait 600
+shot 05-bravo-back
+quit

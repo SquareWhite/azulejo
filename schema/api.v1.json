@@ -5956,7 +5956,7 @@
     "WorkspaceMove": {
       "properties": {
         "index": {
-          "description": "New position within its window, from 0, counted once the workspace\nhas left its old place; past the end means last.",
+          "description": "New position within its window, from 0, counted once the workspace\nhas left its old place; past the end means last. A workspace stays in\nits machine's group (the window's list is grouped by machine, as the\nsidebar shows it), so a place past the group's edge stops there.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"

@@ -114,7 +114,7 @@ final class SidebarRailView: NSView, WorkspaceDragHost {
                 let row = RailWorkspaceRow(
                     ws, number: number, status: SidebarView.status(ws),
                     selected: ws.id == window.activeWorkspace, dimmed: dimmed,
-                    tip: Self.tip(ws, number: number)
+                    tip: Self.tip(ws, number: number, of: window.workspaces.count)
                 ) { [weak self] in self?.onSelect?(ws.id) }
                 row.menuProvider = { [weak self] in self?.onMenu?(ws.id) }
                 header.rows.append(row)
@@ -129,8 +129,8 @@ final class SidebarRailView: NSView, WorkspaceDragHost {
     }
 
     /// Name and ⌘ number, branch, agent counts.
-    static func tip(_ ws: WorkspaceModel, number: Int) -> String {
-        var lines = [number <= 9 ? "\(ws.name) (⌘\(number))" : ws.name]
+    static func tip(_ ws: WorkspaceModel, number: Int, of count: Int) -> String {
+        var lines = [SidebarView.chord(number, of: count).map { "\(ws.name) (\($0))" } ?? ws.name]
         if let branch = SidebarView.branch(ws.git) { lines.append(branch) }
         lines.append(counts(ws))
         return lines.joined(separator: "\n")

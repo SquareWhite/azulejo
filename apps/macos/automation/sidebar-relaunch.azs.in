@@ -10,9 +10,11 @@ until sidebar rail 5000
 expect rail.shown yes
 expect chrome.rail.overlaps none
 
-# standin's group and its adopted workspace (6 and 7: its first one and "on-remote").
+# standin's group and its adopted workspace, numbered after Local's five: 6 is
+# "on-remote", the one workspace sidebar.sh makes there (a fresh herdr server
+# starts with none).
 until rail.groups L:connected|S:connected 20000
-until rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle|7:idle 10000
+until rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle 10000
 expect rail.group.tips Local ¦ Connected ‖ standin ¦ Connected
 expect rail.fits yes
 shot 06-rail-remote
@@ -21,14 +23,14 @@ shot 06-rail-remote
 sh touch @SIDE@/ssh.fail
 sh pkill -f 'azj-dev-side-remote remote-api-bridge' || true
 until rail.groups L:connected|S:reconnecting 10000
-expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle~|7:idle~
+expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle~
 # The turning ring keeps the group's letter and mark centred too.
 expect rail.centred yes
 shot 07-rail-reconnecting
 capture 07-rail-reconnecting-window 0
 sh rm -f @SIDE@/ssh.fail
 until rail.groups L:connected|S:connected 40000
-expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle|7:idle
+expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle
 
 # [sidebar] collapsed = "hidden": the collapsed sidebar goes out of sight
 # (live, on the config reload), and the toggle goes between full and hidden.

@@ -148,7 +148,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     // MARK: Model
 
     /// A machine group: its machine (nil for workspaces whose machine left
-    /// herdr's list) and its workspaces with their window-order numbers.
+    /// herdr's list) and its workspaces with their numbers (⌘1…⌘8).
     struct Group {
         var id: String
         var machine: MachineModel?
@@ -165,15 +165,37 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         for machine in [local] + machines.filter({ !$0.isLocal }) where known.insert(machine.id).inserted {
             groups.append(Group(id: machine.id, machine: machine, workspaces: []))
         }
-        for (i, ws) in window.workspaces.enumerated() {
+        for ws in window.workspaces {
             if known.insert(ws.machineID).inserted {
                 groups.append(Group(id: ws.machineID, machine: nil, workspaces: []))
             }
             if let g = groups.firstIndex(where: { $0.id == ws.machineID }) {
-                groups[g].workspaces.append((i + 1, ws))
+                groups[g].workspaces.append((0, ws))
+            }
+        }
+        // Numbers run top to bottom across the groups (ADR 0013): the core
+        // keeps the window's list grouped the same way, so they're also its
+        // `workspace.list` numbers.
+        var number = 0
+        for g in groups.indices {
+            for w in groups[g].workspaces.indices {
+                number += 1
+                groups[g].workspaces[w].number = number
             }
         }
         return groups
+    }
+
+    /// The window's workspaces as the sidebar and the rail show them, top
+    /// to bottom: what ⌘1…⌘8, ⌘9 and next/previous workspace step through.
+    static func ordered(_ window: WindowModel, machines: [MachineModel]) -> [WorkspaceModel] {
+        groups(window, machines: machines).flatMap { $0.workspaces.map(\.workspace) }
+    }
+
+    /// The chord that reaches workspace `number` of `count`: ⌘1…⌘8, and ⌘9
+    /// for the last one (as `switch_workspace_last`); nil past ⌘8 otherwise.
+    static func chord(_ number: Int, of count: Int) -> String? {
+        number <= 8 ? "⌘\(number)" : number == count ? "⌘9" : nil
     }
 
     func apply(_ window: WindowModel, machines: [MachineModel] = []) {
@@ -207,7 +229,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
             let dimmed = group.machine.map { $0.state != .connected } ?? true
             for (number, ws) in group.workspaces {
                 let row = WorkspaceRow(
-                    ws, number: number, status: statuses[ws.id] ?? .idle,
+                    ws, number: number, of: window.workspaces.count, status: statuses[ws.id] ?? .idle,
                     marker: rollups[ws.id]?.marker, selected: ws.id == window.activeWorkspace,
                     dimmed: dimmed
                 ) { [weak self] in self?.onSelect?(ws.id) }
@@ -412,6 +434,9 @@ extension SidebarView {
         stack.arrangedSubviews.compactMap { ($0 as? MachineHeader)?.summary }
     }
 
+    /// Automation: each workspace row's number and name, in order ("1 alpha").
+    var numbers: [String] { rows.map { "\($0.number) \($0.dragName)" } }
+
     /// Automation: each workspace row's branch, in order ("" outside a repo).
     var branches: [String] { rows.map(\.detailText) }
 
@@ -550,6 +575,8 @@ private final class Dot: NSView, ThemeAware {
 /// focuses it; a drag reorders it within its group (`WorkspaceDrag`).
 @MainActor
 final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDragRow {
+    /// Its number in the sidebar (⌘1…⌘8), top to bottom across groups.
+    let number: Int
     let status: Design.Status
     let workspaceID: String
     let groupID: String
@@ -567,8 +594,9 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
         didSet { Theme.reapply(self) }
     }
 
-    init(_ ws: WorkspaceModel, number: Int, status: Design.Status, marker: NSAttributedString?,
+    init(_ ws: WorkspaceModel, number: Int, of count: Int, status: Design.Status, marker: NSAttributedString?,
          selected: Bool, dimmed: Bool, handler: @escaping () -> Void) {
+        self.number = number
         self.status = status
         self.selected = selected
         self.handler = handler
@@ -583,7 +611,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
         layer?.cornerRadius = Design.Radius.row + 1
         layer?.cornerCurve = .continuous
         alphaValue = dimmed ? Design.Alpha.dimmed : 1
-        var tip = number <= 9 ? "\(ws.name) (⌘\(number))" : ws.name
+        var tip = SidebarView.chord(number, of: count).map { "\(ws.name) (\($0))" } ?? ws.name
         if let branch { tip += "\n\(branch)" }
         toolTip = tip
         setAccessibilityRole(.button)
@@ -865,8 +893,9 @@ private final class SidebarFooter: NSView {
 /// `sidebar mode agents|files`, `sidebar select <n>` (the nth workspace
 /// row, 1-based), `sidebar focus` (the Files tree takes the keyboard) and
 /// `sidebar files <verb> [arg]` (the files tile's verbs on the Files view).
-/// State: `sidebar.mode`, `sidebar.statuses`, `sidebar.footer`, and the
-/// Files view's `tile.*` keys as `sidebar.files.*`.
+/// State: `sidebar.mode`, `sidebar.statuses`, `sidebar.footer`,
+/// `sidebar.numbers` (each row's number and name: `1 alpha|2 bravo`), and
+/// the Files view's `tile.*` keys as `sidebar.files.*`.
 /// The rail: `sidebar rail select N|hover N|expand`; state `rail.shown`,
 /// `rail.rows`, `rail.groups`, `rail.tips`, `rail.group.tips`, `rail.fits`,
 /// `rail.spinning`, `rail.keyboard`, `rail.offsets` (how far each row's
@@ -936,6 +965,7 @@ enum SidebarAutomation {
             "sidebar.mode": sidebar.mode.rawValue,
             "sidebar.statuses": sidebar.statuses.joined(separator: "|"),
             "sidebar.footer": sidebar.footerCounts,
+            "sidebar.numbers": sidebar.numbers.joined(separator: "|"),
         ]
         // The rail: rows, groups, tooltips (lines joined by " ¦ ", rows by
         // " ‖ "), whether it all fits, spinning working rings, whether the

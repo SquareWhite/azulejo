@@ -2024,6 +2024,43 @@ fn two_machines() -> (Core, Fake, Fake) {
     (core, local, remote)
 }
 
+/// Each workspace's machine, top to bottom: `L` for Local, else the first
+/// letter of its machine's ID.
+fn machine_order(s: &Session) -> String {
+    s.windows[0]
+        .workspaces
+        .iter()
+        .map(|w| match w.machine.as_deref() {
+            None => 'L',
+            Some(m) => m.chars().next().unwrap(),
+        })
+        .collect()
+}
+
+#[test]
+fn workspaces_follow_the_machine_groups_as_machines_come_and_go() {
+    let (core, _local, _remote) = two_machines();
+    assert_eq!(machine_order(&core.session().unwrap()), "LL00");
+    // A Local workspace made after the remote's joins Local's group.
+    core.execute(Command::WorkspaceCreate(
+        azulejo_protocol::WorkspaceCreate {
+            name: Some("late".into()),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    assert_eq!(machine_order(&core.session().unwrap()), "LLL00");
+    // A machine whose label sorts first ("aaa" before "dev-server") is
+    // adopted into its own group, between Local's and the other remote's.
+    let other = Fake::with_existing(crate::adopt::tests::fixture());
+    core.add_machine("a-machine".into(), "aaa".into(), other);
+    wait_until(&core, |s| machine_order(s) == "LLLaa00");
+    // Gone from herdr's list: its group goes last, as the sidebar shows it.
+    core.remove_machine("a-machine".into());
+    wait_until(&core, |s| machine_order(s) == "LLL00aa");
+    core.shutdown();
+}
+
 #[test]
 fn a_remote_machines_herdr_is_adopted_beside_locals() {
     let (core, local, remote) = two_machines();

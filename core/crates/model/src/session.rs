@@ -721,6 +721,46 @@ impl Session {
         Ok(())
     }
 
+    /// Keeps each window's workspaces grouped by machine, in the order the
+    /// sidebar shows the groups: Local first, then `machines` (herdr's
+    /// machines in `machines.list` order), then any machine a workspace
+    /// still names but `machines` leaves out, in the order they first
+    /// appear. Within a group the order stays as it was, so a workspace's
+    /// place in the list is its number in the sidebar and for ⌘1…⌘9.
+    /// Returns whether any window's order changed.
+    pub fn group_workspaces(&mut self, machines: &[String]) -> bool {
+        let mut changed = false;
+        for window in &mut self.windows {
+            let mut unlisted: Vec<&str> = Vec::new();
+            let ranks: Vec<usize> = window
+                .workspaces
+                .iter()
+                .map(|ws| match ws.machine.as_deref() {
+                    None => 0,
+                    Some(m) => match machines.iter().position(|id| id == m) {
+                        Some(i) => 1 + i,
+                        None => {
+                            let i = unlisted.iter().position(|u| *u == m).unwrap_or_else(|| {
+                                unlisted.push(m);
+                                unlisted.len() - 1
+                            });
+                            1 + machines.len() + i
+                        }
+                    },
+                })
+                .collect();
+            if ranks.is_sorted() {
+                continue;
+            }
+            let mut ranked: Vec<(usize, Workspace)> =
+                ranks.into_iter().zip(window.workspaces.drain(..)).collect();
+            ranked.sort_by_key(|(rank, _)| *rank);
+            window.workspaces = ranked.into_iter().map(|(_, ws)| ws).collect();
+            changed = true;
+        }
+        changed
+    }
+
     pub fn rename_workspace(
         &mut self,
         id: WorkspaceId,

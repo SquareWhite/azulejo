@@ -1,0 +1,105 @@
+# Workspace numbers across machine groups (wsnum.sh, ADR 0013): the full
+# sidebar, the rail, the core's order and ⌘1…⌘9 all count top to bottom
+# across the groups (Local, then herdr's machines by label), whatever order
+# the workspaces were made in. wsnum.sh sets up two stand-in remote machines,
+# bravo and tango (throwaway herdr sessions reached through the ssh
+# stand-in), and fills in @RB@ (bravo's herdr session).
+
+log wsnum
+seen-visible off
+window-size 1100 720
+until tiles 1 8000
+until machines Local=connected,bravo=connected,tango=connected 20000
+core {"method":"workspace.rename","params":{"name":"l1"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"l2"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"l3"}}
+# One on bravo, through its group's "+".
+machine-add bravo
+until workspaces 4 5000
+until workspace.machine bravo 5000
+core {"method":"workspace.rename","params":{"name":"b1"}}
+# More Local ones after it (⌘T makes a Local workspace), then one on tango,
+# then another Local one.
+action new_workspace
+until workspaces 5 5000
+core {"method":"workspace.rename","params":{"name":"l4"}}
+action new_workspace
+until workspaces 6 5000
+core {"method":"workspace.rename","params":{"name":"l5"}}
+machine-add tango
+until workspaces 7 5000
+until workspace.machine tango 5000
+core {"method":"workspace.rename","params":{"name":"t1"}}
+action new_workspace
+until workspaces 8 5000
+core {"method":"workspace.rename","params":{"name":"l6"}}
+
+# Numbered top to bottom across the groups: no gap in Local's, bravo's
+# workspace after all of Local's. The core's order is the same.
+until sidebar.numbers 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 b1|8 t1 5000
+expect workspace.names l1|l2|l3|l4|l5|l6|b1|t1
+expect sidebar.machines Local ●|bravo ●|tango ●
+wait 600
+shot 01-made
+# ⌘N goes to the row showing N; ⌘9 to the last one.
+key cmd+7
+until workspace.active b1 2000
+key cmd+8
+until workspace.active t1 2000
+key cmd+4
+until workspace.active l4 2000
+key cmd+9
+until workspace.active t1 2000
+key cmd+6
+until workspace.active l6 2000
+
+# The rail: the same numbers, group by group.
+action toggle_sidebar
+until sidebar rail 3000
+wait 600
+expect rail.groups L:connected|B:connected|T:connected
+expect rail.rows 1:idle|2:idle|3:idle|4:idle|5:idle|6:idle*|7:idle|8:idle
+shot 02-rail
+
+# A drag in the rail (Local's first to its third place) renumbers.
+sidebar drag 1
+sidebar drag to 3
+wait 400
+sidebar drag drop
+until workspace.names l2|l3|l1|l4|l5|l6|b1|t1 2000
+expect drag.last moved 1→3
+expect rail.rows 1:idle|2:idle|3:idle|4:idle|5:idle|6:idle*|7:idle|8:idle
+key cmd+3
+until workspace.active l1 2000
+action toggle_sidebar
+until sidebar visible 3000
+wait 600
+expect sidebar.numbers 1 l2|2 l3|3 l1|4 l4|5 l5|6 l6|7 b1|8 t1
+
+# Closing one renumbers everything after it.
+key cmd+2
+until workspace.active l3 2000
+core {"method":"workspace.close","params":{}}
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 b1|7 t1 5000
+expect workspace.names l2|l1|l4|l5|l6|b1|t1
+key cmd+6
+until workspace.active b1 2000
+
+# A workspace made in herdr (adopted) joins its machine's group: Local's
+# lands before bravo's, bravo's before tango's.
+sh {herdr} --session {session} workspace create --label adopted
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 b1|8 t1 15000
+sh {herdr} --session @RB@ workspace create --label adopted-b
+until sidebar.numbers 1 l2|2 l1|3 l4|4 l5|5 l6|6 adopted|7 b1|8 adopted-b|9 t1 20000
+expect workspace.names l2|l1|l4|l5|l6|adopted|b1|adopted-b|t1
+key cmd+8
+until workspace.active adopted-b 2000
+key cmd+9
+until workspace.active t1 2000
+wait 600
+shot 03-adopted
+quit

@@ -60,6 +60,10 @@ pub struct Engine {
     closed_reported: Vec<(azulejo_model::HerdrRef, u64)>,
     /// What a collapsed sidebar shows as (`[sidebar] collapsed`).
     sidebar_collapsed: SidebarState,
+    /// herdr's machines other than Local, in `machines.list` order: the
+    /// order of the sidebar's machine groups, which each window's
+    /// workspaces keep ([`Session::group_workspaces`]).
+    machine_order: Vec<String>,
 }
 
 /// How many closed-here herdr panes `Session::detached_herdr` remembers.
@@ -88,6 +92,7 @@ impl Engine {
             closed_reported: Vec::new(),
             fresh_tab: Some(tab),
             sidebar_collapsed: SidebarState::Rail,
+            machine_order: Vec::new(),
         }
     }
 
@@ -98,6 +103,7 @@ impl Engine {
     pub fn with_session(mut session: Session) -> Self {
         meta::refresh_headers(&mut session);
         session.set_sidebar_collapsed(SidebarState::Rail);
+        session.group_workspaces(&[]);
         Self {
             session,
             placeholder: None,
@@ -106,6 +112,7 @@ impl Engine {
             info_reported: Default::default(),
             closed_reported: Vec::new(),
             sidebar_collapsed: SidebarState::Rail,
+            machine_order: Vec::new(),
         }
     }
 
@@ -139,6 +146,21 @@ impl Engine {
         diff(&before, &self.session, false)
     }
 
+    /// herdr's machine list changed (`machines`: its IDs in `machines.list`
+    /// order, Local's left out): workspaces regroup to match the sidebar's
+    /// groups. Returns the events for any change.
+    pub fn set_machine_order(&mut self, machines: Vec<String>) -> Vec<Event> {
+        if machines == self.machine_order {
+            return Vec::new();
+        }
+        let before = self.session.clone();
+        self.machine_order = machines;
+        if !self.session.group_workspaces(&self.machine_order) {
+            return Vec::new();
+        }
+        diff(&before, &self.session, false)
+    }
+
     pub fn session(&self) -> &Session {
         &self.session
     }
@@ -158,6 +180,9 @@ impl Engine {
         // Focus alone doesn't count as reading an agent's result: the shell
         // knows whether the tile is on screen and sends `tile.seen` (F11).
         meta::refresh_headers(&mut self.session);
+        // A new workspace, or one moved past its machine's group, lands at
+        // that group's edge: numbers follow the sidebar (ADR 0013).
+        self.session.group_workspaces(&self.machine_order);
         let mut events = diff(&before, &self.session, kill);
         self.remember_detached(&events);
         if force_layout && let Reply::Layout(state) = &reply {

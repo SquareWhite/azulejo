@@ -800,6 +800,18 @@ fn run<P: HerdrPort>(
                     let id = Some(info.id.clone());
                     let event = herdr.add(id, info, *port, &engine);
                     listeners.retain(|l| l.send(event.clone()).is_ok());
+                    // The sidebar's machine groups may have moved: so do the
+                    // workspaces' numbers (ADR 0013).
+                    let events = engine.set_machine_order(herdr.order());
+                    publish(
+                        &engine,
+                        &events,
+                        &herdr,
+                        &mut listeners,
+                        &mut previews,
+                        &mut files,
+                        &mut repos,
+                    );
                 }
                 Err(_) => (opts.log)(format!(
                     "machine {}: its port isn't the core's herdr port type",
@@ -809,11 +821,35 @@ fn run<P: HerdrPort>(
             Msg::ShowMachine(info) => {
                 let event = herdr.show(info);
                 listeners.retain(|l| l.send(event.clone()).is_ok());
+                // The sidebar's machine groups may have moved: so do the
+                // workspaces' numbers (ADR 0013).
+                let events = engine.set_machine_order(herdr.order());
+                publish(
+                    &engine,
+                    &events,
+                    &herdr,
+                    &mut listeners,
+                    &mut previews,
+                    &mut files,
+                    &mut repos,
+                );
             }
             Msg::RemoveMachine(id) => {
                 if let Some(event) = herdr.remove(&id) {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
+                // The sidebar's machine groups may have moved: so do the
+                // workspaces' numbers (ADR 0013).
+                let events = engine.set_machine_order(herdr.order());
+                publish(
+                    &engine,
+                    &events,
+                    &herdr,
+                    &mut listeners,
+                    &mut previews,
+                    &mut files,
+                    &mut repos,
+                );
             }
             Msg::Preview(tile, path, rendered) => {
                 if let Some(event) = previews.accept(tile, &path, *rendered) {
@@ -1547,6 +1583,16 @@ impl<P: HerdrPort> Links<P> {
         Some(Event::MachineStatus {
             machine: info.clone(),
         })
+    }
+
+    /// The machines other than Local, as `list` orders them: the order of
+    /// the sidebar's machine groups.
+    fn order(&self) -> Vec<String> {
+        self.list()
+            .into_iter()
+            .filter(|m| !m.is_local())
+            .map(|m| m.id)
+            .collect()
     }
 
     /// Local first, then by label.

@@ -765,6 +765,7 @@ impl Engine {
 
     pub(crate) fn changes_since(&mut self, before: &Session) -> Vec<Event> {
         crate::meta::refresh_headers(&mut self.session);
+        self.session.group_workspaces(&self.machine_order);
         diff(before, &self.session, false)
     }
 }
