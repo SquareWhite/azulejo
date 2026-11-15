@@ -160,6 +160,12 @@ fn sample_commands() -> Vec<Command> {
             step: 1,
         }),
         Command::LayoutEqualize(TabTarget { tab: Some(tab) }),
+        Command::LayoutSetRatio(LayoutSetRatio {
+            tab: Some(tab),
+            path: "ba".into(),
+            ratio: Some(0.3),
+        }),
+        Command::LayoutSetRatio(LayoutSetRatio::default()),
         Command::TerminalBind(TerminalBind {
             tile,
             herdr: herdr.clone(),

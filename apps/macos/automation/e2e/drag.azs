@@ -1,0 +1,122 @@
+# D1: dragging the gutters between tiles (layout.set_ratio). Mouse events
+# are made in the app and handed to the container (DividerAutomation): no
+# OS input. drag.sh checks the mirror log around the `drag-N` markers.
+log D1 divider drags
+delivery direct
+until terminal.phase attached 10000
+expect kind manual
+# --- manual: a | (b / c) ---
+core {"method":"layout.split","params":{"direction":"right"}}
+until tiles 2 3000
+core {"method":"layout.split","params":{"direction":"down"}}
+until tiles 3 3000
+wait 2500
+expect dividers 2
+divider list
+divider probe
+anim reset
+log drag-1 start
+# The app's own render mid-drag: tiles part-way, the hint on the gutter.
+capture drag-1-mid 200
+divider drag - 0.70 400
+log drag-1 released
+expect divider.- 0.70
+expect divider.b 0.50
+expect drag.terminals 3
+divider check
+divider stats drag-1-manual-root
+wait 900
+log drag-1 settled
+# The nested split, resting before the release: its terminals catch up
+# with the tile while the pointer is still down.
+log drag-2 start
+divider drag b 0.25 300 200
+log drag-2 released
+expect divider.b 0.25
+expect divider.- 0.70
+divider check
+divider stats drag-2-manual-nested
+wait 900
+log drag-2 settled
+# Past the end: held at 95 %.
+log drag-3 start
+divider drag - 0.99 250
+log drag-3 released
+expect divider.- 0.95
+divider check
+wait 900
+log drag-3 settled
+# A double-click evens the split out (a | (b / c) is two in a row).
+divider double -
+wait 700
+expect divider.- 0.50
+divider check
+shot 01-manual
+# --- Tile: master edge = master ratio; a stack edge only moves its two ---
+core {"method":"layout.split_auto"}
+until tiles 4 3000
+core {"method":"layout.set","params":{"kind":"tile"}}
+wait 2500
+expect kind tile
+expect dividers 3
+divider probe
+log drag-4 start
+divider drag - 0.65 300
+log drag-4 released
+expect kind tile
+expect ratio 0.65
+divider check
+divider stats drag-4-tile-master
+wait 900
+log drag-4 settled
+remember rect.4
+log drag-5 start
+divider drag b 0.50 300
+log drag-5 released
+expect kind tile
+expect ratio 0.65
+expect divider.b 0.50
+unchanged rect.4
+divider check
+divider stats drag-5-tile-stack
+wait 900
+log drag-5 settled
+shot 02-tile
+# --- Three Column: the centre stays centred ---
+core {"method":"layout.set","params":{"kind":"three_column"}}
+# A switch rebuilds herdr's tab; its pushes settle first.
+wait 2500
+expect kind three_column
+divider list
+log drag-6 start
+divider drag - 0.25 300
+log drag-6 released
+expect kind three_column
+expect ratio 0.67
+expect divider.- 0.25
+expect columns 0.25,0.50,0.25
+divider check
+divider stats drag-6-three-column
+wait 900
+log drag-6 settled
+shot 03-three-column
+# --- Monocle: no dividers ---
+core {"method":"layout.set","params":{"kind":"monocle"}}
+wait 800
+expect dividers 0
+divider probe
+# --- a browser and a preview beside terminals keep their clicks ---
+core {"method":"layout.set","params":{"kind":"manual"}}
+wait 800
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
+until tiles 5 3000
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"/etc/hosts"}}}
+until tiles 6 3000
+wait 1500
+divider list
+divider probe
+shot 04-mixed
+anim stats drag-anim
+# PTY resizes per terminal per drag within range; dropped ticks reported
+# by drag.sh (a busy machine drops a few).
+anim expect-clean 12

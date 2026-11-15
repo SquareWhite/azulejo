@@ -58,6 +58,23 @@ final class TileContainerView: NSView, ThemeAware {
     private var reflowing: [String: Reflow] = [:]
 
     let clock = MotionClock()
+
+    // Dividers (TileDividers.swift).
+    /// The divider drag under way.
+    var dividerDrag: DividerDrag?
+    /// The divider under the pointer, by path.
+    var hoveredDivider: String?
+    /// The line drawn along a hovered or dragged divider.
+    let dividerHint = CALayer()
+    var dividerAreas: [NSTrackingArea] = []
+    /// The resize cursor is up because of a divider.
+    var dividerCursorSet = false
+    /// A divider moved: the tab, the split's path, the ratio (nil evens it
+    /// out). The window sends `layout.set_ratio`.
+    var onSetRatio: ((_ tab: String, _ path: String, _ ratio: Double?) -> Void)?
+    /// Automation: what the last divider drag did.
+    var lastDividerDrag: [String: Any] = [:]
+
     private var link: CADisplayLink?
     /// Display-link ticks so far; a motion that saw none ran with the
     /// display asleep or the screen locked.
@@ -70,11 +87,15 @@ final class TileContainerView: NSView, ThemeAware {
         super.init(frame: frame)
         wantsLayer = true
         clock.onChange = { [weak self] in self?.wake() }
+        dividerHint.opacity = 0
+        dividerHint.zPosition = 2
+        layer?.addSublayer(dividerHint)
         Theme.track(self)
     }
 
     func applyTheme() {
         layer?.backgroundColor = Design.Color.window.cgColor
+        applyDividerHintColour()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -170,7 +191,13 @@ final class TileContainerView: NSView, ThemeAware {
             }
         }
 
-        if animate && sameTab {
+        let keepDragging = dividerDrag != nil && sameTab && closing.isEmpty && created.isEmpty
+            && appearing.isEmpty && hiding.isEmpty && tab?.zoomed == nil && tab?.kind != .monocle
+        if dividerDrag != nil, !keepDragging { endDividerDrag() }
+        if keepDragging {
+            // A drag step: the tiles take their frames at once, no motion.
+            Perf.measure("tiles.drag-layout") { layoutForDrag() }
+        } else if animate && sameTab {
             var kind = Self.kind(tilesBefore: tilesBefore, tilesAfter: tab?.tiles.count ?? 0,
                                  zoomBefore: zoomBefore, zoomAfter: tab?.zoomed,
                                  focusChanged: previousFocus != tab?.focused)
@@ -205,6 +232,7 @@ final class TileContainerView: NSView, ThemeAware {
         // A tab switch cross-fades the whole container; its tiles take their
         // dim at once under it.
         Perf.measure("tiles.dim") { applyDim(animate: animate && sameTab) }
+        if !keepDragging { updateDividerTracking() }
     }
 
     /// The tile area's new frame as the chrome around it changes (the
@@ -246,6 +274,31 @@ final class TileContainerView: NSView, ThemeAware {
 
     /// Whether a tile is on screen: not behind Monocle's top tile or a zoom.
     func isVisible(_ id: String) -> Bool { visibleTiles.contains(id) }
+
+    /// The tab on screen.
+    var shownTab: TabModel? { tab }
+
+    /// A tile's view (its card), for automation.
+    func tileView(_ id: String) -> NSView? { views[id] }
+
+    /// Tiles are moving (a layout motion, not a drag).
+    var isMoving: Bool { CACurrentMediaTime() < motionEnds }
+
+    /// Visible tiles whose content resizes live (running terminals).
+    var liveTileViews: [(String, NSView)] {
+        visibleTiles.compactMap { id in
+            guard let view = views[id], view.superview === self,
+                  (view as? MotionAware)?.resizesLive == true else { return nil }
+            return (id, view)
+        }
+    }
+
+    /// Ends any motion at once (a divider drag takes over).
+    func stopAllMotion() { cancelMotion() }
+
+    /// Runs the display link (a divider drag counts frames and nudges
+    /// terminals on each one).
+    func wakeClock() { wake() }
 
     /// Where each visible tile sits, in this view's coordinates.
     func tileFrames() -> [String: CGRect] {
@@ -1056,15 +1109,16 @@ final class TileContainerView: NSView, ThemeAware {
     @objc private func tick(_ link: CADisplayLink) {
         linkTicks += 1
         let now = CACurrentMediaTime()
-        if now <= motionEnds + 0.02 {
+        if now <= motionEnds + 0.02 || dividerDrag != nil {
             MotionStats.shared.tick(link.timestamp, now: now)
         } else {
             MotionStats.shared.idle()
         }
+        if dividerDrag != nil { Perf.measure("divider.tick") { tickDividerDrag() } }
         // Where the reflowing tiles are when this frame shows.
         if !reflowing.isEmpty { Perf.measure("motion.reflow") { driveReflow(at: link.targetTimestamp) } }
         Perf.measure("clock.tick") { clock.tick(now) }
-        if clock.isEmpty, reflowing.isEmpty, now > motionEnds + 0.05 {
+        if clock.isEmpty, reflowing.isEmpty, dividerDrag == nil, now > motionEnds + 0.05 {
             link.isPaused = true
             MotionStats.shared.idle()
         }
@@ -1137,12 +1191,54 @@ final class TileContainerView: NSView, ThemeAware {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if let hit, leaving.contains(where: { hit === $0.view || hit.isDescendant(of: $0.view) }) { return self }
+        // A divider takes the gutter, and a card's empty margin beside it.
+        if let superview, divider(at: convert(point, from: superview), under: hit) != nil { return self }
         return hit
+    }
+
+    /// What a click at `point` (this view's coordinates) reaches without
+    /// the dividers.
+    func hitTestBelowDividers(_ point: CGPoint) -> NSView? {
+        guard let superview else { return nil }
+        return super.hitTest(convert(point, to: superview))
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        updateDividerTracking()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard event.trackingArea?.userInfo?["divider"] != nil else { return super.mouseMoved(with: event) }
+        dividerHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard event.trackingArea?.userInfo?["divider"] != nil else { return super.mouseEntered(with: event) }
+        dividerHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard event.trackingArea?.userInfo?["divider"] != nil else { return super.mouseExited(with: event) }
+        dividerHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if dividerDrag != nil { return dividerMouseDragged(event) }
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if dividerDrag != nil { return dividerMouseUp(event) }
+        super.mouseUp(with: event)
     }
 
     /// Tiles that don't handle clicks pass them up the responder chain to here.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if let divider = divider(at: point, under: hitTestBelowDividers(point)) {
+            return dividerMouseDown(divider, event: event)
+        }
         let shown = Set(visibleTiles)
         if let id = tileFrames().first(where: { shown.contains($0.key) && $0.value.contains(point) })?.key {
             onClickTile?(id)

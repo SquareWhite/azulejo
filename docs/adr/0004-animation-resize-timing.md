@@ -75,3 +75,7 @@ the maintainer: "it's better, but still reacts a bit slowly." Measured, the text
 
 - `spikes/macos-anim/README.md`, findings table
 - Deferred: frame pacing with the window visible, and Instruments once Xcode is installed (PLAN "Deferred checks")
+
+## Amendment, Nov 5, 2026: divider drags reflow with no lead
+
+Dragging the gutter between tiles (ADR 0010, "Divider drags") moves them every pointer event, with no motion: each step is a `layout.set_ratio` and the tiles take their new frames at once. Terminals reflow as in a window drag, through the reflow machinery above (`liveResizeWillStart`), but **without the lead**: the pointer has no known path ahead, so a surface takes its tile's own size, by whole cells, at most every `Motion.reflowInterval` (33 ms). A display-link tick while the pointer rests lets a resize the throttle held back land (`liveResizeTick`), and the release makes one exact resize. Measured in `apps/macos/automation/e2e/drag.sh` (in-app mouse events, 120 Hz): a 400 ms drag across the tab gives each terminal beside it 8–11 live resizes and one exact one; tiles away from the divider resize 0 times (or once, by a point: the gap the nested splits subtract shifts with their ratios).

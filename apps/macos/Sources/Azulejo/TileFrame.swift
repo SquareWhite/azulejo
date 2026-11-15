@@ -392,6 +392,7 @@ final class MotionTileFrame: TileFrame, MotionAware {
         aware.liveResizeAhead(to: contentFrame(for: size).size, at: time, last: last)
     }
     var resizesLive: Bool { aware.resizesLive }
+    func liveResizeTick() { aware.liveResizeTick() }
     func revealWhenFresh(clock: MotionClock) { aware.revealWhenFresh(clock: clock) }
     func motionDidEnd(clock: MotionClock) { aware.motionDidEnd(clock: clock) }
     func motionCancelled() { aware.motionCancelled() }

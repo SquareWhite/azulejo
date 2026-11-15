@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ff72d8e503c6458375c412af90a5daac57b30fd84573a804e86cd593787083e0 # shrinks to kind = Tile, n = 8, masters = 2, orientation = Top, part = false, drags = [(1675486774356302810, Some(0.0))]
+cc 3a4a00040706ef1d83792d40e435fb6d6e1779c236b4f99522b6366350707e58 # shrinks to kind = Tile, n = 5, masters = 2, orientation = Bottom, part = false, drags = [(2381823386353801763, Some(1.0967915911332895)), (6139981185403325226, Some(1.1866125633467128))]
+cc eaa46e8f1010742162d803035318a6f8cb5f906280714110727df6a105587d76 # shrinks to kind = Tile, n = 5, masters = 2, orientation = Left, part = false, drags = [(2487512353019730581, Some(0.0))]

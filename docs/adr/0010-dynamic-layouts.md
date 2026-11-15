@@ -210,3 +210,15 @@ the maintainer found that `alt+o` "doesn't seem to work". Every tab he has is ad
 - **Monocle and Three Column** (and a lone tile) have nothing to turn: `layout.rotate` succeeds and changes nothing, so the key does nothing and the HUD stays quiet, as with the other edges since the silent-edges change.
 - **herdr** follows each turn: the push rebuilds herdr's tab to the turned tree (a structural change, ADR 0012), and the pull that follows is an echo. `just test-herdr` turns an adopted grid and a Tile tab four times each and checks `layout.export` after every turn.
 
+
+## Divider drags (Nov 5, 2026)
+
+the maintainer: "mouse click & drag to resize panes". The gutter between two tiles is a divider the pointer can drag, in manual and dynamic tabs alike. The shell draws every tab from its tree (manual) or the derived tree (Tile, Three Column), so each split in that tree is one divider, named by its path from the root (`a`/`b` steps). A new command, `layout.set_ratio {tab?, path, ratio?}`, moves it; leaving `ratio` out evens it out (a double-click).
+
+- **Manual:** the split at that path takes the ratio (5–95 %). What's nested on either side keeps its proportions, as in bspwm or any binary-tree tiler: in `a | (b / c)` the root's divider moves `b` and `c` together, and the divider between `b` and `c` is the nested split's. A boundary that looks like one line across the tab but is made of two splits (a 2×2 grid built column by column) is two dividers, each moving its own half. Evening out gives each tile in the row the same share (`a | (b | c)`: a third for `a`).
+- **Tile:** the master edge sets the master ratio (20–80 %), from either side and in every orientation. A divider inside the stack (or between masters) moves only the two tiles beside it, through their weights, each keeping 5 % of its group, so the rest of the stack stays put; the derived tree's nested ratios change to match. Where two groups line up (two masters over two stack tiles, master on top), the shared line moves both pairs, by the same amount. Evening out: the two tiles beside the divider get the same size; the master edge goes to a master area as wide as the stack.
+- **Three Column:** a column edge sets the layout's ratio. Three Column keeps the centre column centred, so dragging either edge moves the other one the mirror way (Bismuth's rule, and what the keyboard resize already does). It can't express one side column wider than the other, and it doesn't pretend to: it doesn't freeze the tab to manual for that. Evening out gives equal columns. Dividers inside a column work as Tile's stack.
+- **Monocle** (and a zoomed tile) has no dividers. The command refuses a Monocle tab.
+- **The derived tree can change shape.** `freeze` cuts along the first line across the tab, so two edges that come to line up (both held at the same clamp, say) can make another split the root. The shell finds the dragged divider again after each step by axis and by where the pointer took hold, so the drag carries on.
+
+No drag converts a dynamic tab to manual: every divider the derived tree shows is one of the layout's parameters.

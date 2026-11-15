@@ -359,22 +359,31 @@ indirect enum LayoutNode: Decodable, Equatable {
         case .leaf(let id):
             return [id: bounds]
         case .split(let axis, let ratio, let a, let b):
-            let r = CGFloat(ratio)
-            var first = bounds, second = bounds
-            switch axis {
-            case .horizontal:
-                let w = max(0, bounds.width - gap)
-                first.size.width = (w * r).rounded()
-                second.origin.x = bounds.minX + first.width + gap
-                second.size.width = max(0, bounds.maxX - second.minX)
-            case .vertical:
-                let h = max(0, bounds.height - gap)
-                let top = (h * r).rounded()
-                first.origin.y = bounds.maxY - top
-                first.size.height = top
-                second.size.height = max(0, first.minY - gap - bounds.minY)
-            }
+            let (first, second, _) = Self.split(bounds, axis: axis, ratio: ratio, gap: gap)
             return a.frames(in: first, gap: gap).merging(b.frames(in: second, gap: gap)) { x, _ in x }
+        }
+    }
+
+    /// One split's two sides inside `bounds` and the gutter between them
+    /// (`gap` wide), as `frames(in:gap:)` lays them out.
+    static func split(_ bounds: CGRect, axis: Axis, ratio: Double, gap: CGFloat)
+        -> (first: CGRect, second: CGRect, gutter: CGRect) {
+        let r = CGFloat(ratio)
+        var first = bounds, second = bounds
+        switch axis {
+        case .horizontal:
+            let w = max(0, bounds.width - gap)
+            first.size.width = (w * r).rounded()
+            second.origin.x = bounds.minX + first.width + gap
+            second.size.width = max(0, bounds.maxX - second.minX)
+            return (first, second, CGRect(x: first.maxX, y: bounds.minY, width: gap, height: bounds.height))
+        case .vertical:
+            let h = max(0, bounds.height - gap)
+            let top = (h * r).rounded()
+            first.origin.y = bounds.maxY - top
+            first.size.height = top
+            second.size.height = max(0, first.minY - gap - bounds.minY)
+            return (first, second, CGRect(x: bounds.minX, y: first.minY - gap, width: bounds.width, height: gap))
         }
     }
 

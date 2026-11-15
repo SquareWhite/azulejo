@@ -970,10 +970,167 @@ pub(crate) fn adjust(
     }
 }
 
+/// Moves a boundary of a Tile or Three Column arrangement to `to` (a
+/// unit-square coordinate along `axis`), as parameter changes: a divider
+/// drag. `a_side` are the tiles that end at `from` along `axis`, `b_side`
+/// those that start there. `to: None` evens the boundary out.
+///
+/// - Between two tiles of one group (the stack, the masters, a column): only
+///   those two change size, through their weights, each kept at least
+///   [`MIN_TILE_SHARE`] of the group. Groups that line up (two masters side
+///   by side over two stack tiles) move together. Evening out gives the two
+///   tiles the same size.
+/// - Between groups: Tile's master edge sets the master ratio. Three
+///   Column's column edges set its ratio, and since that keeps the centre
+///   column centred, both side columns follow (Bismuth's rule). Evening out
+///   gives each tile along the axis the same share: equal columns, a master
+///   area as wide as the stack.
+///
+/// Ratios stay in their kind's range. Returns false when the boundary isn't
+/// one of this arrangement's.
+pub(crate) fn move_boundary(
+    layout: &mut TabLayout,
+    axis: Axis,
+    a_side: &[TileId],
+    b_side: &[TileId],
+    from: f64,
+    to: Option<f64>,
+) -> bool {
+    let groups = match layout.kind {
+        LayoutKind::Tile => tile_groups(&layout.params.tile, &layout.order),
+        LayoutKind::ThreeColumn => three_column_groups(&layout.params.three_column, &layout.order),
+        LayoutKind::Manual | LayoutKind::Monocle => return false,
+    };
+    let group_of = |t: &TileId| groups.iter().position(|g| g.tiles.contains(t));
+    let ga: Vec<usize> = a_side.iter().filter_map(group_of).collect();
+    let gb: Vec<usize> = b_side.iter().filter_map(group_of).collect();
+    if ga.is_empty() || gb.is_empty() {
+        return false;
+    }
+    if !ga.iter().any(|g| gb.contains(g)) {
+        return move_group_edge(layout, &groups, axis, &ga, &gb, to);
+    }
+    // Inside groups: every pair of neighbours across the boundary.
+    let along = |r: &Rect| match axis {
+        Axis::Horizontal => (r.x, r.right()),
+        Axis::Vertical => (r.y, r.bottom()),
+    };
+    let mut pairs: Vec<(&Group, usize)> = Vec::new();
+    let mut target = to;
+    for g in groups.iter().filter(|g| g.axis == axis) {
+        let ws: Vec<f64> = g.tiles.iter().map(|t| layout.weight(*t)).collect();
+        let rects = split_weighted(g.area, g.axis, &ws);
+        for i in 0..g.tiles.len().saturating_sub(1) {
+            if a_side.contains(&g.tiles[i]) && b_side.contains(&g.tiles[i + 1]) {
+                target.get_or_insert((along(&rects[i]).0 + along(&rects[i + 1]).1) / 2.0);
+                pairs.push((g, i));
+            }
+        }
+    }
+    let Some(to) = target else {
+        return false;
+    };
+    // One move for every pair, within what each allows, so groups that
+    // lined up still do.
+    let (lo, hi) = pairs.iter().fold((f64::MIN, f64::MAX), |(lo, hi), (g, i)| {
+        let (l, h) = transfer_range(layout, g, *i, i + 1);
+        (lo.max(l), hi.min(h))
+    });
+    let delta = (to - from).clamp(lo.min(0.0), hi.max(0.0));
+    for (g, i) in pairs {
+        transfer_clamped(layout, g, i, i + 1, delta);
+    }
+    true
+}
+
+/// [`move_boundary`] for a boundary between groups.
+fn move_group_edge(
+    layout: &mut TabLayout,
+    groups: &[Group],
+    axis: Axis,
+    ga: &[usize],
+    gb: &[usize],
+    to: Option<f64>,
+) -> bool {
+    let all = |gs: &[usize], role: Role| gs.iter().all(|g| groups[*g].role == role);
+    match layout.kind {
+        LayoutKind::Tile => {
+            let p = &mut layout.params.tile;
+            if axis != p.orientation.main_axis() {
+                return false;
+            }
+            let first = p.orientation.masters_first();
+            let (masters, stack) = if first { (ga, gb) } else { (gb, ga) };
+            if !all(masters, Role::Masters) || !all(stack, Role::Stack) {
+                return false;
+            }
+            let ratio = match to {
+                Some(to) if first => to,
+                Some(to) => 1.0 - to,
+                None => {
+                    // Masters in a row along the main axis count one each.
+                    let m = if p.rotate_part {
+                        groups[masters[0]].tiles.len() as f64
+                    } else {
+                        1.0
+                    };
+                    m / (m + 1.0)
+                }
+            };
+            p.ratio = clamp_ratio(ratio, TILE_RATIO_MIN, TILE_RATIO_MAX, p.ratio);
+            true
+        }
+        LayoutKind::ThreeColumn => {
+            if axis != Axis::Horizontal {
+                return false;
+            }
+            let p = &mut layout.params.three_column;
+            let (left, right) = (groups[ga[0]].role, groups[gb[0]].role);
+            // The width of a side column the boundary leaves.
+            let side = match (groups.len(), left, right, to) {
+                (_, _, _, None) => None,
+                (2, Role::Masters, Role::RightStack, Some(to)) => {
+                    p.ratio =
+                        clamp_ratio(to, THREE_COLUMN_RATIO_MIN, THREE_COLUMN_RATIO_MAX, p.ratio);
+                    return true;
+                }
+                (3, Role::LeftStack, Role::Masters, Some(to)) => Some(to),
+                (3, Role::Masters, Role::RightStack, Some(to)) => Some(1.0 - to),
+                _ => return false,
+            };
+            let ratio = match side {
+                // Columns weigh (1 − r) : r : (1 − r), so a side column of
+                // width s means r = (1 − 2s) / (1 − s).
+                Some(s) => {
+                    let s = s.clamp(0.0, 0.49);
+                    (1.0 - 2.0 * s) / (1.0 - s)
+                }
+                // Equal columns, two or three.
+                None => 0.5,
+            };
+            p.ratio = clamp_ratio(
+                ratio,
+                THREE_COLUMN_RATIO_MIN,
+                THREE_COLUMN_RATIO_MAX,
+                p.ratio,
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Moves the edge between group tiles `i` and `j` (adjacent) so tile `i`
 /// grows by `amount` and `j` shrinks by as much, keeping each at least
 /// [`MIN_TILE_SHARE`] of the group.
 fn transfer(layout: &mut TabLayout, group: &Group, i: usize, j: usize, amount: f64) {
+    let (lo, hi) = transfer_range(layout, group, i, j);
+    transfer_clamped(layout, group, i, j, amount.clamp(lo, hi));
+}
+
+/// How far the edge between group tiles `i` and `j` may move (towards `j`
+/// positive) with each tile keeping [`MIN_TILE_SHARE`] of the group.
+fn transfer_range(layout: &TabLayout, group: &Group, i: usize, j: usize) -> (f64, f64) {
     let ws: Vec<f64> = group.tiles.iter().map(|t| layout.weight(*t)).collect();
     let total: f64 = ws.iter().sum();
     let extent = match group.axis {
@@ -983,9 +1140,19 @@ fn transfer(layout: &mut TabLayout, group: &Group, i: usize, j: usize, amount: f
     let len = |w: f64| w / total * extent;
     let (ei, ej) = (len(ws[i]), len(ws[j]));
     let min = MIN_TILE_SHARE * extent;
-    let lo = -(ei - min).max(0.0);
-    let hi = (ej - min).max(0.0);
-    let delta = amount.clamp(lo.min(0.0), hi.max(0.0));
+    ((-(ei - min).max(0.0)).min(0.0), (ej - min).max(0.0))
+}
+
+/// [`transfer`] by `delta`, already within [`transfer_range`].
+fn transfer_clamped(layout: &mut TabLayout, group: &Group, i: usize, j: usize, delta: f64) {
+    let ws: Vec<f64> = group.tiles.iter().map(|t| layout.weight(*t)).collect();
+    let total: f64 = ws.iter().sum();
+    let extent = match group.axis {
+        Axis::Horizontal => group.area.width,
+        Axis::Vertical => group.area.height,
+    };
+    let len = |w: f64| w / total * extent;
+    let (ei, ej) = (len(ws[i]), len(ws[j]));
     let to_weight = |e: f64| e / extent * total;
     let (ti, tj) = (group.tiles[i], group.tiles[j]);
     set_weight(layout, ti, to_weight(ei + delta));

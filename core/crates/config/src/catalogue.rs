@@ -126,6 +126,8 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "files.panel",
     "files.panel_close",
     "layout.get",
+    // Dragging a divider sends it; from the keyboard, layout.resize does.
+    "layout.set_ratio",
     "terminal.bind",
     "terminal.send_text",
     "terminal.send_keys",
