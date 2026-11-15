@@ -91,9 +91,9 @@ if [[ "$mode" == "--slow" ]]; then
   step 06c2-monocle-focus alt+j                # stacked tiles: a quick dissolve, no resize
   step 06c3-monocle-out alt+z                  # monocle -> tile: the others grow back in
   emit "expect kind tile"
-  step 06d-three-column alt+bracketleft        # tile -> three column (previous in the cycle)
+  step 06d-three-column alt+bracketright       # tile -> three column (one right in the picker)
   emit "expect kind three_column"
-  step 06d2-tile alt+bracketright              # three column -> tile (next, wrapping round)
+  step 06d2-tile alt+bracketleft               # three column -> tile (one left)
   emit "expect kind tile"
   step 07-focus alt+k                          # the dim cross-fades
   # The sidebar (cmd+a in a terminal): the card turns into the rail and
@@ -144,8 +144,8 @@ else
   # switch in it (no PTY resize) and out, manual and back, a move along
   # the order, rotate part, promote.
   layouts=(
-    "alt+bracketright" "alt+bracketright" "alt+bracketright"   # tile -> monocle -> three column -> tile
-    "alt+bracketleft" "alt+bracketleft" "alt+bracketleft"      # and back
+    "alt+bracketright" "alt+bracketright" "alt+bracketright" "alt+bracketright"  # tile -> three column -> monocle -> manual -> tile
+    "alt+bracketleft" "alt+bracketleft" "alt+bracketleft" "alt+bracketleft"      # and back
     "alt+equal" "alt+minus"                                   # masters 2, then 1
     "alt+shift+equal" "alt+shift+minus"                       # master area bigger, smaller
     "alt+z" "alt+j" "alt+k" "alt+z"                           # monocle in, focus x2, out
@@ -165,7 +165,7 @@ else
   # every kind, Monocle in and straight out, masters up and down.
   emit "key alt+o" "key alt+o" "key alt+o" "key alt+o" "wait $settle"
   emit "expect orientation left"
-  emit "key alt+bracketright" "key alt+bracketright" "key alt+bracketright" "wait $settle"
+  emit "key alt+bracketright" "key alt+bracketright" "key alt+bracketright" "key alt+bracketright" "wait $settle"
   emit "expect kind tile"
   emit "key alt+z" "key alt+z" "wait $settle" "expect kind tile"
   emit "key alt+equal" "key alt+minus" "wait $settle"

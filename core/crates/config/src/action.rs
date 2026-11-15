@@ -222,13 +222,14 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("equalize_layout", EqualizeLayout),
         ("cycle_layout_next", CycleLayoutNext),
         ("cycle_layout_previous", CycleLayoutPrevious),
+        // The kinds in the picker's order (`LayoutKind::ORDER`).
+        ("toggle_layout_manual", ToggleLayout(LayoutKind::Manual)),
         ("toggle_layout_tile", ToggleLayout(LayoutKind::Tile)),
-        ("toggle_layout_monocle", ToggleLayout(LayoutKind::Monocle)),
         (
             "toggle_layout_three_column",
             ToggleLayout(LayoutKind::ThreeColumn),
         ),
-        ("toggle_layout_manual", ToggleLayout(LayoutKind::Manual)),
+        ("toggle_layout_monocle", ToggleLayout(LayoutKind::Monocle)),
         ("increase_masters", IncreaseMasters),
         ("decrease_masters", DecreaseMasters),
         ("grow_master_area", GrowMasterArea),

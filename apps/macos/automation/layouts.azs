@@ -76,11 +76,16 @@ key alt+shift+bracketright    # move one place along the order
 expect focus 2
 
 # --- Monocle: one tile shown, focus restacks without resizing ---
-key alt+bracketright          # tile → monocle (alt+] cycles layouts)
-expect kind monocle
+key alt+bracketright          # tile → three_column (alt+] steps right in the picker)
+expect kind three_column
 key alt+bracketleft           # and back
 expect kind tile
-key alt+backslash             # Bismuth's own chord: tile → monocle
+key alt+bracketleft           # tile → manual (one left)
+expect kind manual
+key alt+bracketright          # and back
+expect kind tile
+key alt+backslash             # Bismuth's own chord, the same step: → three_column
+key alt+backslash             # → monocle
 expect kind monocle
 expect visible 1
 wait 400
@@ -94,13 +99,14 @@ unchanged resizes
 shot 03-monocle
 
 # --- Three Column ---
-key alt+bracketright          # monocle → three_column
+key alt+bracketleft           # monocle → three_column
 expect kind three_column
 expect visible 4
 expect ratio 0.60
 shot 04-three-column
-key alt+shift+backslash       # back to monocle
+key alt+bracketright          # on to monocle
 expect kind monocle
+key alt+shift+backslash       # back to three_column
 key alt+shift+backslash       # and to tile
 expect kind tile
 

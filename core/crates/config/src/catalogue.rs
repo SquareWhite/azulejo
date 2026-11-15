@@ -72,7 +72,7 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
     ),
     (
         "layout.set",
-        "Set layout (tile, monocle, three_column, manual)…",
+        "Set layout (manual, tile, three_column, monocle)…",
         "layout",
         Some("kind"),
         false,

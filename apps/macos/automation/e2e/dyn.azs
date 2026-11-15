@@ -41,7 +41,10 @@ key ctrl+alt+shift+l
 expect ratio 0.55
 wait 600
 shot 01-tall-flow
-# --- cycle Tile → Monocle → Three Column → manual and back ---
+# --- cycle Tile → Three Column → Monocle, manual and back ---
+key alt+backslash
+expect kind three_column
+wait 600
 key alt+backslash
 expect kind monocle
 wait 600
@@ -54,7 +57,7 @@ key alt+h
 wait 400
 unchanged resizes
 shot 02-monocle
-key alt+backslash
+key alt+shift+backslash
 expect kind three_column
 wait 600
 shot 03-three-column

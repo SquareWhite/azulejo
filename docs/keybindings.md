@@ -158,10 +158,10 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `equalize_layout` | global | `alt+shift+e` | `alt+shift+e` | Equalize stack |
 | `cycle_layout_next` | global | `alt+bracketright`, `alt+backslash` | `alt+bracketright`, `alt+backslash` | Next layout |
 | `cycle_layout_previous` | global | `alt+bracketleft`, `alt+shift+backslash` | `alt+bracketleft`, `alt+shift+backslash` | Previous layout |
-| `toggle_layout_tile` | global | `alt+t` | `alt+t` | Toggle Tile layout |
-| `toggle_layout_monocle` | global | `alt+z` | `alt+z` | Toggle Monocle layout |
-| `toggle_layout_three_column` | global | unbound | unbound | Toggle Three Column layout |
 | `toggle_layout_manual` | global | `alt+shift+t` | `alt+shift+t` | Toggle manual layout (freeze) |
+| `toggle_layout_tile` | global | `alt+t` | `alt+t` | Toggle Tile layout |
+| `toggle_layout_three_column` | global | unbound | unbound | Toggle Three Column layout |
+| `toggle_layout_monocle` | global | `alt+z` | `alt+z` | Toggle Monocle layout |
 | `increase_masters` | global | `alt+equal` | `alt+equal` | More masters |
 | `decrease_masters` | global | `alt+minus` | `alt+minus` | Fewer masters |
 | `grow_master_area` | global | `alt+shift+equal` | `alt+shift+equal` | Grow master area |
@@ -295,8 +295,8 @@ Tiles are named by creation (`t1` is the first terminal). Orders list masters fi
 | `alt+t` | `toggle_layout_tile` → `layout.toggle {tile}` | On Tile: back to the previous kind (Monocle), then Tile again | `Meta+T` | yes |
 | `alt+z` | `toggle_layout_monocle` → `layout.toggle {monocle}` | Monocle, then back to Tile | `Meta+M` | yes |
 | `alt+shift+t` | `toggle_layout_manual` → `layout.toggle {manual}` | Freezes to a split tree with the same rects; again goes back to Tile with the same order | none (`Meta+Shift+F`, Floating, is the closest) | Azulejo only |
-| `alt+]` / `alt+[` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | Tile → Monocle and back, animated; the tab's hint reads "… · Monocle layout ▣" | `Meta+]` / `Meta+[` change the master count | different on purpose |
-| `alt+\` / `alt+shift+\` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | Tile → Monocle → Three Column (`286 \| 428 \| 286`) → back | `Meta+\` / `Meta+\|` | yes |
+| `alt+]` / `alt+[` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | One segment right / left in the layout picker (Manual, Tile, Three Column, Monocle), animated, wrapping round at either end: Tile → Three Column and back; the tab's hint reads "… · Three Column layout ▥" | `Meta+]` / `Meta+[` change the master count | different on purpose |
+| `alt+\` / `alt+shift+\` | `cycle_layout_next` / `previous` → `layout.cycle` (±1) | The same steps: Tile → Three Column (`286 \| 428 \| 286`) → Monocle → back | `Meta+\` / `Meta+\|` | the chords yes; the order differs on purpose (the picker's, Manual included) |
 | `ctrl+cmd+t`, `ctrl+cmd+shift+t`, `ctrl+cmd+v` | `split_auto`, `split_down`, `split_right` → `layout.split_auto`, `layout.split` | Each new tile goes to the end of the order (`[layout] insert = "end"`), the split's direction is ignored, and the new tile takes focus: `t1` … `t6`. The same in Three Column and Monocle | A new window is appended (`newWindowAsMaster` off), and KWin focuses it | yes |
 | `alt+w` | `close_tile` → `tile.close` | Leaves the order; the tile now in its place takes focus, else the one before: closing `t4` (4th of 5) focused `t5`, closing the last focused the one before it | The window leaves the list; KWin picks the focus | yes; focus is Azulejo's |
 | `alt+shift+m` | `zoom_tile` → `layout.zoom` | The overlay zoom toggles; order and rects stay | none (Monocle is Bismuth's answer) | Azulejo only |
@@ -318,7 +318,7 @@ Different on purpose:
 - **Resizing a tile with neighbours on both sides** moves the edge on the side you press (`ctrl+alt+shift+k` on a middle stack tile moves its top edge up, so it grows). Bismuth always moves the east or south edge, so its `Meta+Ctrl+K` would shrink that tile. Azulejo keeps herdr's rule, which manual tabs use too, so the chords behave the same in both. Tiles at an edge, which is every tile with one or two in a stack, behave as in Bismuth. Three Column's centre is the exception (fix 4).
 - **Monocle swap** trades the shown tile with the next or previous one in the order. Bismuth has no neighbour there and does nothing.
 - **Close** gives focus to the tile now in that place; Bismuth leaves it to KWin.
-- **Cycling from a manual tab** (not in `[layout] cycle`) goes to the first kind forward and the last kind back; Bismuth goes to the first either way. Toggling the active kind with no previous kind goes to Manual (from Tile) or Tile; Bismuth stays put.
+- **The cycle follows the layout picker** (Nov 11, 2026): Manual, Tile, Three Column, Monocle, left to right, wrapping round, so `alt+[` is one segment left and `alt+]` one right. Bismuth cycles Tile, Monocle, Three Column and has no Manual. `[layout] cycle` picks which kinds the keys visit, never their order; a kind left out steps to its nearest neighbour on each side. Toggling the active kind with no previous kind goes to Manual (from Tile) or Tile; Bismuth stays put.
 - **The layout name** shows in the tab's hint (its tooltip) rather than an on-screen notification.
 - **Azulejo only:** equalize, zoom and the manual toggle.
 

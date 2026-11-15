@@ -87,7 +87,7 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
 
 - **Dynamic → manual** ("freeze"): build a split tree from the current placements with a guillotine cut (find a full-span line, split, recurse). Tile and Three Column are both guillotine layouts, so the frozen tree reproduces the rects exactly; this is also how the derived `root` is computed. Monocle freezes to the Tile arrangement of the same order. If `manual` holds a tree with the same tile set, switching back restores that instead.
 - **Manual → dynamic:** `order` comes from the existing `tall()` reading (master first, then the stack in reading order). If the tree is in canonical tall shape, Tile's ratio and orientation come from it, so a tall tab converts with no visible jump.
-- `layout.toggle {kind}` follows Bismuth: switch to `kind`, or back to `previous` if `kind` is already active. `layout.cycle` walks `[layout] cycle`.
+- `layout.toggle {kind}` follows Bismuth: switch to `kind`, or back to `previous` if `kind` is already active. `layout.cycle` walks `[layout] cycle` (amended Nov 11, 2026: in the picker's order, see [Layout cycle order](#layout-cycle-order-nov-11-2026)).
 
 ### 5. herdr adoption
 
@@ -121,7 +121,7 @@ Left out on purpose: **Spiral** and **Quarter** (dropped by the maintainer), **S
   [layout]
   default = "tile"            # or "manual"
   insert = "end"              # "end" | "master" | "after_focused"
-  cycle = ["tile", "monocle", "three_column"]
+  cycle = ["manual", "tile", "three_column", "monocle"]   # amended Nov 11, 2026
   [layout.tile]
   masters = 1
   ratio = 0.5
@@ -222,3 +222,13 @@ the maintainer: "mouse click & drag to resize panes". The gutter between two til
 - **The derived tree can change shape.** `freeze` cuts along the first line across the tab, so two edges that come to line up (both held at the same clamp, say) can make another split the root. The shell finds the dragged divider again after each step by axis and by where the pointer took hold, so the drag carries on.
 
 No drag converts a dynamic tab to manual: every divider the derived tree shows is one of the layout's parameters.
+
+## Layout cycle order (Nov 11, 2026)
+
+The maintainer: `alt+[` should pick the previous layout and `alt+]` the next, where previous and next mean left and right in the top bar's layout picker. The picker draws Manual, Tile, Three Column, Monocle; the cycle walked Tile, Monocle, Three Column and left Manual out, so `alt+[` on Tile wrapped round to Three Column, a step to the right.
+
+- **One order.** `LayoutKind::ORDER` (manual, tile, three_column, monocle) is the picker's order and the cycle's. The Mac picker and the tab menu's Layout submenu draw it (`LayoutKind.picker`), and the toggle actions are listed in it.
+- **Manual is in the default cycle**, so each key is exactly one segment: `alt+[` on Tile freezes to Manual (restoring a saved tree), `alt+]` on Monocle goes to Manual.
+- **It wraps** at both ends, as before: `alt+]` on Monocle goes to Manual, `alt+[` on Manual to Monocle.
+- **`[layout] cycle` picks kinds, not their order:** the keys always step in the picker's order, so a cycle listed in another order can't put them against the picker. A kind left out keeps its place: from it, one step goes to the nearest cycle kind on that side, wrapping (from Manual with the old three-kind cycle: forward to Tile, back to Monocle, as before).
+- Layout is per tab. The keys act on the focused tab of the active workspace, which is the tab the picker shows.

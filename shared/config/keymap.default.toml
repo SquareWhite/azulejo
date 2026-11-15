@@ -72,7 +72,7 @@ equalize_layout = "alt+shift+e"       # even out the stack
 # flip_layout (master left <-> top, tall.py's rotate) is palette-only.
 
 # Dynamic layouts (ADR 0010): Bismuth's Meta chords on the alt layer.
-cycle_layout_next      = ["alt+bracketright", "alt+backslash"]       # tile -> monocle -> three_column
+cycle_layout_next      = ["alt+bracketright", "alt+backslash"]       # one right in the picker: manual -> tile -> three_column -> monocle, wrapping
 cycle_layout_previous  = ["alt+bracketleft", "alt+shift+backslash"]  # alt+\ / alt+| are Bismuth's own
 toggle_layout_tile     = "alt+t"                 # bash/zsh lose alt+t (transpose words) in tiles
 toggle_layout_monocle  = "alt+z"                 # alt+m is Hammerspoon's, alt+shift+m is zoom

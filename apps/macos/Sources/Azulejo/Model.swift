@@ -136,7 +136,9 @@ enum LayoutKind: String, Decodable {
         }
     }
 
-    /// The kinds the layout picker and the tab menu offer, in their order.
+    /// The kinds the layout picker (left to right) and the tab menu offer.
+    /// The core's `LayoutKind::ORDER`: `cycle_layout_next` / `previous`
+    /// (alt+] / alt+[) step one segment right / left through it.
     static let picker: [LayoutKind] = [.manual, .tile, .threeColumn, .monocle]
 
     /// The kind's name in the layout picker and the tab menu.

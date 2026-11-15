@@ -344,13 +344,70 @@ fn dynamic_ops_map_as_in_the_adr() {
     assert_eq!(s.tab(tab).unwrap().layout.previous, Some(LayoutKind::Tile));
     assert!(s.toggle_layout(tab, LayoutKind::Manual).unwrap());
     assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Tile);
-    // Cycle walks tile → monocle → three_column → tile.
+    // Cycle walks the picker's order: tile → three_column → monocle →
+    // manual → tile.
+    s.cycle_layout(tab, 1).unwrap();
+    assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::ThreeColumn);
     s.cycle_layout(tab, 1).unwrap();
     assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Monocle);
     s.cycle_layout(tab, 1).unwrap();
-    assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::ThreeColumn);
+    assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Manual);
     s.cycle_layout(tab, 1).unwrap();
     assert_eq!(s.tab(tab).unwrap().layout.kind, LayoutKind::Tile);
     s.check_invariants().unwrap();
     let _ = Node::leaf(a);
+}
+
+/// `alt+]` / `alt+[` (`layout.cycle` ±1) step one kind right / left in the
+/// picker's order (`LayoutKind::ORDER`), wrapping at the ends, from every
+/// kind; a cycle listed in another order still walks the picker's order,
+/// and a kind left out of it steps to its nearest neighbour on each side.
+#[test]
+fn cycle_steps_through_the_picker_order() {
+    use LayoutKind::{Manual, Monocle, ThreeColumn, Tile as TileKind};
+    let mut s = Session::new();
+    let (_, ws) = s.create_window("main", None);
+    s.create_tab(ws, Tile::new(TileContent::terminal()), None)
+        .unwrap();
+    let tab = s.focus().tab.unwrap();
+    let a = s.focused_tile().unwrap();
+    s.split(a, Direction::Right, Tile::new(TileContent::terminal()))
+        .unwrap();
+    let kind = |s: &Session| s.tab(tab).unwrap().layout.kind;
+    let order = LayoutKind::ORDER;
+    assert_eq!(order, [Manual, TileKind, ThreeColumn, Monocle]);
+    assert_eq!(s.prefs.cycle, order.to_vec());
+    for (i, from) in order.into_iter().enumerate() {
+        for (step, to) in [(1, (i + 1) % 4), (-1, (i + 3) % 4), (2, (i + 2) % 4)] {
+            s.set_layout(tab, from).unwrap();
+            assert!(s.cycle_layout(tab, step).unwrap());
+            assert_eq!(kind(&s), order[to], "{from:?} {step:+}");
+        }
+    }
+
+    // Listed out of order and without manual: still tile → three_column →
+    // monocle; manual sits left of tile.
+    s.prefs.cycle = vec![Monocle, TileKind, ThreeColumn];
+    for (from, step, to) in [
+        (TileKind, 1, ThreeColumn),
+        (ThreeColumn, 1, Monocle),
+        (Monocle, 1, TileKind),
+        (TileKind, -1, Monocle),
+        (Monocle, -1, ThreeColumn),
+        (Manual, 1, TileKind),
+        (Manual, -1, Monocle),
+        (Manual, 2, ThreeColumn),
+    ] {
+        s.set_layout(tab, from).unwrap();
+        s.cycle_layout(tab, step).unwrap();
+        assert_eq!(kind(&s), to, "{from:?} {step:+}");
+    }
+    // A kind in the middle left out: three_column → nearest on each side.
+    s.prefs.cycle = vec![TileKind, Monocle];
+    for (step, to) in [(1, Monocle), (-1, TileKind)] {
+        s.set_layout(tab, ThreeColumn).unwrap();
+        s.cycle_layout(tab, step).unwrap();
+        assert_eq!(kind(&s), to, "three_column {step:+}");
+    }
+    s.check_invariants().unwrap();
 }

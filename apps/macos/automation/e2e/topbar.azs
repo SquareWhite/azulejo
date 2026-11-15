@@ -18,13 +18,44 @@ expect picker.kind tile
 expect chrome.hit.picker LayoutSegment
 expect chrome.fits yes
 expect picker.tips Manual layout (⌥⇧T)|Master (Tile) layout (⌥T)|Three Column layout|Monocle layout (⌥Z)
+# alt+] / alt+[ (through the app's key router) step one segment right /
+# left, from every kind, wrapping round at both ends.
+expect picker.order manual,tile,three_column,monocle
+expect picker.index 1
+key alt+bracketright
+until kind three_column 3000
+expect picker.kind three_column
+expect picker.index 2
+wait 600
 key alt+bracketright
 until kind monocle 3000
-expect picker.kind monocle
+expect picker.index 3
+wait 600
+key alt+bracketright          # the right end wraps round to the left one
+until kind manual 3000
+expect picker.index 0
+wait 600
+key alt+bracketright
+until kind tile 3000
+expect picker.index 1
+wait 600
+key alt+bracketleft
+until kind manual 3000
+expect picker.kind manual
+expect picker.index 0
+wait 600
+key alt+bracketleft           # the left end wraps round to the right one
+until kind monocle 3000
+expect picker.index 3
+wait 600
+key alt+bracketleft
+until kind three_column 3000
+expect picker.index 2
 wait 600
 key alt+bracketleft
 until kind tile 3000
 expect picker.kind tile
+expect picker.index 1
 wait 600
 action toggle_layout_manual
 until kind manual 3000

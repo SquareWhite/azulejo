@@ -1208,7 +1208,18 @@ fn every_layout_command_maps_in_a_dynamic_tab() {
     assert_eq!(tab_of(&engine).kind(), LayoutKind::Tile);
     run(
         &mut engine,
-        Command::LayoutCycle(LayoutCycle { tab: None, step: 1 }),
+        Command::LayoutCycle(LayoutCycle {
+            tab: None,
+            step: -1,
+        }),
+    );
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Manual);
+    run(
+        &mut engine,
+        Command::LayoutCycle(LayoutCycle {
+            tab: None,
+            step: -1,
+        }),
     );
     assert_eq!(tab_of(&engine).kind(), LayoutKind::Monocle);
 

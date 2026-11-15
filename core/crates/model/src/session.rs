@@ -26,7 +26,8 @@ pub struct LayoutPrefs {
     pub default: LayoutKind,
     /// Where new tiles go in dynamic tabs.
     pub insert: InsertAt,
-    /// What `layout.cycle` walks through.
+    /// The kinds `layout.cycle` visits. It walks them in
+    /// `LayoutKind::ORDER` (the picker's order), whatever order this lists.
     pub cycle: Vec<LayoutKind>,
     /// Parameters new dynamic tabs start with.
     pub params: LayoutParams,
@@ -37,7 +38,7 @@ impl Default for LayoutPrefs {
         Self {
             default: LayoutKind::Manual,
             insert: InsertAt::End,
-            cycle: LayoutKind::DYNAMIC.to_vec(),
+            cycle: LayoutKind::ORDER.to_vec(),
             params: LayoutParams::default(),
         }
     }
@@ -1508,19 +1509,35 @@ impl Session {
         self.set_layout(tab, target)
     }
 
-    /// Steps through the configured cycle of kinds. From a kind not in the
-    /// cycle, forward goes to the first and back to the last.
+    /// Steps `step` kinds through the configured cycle, in
+    /// `LayoutKind::ORDER` (the picker's order, left to right), wrapping
+    /// round at either end. A kind left out of the cycle keeps its place in
+    /// that order: from there one step goes to the nearest cycle kind on
+    /// that side, wrapping too.
     pub fn cycle_layout(&mut self, tab: TabId, step: i32) -> Result<bool, ModelError> {
         let current = self.tab(tab)?.layout.kind;
-        let cycle = self.prefs.cycle.clone();
+        let rank = |kind: LayoutKind| LayoutKind::ORDER.iter().position(|k| *k == kind);
+        let cycle: Vec<LayoutKind> = LayoutKind::ORDER
+            .into_iter()
+            .filter(|k| self.prefs.cycle.contains(k))
+            .collect();
         if cycle.is_empty() || step == 0 {
             return Ok(false);
         }
         let n = cycle.len() as i64;
+        let step = i64::from(step);
         let next = match cycle.iter().position(|k| *k == current) {
-            Some(i) => (i as i64 + i64::from(step)).rem_euclid(n),
-            None if step > 0 => 0,
-            None => n - 1,
+            Some(i) => (i as i64 + step).rem_euclid(n),
+            None => {
+                // `current` sits between the cycle kinds before it and the
+                // rest: the first step forward lands on index `before`.
+                let before = cycle.iter().filter(|k| rank(**k) < rank(current)).count() as i64;
+                if step > 0 {
+                    (before + step - 1).rem_euclid(n)
+                } else {
+                    (before + step).rem_euclid(n)
+                }
+            }
         };
         self.set_layout(tab, cycle[next as usize])
     }

@@ -162,16 +162,37 @@ shot 08-no-sidebar
 key cmd+a
 expect sidebar visible
 
-# --- alt+] / alt+[ switch layouts (the tab is manual: forward goes to the
-# first in [layout] cycle, back from there wraps to the last) ---
+# --- alt+] / alt+[ step one layout right / left in the picker (manual,
+# tile, three_column, monocle), wrapping at the ends ---
+expect picker.order manual,tile,three_column,monocle
+expect kind manual
+expect picker.index 0
 key alt+]
 expect key.last action:cycle_layout_next
 expect kind tile
-key alt+[
-expect key.last action:cycle_layout_previous
-expect kind three_column
+expect picker.index 1
 key alt+]
+expect kind three_column
+expect picker.index 2
+key alt+]
+expect kind monocle
+expect picker.index 3
+key alt+]                     # the right end wraps round to manual
+expect kind manual
+expect picker.index 0
+key alt+[                     # the left end wraps round to monocle
+expect key.last action:cycle_layout_previous
+expect kind monocle
+expect picker.index 3
+key alt+[
+expect kind three_column
+expect picker.index 2
+key alt+[
 expect kind tile
+expect picker.index 1
+key alt+[
+expect kind manual
+expect picker.index 0
 
 # --- unbound keys pass through untouched ---
 key x

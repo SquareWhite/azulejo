@@ -56,7 +56,9 @@
 //! [layout]               # dynamic layouts (ADR 0010)
 //! default = "tile"       # new tabs: "tile", "monocle", "three_column" or "manual"
 //! insert = "end"         # new tiles in dynamic tabs: "end", "master" or "after_focused"
-//! cycle = ["tile", "monocle", "three_column"]
+//! cycle = ["manual", "tile", "three_column", "monocle"]
+//!                        # the kinds alt+] / alt+[ visit; they always step
+//!                        # right / left in the picker's order (this one), wrapping
 //! [layout.tile]
 //! masters = 1            # 0 to 10
 //! ratio = 0.5            # master area, 0.2 to 0.8

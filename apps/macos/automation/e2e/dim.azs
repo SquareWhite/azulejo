@@ -38,14 +38,19 @@ key alt+shift+m
 wait 600
 expect dimmed 2,3,4
 
-# Monocle: one tile on screen, nothing dims; back in Three Column, the rest dim.
+# Monocle: one tile on screen, nothing dims; back in Three Column, the rest
+# dim. The cycle follows the layout picker: Tile, Three Column, Monocle.
+key alt+backslash
+wait 600
+expect kind three_column
+expect dimmed 2,3,4
 key alt+backslash
 wait 600
 expect kind monocle
 expect dimmed none
 capture dim-monocle 0
 wait 300
-key alt+backslash
+key alt+shift+backslash
 wait 600
 expect kind three_column
 expect dimmed 2,3,4

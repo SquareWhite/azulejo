@@ -83,6 +83,8 @@ final class LayoutPickerView: NSView, ThemeAware {
     func segment(_ kind: LayoutKind) -> NSView? { segments.first { $0.kind == kind } }
     /// Each segment's tooltip, "|"-separated.
     var tooltips: String { segments.map { $0.toolTip ?? "" }.joined(separator: "|") }
+    /// The segments as drawn, left to right.
+    var drawnOrder: [LayoutKind] { segments.sorted { $0.frame.minX < $1.frame.minX }.map(\.kind) }
     /// Picks `kind` as a click on its segment does.
     func press(_ kind: LayoutKind) { segments.first { $0.kind == kind }?.press() }
 }
@@ -159,7 +161,9 @@ private final class LayoutSegment: NSView, ThemeAware {
 
 /// `picker KIND` (manual, tile, three_column, monocle): picks a kind as a
 /// click on its segment does. State: `picker.kind` (the selected kind, or
-/// `-` with no tab or while the picker is hidden), `picker.tips`.
+/// `-` with no tab or while the picker is hidden), `picker.index` (the
+/// selected segment's place from the left, from 0, or `-`), `picker.order`
+/// (the kinds as drawn, left to right, ","-separated), `picker.tips`.
 @MainActor
 enum LayoutPickerAutomation {
     static func run(_ arg: String, controller: WindowController?) -> String? {
@@ -172,8 +176,12 @@ enum LayoutPickerAutomation {
 
     static func state(_ controller: WindowController) -> [String: String] {
         let picker = controller.layoutPicker
+        let order = picker.drawnOrder
+        let index = picker.isHidden ? nil : picker.kind.flatMap { order.firstIndex(of: $0) }
         return [
             "picker.kind": picker.isHidden ? "-" : picker.kind?.rawValue ?? "-",
+            "picker.index": index.map(String.init) ?? "-",
+            "picker.order": order.map(\.rawValue).joined(separator: ","),
             "picker.tips": picker.tooltips,
         ]
     }

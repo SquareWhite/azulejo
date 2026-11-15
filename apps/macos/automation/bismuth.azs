@@ -180,15 +180,15 @@ key alt+shift+m
 expect zoomed no
 
 # --- layouts: cycle and toggles ---
-key alt+bracketright          # tile → monocle
-expect kind monocle
+key alt+bracketright          # tile → three column (one right in the picker)
+expect kind three_column
 key alt+bracketleft           # and back
 expect kind tile
-key alt+backslash             # tile → monocle
-expect kind monocle
-key alt+backslash             # → three column
+key alt+backslash             # tile → three column
 expect kind three_column
-key alt+shift+backslash       # → monocle
+key alt+backslash             # → monocle
+expect kind monocle
+key alt+shift+backslash       # → three column
 key alt+shift+backslash       # → tile
 expect kind tile
 key alt+t                     # already Tile: back to the previous kind (monocle)
@@ -229,8 +229,7 @@ key alt+shift+t               # back to tile
 expect kind tile
 
 # --- Three Column: columns weigh 0.4 : 0.6 : 0.4 (2/7, 3/7, 2/7) ---
-key alt+backslash
-key alt+backslash
+key alt+backslash             # tile → three column
 expect kind three_column
 expect ratio 0.60
 key alt+h                     # centre → left stack
@@ -278,8 +277,7 @@ key alt+w
 until tiles 4 3000
 
 # --- Monocle ---
-key alt+backslash             # three column → tile
-key alt+backslash             # → monocle
+key alt+backslash             # three column → monocle
 expect kind monocle
 expect visible 1
 key alt+l                     # next in the order

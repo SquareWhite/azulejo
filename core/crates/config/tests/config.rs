@@ -1485,9 +1485,10 @@ fn layout_defaults_to_dynamic_tile_and_parses_overrides() {
     assert_eq!(
         config.layout.cycle,
         vec![
+            LayoutKind::Manual,
             LayoutKind::Tile,
-            LayoutKind::Monocle,
-            LayoutKind::ThreeColumn
+            LayoutKind::ThreeColumn,
+            LayoutKind::Monocle
         ]
     );
 

@@ -30,10 +30,22 @@ pub enum LayoutKind {
 }
 
 impl LayoutKind {
+    /// Every kind in the one order the app shows them in: the macOS layout
+    /// picker left to right, the tab menu, and the order `layout.cycle`
+    /// steps through (`alt+]` one to the right, `alt+[` one to the left).
+    /// The picker's `LayoutKind.picker` must match it.
+    pub const ORDER: [LayoutKind; 4] = [
+        LayoutKind::Manual,
+        LayoutKind::Tile,
+        LayoutKind::ThreeColumn,
+        LayoutKind::Monocle,
+    ];
+
+    /// The dynamic kinds, in `ORDER`.
     pub const DYNAMIC: [LayoutKind; 3] = [
         LayoutKind::Tile,
-        LayoutKind::Monocle,
         LayoutKind::ThreeColumn,
+        LayoutKind::Monocle,
     ];
 
     pub fn is_dynamic(self) -> bool {

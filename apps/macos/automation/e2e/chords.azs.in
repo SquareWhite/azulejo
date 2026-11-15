@@ -136,17 +136,19 @@ expect key.last action:move_position_previous
 expect focus 1
 key alt+]
 expect key.last action:cycle_layout_next
-expect kind monocle
+expect kind three_column
 key alt+[
 expect key.last action:cycle_layout_previous
 expect kind tile
 key alt+backslash
 expect key.last action:cycle_layout_next
-expect kind monocle
-key alt+]
 expect kind three_column
+key alt+]
+expect kind monocle
 key alt+shift+backslash
 expect key.last action:cycle_layout_previous
+expect kind three_column
+key alt+]
 expect kind monocle
 key alt+t
 expect key.last action:toggle_layout_tile
@@ -178,7 +180,7 @@ expect sidebar visible
 # router sees them before the page, and only cmd+[ / cmd+] are its own
 key alt+]
 expect key.last action:cycle_layout_next
-expect kind monocle
+expect kind three_column
 key alt+[
 expect key.last action:cycle_layout_previous
 expect kind tile
@@ -186,7 +188,7 @@ key cmd+l
 expect key.last action:browser_focus_address
 key alt+]
 expect key.last action:cycle_layout_next
-expect kind monocle
+expect kind three_column
 key alt+[
 expect kind tile
 key escape
@@ -198,14 +200,14 @@ expect key.last passed
 expect sidebar visible
 key alt+]
 expect key.last action:cycle_layout_next
-expect kind monocle
+expect kind three_column
 key alt+[
 expect kind tile
 key cmd+f
 key alt+]
 expect key.last action:cycle_layout_next
 expect key.context find_bar
-expect kind monocle
+expect kind three_column
 key alt+[
 expect kind tile
 key escape
