@@ -229,7 +229,7 @@ every tile appears on screen.
   from its old frame to its new one. Going into Monocle the focused tile
   grows over the others as they fade and shrink a little; coming out, they
   grow back in. Only tab switches and focus moves between Monocle's stacked
-  tiles fade (ADR 0004, Nov 4 amendment).
+  tiles fade (ADR 0004, Nov 4 amendment); workspace switches slide (below).
 - `scale`: a transform scales the whole tile, so text stretches mid-motion.
 - `outline`: tiles jump to their new place hidden, outlines move instead, and
   content fades in over 80 ms at the end.
@@ -240,9 +240,32 @@ enabled = true            # false: changes are instant
 duration_ms = 200         # 0–1000
 curve = "ease_out"        # "ease_out", "ease_in_out", "linear"
 style = "reflow"          # "reflow", "crop", "scale", "outline"
-tab_switch = "fade"       # tab and workspace switches: "fade", "slide", "none"
+tab_switch = "fade"       # tab switches: "fade", "slide" (sideways), "none"
+workspace_switch = "slide" # workspace switches (experimental): "slide", "fade", "none"
+workspace_switch_ms = 260 # a workspace slide's length, 0–1000 (0: instant); not tied to duration_ms
 reduce_motion = "system"  # "system": no motion while macOS Reduce Motion is on; "ignore"
 ```
+
+**Workspace switches slide (experimental).** `workspace_switch = "slide"`
+moves the whole tile area vertically, like a vertical Spaces switch, in the
+sidebar's order top to bottom: going down the list (⌘1 → ⌘5, a new
+workspace) the old workspace leaves at the top while the new one comes in
+from below; going up, the reverse. Closing a workspace slides to the one
+that lands on screen. The sidebar, toolbar and window chrome stay still;
+the tile area clips. It takes `workspace_switch_ms` (260 ms by default, its
+own setting: `duration_ms` doesn't change it; out-of-range values clamp to
+0–1000 with a warning, 0 is instant; live on save) on a cubic ease-out (or
+the configured curve when it isn't `ease_out`). Nothing
+re-lays out or resizes: the old workspace's tile views ride in a sheet a
+gutter (8 pt) from the new one's (the seam looks like any gap between
+tiles) and one `sublayerTransform` animation moves both, so
+focus and typing land in the new workspace at once. A switch mid-slide
+carries on from where everything shows (⌘1 ⌘5 ⌘2 never stacks). Off with
+motion off or under Reduce Motion; `"fade"` is the tab cross-fade
+workspace switches had before, `"none"` is instant. The direction comes from
+`SidebarView.ordered`, the order the numbers follow. `apps/macos/automation/e2e/wsslide.sh` checks it
+(direction, focus, turn-rounds, rapid switches, close, new, the instant
+paths); `anim.sh` measures 45 switches' frame pacing (`ws-stats.json`).
 
 ### Focus: unfocused tiles dim
 

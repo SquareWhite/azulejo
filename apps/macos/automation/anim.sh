@@ -187,6 +187,26 @@ else
   # busy machine); resizes must match exactly.
   emit "wait 800" "anim stats" "anim expect-clean 3"
   emit "capture 90-after-stress 0" "wait 1200" "shot 91-after-stress"
+  # Workspace switches ([animation] workspace_switch, "slide" by default;
+  # AZJ_ANIM_WS=fade|none for the old cross-fade or none, to compare): two
+  # more workspaces, a split in one, then 36 switches up and down the list
+  # and 9 that land 150 ms apart (each turns the last round), stats on
+  # their own.
+  if [[ -n "${AZJ_ANIM_WS:-}" ]]; then
+    emit "sh printf '\\n[animation]\\nworkspace_switch = \"$AZJ_ANIM_WS\"\\n' >> {config}" \
+      "until slide.mode $AZJ_ANIM_WS 8000"
+  fi
+  emit "key cmd+t" "until workspaces 2 5000" "until terminal.phase attached 10000" "key ctrl+cmd+t" "wait 1500"
+  emit "key cmd+t" "until workspaces 3 5000" "until terminal.phase attached 10000" "wait 600"
+  emit "anim reset"
+  for _ in 1 2 3 4 5 6; do
+    for ws in 1 3 2 1 2 3; do emit "key cmd+$ws" "wait $settle"; done
+  done
+  for _ in 1 2 3; do emit "key cmd+1" "key cmd+3" "key cmd+2" "wait $settle"; done
+  # Reported, not gated (experimental, no baseline yet): a switch's own
+  # refresh (sidebar, rail, tiles: 15–25 ms) lands mid-slide on every turn
+  # round, and costs a tick or two each time.
+  emit "key cmd+1" "wait $settle" "expect slide still" "anim stats ws-stats"
   # Off: changes are instant.
   emit "anim enabled false" "anim reset" "key alt+shift+m" "wait 50" "capture 92-off-zoom 0"
   emit "wait 1200" "key alt+shift+m" "wait 300" "anim stats off-stats"

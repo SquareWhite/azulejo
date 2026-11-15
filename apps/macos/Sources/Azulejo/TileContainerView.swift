@@ -26,6 +26,11 @@ final class TileContainerView: NSView, ThemeAware {
     private var tab: TabModel?
     /// Where the active tab sits, for the direction of a slide.
     private var position: (workspace: Int, tab: Int) = (0, 0)
+    /// The workspace on screen and its place in the sidebar's order, for
+    /// the direction of a workspace slide (the place matters once it's
+    /// closed and gone from the order).
+    private var shownWorkspace: String?
+    private var shownRank: Int?
 
     /// Views fading out: closed tiles (removed for good) and tiles leaving the
     /// screen (zoom). Never hit-tested.
@@ -113,13 +118,23 @@ final class TileContainerView: NSView, ThemeAware {
 
     /// Shows `window`'s active tab. Tiles of other tabs keep their views,
     /// hidden; tiles gone from the window are closed and dropped.
-    func apply(_ window: WindowModel) {
+    /// `order`: the window's workspace IDs top to bottom as the sidebar
+    /// shows them, numbered (`SidebarView.ordered`): a workspace slide goes down
+    /// the list or up it.
+    func apply(_ window: WindowModel, order: [String]? = nil) {
         let t0 = CACurrentMediaTime()
         let newTab = window.workspace?.tab
         let active = Perf.measure("motion.active") { Motion.active }
         let animate = active && self.window != nil && bounds.width > 1 && bounds.height > 1
         let sameTab = tab != nil && newTab?.id == tab?.id
         let switching = tab != nil && newTab != nil && !sameTab
+        let order = order ?? window.workspaces.map(\.id)
+        let newRank = order.firstIndex(of: window.activeWorkspace)
+        let workspaceSwitch = switching && shownWorkspace != nil && shownWorkspace != window.activeWorkspace
+        // `workspace_switch_ms = 0`: a slide that takes no time is no slide.
+        let workspaceMode = Motion.settings.workspaceSwitch == "slide" && Motion.workspaceDuration <= 0
+            ? "none" : Motion.settings.workspaceSwitch
+        let switchMode = workspaceSwitch ? workspaceMode : Motion.settings.tabSwitch
 
         // Where everything appears right now (mid-motion: the presentation).
         let before = animate && sameTab ? Perf.measure("tiles.visual") { visualFrames() } : [:]
@@ -137,7 +152,18 @@ final class TileContainerView: NSView, ThemeAware {
         // doesn't cut their fade short); the motion that ends last drops them.
         let fadingOut = Set(leaving.filter { !$0.closed }.compactMap { ($0.view as? any TileView)?.tileID })
 
-        if switching, animate { addTabTransition(to: window) }
+        // A workspace slide in flight ends with anything but another
+        // workspace slide (which carries on from where it shows).
+        let sliding = animate && workspaceSwitch && switchMode == "slide"
+        if !sliding, switching || !animate { endSlide(switching ? "a switch without a slide" : "motion off") }
+        if sliding {
+            let forward = Self.slidesForward(from: shownWorkspace, rank: shownRank, to: newRank, order: order)
+            beginSlide(forward: forward)
+        } else if switching, animate {
+            addTabTransition(to: window, mode: switchMode)
+        }
+        shownWorkspace = window.activeWorkspace
+        shownRank = newRank
 
         let all = window.workspaces.flatMap { $0.tabs }.flatMap { $0.tiles }
         let alive = Set(all.map(\.id))
@@ -147,6 +173,10 @@ final class TileContainerView: NSView, ThemeAware {
                 // A closing terminal keeps a snapshot of its last frame to fade.
                 (view as? MotionAware)?.motionWillStart(freeze: true, fill: Motion.style == .scale)
                 closing.append((view, from))
+            } else if sliding, view.superview is SlideSheet {
+                // Its workspace closed and slides away: it goes with the
+                // sheet, behind a snapshot of its last frame.
+                (view as? MotionAware)?.motionWillStart(freeze: true, fill: false)
             } else {
                 view.removeFromSuperview()
             }
@@ -244,6 +274,7 @@ final class TileContainerView: NSView, ThemeAware {
     /// the tiles jump.
     func setChromeFrame(_ new: NSRect, animated: Bool) {
         let old = frame
+        if old.size != new.size { endSlide("the tile area resized") }
         guard animated, Motion.active, window != nil, tab != nil, !Self.close(old, new),
               old.width > 1, old.height > 1, new.width > 1, new.height > 1
         else {
@@ -282,7 +313,7 @@ final class TileContainerView: NSView, ThemeAware {
     func tileView(_ id: String) -> NSView? { views[id] }
 
     /// Tiles are moving (a layout motion, not a drag).
-    var isMoving: Bool { CACurrentMediaTime() < motionEnds }
+    var isMoving: Bool { CACurrentMediaTime() < max(motionEnds, switchEnds) }
 
     /// Visible tiles whose content resizes live (running terminals).
     var liveTileViews: [(String, NSView)] {
@@ -960,12 +991,13 @@ final class TileContainerView: NSView, ThemeAware {
         leaving = []
     }
 
-    /// Cross-fade or slide between tabs and workspaces. Added before the
-    /// subviews change, in the same transaction.
-    private func addTabTransition(to window: WindowModel) {
+    /// Cross-fade or slide between tabs (and workspaces, with
+    /// `workspace_switch = "fade"`). Added before the subviews change, in the
+    /// same transaction. `mode`: "fade", "slide" or "none".
+    private func addTabTransition(to window: WindowModel, mode: String) {
         cancelMotion()
         let transition = CATransition()
-        switch Motion.settings.tabSwitch {
+        switch mode {
         case "none": return
         case "slide":
             let to = Self.position(of: window)
@@ -978,10 +1010,276 @@ final class TileContainerView: NSView, ThemeAware {
         Motion.configure(transition, duration: Motion.tabDuration)
         layer?.add(transition, forKey: "azj.tab")
         MotionStats.shared.started(kind: "tab_switch", setup: 0)
-        motionEnds = CACurrentMediaTime() + Motion.tabDuration
-        MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, motionEnds)
+        // Not `motionEnds`: the layout pass after this cancels layout
+        // motion, and the fade's frames still count (`switchEnds`).
+        switchEnds = CACurrentMediaTime() + Motion.tabDuration
+        MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, switchEnds)
         Perf.motionStarted = CACurrentMediaTime()
         wake()
+    }
+
+    // MARK: Workspace slide (experimental)
+
+    /// A workspace switch slides the whole tile area vertically, like a
+    /// vertical Spaces switch (`[animation] workspace_switch = "slide"`):
+    /// going down the sidebar the old workspace leaves at the top while the
+    /// new one comes in from the bottom; going up, the other way round.
+    ///
+    /// Nothing re-lays out or resizes. The old workspace's tile views move,
+    /// as they are, into a `SlideSheet` one `slideStep` above or below (the
+    /// tile area's height plus a gutter, so the seam between the two reads
+    /// as any other gap between tiles; the window colour shows through it);
+    /// the new one's tiles take their final frames in this view at once (so
+    /// focus and typing land there straight away); then one additive
+    /// animation of this layer's `sublayerTransform` carries every sublayer
+    /// (tiles, sheets) from the offset to rest, as one sheet. This layer
+    /// clips while it runs; its background (the window colour) stays put.
+    /// The animation ends at zero and goes, so nothing is left offset.
+    ///
+    /// A switch mid-slide carries on from where everything shows: the
+    /// tiles on screen become the next outgoing sheet, the new workspace
+    /// starts a gutter from them, and sheets it would overlap go (one
+    /// coming back is simply the new workspace, turned round where it was).
+    /// Every offset is a whole number of steps, so the gutter holds between
+    /// every pair of neighbours however many switches pile up.
+    private final class SlideSheet: NSView {
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override var isFlipped: Bool { false }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        /// Where its tiles show, above (+) or below the tile area, in layer
+        /// coordinates. A sublayer transform, not the frame: the sheet itself
+        /// stays over the tile area, so AppKit still draws what's in it (a
+        /// view outside its window's visible area doesn't redraw, and a
+        /// moved text field would show empty).
+        var offset: CGFloat = 0 {
+            didSet { layer?.sublayerTransform = CATransform3DMakeTranslation(0, offset, 0) }
+        }
+    }
+
+    private static let slideKey = "azj.workspace-slide"
+    /// Workspaces sliding away, each at its offset (frame) from the tile area.
+    private var sheets: [SlideSheet] = []
+    /// The slide in flight: the sublayer offset it started from (layer
+    /// coordinates, up is positive), when, how long.
+    private var slideFrom: CGFloat = 0
+    private var slideStart: CFTimeInterval = 0
+    private var slideDuration: CFTimeInterval = 0
+    /// When the workspace slide or tab transition in flight ends: frame
+    /// pacing counts until then. Apart from `motionEnds`, which the layout
+    /// pass of a switch resets.
+    private var switchEnds: CFTimeInterval = 0
+    private var slideGeneration = 0
+    /// Automation: slides started and turned round, the last one's way.
+    private(set) var slideCount = 0
+    private(set) var slideRetargets = 0
+    private(set) var lastSlide = "-"
+    private(set) var lastSlideMs = 0
+
+    private var slideRunning: Bool { slideDuration > 0 }
+
+    /// How far apart neighbouring workspaces sit while they slide: one tile
+    /// area plus one gutter.
+    private var slideStep: CGFloat { bounds.height + Self.gap }
+
+    /// Whether the new workspace comes from below (further down the
+    /// sidebar's order). The old one's place in `order` if it's still there,
+    /// else (closed) its place before: landing on the one that took that
+    /// place, or a later one, goes down.
+    private static func slidesForward(from old: String?, rank: Int?, to newRank: Int?, order: [String]) -> Bool {
+        guard let newRank else { return true }
+        if let old, let now = order.firstIndex(of: old) { return newRank > now }
+        guard let rank else { return true }
+        return newRank >= rank
+    }
+
+    /// The sublayer offset at `time` (0 at rest): where the tiles on screen
+    /// appear, relative to their frames.
+    private func slideOffset(at time: CFTimeInterval) -> CGFloat {
+        guard slideRunning else { return 0 }
+        let t = (time - slideStart) / slideDuration
+        return slideFrom * CGFloat(1 - Motion.progress(t, curve: Motion.slideTiming))
+    }
+
+    /// Starts a slide (or turns one round) before the subviews change: the
+    /// tiles on screen go into a sheet, offset so they show where they are.
+    private func beginSlide(forward: Bool) {
+        guard let layer, bounds.height > 1 else { return }
+        let now = CACurrentMediaTime()
+        let height = bounds.height, step = slideStep
+        let retarget = slideRunning
+        // Where the tiles on screen show now, and where the new workspace
+        // starts: a gutter below them (forward) or a gutter above.
+        let current = slideOffset(at: now)
+        let start = forward ? current - step : current + step
+        // Layout motion of the old workspace stops where it's going.
+        cancelMotion()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        // Earlier sheets keep showing where they are under the new offset
+        // (each moves by one step, so they stay whole steps apart). One the
+        // new workspace would cover goes now; so does one that won't show
+        // again on the way from `start` to rest.
+        let shift = current - start
+        for sheet in sheets {
+            sheet.offset += shift
+        }
+        let (gone, kept) = sheets.reduce(into: ([SlideSheet](), [SlideSheet]())) { acc, sheet in
+            let covered = abs(sheet.offset) < step - 0.5
+            let from = start + sheet.offset, to = sheet.offset
+            let shows = max(from, to) > -height && min(from, to) < height
+            if covered || !shows { acc.0.append(sheet) } else { acc.1.append(sheet) }
+        }
+        for sheet in gone { dropSheet(sheet) }
+        sheets = kept
+        let sheet = SlideSheet(frame: bounds)
+        sheet.offset = shift
+        addSubview(sheet, positioned: .below, relativeTo: nil)
+        for view in subviews where view is any TileView {
+            let frame = view.frame
+            sheet.addSubview(view)
+            view.frame = frame
+        }
+        sheets.append(sheet)
+
+        layer.masksToBounds = true
+        layer.removeAnimation(forKey: Self.slideKey)
+        let duration = Motion.workspaceDuration
+        let animation = CABasicAnimation(keyPath: "sublayerTransform.translation.y")
+        animation.fromValue = start
+        animation.toValue = 0
+        animation.isAdditive = true
+        Motion.configure(animation, duration: duration)
+        animation.timingFunction = Motion.slideTiming
+        animation.beginTime = layer.convertTime(now, from: nil)
+        animation.fillMode = .backwards
+        layer.add(animation, forKey: Self.slideKey)
+        CATransaction.commit()
+
+        slideFrom = start
+        slideStart = now
+        slideDuration = duration
+        slideGeneration += 1
+        slideCount += 1
+        if retarget {
+            slideRetargets += 1
+            MotionStats.shared.retargeted()
+        }
+        lastSlide = forward ? "up" : "down"
+        lastSlideMs = Int((duration * 1000).rounded())
+        MotionStats.shared.started(kind: "workspace_slide", setup: 0)
+        switchEnds = now + duration
+        MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, now + duration)
+        Perf.motionStarted = now
+        let gen = slideGeneration
+        let ends = now + duration
+        clock.add { [weak self] now in
+            guard let self, gen == self.slideGeneration else { return false }
+            guard now >= ends else { return true }
+            self.endSlide(nil)
+            return false
+        }
+        // No display-link ticks (display asleep, screen locked): a timer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
+            guard let self, gen == self.slideGeneration else { return }
+            self.endSlide(nil)
+        }
+        wake()
+    }
+
+    /// Ends the slide now: the new workspace at rest, the old ones gone.
+    /// `cut`: why it ends before its time (logged), nil when it's over.
+    private func endSlide(_ cut: String?) {
+        guard slideRunning || !sheets.isEmpty else { return }
+        if let cut, CACurrentMediaTime() < switchEnds { Motion.log("workspace slide cut short: \(cut)") }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.removeAnimation(forKey: Self.slideKey)
+        layer?.masksToBounds = false
+        for sheet in sheets { dropSheet(sheet) }
+        CATransaction.commit()
+        sheets = []
+        slideFrom = 0
+        slideDuration = 0
+        switchEnds = min(switchEnds, CACurrentMediaTime())
+        slideGeneration += 1
+    }
+
+    /// A sheet goes, with the tiles still in it: off screen, like any tile
+    /// of a workspace not shown (closed ones for good, as a close's fade).
+    private func dropSheet(_ sheet: SlideSheet) {
+        for view in sheet.subviews { view.removeFromSuperview() }
+        sheet.removeFromSuperview()
+    }
+
+    /// Automation: the slide right now. `slide`: "still" at rest with
+    /// nothing left behind (no sheet, no offset, no clip, every tile on
+    /// screen at its frame in this view), else "dirty: …"; mid-slide "up" or
+    /// "down" (the way the content moves). `slide.in`: where the new
+    /// workspace shows ("below", "above", "rest"); `slide.out`: where each
+    /// outgoing sheet shows, oldest first; `.dy` the same in points (down is
+    /// positive). `slide.gap`: space between neighbouring workspaces (the
+    /// new one and every sheet, in order), one gutter (`gap`) when the
+    /// stack is right; differing gaps list each. `slide.ms`: how long the last
+    /// slide was set to take. `slide.ca`: whether Core
+    /// Animation's presentation shows the new workspace where the curve
+    /// says ("ok", else the difference).
+    var slideState: [String: String] {
+        let now = CACurrentMediaTime()
+        func word(_ dy: CGFloat) -> String { dy > 0.5 ? "below" : dy < -0.5 ? "above" : "rest" }
+        let offset = slideOffset(at: now)
+        let dy = -offset
+        let outs = sheets.map { -($0.offset + offset) }
+        let shown = -(layer?.presentation()?.sublayerTransform.m42 ?? 0)
+        var s: [String: String] = [
+            "slide.mode": Motion.settings.workspaceSwitch,
+            "slide.count": "\(slideCount)",
+            "slide.retargets": "\(slideRetargets)",
+            "slide.last": lastSlide,
+            "slide.ms": "\(lastSlideMs)",
+            "slide.config.ms": "\(Motion.settings.workspaceSwitchMs)",
+            "slide.in": word(dy),
+            "slide.dy": "\(Int(dy.rounded()))",
+            "slide.out": outs.isEmpty ? "-" : outs.map(word).joined(separator: ","),
+            "slide.out.dy": outs.isEmpty ? "-" : outs.map { "\(Int($0.rounded()))" }.joined(separator: ","),
+            "slide.gap": slideGaps(dy: dy, outs: outs),
+            "slide.ca": abs(shown - dy) <= 2 ? "ok" : "off by \(Int((shown - dy).rounded()))",
+        ]
+        if slideRunning {
+            s["slide"] = lastSlide
+        } else {
+            var dirty: [String] = []
+            if !sheets.isEmpty { dirty.append("\(sheets.count) sheet(s)") }
+            if layer?.animation(forKey: Self.slideKey) != nil { dirty.append("animation") }
+            if abs(shown) > 0.01 || layer?.sublayerTransform.m42 != 0 { dirty.append("offset \(shown)") }
+            if layer?.masksToBounds == true { dirty.append("clip") }
+            let frames = tileFrames()
+            for id in visibleTiles {
+                guard let view = views[id] else { continue }
+                if view.superview !== self { dirty.append("\(id.suffix(4)) not shown") }
+                if let want = frames[id], !Self.close(visual(view), want) {
+                    dirty.append("\(id.suffix(4)) at \(visual(view)) not \(want)")
+                }
+            }
+            s["slide"] = dirty.isEmpty ? "still" : "dirty: " + dirty.joined(separator: "; ")
+        }
+        return s
+    }
+
+    /// `slide.gap`: the space between each pair of neighbours in the stack
+    /// (the new workspace at `dy`, the sheets at `outs`), "-" with no sheet.
+    private func slideGaps(dy: CGFloat, outs: [CGFloat]) -> String {
+        guard !outs.isEmpty else { return "-" }
+        let stack = ([dy] + outs).sorted()
+        let gaps = zip(stack, stack.dropFirst()).map { Int(($1 - $0 - bounds.height).rounded()) }
+        return Set(gaps).count == 1 ? "\(gaps[0])" : gaps.map(String.init).joined(separator: ",")
     }
 
     /// The focus indicator: every unfocused tile on screen dims
@@ -1017,7 +1315,7 @@ final class TileContainerView: NSView, ThemeAware {
     /// or motion snapshot) and whether it's current, for captures that would
     /// otherwise pass off an old frame as the app's state.
     func captureFreshness() -> (tiles: [[String: Any]], ticks: Int) {
-        let moving = CACurrentMediaTime() < motionEnds
+        let moving = CACurrentMediaTime() < max(motionEnds, switchEnds)
         let shown = Set(visibleTiles)
         let tiles = views.filter { shown.contains($0.key) }.sorted { $0.key < $1.key }.compactMap { _, view in
             ((view as? TileFrame)?.content as? TerminalTileView)?.captureFreshness(moving: moving)
@@ -1109,7 +1407,7 @@ final class TileContainerView: NSView, ThemeAware {
     @objc private func tick(_ link: CADisplayLink) {
         linkTicks += 1
         let now = CACurrentMediaTime()
-        if now <= motionEnds + 0.02 || dividerDrag != nil {
+        if now <= max(motionEnds, switchEnds) + 0.02 || dividerDrag != nil {
             MotionStats.shared.tick(link.timestamp, now: now)
         } else {
             MotionStats.shared.idle()
@@ -1118,7 +1416,7 @@ final class TileContainerView: NSView, ThemeAware {
         // Where the reflowing tiles are when this frame shows.
         if !reflowing.isEmpty { Perf.measure("motion.reflow") { driveReflow(at: link.targetTimestamp) } }
         Perf.measure("clock.tick") { clock.tick(now) }
-        if clock.isEmpty, reflowing.isEmpty, dividerDrag == nil, now > motionEnds + 0.05 {
+        if clock.isEmpty, reflowing.isEmpty, dividerDrag == nil, now > max(motionEnds, switchEnds) + 0.05 {
             link.isPaused = true
             MotionStats.shared.idle()
         }
@@ -1191,6 +1489,8 @@ final class TileContainerView: NSView, ThemeAware {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if let hit, leaving.contains(where: { hit === $0.view || hit.isDescendant(of: $0.view) }) { return self }
+        // A workspace sliding away takes no clicks.
+        if let hit, sheets.contains(where: { hit === $0 || hit.isDescendant(of: $0) }) { return self }
         // A divider takes the gutter, and a card's empty margin beside it.
         if let superview, divider(at: convert(point, from: superview), under: hit) != nil { return self }
         return hit

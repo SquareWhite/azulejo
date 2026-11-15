@@ -533,7 +533,8 @@ pub unsafe extern "C" fn azj_core_keymap(core: *const AzjCore) -> *mut c_char {
 }
 
 /// The current `[animation]` settings, as JSON: `{"enabled":true,
-/// "duration_ms":200,"curve":"ease_out","tab_switch":"fade",
+/// "duration_ms":200,"curve":"ease_out","tab_switch":"fade","workspace_switch":"slide",
+/// "workspace_switch_ms":260,
 /// "reduce_motion":"system","unfocused_split_opacity":null,
 /// "unfocused_split_fill":null}`. The last two are Ghostty's settings for
 /// dimming unfocused splits (`0.15`–`1`, `"#rrggbb"`), `null` when its config
@@ -559,6 +560,8 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
         "curve": a.curve.name(),
         "style": a.style.name(),
         "tab_switch": a.tab_switch.name(),
+        "workspace_switch": a.workspace_switch.name(),
+        "workspace_switch_ms": a.workspace_switch_ms,
         "reduce_motion": a.reduce_motion.name(),
         "unfocused_split_opacity": ghostty.unfocused_split_opacity,
         "unfocused_split_fill": fill,
@@ -984,6 +987,8 @@ mod tests {
             assert_eq!(animation["curve"], "ease_out");
             assert_eq!(animation["style"], "reflow");
             assert_eq!(animation["tab_switch"], "fade");
+            assert_eq!(animation["workspace_switch"], "slide");
+            assert_eq!(animation["workspace_switch_ms"], 260);
             assert_eq!(animation["reduce_motion"], "system");
             assert_eq!(animation["unfocused_split_opacity"], Value::Null);
             assert_eq!(animation["unfocused_split_fill"], Value::Null);

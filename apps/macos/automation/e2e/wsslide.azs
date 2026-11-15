@@ -1,0 +1,316 @@
+# Workspace switches slide vertically (wsslide.sh; experimental,
+# `[animation] workspace_switch`). Keys go through the real router; motion is
+# slowed (a 1.3 s slide) so the checks and captures land mid-slide. Going
+# down the sidebar the old workspace leaves at the top and the new one comes
+# in from below; going up, the reverse. Focus lands in the new workspace at
+# once, a switch mid-slide turns it round from where it shows, and nothing
+# is left offset once it settles. Mid-slide the workspaces sit one gutter
+# (8 pt, `slide.gap`) apart, like any two tiles. Each workspace's folder is a fixture
+# (@FX@, filled in by wsslide.sh), so captures show no real files.
+
+log wsslide
+seen-visible off
+window-size 1100 640
+until terminal.phase attached 10000
+expect slide.mode slide
+expect slide still
+core {"method":"workspace.rename","params":{"name":"one"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/one"}}
+
+# ---- Creating workspaces: each new one comes in from below.
+action new_workspace
+until workspaces 2 5000
+expect slide.last up
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"two"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/two"}}
+action new_workspace
+until workspaces 3 5000
+expect slide.last up
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"three"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/three"}}
+action new_workspace
+until workspaces 4 5000
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"four"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/four"}}
+action new_workspace
+until workspaces 5 5000
+until terminal.phase attached 10000
+core {"method":"workspace.rename","params":{"name":"five"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/five"}}
+expect slide.count 4
+expect slide.last up
+until slide still 3000
+# Something to look at in each: a different line in each terminal.
+key cmd+1
+until workspace 1 2000
+until slide still 3000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@ && clear; printf 'workspace ONE\\n%.0s' 1 2 3 4 5 6\n"}}
+key cmd+2
+until workspace 2 2000
+until slide still 3000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@ && clear; printf 'workspace TWO\\n%.0s' 1 2 3 4 5 6\n"}}
+core {"method":"layout.set","params":{"kind":"tile"}}
+key ctrl+cmd+t
+until tiles 2 5000
+key cmd+3
+until workspace 3 2000
+until slide still 3000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@ && clear; printf 'workspace THREE\\n%.0s' 1 2 3 4 5 6\n"}}
+key cmd+4
+until workspace 4 2000
+until slide still 3000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@ && clear; printf 'workspace FOUR\\n%.0s' 1 2 3 4 5 6\n"}}
+key cmd+5
+until workspace 5 2000
+until slide still 3000
+core {"method":"terminal.send_text","params":{"text":"cd @FX@ && clear; printf 'workspace FIVE\\n%.0s' 1 2 3 4 5 6\n"}}
+key cmd+1
+until workspace 1 2000
+until slide still 3000
+wait 600
+
+# ---- 1 → 5, slowed: one goes up and out, five comes in from below.
+anim duration 1000
+anim reset
+remember slide.count
+key cmd+5
+until workspace 5 2000
+# Focus is in five already: the keyboard goes there mid-slide.
+expect responder terminal
+expect responder.focused yes
+expect slide up
+expect slide.in below
+expect slide.out above
+expect slide.gap 8
+expect slide.ca ok
+capture 01-down-a-mid 0
+remember slide.dy
+type echo slidemark
+key enter
+wait 250
+expect slide up
+expect slide.in below
+expect slide.out above
+expect slide.gap 8
+capture 01-down-b-mid 0
+wait 1300
+expect slide still
+expect slide.in rest
+expect slide.out -
+expect workspace 5
+expect workspace.active five
+sh {herdr} --session {session} pane read {pane} --source recent | grep -q slidemark
+capture 01-down-c-end 0
+
+# ---- 5 → 2: five goes down and out, two comes in from above.
+key cmd+2
+until workspace 2 2000
+expect slide down
+expect slide.in above
+expect slide.out below
+expect responder.focused yes
+expect slide.gap 8
+capture 02-up-a-mid 0
+remember slide.dy
+wait 250
+expect slide.in above
+expect slide.out below
+expect slide.gap 8
+expect slide.ca ok
+capture 02-up-b-mid 0
+wait 1300
+expect slide still
+expect workspace.active two
+expect tiles 2
+capture 02-up-c-end 0
+
+expect slide.retargets 0
+
+# ---- Turned round: 2 → 5, then back to 2 a third of the way in. Two
+# comes back from where it shows (above), the same sheet turned round.
+key cmd+5
+until workspace 5 2000
+wait 300
+expect slide.in below
+key cmd+2
+until workspace 2 2000
+expect slide down
+expect slide.in above
+expect slide.gap 8
+expect slide.ca ok
+capture 03-turn-a-mid 100
+wait 1500
+expect slide still
+expect workspace.active two
+
+# ---- Rapid: ⌘1, ⌘5, ⌘2 60 ms apart; each retargets the last.
+key cmd+1
+wait 60
+key cmd+5
+wait 60
+key cmd+2
+until workspace 2 2000
+expect responder.focused yes
+expect slide.gap 8
+expect slide.ca ok
+capture 04-rapid-a-mid 50
+wait 1500
+expect slide still
+expect workspace.active two
+expect slide.retargets 3
+# Three down in a row, 60 ms apart: every sheet still on screen stays a
+# gutter from its neighbours (none jumps out).
+key cmd+3
+wait 60
+key cmd+4
+wait 60
+key cmd+5
+until workspace 5 2000
+expect slide up
+expect slide.gap 8
+expect slide.ca ok
+remember slide.out.dy
+capture 04-rapid-b-mid 50
+wait 1500
+expect slide still
+expect workspace.active five
+key cmd+2
+until workspace 2 2000
+until slide still 3000
+# At default speed too, faster than a slide.
+anim duration default
+key cmd+4
+wait 40
+key cmd+1
+wait 40
+key cmd+3
+wait 40
+key cmd+5
+until workspace 5 2000
+expect responder.focused yes
+wait 500
+expect slide still
+expect workspace.active five
+
+# ---- Next / previous / last workspace go the same way.
+anim duration 1000
+key cmd+1
+until workspace 1 2000
+until slide still 3000
+action next_workspace
+until workspace 2 2000
+expect slide up
+until slide still 3000
+action previous_workspace
+until workspace 1 2000
+expect slide down
+until slide still 3000
+key cmd+9
+until workspace 5 2000
+expect slide up
+until slide still 3000
+
+# ---- Closing a workspace lands on a neighbour and slides there.
+key cmd+3
+until workspace 3 2000
+until slide still 3000
+remember slide.count
+key alt+cmd+w
+until workspaces 4 4000
+expect slide.gap 8
+capture 05-close-a-mid 200
+wait 1500
+expect slide still
+log closed three: landed on the workspace below its place (slide up) or above (down)
+
+# ---- A new workspace comes in from below.
+key cmd+1
+until workspace 1 2000
+until slide still 3000
+key cmd+t
+until workspaces 5 5000
+expect slide up
+expect slide.in below
+capture 06-new-a-mid 200
+wait 1500
+expect slide still
+until terminal.phase attached 10000
+
+# ---- Tab switches stay a fade; no slide.
+remember slide.count
+key cmd+shift+t
+until tabs 2 4000
+wait 600
+key ctrl+1
+wait 600
+unchanged slide.count
+expect slide still
+
+# ---- Motion off: instant.
+anim enabled false
+remember slide.count
+key cmd+2
+until workspace 2 2000
+expect slide still
+unchanged slide.count
+anim enabled default
+
+# ---- Reduce Motion (stood in for; the system setting is the user's): instant.
+anim reduce-motion true
+key cmd+3
+until workspace 3 2000
+expect slide still
+unchanged slide.count
+anim reduce-motion default
+
+# ---- workspace_switch_ms: the slide's own length, live on reload. 120 ms
+# is over 300 ms in; 800 ms is still moving 550 ms in; 0 is instant.
+anim duration default
+sh printf '\n[animation]\nworkspace_switch_ms = 120\n' >> {config}
+until slide.config.ms 120 8000
+key cmd+2
+until workspace 2 2000
+expect slide.ms 120
+wait 300
+expect slide still
+sh sed -i '' 's/workspace_switch_ms = 120/workspace_switch_ms = 800/' {config}
+until slide.config.ms 800 8000
+key cmd+3
+until workspace 3 2000
+expect slide.ms 800
+expect slide up
+wait 400
+expect slide up
+expect slide.in below
+wait 600
+expect slide still
+sh sed -i '' 's/workspace_switch_ms = 800/workspace_switch_ms = 0/' {config}
+until slide.config.ms 0 8000
+remember slide.count
+key cmd+1
+until workspace 1 2000
+expect slide still
+unchanged slide.count
+sh sed -i '' 's/workspace_switch_ms = 0/workspace_switch_ms = 260/' {config}
+until slide.config.ms 260 8000
+
+# ---- workspace_switch = "none": instant; "fade": the old cross-fade.
+sh printf 'workspace_switch = "none"\n' >> {config}
+until slide.mode none 8000
+key cmd+1
+until workspace 1 2000
+expect slide still
+unchanged slide.count
+sh sed -i '' 's/workspace_switch = "none"/workspace_switch = "fade"/' {config}
+until slide.mode fade 8000
+anim reset
+key cmd+4
+until workspace 4 2000
+expect slide still
+unchanged slide.count
+wait 1500
+anim stats fade-stats
+quit

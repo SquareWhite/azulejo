@@ -432,6 +432,9 @@ final class Automation {
             Motion.enabledOverride = value == "default" ? nil : value == "true"
         case "style":
             Motion.styleOverride = value == "default" ? nil : value
+        case "reduce-motion":
+            // Stands in for macOS Reduce Motion; the user's setting stays.
+            Motion.reduceMotionOverride = value == "default" ? nil : value == "true"
         case "reflow-ms":
             if let ms = Double(value), ms >= 0 { Motion.reflowInterval = ms / 1000 }
         case "reflow-lead":
@@ -454,7 +457,7 @@ final class Automation {
             if dropped > allowed { failures.append("line \(step): \(dropped) dropped frame(s), allowed \(allowed)") }
             if !mismatches.isEmpty { failures.append("line \(step): \(mismatches.joined(separator: ", "))") }
         default:
-            failures.append("line \(step): anim needs duration|enabled|style|reflow-ms|reflow-lead|reset|stats|expect-clean")
+            failures.append("line \(step): anim needs duration|enabled|style|reduce-motion|reflow-ms|reflow-lead|reset|stats|expect-clean")
         }
         record("anim \(arg)")
     }
@@ -694,6 +697,10 @@ final class Automation {
                 }
                 s["order"] = tab.order.map { tileName($0, in: tab) }.joined(separator: ",")
                 return s
+            },
+            Source(["slide", "slide.mode", "slide.ms", "slide.config.ms", "slide.count", "slide.retargets", "slide.last", "slide.in", "slide.dy",
+                    "slide.out", "slide.out.dy", "slide.gap", "slide.ca"]) {
+                controller.tiles.slideState
             },
             Source(["visible", "dimmed", "dim.strength", "resizes"]) {
                 guard tab != nil else { return [:] }

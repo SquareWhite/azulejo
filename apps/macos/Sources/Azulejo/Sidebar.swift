@@ -187,7 +187,8 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     }
 
     /// The window's workspaces as the sidebar and the rail show them, top
-    /// to bottom: what ⌘1…⌘8, ⌘9 and next/previous workspace step through.
+    /// to bottom: what ⌘1…⌘8, ⌘9 and next/previous workspace step through,
+    /// and which way a workspace slide goes (further down is "below").
     static func ordered(_ window: WindowModel, machines: [MachineModel]) -> [WorkspaceModel] {
         groups(window, machines: machines).flatMap { $0.workspaces.map(\.workspace) }
     }

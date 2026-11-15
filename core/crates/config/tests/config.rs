@@ -1242,8 +1242,9 @@ fn animation_settings() {
 
 #[test]
 fn animation_style_settings() {
-    use azulejo_config::{Curve, ReduceMotion, Style, TabSwitch};
+    use azulejo_config::{Curve, ReduceMotion, Style, TabSwitch, WorkspaceSwitch};
     let defaults = user("", MAC);
+    assert_eq!(defaults.animation.workspace_switch, WorkspaceSwitch::Slide);
     assert_eq!(defaults.animation.curve, Curve::EaseOut);
     assert_eq!(defaults.animation.style, Style::Reflow);
     assert_eq!(defaults.animation.tab_switch, TabSwitch::Fade);
@@ -1274,6 +1275,43 @@ fn animation_style_settings() {
     assert_eq!(bad.animation.style, Style::Reflow);
     assert_eq!(bad.animation.tab_switch, TabSwitch::Fade);
     assert!(errors(&bad)[0].contains("\"ease_out\""));
+
+    // Workspace switches have their own setting (experimental: a vertical
+    // slide by default); tab_switch no longer covers them.
+    for (text, want) in [
+        ("none", WorkspaceSwitch::None),
+        ("fade", WorkspaceSwitch::Fade),
+        ("slide", WorkspaceSwitch::Slide),
+    ] {
+        let c = user(
+            &format!("[animation]\nworkspace_switch = \"{text}\"\n"),
+            MAC,
+        );
+        assert!(c.diagnostics.is_empty(), "{:?}", c.diagnostics);
+        assert_eq!(c.animation.workspace_switch, want);
+    }
+    // Its length is its own (260 ms by default, whatever duration_ms says),
+    // clamped to 0..=1000 with a warning; 0 is instant.
+    assert_eq!(defaults.animation.workspace_switch_ms, 260);
+    let slow = user(
+        "[animation]\nduration_ms = 500\nworkspace_switch_ms = 400\n",
+        MAC,
+    );
+    assert!(slow.diagnostics.is_empty(), "{:?}", slow.diagnostics);
+    assert_eq!(slow.animation.workspace_switch_ms, 400);
+    let off = user("[animation]\nworkspace_switch_ms = 0\n", MAC);
+    assert_eq!(off.animation.workspace_switch_ms, 0);
+    let long = user("[animation]\nworkspace_switch_ms = 5000\n", MAC);
+    assert_eq!(long.animation.workspace_switch_ms, 1000);
+    assert_eq!(long.diagnostics.len(), 1);
+    let negative = user("[animation]\nworkspace_switch_ms = -5\n", MAC);
+    assert_eq!(negative.animation.workspace_switch_ms, 0);
+    let words = user("[animation]\nworkspace_switch_ms = \"fast\"\n", MAC);
+    assert_eq!(errors(&words).len(), 1);
+    assert_eq!(words.animation.workspace_switch_ms, 260);
+    let bad_ws = user("[animation]\nworkspace_switch = \"spin\"\n", MAC);
+    assert_eq!(errors(&bad_ws).len(), 1);
+    assert_eq!(bad_ws.animation.workspace_switch, WorkspaceSwitch::Slide);
 
     // `dim_inactive` is retired: dimming unfocused tiles is the focus
     // indicator now. The key only warns, whatever its value.

@@ -37,6 +37,10 @@ enum Motion {
         var curve = "ease_out"
         var style = "reflow"
         var tabSwitch = "fade"
+        /// "slide" (vertical, sidebar order), "fade" or "none" (experimental).
+        var workspaceSwitch = "slide"
+        /// How long a workspace slide takes (`workspace_switch_ms`); 0: instant.
+        var workspaceSwitchMs = 260
         var reduceMotion = "system"
         /// Ghostty's `unfocused-split-opacity` and `-fill`, when its config
         /// sets them (the core reads them; nil otherwise).
@@ -49,6 +53,9 @@ enum Motion {
     static var durationOverride: CFTimeInterval?
     static var enabledOverride: Bool?
     static var styleOverride: String?
+    /// Automation: stands in for macOS Reduce Motion (the real setting is
+    /// the user's, never touched by tests).
+    static var reduceMotionOverride: Bool?
     /// The app log (motion ends, reveals).
     static var log: (String) -> Void = { _ in }
 
@@ -148,6 +155,8 @@ enum Motion {
         if let v = json["curve"] as? String { s.curve = v }
         if let v = json["style"] as? String { s.style = v }
         if let v = json["tab_switch"] as? String { s.tabSwitch = v }
+        if let v = json["workspace_switch"] as? String { s.workspaceSwitch = v }
+        if let v = json["workspace_switch_ms"] as? Int { s.workspaceSwitchMs = v }
         if let v = json["reduce_motion"] as? String { s.reduceMotion = v }
         if let v = json["unfocused_split_opacity"] as? Double { s.unfocusedOpacity = v }
         if let v = json["unfocused_split_fill"] as? String { s.unfocusedFill = color(hex: v) }
@@ -195,7 +204,8 @@ enum Motion {
     static var active: Bool {
         if let forced = enabledOverride { return forced && duration > 0 }
         guard settings.enabled, duration > 0 else { return false }
-        if settings.reduceMotion == "system", NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        if settings.reduceMotion == "system",
+           reduceMotionOverride ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             return false
         }
         return true
@@ -203,8 +213,22 @@ enum Motion {
 
     /// Layout motion (split, close, move, resize, zoom, the sidebar).
     static var duration: CFTimeInterval { durationOverride ?? Double(settings.durationMs) / 1000 }
-    /// Tab and workspace switches.
+    /// Tab switches (and workspace switches set to "fade").
     static var tabDuration: CFTimeInterval { duration * 0.75 }
+    /// A workspace slide: `workspace_switch_ms` (260 by default, its own
+    /// setting). Automation's slow motion stretches it with everything else
+    /// (1.3 × the override).
+    static var workspaceDuration: CFTimeInterval {
+        durationOverride.map { $0 * 1.3 } ?? Double(settings.workspaceSwitchMs) / 1000
+    }
+
+    /// A workspace slide's curve. The default ease-out covers 40 % of the
+    /// way in the first tenth of the time, which on a whole tile area reads
+    /// as a jump; a cubic ease-out slows down evenly (half the way in a
+    /// fifth of the time), calmer, like Spaces. Other curves as configured.
+    static var slideTiming: CAMediaTimingFunction {
+        settings.curve == "ease_out" ? CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1) : timing
+    }
     /// A focus switch between Monocle's stacked tiles: the next one
     /// dissolves in over the last, quicker than a move (nothing travels).
     static var stackDuration: CFTimeInterval { duration * 0.6 }

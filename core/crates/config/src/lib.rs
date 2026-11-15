@@ -26,7 +26,11 @@
 //! duration_ms = 200
 //! curve = "ease_out"     # or "ease_in_out", "linear"
 //! style = "reflow"       # moving tiles: "reflow" (content resizes live), "crop" (content at 1:1, revealed or cut off), "scale", "outline"
-//! tab_switch = "fade"    # tab/workspace switches: "fade", "slide" or "none"
+//! tab_switch = "fade"    # tab switches: "fade", "slide" (sideways) or "none"
+//! workspace_switch = "slide"  # workspace switches (experimental): "slide" (vertical, in
+//!                        # sidebar order), "fade" or "none"
+//! workspace_switch_ms = 260  # how long a workspace slide takes, 0 to 1000 (0: instant);
+//!                        # its own setting, not tied to duration_ms
 //! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
 //!
 //! [herdr]
@@ -101,11 +105,17 @@ pub struct Animation {
     pub curve: Curve,
     pub style: Style,
     pub tab_switch: TabSwitch,
+    pub workspace_switch: WorkspaceSwitch,
+    /// How long a workspace slide takes; 0 makes it instant.
+    pub workspace_switch_ms: u32,
     pub reduce_motion: ReduceMotion,
 }
 
 impl Animation {
     pub const MAX_DURATION_MS: u32 = 1000;
+    /// `workspace_switch_ms` by default: a little longer than a layout move,
+    /// since the whole tile area travels its own height.
+    pub const WORKSPACE_SWITCH_MS: u32 = 260;
 }
 
 impl Default for Animation {
@@ -116,6 +126,8 @@ impl Default for Animation {
             curve: Curve::EaseOut,
             style: Style::Reflow,
             tab_switch: TabSwitch::Fade,
+            workspace_switch: WorkspaceSwitch::Slide,
+            workspace_switch_ms: Animation::WORKSPACE_SWITCH_MS,
             reduce_motion: ReduceMotion::System,
         }
     }
@@ -143,11 +155,24 @@ pub enum Style {
     Outline,
 }
 
-/// How switching tab or workspace looks.
+/// How switching tab looks: a cross-fade, a sideways push (tab order) or
+/// nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabSwitch {
     Fade,
     Slide,
+    None,
+}
+
+/// How switching workspace looks (experimental). `Slide`: the tile area
+/// moves as one sheet, vertically, in sidebar order: going down the list the
+/// old workspace leaves at the top and the new one comes in from the bottom,
+/// like a vertical Spaces switch. `Fade` is the tab cross-fade (what
+/// workspace switches did before).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceSwitch {
+    Slide,
+    Fade,
     None,
 }
 
@@ -176,6 +201,7 @@ macro_rules! named {
 named!(Curve { EaseOut = "ease_out", EaseInOut = "ease_in_out", Linear = "linear" });
 named!(Style { Reflow = "reflow", Crop = "crop", Scale = "scale", Outline = "outline" });
 named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
+named!(WorkspaceSwitch { Slide = "slide", Fade = "fade", None = "none" });
 named!(ReduceMotion { System = "system", Ignore = "ignore" });
 
 /// Which herdr session terminal tiles live in (ADR 0008).
@@ -517,6 +543,28 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                     ),
                 }
             }
+            ("workspace_switch_ms", DeValue::Integer(i)) => {
+                // Clamped (with a warning) rather than dropped: a slide that's
+                // too long or negative still means "longer" or "none".
+                let max = i64::from(Animation::MAX_DURATION_MS);
+                match i64::from_str_radix(i.as_str(), i.radix()) {
+                    Ok(ms) if (0..=max).contains(&ms) => out.workspace_switch_ms = ms as u32,
+                    Ok(ms) => {
+                        let clamped = ms.clamp(0, max);
+                        out.workspace_switch_ms = clamped as u32;
+                        sink.warn(
+                            value.span(),
+                            format!(
+                                "`animation.workspace_switch_ms` must be 0 to {max}; using {clamped}"
+                            ),
+                        );
+                    }
+                    Err(_) => sink.error(
+                        value.span(),
+                        "`animation.workspace_switch_ms` must be a whole number",
+                    ),
+                }
+            }
             ("curve", _) => choice(
                 sink,
                 value,
@@ -541,6 +589,14 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
                 TabSwitch::from_name,
                 &mut out.tab_switch,
             ),
+            ("workspace_switch", _) => choice(
+                sink,
+                value,
+                "workspace_switch",
+                WorkspaceSwitch::NAMES,
+                WorkspaceSwitch::from_name,
+                &mut out.workspace_switch,
+            ),
             ("reduce_motion", _) => choice(
                 sink,
                 value,
@@ -553,6 +609,10 @@ fn parse_animation(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out:
             ("duration_ms", _) => sink.error(
                 value.span(),
                 "`animation.duration_ms` must be a whole number",
+            ),
+            ("workspace_switch_ms", _) => sink.error(
+                value.span(),
+                "`animation.workspace_switch_ms` must be a whole number",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `animation.{other}`")),
         }

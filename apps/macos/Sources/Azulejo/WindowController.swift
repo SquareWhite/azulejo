@@ -172,7 +172,9 @@ final class WindowController: NSObject, NSWindowDelegate {
         Perf.measure("apply.rail") { rail.apply(model, machines: app?.machines ?? []) }
         Perf.measure("apply.tabbar") { tabBar.apply(model.workspace) }
         layoutPicker.apply(model.workspace?.tab?.kind)
-        Perf.measure("apply.tiles") { tiles.apply(model) }
+        Perf.measure("apply.tiles") {
+            tiles.apply(model, order: SidebarView.ordered(model, machines: app?.machines ?? []).map(\.id))
+        }
         terminalHints.validate()
         Perf.measure("apply.attention") { attention.apply(model.workspace?.tab, frames: tiles.visibleTileFrames()) }
         let ws = model.workspace
