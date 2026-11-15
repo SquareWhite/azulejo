@@ -15,7 +15,7 @@ import QuartzCore
 /// Focus shows by dimming every unfocused tile (`applyDim`); there's no
 /// outline round the focused one.
 @MainActor
-final class TileContainerView: NSView {
+final class TileContainerView: NSView, ThemeAware {
     static let gap = Design.Space.gutter
     static let inset = Design.Space.tileInset
     private static let motionKey = "azj.motion"
@@ -51,8 +51,17 @@ final class TileContainerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = Design.Color.window.cgColor
         clock.onChange = { [weak self] in self?.wake() }
+        Theme.track(self)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.window.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        Theme.reapply(self)
     }
 
     @available(*, unavailable)
@@ -570,6 +579,7 @@ final class TileContainerView: NSView {
         ghost.frame = frame
         ghost.cornerRadius = Design.Radius.ghost
         ghost.borderWidth = Design.Border.hairline
+        // theme: made fresh for each outline motion, gone when it ends.
         ghost.borderColor = Design.Color.textMuted.cgColor
         ghost.backgroundColor = Design.Color.ghostFill.cgColor
         ghost.zPosition = 0.5

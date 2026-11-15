@@ -1,7 +1,8 @@
 //! Source code and plain text as HTML, highlighted with syntect.
 //!
 //! Highlighting uses CSS classes (`syn-*`), not inline colours, so one page
-//! follows the system's light or dark appearance without re-rendering.
+//! follows the theme (`html[data-azj-syntax]`, see `syntax.rs`) or, without
+//! one, the system's light or dark appearance, without re-rendering.
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -25,24 +26,34 @@ pub(crate) fn syntaxes() -> &'static SyntaxSet {
     SET.get_or_init(SyntaxSet::load_defaults_newlines)
 }
 
-/// The syntax colours for `syn-*` classes: light by default, dark under
+/// The syntax colours for `syn-*` classes. Each theme's syntax
+/// (`crate::syntax::NAMES`) applies under `html[data-azj-syntax="<name>"]`;
+/// a page without the attribute is light by default and dark under
 /// `prefers-color-scheme: dark`.
 pub fn syntax_css() -> &'static str {
     static CSS: OnceLock<String> = OnceLock::new();
     CSS.get_or_init(|| {
         let themes = ThemeSet::load_defaults();
-        let css = |name: &str| {
-            themes
-                .themes
-                .get(name)
+        let css = |theme: Option<&syntect::highlighting::Theme>| {
+            theme
                 .and_then(|theme| css_for_theme_with_class_style(theme, CLASS_STYLE).ok())
                 .unwrap_or_default()
         };
-        format!(
+        let unthemed = "html:not([data-azj-syntax])";
+        let mut out = format!(
             "/* syntax: {LIGHT_THEME} */\n{}\n@media (prefers-color-scheme: dark) {{\n/* syntax: {DARK_THEME} */\n{}\n}}\n",
-            css(LIGHT_THEME),
-            css(DARK_THEME)
-        )
+            crate::syntax::scoped(&css(themes.themes.get(LIGHT_THEME)), unthemed),
+            crate::syntax::scoped(&css(themes.themes.get(DARK_THEME)), unthemed),
+        );
+        for name in crate::syntax::NAMES {
+            let theme = crate::syntax::theme(name);
+            let scope = format!("html[data-azj-syntax=\"{name}\"]");
+            out.push_str(&format!(
+                "/* syntax: {name} */\n{}\n",
+                crate::syntax::scoped(&css(theme.as_ref()), &scope)
+            ));
+        }
+        out
     })
 }
 

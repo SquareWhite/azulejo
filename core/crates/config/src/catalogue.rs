@@ -309,6 +309,7 @@ pub(crate) fn title(action: Action) -> String {
         OpenConfig => "Open config file".into(),
         ReloadConfig => "Reload config".into(),
         ToggleSidebar => "Toggle sidebar".into(),
+        SetTheme => "Set theme…".into(),
         EditScrollback => "Edit scrollback".into(),
         EnterPrefix => "Prefix".into(),
         Quit => "Quit Azulejo".into(),
@@ -369,7 +370,7 @@ fn category(action: Action) -> &'static str {
         NewWindow | CloseWindow | Minimize => "window",
         Find | EditScrollback | SendHerdrPrefix | TakeOver => "terminal",
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
-        | EnterPrefix | Quit | Hide | HideOthers => "app",
+        | SetTheme | EnterPrefix | Quit | Hide | HideOthers => "app",
         PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
         | PalettePageUp | PaletteComplete => "palette",
         FindNext | FindPrevious | FindClose => "find",
@@ -547,6 +548,10 @@ mod tests {
         assert_eq!(get("quick_open").category, "app");
         assert!(get("command_palette").chords.is_empty());
         assert!(get("goto").chords.is_empty());
+        // Themes go through the catalogue, with no default chord.
+        assert!(get("set_theme").chords.is_empty());
+        assert_eq!(get("set_theme").title, "Set theme…");
+        assert_eq!(get("set_theme").method, None, "shell-only");
         for e in &list {
             assert!(!e.title.is_empty() && !e.category.is_empty(), "{e:?}");
         }

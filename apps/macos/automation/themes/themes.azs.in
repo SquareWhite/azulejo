@@ -1,0 +1,222 @@
+# themes.sh's part, run after mockup.azs has built and captured the scene
+# (AZJ_MOCKUP_TAIL). @HERE@ is apps/macos/automation/themes. Each switch
+# must leave every PTY its size and every terminal attached (resizes,
+# terminal.attaches unchanged); themes.sh then checks the captures' pixels.
+# The working ring holds still, so samples don't catch it mid-turn.
+
+log === themes: the scene in atom-one-dark (the default)
+anim enabled false
+wait 300
+expect theme atom-one-dark
+expect theme.choice atom-one-dark
+expect theme.window dark
+expect theme.terminals theme
+expect theme.sidebar flat
+capture t1-atom-one-dark 0
+wait 1200
+palette open
+palette type theme
+wait 400
+remember theme.regions
+capture t1-atom-one-dark-palette 0
+wait 1200
+palette close
+action find
+wait 500
+remember theme.regions
+capture t1-atom-one-dark-find 0
+wait 1200
+key escape
+until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t1-atom-one-dark-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
+
+log === config file → atom-one-light
+remember resizes
+remember terminal.attaches
+sh python3 @HERE@/set-appearance.py {config} theme=atom-one-light
+until theme atom-one-light 8000
+wait 1500
+unchanged resizes
+unchanged terminal.attaches
+expect theme.choice atom-one-light
+expect theme.window light
+expect banner none
+capture t2-atom-one-light 0
+wait 1200
+palette open
+palette type theme
+wait 400
+remember theme.regions
+capture t2-atom-one-light-palette 0
+wait 1200
+palette close
+action find
+wait 500
+remember theme.regions
+capture t2-atom-one-light-find 0
+wait 1200
+key escape
+until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t2-atom-one-light-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
+
+log === ⌘K "Set theme…": arrows preview, esc goes back
+remember resizes
+remember terminal.attaches
+palette open >
+palette type set theme
+wait 200
+expect palette.selected Set theme…
+palette key enter
+until palette list:themes 3000
+expect palette.selected Atom One Light
+palette key down
+until theme macos-dark 3000
+expect theme.window dark
+palette key escape
+until theme atom-one-light 3000
+expect palette closed
+expect theme.choice atom-one-light
+
+log === ⌘K "Set theme…" → macos-dark, saved
+palette open >
+palette type set theme
+wait 200
+palette key enter
+until palette list:themes 3000
+palette select theme:macos-dark
+until theme macos-dark 3000
+palette key enter
+until theme.choice macos-dark 5000
+expect theme macos-dark
+expect palette closed
+wait 1500
+unchanged resizes
+unchanged terminal.attaches
+sh grep -q '^theme = "macos-dark"' {config}
+expect theme.sidebar sidebar
+capture t3-macos-dark 0
+wait 1200
+palette open
+palette type theme
+wait 400
+remember theme.regions
+capture t3-macos-dark-palette 0
+wait 1200
+palette close
+action find
+wait 500
+remember theme.regions
+capture t3-macos-dark-find 0
+wait 1200
+key escape
+until tile.find closed 3000
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture t3-macos-dark-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
+
+log === config file → macos-light, with the sidebar collapsed to its rail
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+remember resizes
+remember terminal.attaches
+sh python3 @HERE@/set-appearance.py {config} theme=macos-light
+until theme macos-light 8000
+wait 1500
+unchanged resizes
+unchanged terminal.attaches
+expect theme.window light
+capture t4-macos-light-rail 0
+wait 1200
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
+capture t4-macos-light 0
+wait 1200
+palette open
+palette type theme
+wait 400
+remember theme.regions
+capture t4-macos-light-palette 0
+wait 1200
+palette close
+action find
+wait 500
+remember theme.regions
+capture t4-macos-light-find 0
+wait 1200
+key escape
+until tile.find closed 3000
+
+log === back to atom-one-dark through View → Theme's path: same pixels as before
+remember resizes
+remember terminal.attaches
+theme set atom-one-dark
+until theme atom-one-dark 5000
+wait 1500
+unchanged resizes
+unchanged terminal.attaches
+expect theme.sidebar flat
+capture t5-atom-one-dark-again 0
+wait 1200
+
+log === auto follows the (app's idea of the) system appearance
+sh python3 @HERE@/set-appearance.py {config} theme=auto theme_light=macos-light theme_dark=atom-one-dark
+until theme.choice auto 8000
+theme system light
+until theme macos-light 3000
+theme system dark
+until theme atom-one-dark 3000
+theme system light
+until theme macos-light 3000
+theme system real
+
+log === a user theme: hot reload, its problems in the banner
+sh sh @HERE@/files.sh dusk {config}
+sh python3 @HERE@/set-appearance.py {config} theme=dusk
+until theme dusk 8000
+wait 1500
+remember banner.full
+expect theme.window dark
+capture t6-dusk 0
+wait 1200
+sh sh @HERE@/files.sh dusk-edit {config}
+wait 2500
+capture t7-dusk-edited 0
+wait 1200
+
+log === Ghostty's colours win when its config sets them (terminal_colors unset)
+sh python3 @HERE@/set-appearance.py {config} theme=atom-one-light
+until theme atom-one-light 8000
+expect theme.terminals theme
+sh sh @HERE@/files.sh ghostty-set {config}
+sh python3 @HERE@/set-appearance.py {config} theme=atom-one-light terminal_colors=ghostty
+until theme.terminals ghostty 8000
+sh python3 @HERE@/set-appearance.py {config} theme=atom-one-light
+wait 2500
+expect theme.terminals ghostty
+sh sh @HERE@/files.sh ghostty-clear {config}
+sh python3 @HERE@/set-appearance.py {config} theme=atom-one-dark
+until theme.terminals theme 8000
+until theme atom-one-dark 5000
+anim enabled default
+quit

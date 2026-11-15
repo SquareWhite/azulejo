@@ -22,7 +22,7 @@ import WebKit
 /// file, so local images resolve (the core makes their URLs absolute); data
 /// stores are non-persistent.
 @MainActor
-final class PreviewTileView: NSView, TileView {
+final class PreviewTileView: NSView, TileView, ThemeAware {
     let tileID: String
     let kind: TileKind = .preview
 
@@ -85,7 +85,6 @@ final class PreviewTileView: NSView, TileView {
         wantsLayer = true
         // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
-        layer?.backgroundColor = Design.Color.tile.cgColor
 
         // The controls live in the tile's header strip (TileFrame, F28/F29).
         header.onOpen = { [weak self] in self?.openInDefaultApp() }
@@ -115,6 +114,7 @@ final class PreviewTileView: NSView, TileView {
         placeholder.translatesAutoresizingMaskIntoConstraints = false
 
         Self.live[tileID] = WeakPreview(self)
+        Theme.track(self)
         header.setPath(tile.path)
         if tile.path == nil {
             showEmpty()
@@ -128,10 +128,26 @@ final class PreviewTileView: NSView, TileView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.tile.cgColor
-        }
+        Theme.reapply(self)
     }
+
+    /// The tile's backdrop, and the page's colours and syntax theme: the
+    /// script runs on the live page now and on every page load from here on
+    /// (at document start, so a reload never flashes the old theme).
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.tile.cgColor
+        guard let webView else { return }
+        let script = Theme.webviewScript
+        guard script != appliedScript else { return }
+        appliedScript = script
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    /// The theme script last installed in this tile's web view.
+    private var appliedScript: String?
 
     // MARK: TileView
 
@@ -393,6 +409,7 @@ final class PreviewTileView: NSView, TileView {
         }
         navigation.view = self
         webView = web
+        Theme.reapply(self)
         return web
     }
 

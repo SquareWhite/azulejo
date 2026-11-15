@@ -36,6 +36,11 @@
 //! [terminal]
 //! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
 //!
+//! [appearance]           # themes (docs/themes.md)
+//! theme = "atom-one-dark"   # a theme id, or "auto" to follow the system
+//! theme_light = "atom-one-light"  # with "auto"
+//! theme_dark = "atom-one-dark"
+//! terminal_colors = "theme"  # or "ghostty"; default: "ghostty" if its config sets colours
 //! [sidebar]
 //! collapsed = "rail"     # what toggle_sidebar collapses it to: "rail" (workspace numbers and
 //!                        # agent states down a narrow column) or "hidden"
@@ -60,6 +65,7 @@ mod diag;
 pub mod ghostty;
 mod keymap;
 mod listing;
+pub mod theme;
 
 use std::path::{Path, PathBuf};
 
@@ -75,6 +81,7 @@ pub use listing::{
     DOC_BEGIN, DOC_END, GLOBAL, chord_patterns, key_listing, keys_template, reference_markdown,
     splice_reference,
 };
+pub use theme::{AppearanceConfig, TerminalColors, Theme, Themes};
 
 use diag::Sink;
 use keymap::{Layer, LayerInfo, LayerParser};
@@ -266,6 +273,10 @@ pub struct Config {
     pub layout: LayoutPrefs,
     pub herdr: HerdrConfig,
     pub terminal: TerminalConfig,
+    /// `[appearance]`: the theme, and whose colours terminals use.
+    pub appearance: AppearanceConfig,
+    /// The built-in themes plus the user's (`<config dir>/themes/*.toml`).
+    pub themes: Themes,
     pub sidebar: SidebarConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
@@ -294,6 +305,14 @@ impl Config {
         let mut layout = default_layout();
         let mut herdr = HerdrConfig::default();
         let mut terminal = TerminalConfig::default();
+        let mut appearance = AppearanceConfig::default();
+        let mut appearance_spans = theme::AppearanceSpans::default();
+        // User themes live next to the config file.
+        let themes_dir = path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|dir| dir.join("themes"));
+        let themes = Themes::load(themes_dir.as_deref(), &mut diagnostics);
         let mut sidebar = SidebarConfig::default();
 
         parse_layer(
@@ -335,9 +354,24 @@ impl Config {
                         parse_layout(sink, value, &mut layout);
                         true
                     }
+                    "appearance" => {
+                        theme::parse_appearance(
+                            sink,
+                            value,
+                            &mut appearance,
+                            &mut appearance_spans,
+                        );
+                        true
+                    }
                     _ => false,
                 },
             );
+            let mut sink = Sink {
+                text,
+                source: source.clone(),
+                out: &mut diagnostics,
+            };
+            theme::check_appearance(&mut sink, &mut appearance, &appearance_spans, &themes);
             layers.push(layer);
             infos.push(LayerInfo { text, source });
         }
@@ -349,6 +383,7 @@ impl Config {
                 Source::DefaultKeymap => 0,
                 Source::User(_) => 1,
                 Source::Ghostty(_) => 2,
+                Source::Theme(_) => 3,
             };
             (rank, d.location.map(|l| (l.line, l.column)))
         });
@@ -358,6 +393,8 @@ impl Config {
             layout,
             herdr,
             terminal,
+            appearance,
+            themes,
             sidebar,
             path,
             diagnostics,
@@ -803,9 +840,8 @@ pub fn reload(path: &Path, platform: Platform) -> Config {
     match std::fs::read_to_string(path) {
         Ok(text) => Config::from_toml(&text, Some(path.to_path_buf()), platform),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let mut config = Config::defaults(platform);
-            config.path = Some(path.to_path_buf());
-            config
+            // No file, but user themes beside it still show up (⌘K lists them).
+            Config::build(platform, None, Some(path.to_path_buf()))
         }
         Err(e) => {
             let mut config = Config::defaults(platform);

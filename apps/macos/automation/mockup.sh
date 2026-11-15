@@ -6,6 +6,11 @@
 # (scripts/ssh-standin.sh) — nothing connects to a real machine. The browser
 # tile shows a static fixture page served from a temp folder.
 #   apps/macos/automation/mockup.sh [--keep]   (--keep: leave the instance)
+# Other scripts build on the scene (themes.sh): AZJ_MOCKUP_CONFIG is TOML
+# appended to the instance's config.toml, AZJ_MOCKUP_TAIL a file of
+# automation lines run after the scene's captures (instead of quitting),
+# AZJ_MOCKUP_TIMEOUT the watchdog in seconds (default 240), and
+# AZJ_MOCKUP_GHOSTTY the instance's own Ghostty config (copied in).
 # Output: .dev/<name>.out/mockup/01-scene.png (system capture, needs an
 # unlocked screen), 01-scene-app.png (the app's render of the layer tree, as
 # Core Animation shows it) and 01-scene-shot.png (AppKit's cacheDisplay); the
@@ -124,10 +129,25 @@ session = "azj-dev-$AZJ_DEV_NAME"
 machines = true
 machines_file = "$side/machines.json"
 ssh = "$side/ssh"
+${AZJ_MOCKUP_CONFIG:-}
 TOML
+mkdir -p "$dev/config/ghostty"
+if [[ -n "${AZJ_MOCKUP_GHOSTTY:-}" ]]; then
+  cp "$AZJ_MOCKUP_GHOSTTY" "$dev/config/ghostty/config"
+else
+  rm -f "$dev/config/ghostty/config"
+fi
 
 sed -e "s|@FX@|$fx|g" -e "s|@SIDE@|$side|g" -e "s|@REMOTE_T@|$remote_t|g" \
-  "$here/mockup.azs.in" >"$fx/mockup.azs"
+  "$here/mockup.azs.in" >"$fx/mockup.azs.part"
+# The end of the script: quit, or the caller's tail (with @FX@ and @SIDE@ filled).
+python3 - "$fx/mockup.azs.part" "${AZJ_MOCKUP_TAIL:-}" "$fx" "$side" >"$fx/mockup.azs" <<'PY'
+import sys
+script, tail, fx, side = sys.argv[1:5]
+text = open(script).read()
+end = open(tail).read().replace("@FX@", fx).replace("@SIDE@", side) if tail else "quit\n"
+sys.stdout.write(text.replace("@TAIL@", end.rstrip("\n")))
+PY
 
 # The app asks for window captures by dropping files in $out/.capture.
 watch_captures() {
@@ -143,7 +163,7 @@ watch_captures() {
   done
 }
 watch_captures & watcher=$!
-( sleep 240; "$root/apps/macos/dev.sh" --stop ) & watchdog=$!
+( sleep "${AZJ_MOCKUP_TIMEOUT:-240}"; "$root/apps/macos/dev.sh" --stop ) & watchdog=$!
 
 status=0
 "$root/apps/macos/dev.sh" --automation "$fx/mockup.azs" --out "$out" || status=1

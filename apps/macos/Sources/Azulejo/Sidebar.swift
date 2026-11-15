@@ -16,7 +16,7 @@ import AppKit
 /// the focused workspace's repository (else its cwd). Return opens a file
 /// beside the focused tile; Esc hands the keyboard back to the tiles.
 @MainActor
-final class SidebarView: NSView, KeepsKeyboard {
+final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     enum Mode: String { case agents, files }
 
     static var width: CGFloat { Design.Space.sidebarWidth }
@@ -94,10 +94,14 @@ final class SidebarView: NSView, KeepsKeyboard {
         addSubview(files)
 
         footerLine.wantsLayer = true
-        footerLine.layer?.backgroundColor = Design.Color.border.cgColor
         addSubview(footerLine)
         addSubview(footer)
         applyMode()
+        Theme.track(self)
+    }
+
+    func applyTheme() {
+        footerLine.layer?.backgroundColor = Design.Color.border.cgColor
     }
 
     @available(*, unavailable)
@@ -105,9 +109,7 @@ final class SidebarView: NSView, KeepsKeyboard {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            footerLine.layer?.backgroundColor = Design.Color.border.cgColor
-        }
+        Theme.reapply(self)
     }
 
     // MARK: Layout
@@ -318,7 +320,7 @@ final class SidebarView: NSView, KeepsKeyboard {
     static func icon(_ status: Design.Status, pointSize: CGFloat) -> NSImage? {
         guard status.symbol.hasSuffix(".fill") else { return Design.StatusIcon.image(status, pointSize: pointSize) }
         let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
-            .applying(.init(paletteColors: [Design.Color.window, status.color]))
+            .applying(.init(paletteColors: [Theme.resolved(Design.Color.window), Theme.resolved(status.color)]))
         return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
             .withSymbolConfiguration(config)
     }
@@ -406,8 +408,9 @@ final class MachineHeader: NSView {
         if busy {
             // The app's own ring, not the system spinner, which can't take a
             // colour. It holds still with motion off or Reduce Motion on.
-            let image = Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
-            let spinner = StatusIconView(status, image: image, spins: true)
+            let spinner = StatusIconView(status, image: {
+                Design.customSymbol("azulejo.ring", color: status.color, pointSize: Design.Symbol.machineRing)
+            }, spins: true)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             spinner.setContentHuggingPriority(.required, for: .horizontal)
             right.addArrangedSubview(spinner)
@@ -444,13 +447,16 @@ final class MachineHeader: NSView {
 
 /// A small filled circle: a machine's connection state.
 @MainActor
-private final class Dot: NSView {
+private final class Dot: NSView, ThemeAware {
+    private let color: NSColor
+
     init(color: NSColor) {
+        self.color = color
         let side = Design.Radius.machineDot * 2
         super.init(frame: NSRect(x: 0, y: 0, width: side, height: side))
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.machineDot
-        layer?.backgroundColor = color.cgColor
+        Theme.track(self)
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: side),
@@ -460,11 +466,15 @@ private final class Dot: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyTheme() {
+        layer?.backgroundColor = color.cgColor
+    }
 }
 
 /// A workspace: status icon, name, and its branch on the right.
 @MainActor
-final class WorkspaceRow: NSView, ContextMenuProviding {
+final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware {
     let status: Design.Status
     /// Right-click: Rename, New Tab, Close and the folder's items.
     var menuProvider: (() -> NSMenu?)?
@@ -475,7 +485,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding {
     private let handler: () -> Void
     private let selected: Bool
     private var hovering = false {
-        didSet { updateBackground() }
+        didSet { Theme.reapply(self) }
     }
 
     init(_ ws: WorkspaceModel, number: Int, status: Design.Status, marker: NSAttributedString?,
@@ -497,7 +507,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding {
         setAccessibilityRole(.button)
         setAccessibilityLabel("\(ws.name), \(status.rawValue)")
 
-        let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.sidebarRow))
+        let icon = StatusIconView(status) { SidebarView.icon(status, pointSize: Design.Symbol.sidebarRow) }
         let name = NSTextField(labelWithString: ws.name)
         name.font = Design.Font.sidebarRow
         name.textColor = Design.Color.textPrimary
@@ -528,7 +538,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding {
             // The branch never takes more than about half the row.
             detail.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.48),
         ])
-        updateBackground()
+        Theme.track(self)
     }
 
     @available(*, unavailable)
@@ -554,15 +564,13 @@ final class WorkspaceRow: NSView, ContextMenuProviding {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateBackground()
+        Theme.reapply(self)
     }
 
-    private func updateBackground() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = selected
-                ? Design.Color.selected.cgColor
-                : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover).cgColor : nil
-        }
+    func applyTheme() {
+        layer?.backgroundColor = selected
+            ? Design.Color.selected.cgColor
+            : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover).cgColor : nil
     }
 
     /// Automation: what a click does.
@@ -607,7 +615,7 @@ private final class AddRow: NSView {
 /// The segmented switch under the traffic lights: Agents (list icon) and
 /// Files (folder icon) on a dark track, the selected one lighter.
 @MainActor
-private final class SidebarSegments: NSView {
+private final class SidebarSegments: NSView, ThemeAware {
     var onChange: ((SidebarView.Mode) -> Void)?
     var selected: SidebarView.Mode = .agents {
         didSet { update() }
@@ -620,7 +628,7 @@ private final class SidebarSegments: NSView {
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.sidebarSegment
         layer?.cornerCurve = .continuous
-        layer?.backgroundColor = Design.Color.control.cgColor
+        Theme.track(self)
         agents.target = self
         agents.action = #selector(agentsClicked)
         files.target = self
@@ -643,10 +651,11 @@ private final class SidebarSegments: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Design.Color.control.cgColor
-        }
-        update()
+        Theme.reapply(self)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.control.cgColor
     }
 
     private func update() {
@@ -659,7 +668,7 @@ private final class SidebarSegments: NSView {
 }
 
 @MainActor
-private final class SegmentButton: NSButton {
+private final class SegmentButton: NSButton, ThemeAware {
     var isOn = false {
         didSet { restyle() }
     }
@@ -678,7 +687,14 @@ private final class SegmentButton: NSButton {
         layer?.cornerRadius = Design.Radius.sidebarSegment - 2
         layer?.cornerCurve = .continuous
         setAccessibilityLabel(title)
-        restyle()
+        Theme.track(self)
+    }
+
+    func applyTheme() { restyle() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        Theme.reapply(self)
     }
 
     @available(*, unavailable)
@@ -690,7 +706,7 @@ private final class SegmentButton: NSButton {
         let text = NSMutableAttributedString()
         if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: Design.Symbol.sidebarSegment, weight: .regular)
-                .applying(.init(paletteColors: [color]))) {
+                .applying(.init(paletteColors: [Theme.resolved(color)]))) {
             let attachment = NSTextAttachment()
             attachment.image = image
             attachment.bounds = NSRect(x: 0, y: -1.5, width: image.size.width, height: image.size.height)
@@ -703,6 +719,7 @@ private final class SegmentButton: NSButton {
         ]))
         text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
         attributedTitle = text
+        // theme: restyle() is this view's applyTheme().
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = isOn ? Design.Color.selected.cgColor : nil
         }
@@ -745,7 +762,7 @@ private final class SidebarFooter: NSView {
             item.orientation = .horizontal
             item.spacing = 4
             item.alignment = .centerY
-            let icon = StatusIconView(status, image: SidebarView.icon(status, pointSize: Design.Symbol.footerStatus))
+            let icon = StatusIconView(status) { SidebarView.icon(status, pointSize: Design.Symbol.footerStatus) }
             let text = NSTextField(labelWithString: "\(count)")
             text.font = Design.Font.footerCount
             // Tinted by state, as in the mockup (idle stays grey).

@@ -16,7 +16,7 @@ extension Core {
 /// capped (`preferredHeight`): it shows the first problem on as many lines as
 /// fit, cut with "…", and the whole message is in its tooltip (V25).
 @MainActor
-final class BannerView: NSView {
+final class BannerView: NSView, ThemeAware {
     static let maxLines = 4
     private let icon = NSTextField(labelWithString: "")
     private let text = NSTextField(wrappingLabelWithString: "")
@@ -27,12 +27,16 @@ final class BannerView: NSView {
     private var short = ""
     /// Automation: the banner shows `short`, cut to fit.
     private(set) var capped = false
+    /// Errors tint it red, warnings yellow.
+    private var errors = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.banner
+        layer?.borderWidth = Design.Border.hairline
         isHidden = true
+        Theme.track(self)
 
         icon.font = Design.Font.bannerIcon
         text.font = Design.Font.bannerText
@@ -107,16 +111,22 @@ final class BannerView: NSView {
         text.stringValue = message
         capped = false
         toolTip = [message, path].compactMap { $0 }.joined(separator: "\n\n")
-        let tint = errors ? Design.Color.error : Design.Color.warning
+        self.errors = errors
         icon.stringValue = errors ? "⚠︎" : "ⓘ"
-        icon.textColor = tint
-        layer?.backgroundColor = tint.withAlphaComponent(Design.Alpha.bannerFill).blended(
-            withFraction: Design.Alpha.bannerMix, of: Design.Color.window)?.cgColor
-        layer?.borderWidth = Design.Border.hairline
-        layer?.borderColor = tint.withAlphaComponent(Design.Alpha.bannerBorder).cgColor
+        Theme.reapply(self)
         isHidden = false
         superview?.needsLayout = true
         return false
+    }
+
+    func applyTheme() {
+        let tint = errors ? Design.Color.error : Design.Color.warning
+        icon.textColor = tint
+        // Blending needs real components: resolved in the theme's appearance.
+        let fill = Theme.resolved(tint.withAlphaComponent(Design.Alpha.bannerFill))
+        layer?.backgroundColor = fill.blended(
+            withFraction: Design.Alpha.bannerMix, of: Theme.resolved(Design.Color.window))?.cgColor
+        layer?.borderColor = tint.withAlphaComponent(Design.Alpha.bannerBorder).cgColor
     }
 
     @objc func dismiss() { hide() }

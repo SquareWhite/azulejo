@@ -2,8 +2,9 @@ import AppKit
 
 /// A flat, highlightable row used by the sidebar and tab bar.
 @MainActor
-final class RowButton: NSButton {
+final class RowButton: NSButton, ThemeAware {
     private let handler: () -> Void
+    private let selected: Bool
 
     /// Automation: the marker's text (" ● 2"), or "".
     let markerText: String
@@ -15,6 +16,7 @@ final class RowButton: NSButton {
     init(title: String, selected: Bool, marker: NSAttributedString? = nil,
          detail: String? = nil, detailWidth: CGFloat = 0, handler: @escaping () -> Void) {
         self.handler = handler
+        self.selected = selected
         markerText = marker?.string ?? ""
         detailText = detail ?? ""
         super.init(frame: .zero)
@@ -47,7 +49,7 @@ final class RowButton: NSButton {
         }
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.row
-        layer?.backgroundColor = selected ? Design.Color.selected.cgColor : nil
+        Theme.track(self)
         target = self
         action = #selector(clicked)
         refusesFirstResponder = true
@@ -61,6 +63,10 @@ final class RowButton: NSButton {
     override var intrinsicContentSize: NSSize {
         let size = super.intrinsicContentSize
         return NSSize(width: size.width + 14, height: 22)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = selected ? Design.Color.selected.cgColor : nil
     }
 
     @objc private func clicked() { handler() }

@@ -22,7 +22,7 @@ import WebKit
 /// New windows (`target=_blank`, `window.open`) open in the same tile.
 /// Downloads go to ~/Downloads with a banner.
 @MainActor
-final class BrowserTileView: NSView, TileView, KeyScope {
+final class BrowserTileView: NSView, TileView, KeyScope, ThemeAware {
     let tileID: String
     let kind: TileKind = .browser
 
@@ -84,7 +84,6 @@ final class BrowserTileView: NSView, TileView, KeyScope {
         wantsLayer = true
         // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
-        layer?.backgroundColor = Design.Color.tile.cgColor
 
         webView.isInspectable = true
         webView.allowsBackForwardNavigationGestures = true
@@ -119,14 +118,13 @@ final class BrowserTileView: NSView, TileView, KeyScope {
         toolbar.onMenu = { [weak self] event in self?.showMore(event) }
 
         progress.wantsLayer = true
-        progress.layer?.backgroundColor = Design.Color.accent.cgColor
         progress.isHidden = true
 
         banner.isHidden = true
 
         [back, forward, pill, reload].forEach(toolbar.addSubview)
         [toolbar, webView, progress, banner].forEach(addSubview)
-        updateChromeColors()
+        Theme.track(self)
 
         observe()
         refreshControls()
@@ -283,14 +281,15 @@ final class BrowserTileView: NSView, TileView, KeyScope {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateChromeColors()
+        Theme.reapply(self)
     }
 
-    private func updateChromeColors() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            toolbar.layer?.backgroundColor = Design.Color.browserChrome.cgColor
-            pill.layer?.backgroundColor = Design.Color.browserField.cgColor
-        }
+    /// The chrome follows the theme; the page shows as the site draws it.
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.tile.cgColor
+        toolbar.layer?.backgroundColor = Design.Color.browserChrome.cgColor
+        pill.layer?.backgroundColor = Design.Color.browserField.cgColor
+        progress.layer?.backgroundColor = Design.Color.accent.cgColor
     }
 
     private func layoutProgress() {
@@ -746,8 +745,9 @@ enum BrowserStores {
 
 /// A one-line notice over the page: failed loads, crashes, downloads.
 @MainActor
-final class BrowserBanner: NSView {
+final class BrowserBanner: NSView, ThemeAware {
     enum Style { case info, error }
+    private var style = Style.info
 
     private let label = NSTextField(labelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
@@ -766,10 +766,19 @@ final class BrowserBanner: NSView {
         button.action = #selector(run)
         addSubview(label)
         addSubview(button)
+        Theme.track(self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    func applyTheme() {
+        label.textColor = style == .error ? Design.Color.textOnAccent : Design.Color.textPrimary
+        layer?.backgroundColor = (style == .error ? Design.Color.error : Design.Color.control)
+            .withAlphaComponent(Design.Alpha.browserBanner).cgColor
+        layer?.borderWidth = style == .error ? 0 : Design.Border.hairline
+        layer?.borderColor = Design.Color.border.cgColor
+    }
 
     /// Showing or hiding moves the page (the banner has its own row).
     override var isHidden: Bool {
@@ -781,11 +790,8 @@ final class BrowserBanner: NSView {
     func show(_ text: String, style: Style, action: (String, () -> Void)?) {
         hideWork?.cancel()
         label.stringValue = text
-        label.textColor = style == .error ? Design.Color.textOnAccent : Design.Color.textPrimary
-        layer?.backgroundColor = (style == .error ? Design.Color.error : Design.Color.control)
-            .withAlphaComponent(Design.Alpha.browserBanner).cgColor
-        layer?.borderWidth = style == .error ? 0 : Design.Border.hairline
-        layer?.borderColor = Design.Color.border.cgColor
+        self.style = style
+        Theme.reapply(self)
         self.action = action?.1
         button.title = action?.0 ?? ""
         button.isHidden = action == nil

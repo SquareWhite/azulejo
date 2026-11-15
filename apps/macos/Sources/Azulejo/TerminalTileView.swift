@@ -27,7 +27,7 @@ import GhosttyKit
 /// Closing the tile only detaches: the pane keeps running in herdr. Killing it
 /// is the core's `tile.close {kill: true}`.
 @MainActor
-final class TerminalTileView: NSView, TileView {
+final class TerminalTileView: NSView, TileView, ThemeAware {
     let tileID: String
     let kind = TileKind.terminal
     private var model: TileModel
@@ -91,6 +91,8 @@ final class TerminalTileView: NSView, TileView {
     private static var log: (String) -> Void = { _ in }
     /// Every open terminal tile, for herdr.status and wake health checks.
     private static let live = NSHashTable<TerminalTileView>.weakObjects()
+    /// Automation: terminal surfaces started so far (each one an attach).
+    private(set) static var attaches = 0
     /// Machines (`local` or herdr's ID) the core has said are connected, with
     /// their bound panes checked: `machines.list`, then `herdr.status` and
     /// `machine.status`.
@@ -118,9 +120,9 @@ final class TerminalTileView: NSView, TileView {
             .appendingPathComponent(tile.id, isDirectory: true)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = (TerminalRuntime.shared?.background ?? Design.Color.tile).cgColor
         // Rectangular clip (cheap): the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
+        Theme.track(self)
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         overlay.onButton = { [weak self] action in self?.overlayAction(action) }
         addSubview(overlay)
@@ -209,6 +211,12 @@ final class TerminalTileView: NSView, TileView {
     }
 
     fileprivate var surfaceResizeCount: Int { surface?.resizeCount ?? 0 }
+
+    /// The backdrop round the surface: the terminal's own background (the
+    /// theme's palette, or the user's Ghostty colours).
+    func applyTheme() {
+        layer?.backgroundColor = (TerminalRuntime.shared?.background ?? Design.Color.tile).cgColor
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -366,6 +374,7 @@ final class TerminalTileView: NSView, TileView {
             phase = .waiting("the terminal surface didn't start")
             return false
         }
+        Self.attaches += 1
         // Sized by setFrameSize, so motion controls when the PTY resizes.
         view.autoresizingMask = []
         view.logName = Short.id(tileID)
@@ -821,6 +830,7 @@ extension TerminalTileView: MotionAware {
                           height: CGFloat(IOSurfaceGetHeight(image)) / scale)
         let cover = NSView(frame: bounds)
         cover.wantsLayer = true
+        // theme: a copy for the length of one motion.
         cover.layer?.backgroundColor = layer?.backgroundColor
         cover.autoresizingMask = []
         let picture = NSView(frame: fill ? bounds : CGRect(origin: .zero, size: size))
@@ -967,7 +977,7 @@ extension TerminalTileView: MotionAware {
 }
 
 @MainActor
-final class TerminalOverlay: NSView {
+final class TerminalOverlay: NSView, ThemeAware {
     enum Action { case takeOver, respawn, close, retryNow }
     /// `placeholder`: a new pane on its way, drawn on the terminal's own
     /// background so a split doesn't flash a dark hole before the shell.
@@ -993,6 +1003,7 @@ final class TerminalOverlay: NSView {
     private let stack = NSStackView()
     private var actions: [Action] = []
     private var style: Style = .full
+    private var titleLabel: NSTextField?
 
     init() {
         super.init(frame: .zero)
@@ -1004,10 +1015,32 @@ final class TerminalOverlay: NSView {
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        Theme.track(self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Placeholders sit on the terminal's own background; the full overlay
+    /// (Session ended, reconnecting) on the overlay colour; the take-over
+    /// banner on its amber strip.
+    func applyTheme() {
+        switch style {
+        case .full, .placeholder:
+            layer?.backgroundColor = (style == .placeholder
+                ? TerminalRuntime.shared?.background ?? Design.Color.tile
+                : Design.Color.overlay).cgColor
+            stack.layer?.backgroundColor = nil
+        case .banner:
+            layer?.backgroundColor = NSColor.clear.cgColor
+            stack.layer?.backgroundColor = Design.Color.takeover.cgColor
+        }
+        titleLabel?.textColor = switch style {
+        case .placeholder: Design.Color.textMuted
+        case .full: Design.Color.overlayTitle
+        case .banner: Design.Color.textOnAccent
+        }
+    }
 
     func show(_ content: Content?) {
         guard let content else {
@@ -1020,7 +1053,7 @@ final class TerminalOverlay: NSView {
         NSLayoutConstraint.deactivate(constraints.filter { $0.firstItem === stack || $0.secondItem === stack })
         let title = NSTextField(labelWithString: content.title)
         title.font = content.style == .banner ? Design.Font.overlayTitleSmall : Design.Font.overlayTitle
-        title.textColor = content.style == .placeholder ? Design.Color.textMuted : Design.Color.textOnAccent
+        titleLabel = title
         actions = content.buttons.map(\.action)
         let buttons = content.buttons.enumerated().map { index, button in
             let b = NSButton(title: button.title, target: self, action: #selector(pressed(_:)))
@@ -1031,12 +1064,6 @@ final class TerminalOverlay: NSView {
         }
         switch content.style {
         case .full, .placeholder:
-            effectiveAppearance.performAsCurrentDrawingAppearance {
-                layer?.backgroundColor = (content.style == .placeholder
-                    ? TerminalRuntime.shared?.background ?? Design.Color.tile
-                    : Design.Color.overlay).cgColor
-            }
-            stack.layer?.backgroundColor = nil
             stack.orientation = .vertical
             stack.addArrangedSubview(title)
             if let detail = content.detail {
@@ -1057,10 +1084,8 @@ final class TerminalOverlay: NSView {
                 stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24),
             ])
         case .banner:
-            layer?.backgroundColor = NSColor.clear.cgColor
             stack.orientation = .horizontal
             stack.wantsLayer = true
-            stack.layer?.backgroundColor = Design.Color.takeover.cgColor
             stack.layer?.cornerRadius = Design.Radius.overlay
             stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 6)
             stack.addArrangedSubview(title)
@@ -1070,6 +1095,7 @@ final class TerminalOverlay: NSView {
                 stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             ])
         }
+        Theme.reapply(self)
     }
 
     /// The banner only covers its own strip; clicks elsewhere reach the

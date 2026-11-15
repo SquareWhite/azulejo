@@ -382,6 +382,48 @@ impl App {
         Some(event)
     }
 
+    /// Sets `[appearance] theme` in the config file (a theme id or
+    /// `"auto"`), touching nothing else in it, and reloads. The file and
+    /// its folder are created when missing. `Err` says why not: no config
+    /// file, an unknown theme, a file the edit can't express, or I/O.
+    pub fn set_theme(&self, theme: &str) -> Result<azulejo_protocol::ConfigReloaded, String> {
+        let config = self.config();
+        let path = config
+            .path
+            .clone()
+            .ok_or("there's no config file to save the theme in")?;
+        if theme != azulejo_config::theme::AUTO && config.themes.get(theme).is_none() {
+            return Err(format!("unknown theme `{theme}`"));
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("can't read {}: {e}", path.display())),
+        };
+        let edited = azulejo_config::theme::set_theme_in(&text, theme).ok_or_else(|| {
+            format!(
+                "{} sets the theme in a way Azulejo can't edit; set `[appearance] theme = \"{theme}\"` there",
+                path.display()
+            )
+        })?;
+        if edited != text {
+            let dir = path.parent().ok_or("the config path has no folder")?;
+            std::fs::create_dir_all(dir)
+                .map_err(|e| format!("can't create {}: {e}", dir.display()))?;
+            // Write beside it and rename over, as editors do: the watcher
+            // never reads half a file.
+            let tmp = dir.join(format!(".config.toml.azulejo-{}", std::process::id()));
+            std::fs::write(&tmp, &edited)
+                .and_then(|()| std::fs::rename(&tmp, &path))
+                .map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    format!("can't save {}: {e}", path.display())
+                })?;
+        }
+        self.reload_config()
+            .ok_or_else(|| "the config didn't reload".to_owned())
+    }
+
     pub fn herdr(&self) -> Option<&HerdrInfo> {
         self.herdr.as_ref()
     }
@@ -751,6 +793,85 @@ mod tests {
             text.contains("# browser_back = \"cmd+bracketleft\""),
             "{text}"
         );
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn themes_reload_on_save_and_set_theme_edits_the_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "azj-daemon-themes-{}-{:x}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, "# mine\n[layout]\ndefault = \"tile\"\n").unwrap();
+        let app = App::start(Options {
+            config_path: Some(path.clone()),
+            platform: Platform::Macos,
+            ..in_memory()
+        })
+        .unwrap();
+        let events = app.core().subscribe();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(app.config().appearance.theme, "atom-one-dark");
+
+        // A theme file appearing (the folder too) reloads.
+        std::fs::create_dir_all(dir.join("themes")).unwrap();
+        std::fs::write(
+            dir.join("themes/dusk.toml"),
+            "inherits = \"atom-one-dark\"\n[color]\nwindow = \"#101010\"\n",
+        )
+        .unwrap();
+        let r = next_reload(&events);
+        assert!(r.applied, "{r:?}");
+        assert!(app.config().themes.get("dusk").is_some());
+
+        // Editing it reloads, and its problems reach the banner.
+        std::fs::write(
+            dir.join("themes/dusk.toml"),
+            "inherits = \"atom-one-dark\"\n[color]\nwindow = \"dark\"\n",
+        )
+        .unwrap();
+        let r = next_reload(&events);
+        assert!(r.applied, "theme warnings don't block a reload: {r:?}");
+        let d = r
+            .diagnostics
+            .iter()
+            .find(|d| d.message.contains("color.window"))
+            .expect("the bad colour is reported");
+        assert!(
+            d.file.as_deref().unwrap().ends_with("themes/dusk.toml"),
+            "{d:?}"
+        );
+        assert_eq!(d.line, Some(3));
+
+        // set_theme writes the one line and applies it now.
+        let r = app.set_theme("dusk").unwrap();
+        assert!(r.applied);
+        assert_eq!(app.config().appearance.theme, "dusk");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text,
+            "# mine\n[layout]\ndefault = \"tile\"\n\n[appearance]\ntheme = \"dusk\"\n"
+        );
+        app.set_theme("auto").unwrap();
+        assert!(app.config().appearance.is_auto());
+        assert!(
+            app.set_theme("solarized")
+                .unwrap_err()
+                .contains("unknown theme")
+        );
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("theme = \"auto\"")
+        );
+
         app.shutdown();
         let _ = std::fs::remove_dir_all(dir);
     }

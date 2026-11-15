@@ -56,6 +56,11 @@ enum ShellAutomation {
                 controller.layoutChrome()
             case "close":
                 controller.palette.close()
+            case "select":
+                // A row by id (the theme picker's `theme:<id>`), as if
+                // arrowed to.
+                guard controller.palette.isOpen else { return "palette isn't open" }
+                if !controller.palette.select(id: rest) { return "no row \(rest)" }
             case "forget":
                 // Fresh recents for a deterministic run (dev keys only).
                 guard PaletteStore.forgetDevRecents() else { return "palette forget is dev-only" }
@@ -120,6 +125,8 @@ enum ShellAutomation {
         var s: [String: String] = [:]
         if let id = palette.promptingFor {
             s["palette"] = "prompt:\(id)"
+        } else if let id = palette.listID {
+            s["palette"] = "list:\(id)"
         } else {
             s["palette"] = palette.isOpen ? palette.scope.rawValue : "closed"
         }
@@ -134,6 +141,8 @@ enum ShellAutomation {
             ? palette.results[palette.selected].item.title : "-"
         s["banner"] = controller.banner.isHidden
             ? "none" : controller.banner.message.split(separator: "\n").first.map(String.init) ?? ""
+        s["banner.full"] = controller.banner.isHidden
+            ? "none" : controller.banner.message.replacingOccurrences(of: "\n", with: " | ")
         let badges = controller.attention.shown.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         s["badges"] = badges.isEmpty ? "none" : badges.joined(separator: ",")
         func compact(_ markers: [String]) -> String {

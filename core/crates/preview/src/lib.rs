@@ -17,6 +17,7 @@ mod classify;
 mod code;
 mod markdown;
 mod page;
+pub mod syntax;
 mod watch;
 
 use std::path::{Path, PathBuf};

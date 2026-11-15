@@ -90,6 +90,8 @@ pub enum Action {
     OpenConfig,
     ReloadConfig,
     ToggleSidebar,
+    /// Lists the themes in the ⌘K menu, previewing each as it's selected.
+    SetTheme,
     EditScrollback,
     /// Arms prefix mode; the next chord is looked up in the prefix keymap.
     EnterPrefix,
@@ -245,6 +247,7 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("open_config", OpenConfig),
         ("reload_config", ReloadConfig),
         ("toggle_sidebar", ToggleSidebar),
+        ("set_theme", SetTheme),
         ("edit_scrollback", EditScrollback),
         ("quit", Quit),
         ("hide", Hide),
@@ -380,6 +383,7 @@ impl Action {
             | OpenConfig
             | ReloadConfig
             | ToggleSidebar
+            | SetTheme
             | EnterPrefix
             | Quit
             | Hide

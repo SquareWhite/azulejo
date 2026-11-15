@@ -13,6 +13,7 @@ path = "src/bin/azj-keys-doc.rs"
 
 [dependencies]
 azulejo-protocol.workspace = true
+serde_json.workspace = true
 toml = { version = "1", default-features = false, features = ["std", "parse"] }
 
 [dev-dependencies]

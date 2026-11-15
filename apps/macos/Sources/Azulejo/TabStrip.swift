@@ -12,7 +12,7 @@ import AppKit
 /// edges with more tabs fade out, the selected tab scrolls into view, and
 /// "+" stays put at the end.
 @MainActor
-final class TabStripView: NSView {
+final class TabStripView: NSView, ThemeAware {
     static let height = Design.Space.tabStripHeight
     var onSelect: ((String) -> Void)?
     /// "+": a new tab in the active workspace.
@@ -32,8 +32,6 @@ final class TabStripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = Design.Color.tabStrip.cgColor
-        layer?.borderColor = Design.Color.tabStripBorder.cgColor
         layer?.borderWidth = Design.Border.hairline
         layer?.cornerRadius = Design.Radius.tabStrip
         // The strip sits under the (transparent) title bar; no inset for it.
@@ -61,6 +59,12 @@ final class TabStripView: NSView {
         add.action = #selector(addClicked)
         add.toolTip = "New tab"
         addSubview(add)
+        Theme.track(self)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.tabStrip.cgColor
+        layer?.borderColor = Design.Color.tabStripBorder.cgColor
     }
 
     @available(*, unavailable)
@@ -68,8 +72,7 @@ final class TabStripView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.backgroundColor = Design.Color.tabStrip.cgColor
-        layer?.borderColor = Design.Color.tabStripBorder.cgColor
+        Theme.reapply(self)
     }
 
     /// Automation: each tab's marker, in order (" ● 2" without spaces, or "").
@@ -189,6 +192,7 @@ final class TabStripView: NSView {
         CATransaction.setDisableActions(true)
         if left || right, scroll.bounds.width > 0 {
             let f = min(Design.Space.tabFadeWidth / scroll.bounds.width, 0.5)
+            // theme: a mask's alpha, not a colour anyone sees.
             let solid = NSColor.black.cgColor, clear = NSColor.clear.cgColor
             fade.frame = scroll.bounds
             fade.colors = [left ? clear : solid, solid, solid, right ? clear : solid]
@@ -244,7 +248,7 @@ private final class TabScrollView: NSScrollView {
 
 /// One tab in the strip: state icon and name, filled when selected.
 @MainActor
-final class TabButton: NSView {
+final class TabButton: NSView, ThemeAware {
     let status: Design.Status
     /// Automation: the rollup's marker text, as the sidebar shows it.
     let markerText: String
@@ -258,12 +262,11 @@ final class TabButton: NSView {
         self.status = status
         self.selected = selected
         self.handler = handler
-        icon = StatusIconView(status, image: Self.icon(status))
+        icon = StatusIconView(status) { Self.icon(status) }
         markerText = rollup.marker?.string ?? ""
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.tab
-        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
         addSubview(icon)
         label.stringValue = tab.label
         label.font = selected ? Design.Font.tabSelected : Design.Font.tab
@@ -276,6 +279,11 @@ final class TabButton: NSView {
         toolTip = "\(tab.label) · \(count) · \(layout)\(tab.kind.glyph.map { " \($0)" } ?? "")"
         setAccessibilityRole(.button)
         setAccessibilityLabel(tab.label)
+        Theme.track(self)
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
     }
 
     @available(*, unavailable)
@@ -287,8 +295,12 @@ final class TabButton: NSView {
         guard status.symbol.hasSuffix(".fill") else {
             return Design.StatusIcon.image(status, pointSize: Design.Symbol.tabStatus)
         }
+        // The mark in the strip's colour; a see-through strip (the macOS
+        // themes) would leave no mark, so the window's colour then.
+        let strip = Theme.resolved(Design.Color.tabStrip)
+        let mark = strip.alphaComponent < 1 ? Theme.resolved(Design.Color.window) : strip
         let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.tabStatus, weight: .bold)
-            .applying(.init(paletteColors: [Design.Color.tabStrip, status.color]))
+            .applying(.init(paletteColors: [mark, Theme.resolved(status.color)]))
         return NSImage(systemSymbolName: status.symbol, accessibilityDescription: status.rawValue)?
             .withSymbolConfiguration(config)
     }
@@ -331,7 +343,7 @@ final class TabButton: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
+        Theme.reapply(self)
     }
 
     /// The whole tab is one click target (not its label or icon).
