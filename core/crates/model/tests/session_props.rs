@@ -308,6 +308,33 @@ proptest! {
             if let Err(broken) = session.check_invariants() {
                 return Err(TestCaseError::fail(format!("after {op:?}: {broken}")));
             }
+            // A turn of a manual tab turns its whole tree, whatever its
+            // shape, and a turn back gives it back exactly (ratios on the
+            // turn's grid); Monocle and Three Column don't move.
+            if let Op::RotateTurn(i, reverse) = *op {
+                let tabs: Vec<_> = before.windows.iter()
+                    .flat_map(|w| w.workspaces.iter().flat_map(|ws| ws.tabs.iter().map(|t| t.id)))
+                    .collect();
+                if let Some(id) = nth(&tabs, i) {
+                    let was = before.tab(id).unwrap();
+                    let now = session.tab(id).unwrap();
+                    match was.layout.kind {
+                        LayoutKind::Manual => {
+                            let mut back = session.clone();
+                            back.rotate_turn(id, !reverse).unwrap();
+                            let mut want = was.root.clone();
+                            want.snap_ratios();
+                            prop_assert_eq!(&back.tab(id).unwrap().root, &want);
+                            prop_assert_eq!(now.focused, was.focused);
+                            prop_assert_eq!(now.zoomed, was.zoomed);
+                        }
+                        LayoutKind::Monocle | LayoutKind::ThreeColumn => {
+                            prop_assert_eq!(now, was, "{:?} turned a {:?} tab", op, was.layout.kind);
+                        }
+                        LayoutKind::Tile => {}
+                    }
+                }
+            }
             // Only split and create-tab add tiles; nothing else may lose or invent one
             // except the closing ops.
             let after = session.tiles().count();

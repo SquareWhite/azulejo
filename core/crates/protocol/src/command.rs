@@ -211,8 +211,10 @@ pub enum Command {
     /// goes left → top → right → bottom (clockwise), or back with `reverse`.
     /// `part` turns only the master area instead ("rotate part": masters
     /// side by side or stacked), and `flip` toggles master left ↔ top
-    /// (`tall.py`'s rotate). A manual tab flips its split tree's master
-    /// left ↔ top whatever is asked; Monocle and Three Column don't rotate.
+    /// (`tall.py`'s rotate). A manual tab turns its whole split tree a
+    /// quarter turn, whatever its shape (`reverse` turns it back; `flip`
+    /// still toggles master left ↔ top). Monocle and Three Column have
+    /// nothing to turn: the command succeeds and changes nothing.
     #[serde(rename = "layout.rotate")]
     LayoutRotate(LayoutRotate),
     /// Gives every tile in the tab's stack the same size.
@@ -647,15 +649,16 @@ pub struct LayoutRotate {
     /// Defaults to the focused tab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<TabId>,
-    /// Tile tabs: turn anticlockwise (master left → bottom → right → top).
+    /// Turn anticlockwise: a Tile tab's master goes left → bottom → right →
+    /// top; a manual tab's tree turns back the other way.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reverse: bool,
     /// Tile tabs: turn only the master area, so several masters sit side by
     /// side instead of stacked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub part: bool,
-    /// Tile tabs: toggle master left ↔ top (and right ↔ bottom) instead of
-    /// turning. Not with `part`.
+    /// Toggle master left ↔ top (and right ↔ bottom in a Tile tab) instead
+    /// of turning; a manual tree is rebuilt in tall shape. Not with `part`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub flip: bool,
 }

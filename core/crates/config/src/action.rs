@@ -35,8 +35,8 @@ pub enum Action {
     /// Tall layout: master left, stack right, new tiles append to the stack.
     SplitAuto,
     PromoteTile,
-    /// A quarter turn clockwise in a Tile tab (Bismuth's rotate); a manual
-    /// tab flips its master left ↔ top.
+    /// A quarter turn clockwise: Bismuth's rotate in a Tile tab, the whole
+    /// split tree in a manual tab. Monocle and Three Column: nothing.
     RotateLayout,
     EqualizeLayout,
     // Dynamic layouts (ADR 0010)

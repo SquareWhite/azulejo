@@ -1032,7 +1032,7 @@
           "type": "object"
         },
         {
-          "description": "Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area\ngoes left → top → right → bottom (clockwise), or back with `reverse`.\n`part` turns only the master area instead (\"rotate part\": masters\nside by side or stacked), and `flip` toggles master left ↔ top\n(`tall.py`'s rotate). A manual tab flips its split tree's master\nleft ↔ top whatever is asked; Monocle and Three Column don't rotate.",
+          "description": "Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area\ngoes left → top → right → bottom (clockwise), or back with `reverse`.\n`part` turns only the master area instead (\"rotate part\": masters\nside by side or stacked), and `flip` toggles master left ↔ top\n(`tall.py`'s rotate). A manual tab turns its whole split tree a\nquarter turn, whatever its shape (`reverse` turns it back; `flip`\nstill toggles master left ↔ top). Monocle and Three Column have\nnothing to turn: the command succeeds and changes nothing.",
           "properties": {
             "method": {
               "const": "layout.rotate",
@@ -3235,7 +3235,7 @@
     "LayoutRotate": {
       "properties": {
         "flip": {
-          "description": "Tile tabs: toggle master left ↔ top (and right ↔ bottom) instead of\nturning. Not with `part`.",
+          "description": "Toggle master left ↔ top (and right ↔ bottom in a Tile tab) instead\nof turning; a manual tree is rebuilt in tall shape. Not with `part`.",
           "type": "boolean"
         },
         "part": {
@@ -3243,7 +3243,7 @@
           "type": "boolean"
         },
         "reverse": {
-          "description": "Tile tabs: turn anticlockwise (master left → bottom → right → top).",
+          "description": "Turn anticlockwise: a Tile tab's master goes left → bottom → right →\ntop; a manual tab's tree turns back the other way.",
           "type": "boolean"
         },
         "tab": {

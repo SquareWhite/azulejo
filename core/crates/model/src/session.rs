@@ -1180,15 +1180,18 @@ impl Session {
         })
     }
 
-    /// A quarter turn of a Tile tab, Bismuth's rotate: master left → top →
-    /// right → bottom, or back with `reverse`. A split tree has no master on
-    /// the right or at the bottom (its tall reading puts the master first),
-    /// so manual tabs flip as [`Session::flip`] either way.
+    /// A quarter turn clockwise, or back with `reverse`. A Tile tab turns as
+    /// Bismuth's rotate: master left → top → right → bottom. A manual tab
+    /// turns its whole split tree as a picture, whatever its shape (a grid,
+    /// columns, a tall layout), and four turns give it back exactly. Monocle
+    /// and Three Column have nothing to turn: a silent no-op (`Ok(false)`),
+    /// as is a lone tile. Focus and zoom are kept.
     pub fn rotate_turn(&mut self, tab: TabId, reverse: bool) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);
         Ok(match t.layout.kind {
-            LayoutKind::Manual => t.root.rotate(),
+            LayoutKind::Manual if reverse => t.root.rotate_anticlockwise(),
+            LayoutKind::Manual => t.root.rotate_clockwise(),
             LayoutKind::Tile => {
                 let o = &mut t.layout.params.tile.orientation;
                 *o = o.turned(reverse);

@@ -615,6 +615,102 @@ fn tall_commands_append_promote_rotate_and_equalize() {
 }
 
 #[test]
+fn rotate_turns_any_manual_tree_four_ways_and_monocle_stays_silent() {
+    // A manual 2×2 grid, the shape herdr's own splits make and adoption keeps.
+    let mut engine = Engine::new();
+    let a = engine.session().focused_tile().unwrap();
+    split(&mut engine, Direction::Right);
+    let b = engine.session().focused_tile().unwrap();
+    engine
+        .execute(Command::LayoutFocus(LayoutFocus {
+            direction: Direction::Left,
+        }))
+        .unwrap();
+    split(&mut engine, Direction::Down);
+    engine
+        .execute(Command::LayoutFocus(LayoutFocus {
+            direction: Direction::Right,
+        }))
+        .unwrap();
+    split(&mut engine, Direction::Down);
+    assert_eq!(tab_of(&engine).kind(), LayoutKind::Manual);
+    let original = tab_of(&engine).root.clone();
+    let focused = engine.session().focused_tile();
+    let rect = |engine: &Engine, t| {
+        tab_of(engine)
+            .root
+            .rects()
+            .into_iter()
+            .find(|(id, _)| *id == t)
+            .unwrap()
+            .1
+    };
+
+    let mut seen = Vec::new();
+    for turn in 0..4 {
+        let events = run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+        assert!(
+            names(&events).contains(&"layout.changed".to_string()),
+            "turn {turn} changed nothing"
+        );
+        seen.push((rect(&engine, a), rect(&engine, b)));
+        assert_eq!(engine.session().focused_tile(), focused, "focus stays");
+    }
+    // a starts top left: top right, bottom right, bottom left, home.
+    let corner = |r: azulejo_model::Rect| (r.x > 0.25, r.y > 0.25);
+    assert_eq!(
+        seen.iter().map(|(ra, _)| corner(*ra)).collect::<Vec<_>>(),
+        [(true, false), (true, true), (false, true), (false, false)]
+    );
+    assert_eq!(
+        tab_of(&engine).root,
+        original,
+        "four turns are the identity"
+    );
+
+    // Anticlockwise undoes clockwise.
+    run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            reverse: true,
+            ..LayoutRotate::default()
+        }),
+    );
+    assert_eq!(tab_of(&engine).root, original);
+
+    // flip is still the old two-way tall flip (the grid becomes master
+    // left | stack, then master on top).
+    let mut flipped = original.clone();
+    flipped.rotate();
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            flip: true,
+            ..LayoutRotate::default()
+        }),
+    );
+    assert_eq!(tab_of(&engine).root, flipped);
+    assert!(tab_of(&engine).root.tall().vertical);
+
+    // Monocle has nothing to turn: Ok, and no event at all.
+    run(
+        &mut engine,
+        Command::LayoutSet(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::Monocle,
+        }),
+    );
+    let before = tab_of(&engine).clone();
+    let outcome = engine
+        .execute(Command::LayoutRotate(LayoutRotate::default()))
+        .unwrap();
+    assert_eq!(outcome.reply, Reply::Ok);
+    assert!(outcome.events.is_empty(), "{:?}", names(&outcome.events));
+    assert_eq!(tab_of(&engine), &before);
+}
+
+#[test]
 fn moving_focus_onto_a_tile_clears_its_agent_attention() {
     use azulejo_model::{AgentInfo, AgentStatus};
     let mut engine = Engine::new();

@@ -74,6 +74,14 @@ if [[ "$mode" == "--slow" ]]; then
     "key alt+o" "capture 06h-rotate-retarget-b-mid 250" "wait 250" "key alt+o" \
     "capture 06h-rotate-retarget-c-mid 400" "wait 1800" "capture 06h-rotate-retarget-d-end 0" "wait 400"
   emit "expect orientation left"
+  # A manual tab (every adopted herdr tab is one): alt+o turns the whole
+  # split tree, and the tiles move to their turned places like Tile's.
+  emit "key alt+shift+t" "wait 2500" "expect kind manual"
+  step 06i-manual-rotate-top alt+o
+  step 06j-manual-rotate-right alt+o
+  step 06k-manual-rotate-bottom alt+o
+  step 06l-manual-rotate-left alt+o
+  emit "expect kind manual" "key alt+shift+t" "wait 2500" "expect kind tile"
   step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
   step 06b2-masters-back alt+minus
   step 06c-monocle-in alt+z                    # tile -> monocle: focused grows, others tuck away

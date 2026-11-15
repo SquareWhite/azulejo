@@ -135,6 +135,19 @@ pub enum Node {
 
 const EPS: f64 = 1e-9;
 
+/// `r` rounded to a multiple of 2⁻⁵³, where `1 − r` is exact both ways.
+/// Ratios from ½ up already are; one below moves by at most 2⁻⁵⁴. A ratio
+/// that would round to 0 or 1 stays as it is.
+fn snap_ratio(r: f64) -> f64 {
+    const GRID: f64 = (1u64 << 53) as f64;
+    let snapped = (r * GRID).round() / GRID;
+    if snapped > 0.0 && snapped < 1.0 {
+        snapped
+    } else {
+        r
+    }
+}
+
 impl Node {
     pub fn leaf(id: TileId) -> Node {
         Node::Leaf { id }
@@ -571,6 +584,72 @@ impl Node {
         true
     }
 
+    // ----- turning the whole tree -----
+    //
+    // A quarter turn of the picture, for any tree (manual tabs' `alt+o`).
+    // Clockwise, the top edge becomes the right edge:
+    //
+    //     a | b  (r)   →   a over b  (r)
+    //     a over b (r) →   b | a     (1 − r)
+    //
+    // so a side-by-side split keeps its children and ratio, and a stacked
+    // one swaps them and gives the new first child the old second's share.
+    // Anticlockwise is the exact inverse. Every split is complemented twice
+    // in four turns, and `1 − (1 − r)` isn't always `r` in floating point,
+    // so ratios are first snapped to multiples of 2⁻⁵³ (which only moves a
+    // ratio under ½, by less than 1e-16): on that grid `1 − r` is exact, and
+    // four turns, or a turn and a turn back, give the same tree bit for bit.
+
+    /// Turns the layout a quarter turn clockwise, as a picture: what was on
+    /// the left goes to the top, the top to the right. Every tile keeps its
+    /// size (width and height swapped). Returns false for a lone tile.
+    pub fn rotate_clockwise(&mut self) -> bool {
+        self.turn(true)
+    }
+
+    /// The exact inverse of [`Node::rotate_clockwise`]: a quarter turn
+    /// anticlockwise. Returns false for a lone tile.
+    pub fn rotate_anticlockwise(&mut self) -> bool {
+        self.turn(false)
+    }
+
+    fn turn(&mut self, clockwise: bool) -> bool {
+        fn walk(node: &mut Node, clockwise: bool) {
+            let Node::Split { axis, ratio, a, b } = node else {
+                return;
+            };
+            walk(a, clockwise);
+            walk(b, clockwise);
+            let r = snap_ratio(*ratio);
+            // The split whose children trade places: stacked ones going
+            // clockwise, side-by-side ones going back.
+            let swaps = (*axis == Axis::Vertical) == clockwise;
+            if swaps {
+                std::mem::swap(a, b);
+                *ratio = 1.0 - r;
+            } else {
+                *ratio = r;
+            }
+            *axis = axis.other();
+        }
+        if matches!(self, Node::Leaf { .. }) {
+            return false;
+        }
+        walk(self, clockwise);
+        true
+    }
+
+    /// This tree with every ratio on the grid [`Node::rotate_clockwise`]
+    /// works on (multiples of 2⁻⁵³); a ratio moves by at most 2⁻⁵⁴. Four
+    /// turns of any tree give exactly this.
+    pub fn snap_ratios(&mut self) {
+        if let Node::Split { ratio, a, b, .. } = self {
+            *ratio = snap_ratio(*ratio);
+            a.snap_ratios();
+            b.snap_ratios();
+        }
+    }
+
     /// Tiles in a chain along `axis`, each split giving its `a` tile an equal
     /// share of what's left.
     fn chain(tiles: &[TileId], axis: Axis) -> Node {
@@ -849,6 +928,83 @@ mod tests {
 
         assert!(root.rotate());
         assert_eq!(root, original);
+    }
+
+    /// `t`'s rect in `root`, rounded to thousandths: (x, y, w, h).
+    fn rect_of(root: &Node, t: TileId) -> (i64, i64, i64, i64) {
+        let r = root.rects().into_iter().find(|(id, _)| *id == t).unwrap().1;
+        let k = |v: f64| (v * 1000.0).round() as i64;
+        (k(r.x), k(r.y), k(r.width), k(r.height))
+    }
+
+    #[test]
+    fn rotate_clockwise_turns_a_grid_and_three_columns_as_pictures() {
+        // [a c | b d]: a top left, c bottom left, b top right, d bottom right.
+        let [a, b, c, d] = ids();
+        let mut grid = Node::leaf(a);
+        grid.split(a, Direction::Right, b).unwrap();
+        grid.split(a, Direction::Down, c).unwrap();
+        grid.split(b, Direction::Down, d).unwrap();
+        grid.resize(a, Direction::Right, 0.1).unwrap(); // left column 0.6
+        let original = grid.clone();
+
+        assert!(grid.rotate_clockwise());
+        // Clockwise: the left column becomes the top row, read right to left.
+        assert_eq!(rect_of(&grid, c), (0, 0, 500, 600));
+        assert_eq!(rect_of(&grid, a), (500, 0, 500, 600));
+        assert_eq!(rect_of(&grid, d), (0, 600, 500, 400));
+        assert_eq!(rect_of(&grid, b), (500, 600, 500, 400));
+        for _ in 0..3 {
+            assert!(grid.rotate_clockwise());
+        }
+        assert_eq!(grid, original, "four turns are the identity");
+
+        // Three columns from repeated split-right become three rows.
+        let [x, y, z] = ids();
+        let mut cols = Node::leaf(x);
+        cols.split(x, Direction::Right, y).unwrap();
+        cols.split(y, Direction::Right, z).unwrap();
+        let original = cols.clone();
+        assert!(cols.rotate_clockwise());
+        assert_eq!(rect_of(&cols, x), (0, 0, 1000, 500));
+        assert_eq!(rect_of(&cols, y), (0, 500, 1000, 250));
+        assert_eq!(rect_of(&cols, z), (0, 750, 1000, 250));
+        assert!(cols.rotate_clockwise());
+        // Upside down: right to left.
+        assert_eq!(rect_of(&cols, z), (0, 0, 250, 1000));
+        assert_eq!(rect_of(&cols, x), (500, 0, 500, 1000));
+        assert!(cols.rotate_anticlockwise());
+        assert!(cols.rotate_anticlockwise());
+        assert_eq!(cols, original, "a turn back undoes a turn");
+
+        let mut lone = Node::leaf(x);
+        assert!(!lone.rotate_clockwise());
+        assert!(!lone.rotate_anticlockwise());
+    }
+
+    #[test]
+    fn four_turns_are_exact_even_for_thirds() {
+        // An even three-tile stack has 1/3 ratios, where 1 − (1 − r) ≠ r in
+        // floating point; snapping first keeps four turns exact.
+        let [m, s1, s2, s3] = ids();
+        let mut root = Node::leaf(m);
+        for t in [s1, s2, s3] {
+            root.split_auto(t).unwrap();
+        }
+        let mut snapped = root.clone();
+        snapped.snap_ratios();
+        for (x, y) in root.ratios().iter().zip(snapped.ratios()) {
+            assert!((x - y).abs() <= f64::EPSILON / 4.0);
+        }
+        let mut turned = root.clone();
+        for _ in 0..4 {
+            turned.rotate_clockwise();
+        }
+        assert_eq!(turned, snapped);
+        for _ in 0..4 {
+            turned.rotate_anticlockwise();
+        }
+        assert_eq!(turned, snapped);
     }
 
     #[test]

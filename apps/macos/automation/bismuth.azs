@@ -207,8 +207,24 @@ key alt+h                     # the master again
 key alt+h                     # past the left edge
 expect focus 1
 unchanged hud.flashes
-key alt+o                     # manual: the tree flips master left ↔ top
-key alt+o
+# manual: alt+o turns the whole tree a quarter turn, as Tile does
+remember tree
+expect rect.focused 0,0,500x1000
+key alt+o                     # the master goes to the top…
+expect rect.focused 0,0,1000x500
+key alt+o                     # …the right…
+expect rect.focused 500,0,500x1000
+key alt+o                     # …the bottom…
+expect rect.focused 0,500,1000x500
+key alt+o                     # …and home: the same tree
+expect rect.focused 0,0,500x1000
+unchanged tree
+expect kind manual
+action rotate_anticlockwise   # back the other way
+expect rect.focused 0,500,1000x500
+action rotate_layout
+unchanged tree
+unchanged hud.flashes
 key alt+shift+t               # back to tile
 expect kind tile
 
@@ -247,7 +263,9 @@ key alt+shift+minus
 key alt+equal
 key alt+minus
 key alt+minus                 # at least one master
-key alt+o                     # nothing to rotate
+remember layout
+key alt+o                     # nothing to rotate: silently nothing
+unchanged layout
 key alt+shift+o
 key alt+enter
 key alt+shift+bracketright
@@ -271,7 +289,9 @@ key alt+k                     # previous
 key alt+shift+l
 key alt+shift+h
 key ctrl+alt+shift+l          # nothing to resize
-key alt+o
+remember layout
+key alt+o                     # nothing to rotate: silently nothing
+unchanged layout
 key alt+shift+o
 key alt+equal
 key alt+minus
@@ -283,6 +303,33 @@ key ctrl+cmd+t
 until tiles 5 3000
 key alt+w
 until tiles 4 3000
+
+# --- an adopted herdr tab: manual, like every tab the maintainer has. A 2×2 grid
+# split in herdr turns as a picture, and four turns bring it home ---
+sh "$(dirname "$AZULEJO_AUTOMATION")/herdr-grid.sh" {herdr} {session} grid
+until workspaces 2 10000
+key cmd+2
+until tiles 4 10000
+expect kind manual
+wait 800
+key alt+h                     # the top-left tile
+key alt+k
+expect rect.focused 0,0,500x500
+remember tree
+key alt+o                     # top left → top right
+expect rect.focused 500,0,500x500
+key alt+o                     # → bottom right
+expect rect.focused 500,500,500x500
+key alt+o                     # → bottom left
+expect rect.focused 0,500,500x500
+key alt+o                     # → home
+expect rect.focused 0,0,500x500
+unchanged tree
+expect kind manual
+wait 800                      # herdr has it now; no pull turns it back
+unchanged tree
+key cmd+1
+
 # Every chord above was a real one or ran into an edge: no flashes at all.
 expect hud.flashes 0
 shot 99-end
