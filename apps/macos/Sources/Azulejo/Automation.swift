@@ -614,86 +614,152 @@ final class Automation {
 
     // MARK: State
 
-    private func state() -> [String: String] {
+    /// The focused window's state, worked out key by key as a step asks for
+    /// it: `expect`, `until` and `record` read a few keys, and building every
+    /// key on every step cost the frame budget mid-motion.
+    private func state() -> AutomationState {
         guard let app, let controller = app.focusedController,
               let session = app.session, let window = session.window(controller.windowID)
-        else { return [:] }
-        var s: [String: String] = [
-            "windows": "\(session.windows.count)",
-            "workspaces": "\(window.workspaces.count)",
-            "workspace": "\((window.workspaces.firstIndex { $0.id == window.activeWorkspace } ?? -1) + 1)",
-            "sidebar": controller.sidebarState == .full ? "visible" : controller.sidebarState.rawValue,
-            "dockicon": DockIcon.showingDark ? "dark" : "light",
+        else { return AutomationState([]) }
+        // Trace names go to tiles as they're first seen, on every read, as
+        // when each read built the whole state (`order` and `layout` use them).
+        if let tab = window.workspace?.tab { Self.nameNewTiles(in: tab) }
+        return AutomationState(Self.stateSources(app: app, controller: controller, session: session, window: window))
+    }
+
+    /// Every state key, from the sources below in order: a later source's
+    /// key wins, as when they were merged into one dictionary. Each source
+    /// names the keys it can set (exact names and prefixes); a key no
+    /// source names is still found in the full merge.
+    private static func stateSources(app: AppController, controller: WindowController,
+                                     session: SessionModel, window: WindowModel) -> [AutomationState.Source] {
+        typealias Source = AutomationState.Source
+        let tab = window.workspace?.tab
+        return [
+            Source(["windows", "workspaces", "workspace", "sidebar", "dockicon", "tabs", "tab"]) {
+                var s: [String: String] = [
+                    "windows": "\(session.windows.count)",
+                    "workspaces": "\(window.workspaces.count)",
+                    "workspace": "\((window.workspaces.firstIndex { $0.id == window.activeWorkspace } ?? -1) + 1)",
+                    "sidebar": controller.sidebarState == .full ? "visible" : controller.sidebarState.rawValue,
+                    "dockicon": DockIcon.showingDark ? "dark" : "light",
+                ]
+                if let ws = window.workspace {
+                    s["tabs"] = "\(ws.tabs.count)"
+                    s["tab"] = "\((ws.tabs.firstIndex { $0.id == ws.tab?.id } ?? -1) + 1)"
+                }
+                return s
+            },
+            Source(["tiles", "focus", "zoomed", "axis", "ratio", "tree", "kind", "masters", "orientation", "part"]) {
+                guard let tab else { return [:] }
+                var s: [String: String] = [
+                    "tiles": "\(tab.tiles.count)",
+                    "focus": "\((tab.order.firstIndex(of: tab.focused) ?? -1) + 1)",
+                    "zoomed": tab.zoomed == nil ? "no" : "yes",
+                ]
+                switch tab.root {
+                case .leaf: s["axis"] = "leaf"; s["ratio"] = "-"
+                case .split(let axis, let ratio, _, _):
+                    s["axis"] = axis == .horizontal ? "h" : "v"
+                    s["ratio"] = String(format: "%.2f", ratio)
+                }
+                s["tree"] = tab.root.describe { id in
+                    let mark = id == tab.focused ? "*" : ""
+                    return "\(mark)\(Short.id(id))"
+                }
+                s["kind"] = tab.kind.rawValue
+                let params = tab.layout?.params
+                switch tab.kind {
+                case .tile:
+                    s["masters"] = params.map { "\($0.tile.masters)" } ?? "?"
+                    s["orientation"] = params?.tile.orientation ?? "?"
+                    s["part"] = params?.tile.rotatePart == true ? "yes" : "no"
+                    s["ratio"] = params.map { String(format: "%.2f", $0.tile.ratio) } ?? "?"
+                case .threeColumn:
+                    s["masters"] = params.map { "\($0.threeColumn.masters)" } ?? "?"
+                    s["ratio"] = params.map { String(format: "%.2f", $0.threeColumn.ratio) } ?? "?"
+                case .manual, .monocle:
+                    break
+                }
+                return s
+            },
+            Source(["layout", "rect.focused", "order"]) {
+                guard let tab else { return [:] }
+                var s = ["layout": layoutTrace(tab)]
+                // The focused tile's rect in a 1000×1000 tab, top-left origin
+                // (`x,y,wxh`): follows one tile through a rotate.
+                let size: CGFloat = 1000
+                if let f = tab.root.frames(in: CGRect(x: 0, y: 0, width: size, height: size), gap: 0)[tab.focused] {
+                    s["rect.focused"] = "\(Int(f.minX)),\(Int(size - f.maxY)),\(Int(f.width))x\(Int(f.height))"
+                }
+                s["order"] = tab.order.map { tileName($0, in: tab) }.joined(separator: ",")
+                return s
+            },
+            Source(["visible", "dimmed", "dim.strength", "resizes"]) {
+                guard tab != nil else { return [:] }
+                return [
+                    "visible": "\(controller.tiles.visibleTileFrames().count)",
+                    "dimmed": controller.tiles.dimmedTiles,
+                    "dim.strength": String(format: "%.2f", Motion.dimStrength),
+                    "resizes": "\(controller.tiles.totalSurfaceResizes)",
+                ]
+            },
+            Source(prefixes: ["tile."]) {
+                (controller.tiles.focusedView as? AutomatableTile)?.automationState() ?? [:]
+            },
+            Source([
+                "palette", "palette.count", "palette.motion", "palette.visible", "palette.look", "palette.anims",
+                "palette.typing", "palette.open.ms", "palette.close.ms", "palette.index", "palette.top",
+                "palette.topkind", "palette.kinds", "palette.selected", "banner", "banner.full", "badges",
+                "tile.badge.setting", "sidebar.markers", "sidebar.machines", "machines", "workspace.machine",
+                "sidebar.branches", "tab.markers", "dock", "focused.id", "tab.label", "agents", "header.agents",
+                "focused.agent",
+            ]) { ShellAutomation.state(app: app, controller: controller) },
+            Source([
+                "responder", "responder.tile", "responder.focused", "key.last", "key.context", "keys.resizing",
+                "keywindow", "palette.query", "clipboard", "banner.shown", "banner.capped", "terminal.phase",
+                "terminal.cwd", "ime.marked", "terminal.selection",
+            ], prefixes: ["hints."]) { FocusAutomation.state(app: app, controller: controller) },
+            Source(["drop.op", "drop.highlight", "drop.last", "drop.dir"]) {
+                DropAutomation.state(controller: controller, tab: tab)
+            },
+            Source([
+                "sidebar.mode", "sidebar.statuses", "sidebar.footer", "workspace.active",
+                "drag.last", "drag.landed", "drag.active", "drag.slot", "drag.rows", "drag.indicator",
+            ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
+            Source(["theme", "terminal.attaches"], prefixes: ["theme."]) { ThemeAutomation.state(controller) },
+            Source(["workspace.names"], prefixes: ["menu."]) { MenuAutomation.state(app: app, controller: controller) },
+            Source([
+                "hud.flashes", "hud.last", "prompt.asks", "prompt.last", "tab.statuses", "tab.overflow",
+                "tab.names", "tab.hint", "search.chord", "search.active", "palette.anchor",
+            ], prefixes: ["chrome."]) { controller.chromeState() },
+            Source(prefixes: ["picker."]) { LayoutPickerAutomation.state(controller) },
+            Source(["tab.visual", "tab.selected", "tab.leftmost", "tab.session"], prefixes: ["tabdrag."]) {
+                TabDragAutomation.state(app: app, controller: controller)
+            },
+            Source([
+                "dividers", "hover", "cursor", "hint", "shape", "columns",
+                "drag.commands", "drag.terminals", "drag.mid",
+            ], prefixes: ["divider.", "rect."]) { DividerAutomation.state(controller) },
+            Source([
+                "mouse.target", "terminal.selection.text", "terminal.cursor", "terminal.mouse",
+                "terminal.mouse.owner", "terminal.link", "terminal.opened", "terminal.refused",
+            ]) { MouseAutomation.state(controller) },
         ]
-        if let ws = window.workspace {
-            s["tabs"] = "\(ws.tabs.count)"
-            s["tab"] = "\((ws.tabs.firstIndex { $0.id == ws.tab?.id } ?? -1) + 1)"
+    }
+
+    /// Gives every tile of `tab` without a trace name the next one.
+    private static func nameNewTiles(in tab: TabModel) {
+        for tile in tab.tiles where traceNames[tile.id] == nil {
+            traceNames[tile.id] = "t\(traceNames.count + 1)"
         }
-        if let tab = window.workspace?.tab {
-            s["tiles"] = "\(tab.tiles.count)"
-            s["focus"] = "\((tab.order.firstIndex(of: tab.focused) ?? -1) + 1)"
-            s["zoomed"] = tab.zoomed == nil ? "no" : "yes"
-            switch tab.root {
-            case .leaf: s["axis"] = "leaf"; s["ratio"] = "-"
-            case .split(let axis, let ratio, _, _):
-                s["axis"] = axis == .horizontal ? "h" : "v"
-                s["ratio"] = String(format: "%.2f", ratio)
-            }
-            s["tree"] = tab.root.describe { id in
-                let mark = id == tab.focused ? "*" : ""
-                return "\(mark)\(Short.id(id))"
-            }
-            s["kind"] = tab.kind.rawValue
-            let params = tab.layout?.params
-            switch tab.kind {
-            case .tile:
-                s["masters"] = params.map { "\($0.tile.masters)" } ?? "?"
-                s["orientation"] = params?.tile.orientation ?? "?"
-                s["part"] = params?.tile.rotatePart == true ? "yes" : "no"
-                s["ratio"] = params.map { String(format: "%.2f", $0.tile.ratio) } ?? "?"
-            case .threeColumn:
-                s["masters"] = params.map { "\($0.threeColumn.masters)" } ?? "?"
-                s["ratio"] = params.map { String(format: "%.2f", $0.threeColumn.ratio) } ?? "?"
-            case .manual, .monocle:
-                break
-            }
-            s["layout"] = Self.layoutTrace(tab)
-            // The focused tile's rect in a 1000×1000 tab, top-left origin
-            // (`x,y,wxh`): follows one tile through a rotate.
-            let size: CGFloat = 1000
-            if let f = tab.root.frames(in: CGRect(x: 0, y: 0, width: size, height: size), gap: 0)[tab.focused] {
-                s["rect.focused"] = "\(Int(f.minX)),\(Int(size - f.maxY)),\(Int(f.width))x\(Int(f.height))"
-            }
-            s["order"] = tab.order.map { Self.tileName($0, in: tab) }.joined(separator: ",")
-            s["visible"] = "\(controller.tiles.visibleTileFrames().count)"
-            s["dimmed"] = controller.tiles.dimmedTiles
-            s["dim.strength"] = String(format: "%.2f", Motion.dimStrength)
-            s["resizes"] = "\(controller.tiles.totalSurfaceResizes)"
-        }
-        if let tile = controller.tiles.focusedView as? AutomatableTile {
-            s.merge(tile.automationState()) { $1 }
-        }
-        s.merge(ShellAutomation.state(app: app, controller: controller)) { $1 }
-        s.merge(FocusAutomation.state(app: app, controller: controller)) { $1 }
-        s.merge(DropAutomation.state(controller: controller, tab: window.workspace?.tab)) { $1 }
-        s.merge(SidebarAutomation.state(controller)) { $1 }
-        s.merge(ThemeAutomation.state(controller)) { $1 }
-        s.merge(MenuAutomation.state(app: app, controller: controller)) { $1 }
-        s.merge(controller.chromeState()) { $1 }
-        s.merge(LayoutPickerAutomation.state(controller)) { $1 }
-        s.merge(TabDragAutomation.state(app: app, controller: controller)) { $1 }
-        s.merge(DividerAutomation.state(controller)) { $1 }
-        s.merge(MouseAutomation.state(controller)) { $1 }
-        return s
     }
 
     /// A tile's name in traces and `expect order`: `t1` is the first tile
     /// seen, `t2` the next, and a name never moves to another tile while the
     /// layout order changes and tiles close.
     static func tileName(_ id: String, in tab: TabModel) -> String {
-        for tile in tab.tiles where traceNames[tile.id] == nil {
-            traceNames[tile.id] = "t\(traceNames.count + 1)"
-        }
+        nameNewTiles(in: tab)
         return traceNames[id] ?? "t?"
     }
     private static var traceNames: [String: String] = [:]
@@ -765,4 +831,51 @@ protocol AutomatableTile {
     func automate(_ verb: String, _ arg: String) -> String?
     /// Extra `expect` / `until` keys, prefixed `tile.`.
     func automationState() -> [String: String]
+}
+
+/// One read of the automation state (`Automation.state()`): a source
+/// runs the first time a key it names is asked for, then keeps its answer
+/// for the rest of the read.
+@MainActor
+final class AutomationState {
+    struct Source {
+        let keys: Set<String>
+        let prefixes: [String]
+        let compute: () -> [String: String]
+
+        init(_ keys: Set<String> = [], prefixes: [String] = [], _ compute: @escaping () -> [String: String]) {
+            self.keys = keys
+            self.prefixes = prefixes
+            self.compute = compute
+        }
+
+        func names(_ key: String) -> Bool {
+            keys.contains(key) || prefixes.contains { key.hasPrefix($0) }
+        }
+    }
+
+    private let sources: [Source]
+    private var computed: [Int: [String: String]] = [:]
+
+    init(_ sources: [Source]) { self.sources = sources }
+
+    private func values(_ i: Int) -> [String: String] {
+        if let done = computed[i] { return done }
+        let values = sources[i].compute()
+        computed[i] = values
+        return values
+    }
+
+    /// The last source to set `key` has it, as in one merged dictionary.
+    subscript(key: String) -> String? {
+        for i in sources.indices.reversed() where sources[i].names(key) {
+            if let value = values(i)[key] { return value }
+        }
+        // Not where it's named (a key that's only sometimes set) or named
+        // nowhere: every source has its say.
+        for i in sources.indices.reversed() {
+            if let value = values(i)[key] { return value }
+        }
+        return nil
+    }
 }
