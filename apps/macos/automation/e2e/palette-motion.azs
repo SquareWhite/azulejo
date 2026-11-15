@@ -1,0 +1,203 @@
+# The ⌘K menu grows in from its top centre and shrinks back out (layer
+# motion only). Open and closed are immediate: typing works from the first
+# frame, Esc and ⌘K mid-open close it, a run doesn't wait for the close, and
+# rapid toggles never leave it half-open or doubled up. palette-motion.sh
+# checks the timings this logs (`remember palette.open.ms` / `.close.ms`).
+log palette motion
+delivery direct
+until terminal.phase attached 10000
+palette forget
+expect palette closed
+expect palette.visible no
+
+# --- Default speed: how long a grow and a shrink take (three of each).
+anim duration default
+key cmd+k
+until palette.motion none 1000
+remember palette.open.ms
+expect palette.look 1.00@1.00
+key escape
+until palette.visible no 1000
+remember palette.close.ms
+expect palette.anims 0
+key cmd+k
+until palette.motion none 1000
+remember palette.open.ms
+key escape
+until palette.visible no 1000
+remember palette.close.ms
+key cmd+k
+until palette.motion none 1000
+remember palette.open.ms
+key escape
+until palette.visible no 1000
+remember palette.close.ms
+
+# --- Slow motion (open 1.2 s, close 0.8 s): the menu mid-motion.
+anim duration 1500
+key cmd+k
+expect palette all
+expect palette.motion opening
+expect palette.visible yes
+# The field has the keys from the first frame: typed letters filter at once.
+expect palette.typing yes
+capture 01-open-a 20
+type rot
+expect palette.motion opening
+expect palette.top Rotate layout clockwise
+capture 01-open-b 60
+wait 1300
+until palette.motion none 2000
+expect palette.look 1.00@1.00
+expect palette.anims 0
+capture 01-open-c 0
+key escape
+expect palette closed
+expect palette.motion closing
+expect palette.visible yes
+expect palette.typing no
+expect palette.anchor -
+capture 02-close-a 10
+capture 02-close-b 60
+until palette.visible no 2000
+expect palette.motion none
+expect palette.anims 0
+
+# Esc mid-open: closed at once, shrinking from where it got to.
+key cmd+k
+expect palette.motion opening
+key escape
+expect palette closed
+expect palette.motion closing
+until palette.visible no 2000
+expect palette.anims 0
+
+# ⌘K mid-open closes it the same way.
+key cmd+k
+expect palette.motion opening
+key cmd+k
+expect palette closed
+expect palette.motion closing
+until palette.visible no 2000
+
+# Rapid ⌘K by key, each one mid-motion: five end open, five more closed.
+key cmd+k
+key cmd+k
+key cmd+k
+key cmd+k
+key cmd+k
+expect palette all
+until palette.motion none 3000
+expect palette.look 1.00@1.00
+expect palette.typing yes
+expect palette.anims 0
+key cmd+k
+key cmd+k
+key cmd+k
+key cmd+k
+key cmd+k
+expect palette closed
+until palette.visible no 3000
+expect palette.motion none
+expect palette.anims 0
+
+# A run fires on Enter, not after the shrink: the split lands mid-close.
+key cmd+k
+palette type split right
+key enter
+expect palette closed
+expect palette.motion closing
+until tiles 2 600
+expect palette.motion closing
+until palette.visible no 2000
+
+# "Set theme…" closes the menu and opens the picker in the same turn: it
+# just stays up (no shrink and grow back).
+key cmd+k
+until palette.motion none 2000
+palette type >set theme
+expect palette.selected Set theme…
+key enter
+expect palette list:themes
+expect palette.motion none
+expect palette.look 1.00@1.00
+key escape
+until palette.visible no 2000
+
+# --- Rapid toggles at the real speed.
+anim duration default
+# Five in one turn: open, settled, nothing left over.
+palette toggle 5
+expect palette all
+until palette.motion none 1000
+expect palette.look 1.00@1.00
+expect palette.anims 0
+expect palette.typing yes
+# Six and seven, 40 ms apart (each mid-motion): open, then closed.
+palette toggle 6 40
+wait 600
+expect palette all
+expect palette.motion none
+expect palette.look 1.00@1.00
+expect palette.typing yes
+palette toggle 7 40
+wait 600
+expect palette closed
+expect palette.visible no
+expect palette.anims 0
+
+# --- Each built-in theme, mid-grow and mid-shrink (slow motion).
+anim duration 1500
+theme set atom-one-dark
+until theme atom-one-dark 8000
+wait 400
+key cmd+k
+capture 10-atom-one-dark-open 40
+wait 1400
+key escape
+capture 11-atom-one-dark-close 20
+wait 1000
+theme set atom-one-light
+until theme atom-one-light 8000
+wait 400
+key cmd+k
+capture 20-atom-one-light-open 40
+wait 1400
+key escape
+capture 21-atom-one-light-close 20
+wait 1000
+theme set macos-dark
+until theme macos-dark 8000
+wait 400
+key cmd+k
+capture 30-macos-dark-open 40
+wait 1400
+key escape
+capture 31-macos-dark-close 20
+wait 1000
+theme set macos-light
+until theme macos-light 8000
+wait 400
+key cmd+k
+capture 40-macos-light-open 40
+wait 1400
+key escape
+capture 41-macos-light-close 20
+wait 1000
+theme set atom-one-dark
+until theme atom-one-dark 8000
+
+# --- Motion off ([animation] enabled = false or Reduce Motion): no motion,
+# it shows and hides at once.
+anim enabled false
+key cmd+k
+expect palette all
+expect palette.motion none
+expect palette.visible yes
+expect palette.look 1.00@1.00
+expect palette.anims 0
+key escape
+expect palette closed
+expect palette.visible no
+anim enabled default
+anim duration default
