@@ -403,6 +403,8 @@ extension TileFrame: AutomatableTile {
         state["tile.header.subtitle"] = header.subtitleText
         state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
+        // Room the strip keeps clear at its right end (the badge; 0 without).
+        state["tile.header.inset"] = "\(Int(header.trailingInset.rounded()))"
         state["tile.dim"] = dimLevel > 0 ? "yes" : "no"
         state["tile.overlays.top"] = subviews.last === overlays && layer?.sublayers?.last === overlays.layer
             ? "yes" : "no"
@@ -476,9 +478,10 @@ final class TileHeaderView: NSView, ThemeAware {
         render()
     }
 
-    /// The agent badge (the attention overlay makes and fills it) at the
-    /// strip's right end; the title keeps clear of it. A subview, so it rides
-    /// with the strip when the strip follows a crop clip mid-motion (F6).
+    /// The agent badge, or a blocked tile's icon (the attention overlay makes
+    /// and fills it), at the strip's right end; the title keeps clear of it.
+    /// None by default: the title gets the whole strip. A subview, so it
+    /// rides with the strip when the strip follows a crop clip mid-motion (F6).
     var badge: NSView? {
         didSet {
             if oldValue !== badge, oldValue?.superview === self { oldValue?.removeFromSuperview() }
@@ -487,8 +490,8 @@ final class TileHeaderView: NSView, ThemeAware {
         }
     }
 
-    /// Room kept clear at the strip's right end for the badge.
-    private var trailingInset: CGFloat = 0
+    /// Room kept clear at the strip's right end for the badge (0 without one).
+    private(set) var trailingInset: CGFloat = 0
 
     /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
     private(set) var shownSubtitle = ""

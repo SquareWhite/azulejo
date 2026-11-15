@@ -393,6 +393,22 @@ fn appearance_section() {
     let plain = Config::defaults(MAC);
     assert_eq!(plain.appearance.theme, "atom-one-dark");
     assert_eq!(plain.appearance.terminal_colors, None);
+    assert!(
+        !plain.appearance.tile_agent_badge,
+        "no agent badge in headers by default"
+    );
+
+    // The header badge comes back on request; anything but a bool is an error.
+    let badge = Config::from_toml("[appearance]\ntile_agent_badge = true\n", None, MAC);
+    assert!(badge.diagnostics.is_empty(), "{:?}", badge.diagnostics);
+    assert!(badge.appearance.tile_agent_badge);
+    let wrong = Config::from_toml("[appearance]\ntile_agent_badge = \"yes\"\n", None, MAC);
+    assert!(
+        messages(&wrong, Severity::Error)
+            .iter()
+            .any(|e| e.contains("tile_agent_badge` must be true or false"))
+    );
+    assert!(!wrong.appearance.tile_agent_badge);
 
     // auto follows the system, with the atom pair by default.
     let auto = Config::from_toml("[appearance]\ntheme = \"auto\"\n", None, MAC);

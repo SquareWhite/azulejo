@@ -60,6 +60,17 @@ With Ghostty's colours, a Ghostty `theme = light:…,dark:…` follows Azulejo's
 
 **Unfocused tiles** dim towards the theme's `dimFill` at `alpha.unfocusedDim` (25 %), unless your Ghostty config sets `unfocused-split-opacity` or `unfocused-split-fill` (those win, as before). Each theme picks a fill that suits it: the window colour for the Atom themes and macOS Light, black for macOS Dark (its window colour is lighter than its tiles).
 
+## Agent state in tile headers
+
+Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. Terminal tile headers stay quiet by default: no "● claude · working" badge, so the title gets the whole strip. A blocked agent still marks its own tile, so you can find it at a glance in a busy tab: the blocked icon (yellow `exclamationmark.circle.fill`, no text, the agent's name in its tooltip) at the right end of the header strip, as long as the agent stays blocked. A blocked tile you haven't looked at yet also gets the yellow attention border.
+
+```toml
+[appearance]
+tile_agent_badge = true    # the badge in every agent tile's header (default false)
+```
+
+On, every terminal with an agent shows its name and state at the right end of its header ("● codex · blocked"; just the dot in a narrow tile) instead of the blocked icon. It applies live when you save the config.
+
 ## Previews
 
 Rendered markdown, Source mode and code previews follow the theme: Azulejo sets the page's CSS variables (`--azj-bg`, `--azj-fg`, …, mapped from colour tokens in tokens.json `webview`) and its syntax colours (`html[data-azj-syntax]`: One Dark, One Light, GitHub dark or GitHub light, built in the core from scope tables) before the page draws, and again on a theme change. Browser tiles show web pages as the site draws them; only their chrome (toolbar, address field, notices) follows the theme.
@@ -173,7 +184,7 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 ## Where it lives
 
 - `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `syntax`, `sidebarMaterial`, `color` and `terminal`), `webview` (CSS variables). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell (M3) reads the same file through `azulejo-config`.
-- `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]`, the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
+- `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
 - macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config and updates the previews. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
 
 ## Tests

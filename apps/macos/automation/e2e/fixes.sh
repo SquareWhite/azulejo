@@ -3,7 +3,7 @@
 #   - fixes.azs.in, in-process: ⌘F under motion, a herdr restart, ⌘K and a tab
 #     switch; Source and Quick Look previews; a failed browser page; the find
 #     bar at the minimum size; `azj preview open` from a terminal (twice, and a
-#     missing file); HUD wording; agent badges; the config banner row; tab
+#     missing file); HUD wording; agent state in headers; the config banner row; tab
 #     overflow.
 #   - then, through `azj` against the same app: error wording (message names
 #     no IDs, the IDs are in the error data), unknown params, and

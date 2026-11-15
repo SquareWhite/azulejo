@@ -828,6 +828,10 @@ pub struct AppearanceConfig {
     /// `None`: "ghostty" when the user's Ghostty config sets colours, else
     /// "theme" (see [`AppearanceConfig::terminal_colors`]).
     pub terminal_colors: Option<TerminalColors>,
+    /// The agent badge ("● claude · working") at the right end of terminal
+    /// tile headers. Off by default: the sidebar, rail, tab strip, ⌘K and
+    /// Dock show agent state, and a blocked tile keeps its own mark.
+    pub tile_agent_badge: bool,
 }
 
 impl Default for AppearanceConfig {
@@ -837,6 +841,7 @@ impl Default for AppearanceConfig {
             theme_light: DEFAULT_LIGHT_THEME.into(),
             theme_dark: DEFAULT_DARK_THEME.into(),
             terminal_colors: None,
+            tile_agent_badge: false,
         }
     }
 }
@@ -911,6 +916,11 @@ pub(crate) fn parse_appearance(
             ("terminal_colors", _) => sink.error(
                 value.span(),
                 "`appearance.terminal_colors` must be \"theme\" or \"ghostty\"",
+            ),
+            ("tile_agent_badge", DeValue::Boolean(on)) => out.tile_agent_badge = *on,
+            ("tile_agent_badge", _) => sink.error(
+                value.span(),
+                "`appearance.tile_agent_badge` must be true or false",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `appearance.{other}`")),
         }
