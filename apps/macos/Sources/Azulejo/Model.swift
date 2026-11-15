@@ -289,7 +289,9 @@ struct TileModel: Decodable, Equatable {
     }
 }
 
+/// What herdr reports for a terminal tile's pane (`azulejo_model::PaneMeta`).
 struct PaneMetaModel: Decodable, Equatable {
+    /// Its working directory now (the tile's `cwd` is where it started).
     var cwd: String?
     /// The foreground command when it isn't the shell (F28).
     var command: String?

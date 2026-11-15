@@ -14,6 +14,7 @@ mod meta;
 pub mod mirror;
 pub mod persist;
 mod preview;
+mod remote_files;
 mod repos;
 pub mod terminal;
 
@@ -771,7 +772,11 @@ fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created
             Ok(created(new))
         }
         FilesOpenTarget::Terminal => {
-            let folder = if path.is_dir() {
+            // In a remote workspace the path is on its machine, where the
+            // terminal runs: a remote files panel hands over the folder.
+            let (_, workspace, _) = s.ids_at(s.locate(id)?);
+            let remote = s.workspace(workspace)?.machine.is_some();
+            let folder = if remote || path.is_dir() {
                 path
             } else {
                 path.parent()

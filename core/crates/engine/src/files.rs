@@ -7,21 +7,44 @@
 //! What a tile has open, and whether it shows hidden entries, lives here and
 //! isn't saved: after a relaunch a tile shows its root, and shells expand
 //! again what they remember.
+//!
+//! A files panel can show a remote herdr machine's files instead (ADR
+//! 0015). Its folders are listed over the machine's SSH connection
+//! ([`crate::remote_files`]) and kept in a cache by machine and folder: a
+//! listing answers at once from the cache, or empty with `loading`, and
+//! `files.changed` follows when the remote listing is in. Open folders are
+//! listed again every [`REMOTE_POLL`]; there's no watching and no git status.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use azulejo_files::{Change, DirWatcher, GitState, GitStatus};
+use azulejo_herdr::RemoteMachine;
 use azulejo_model::{Session, TileContent, TileId};
 use azulejo_protocol::{
     Command, Created, Error, ErrorCode, Event, FileEntry, FileGitState, FilesChanged, FilesGit,
-    FilesListing, FilesRevealed, Reply,
+    FilesListing, FilesOpen, FilesOpenTarget, FilesRevealed, Reply,
 };
 
 use crate::driver::LogFn;
+use crate::remote_files::{self, RemoteDir, RunError};
 use crate::{Engine, Outcome};
+
+/// How often a remote panel lists its open folders again.
+pub(crate) const REMOTE_POLL: Duration = Duration::from_secs(3);
+
+/// A cached remote listing older than this is listed again when a shell asks
+/// for it; the shell gets the cached one meanwhile.
+const REMOTE_FRESH: Duration = Duration::from_secs(2);
+
+/// After a remote listing failed, polls wait this long before trying again.
+const REMOTE_RETRY: Duration = Duration::from_secs(10);
+
+/// Most remote folders the cache keeps.
+const REMOTE_CACHE: usize = 512;
 
 /// How long a folder must be quiet after a change before shells hear of it.
 pub(crate) const DEBOUNCE: Duration = Duration::from_millis(40);
@@ -40,6 +63,22 @@ pub(crate) enum Delivery {
     Listed(TileId, PathBuf, u64),
     /// `git status` finished for a tile's root.
     Git(TileId, PathBuf, Option<GitStatus>),
+    /// A remote listing finished (or failed) for a panel; `fetch` numbers
+    /// the run.
+    Remote {
+        tile: TileId,
+        fetch: u64,
+        dirs: Vec<PathBuf>,
+        result: remote_files::Listed,
+    },
+    /// Time for a remote panel (in its `generation`) to list its open
+    /// folders again.
+    Poll(TileId, u64),
+    /// A remote file was copied here for the preview tile, or wasn't.
+    Read {
+        remote: PathBuf,
+        result: Result<PathBuf, String>,
+    },
 }
 
 pub(crate) type Deliver = Arc<dyn Fn(Delivery) + Send + Sync>;
@@ -65,6 +104,32 @@ struct TileState {
     git_again: bool,
     /// When the last `git status` started (or will, after `GIT_GAP`).
     git_started: Option<Instant>,
+    /// A panel on a remote machine.
+    remote: Option<RemoteState>,
+}
+
+impl TileState {
+    fn machine(&self) -> Option<&str> {
+        self.remote.as_ref().map(|r| r.machine.as_str())
+    }
+}
+
+/// What a remote panel is fetching and what went wrong.
+struct RemoteState {
+    /// herdr's machine ID.
+    machine: String,
+    /// Tells this panel's polls from an earlier root's.
+    generation: u64,
+    /// Cleared when the panel stops: its poller ends.
+    alive: Arc<AtomicBool>,
+    /// Running listings by fetch number, each with its cancel flag.
+    running: HashMap<u64, Arc<AtomicBool>>,
+    /// Folders a running listing covers.
+    fetching: HashSet<PathBuf>,
+    /// Folders whose last listing failed, and why.
+    errors: HashMap<PathBuf, String>,
+    /// When a listing last failed as a whole (unreachable, timed out).
+    failed_at: Option<Instant>,
 }
 
 pub(crate) struct Files {
@@ -76,6 +141,22 @@ pub(crate) struct Files {
     /// sidebar's Files view. They live in `tiles` too but not in the session,
     /// so `sync` leaves them alone.
     panels: HashSet<TileId>,
+    /// herdr's connected remote machines, by ID, for remote panels.
+    machines: HashMap<String, RemoteMachine>,
+    /// Remote listings by machine and folder, sorted, with when they came.
+    cache: HashMap<(String, PathBuf), (Instant, Arc<RemoteDir>)>,
+    /// Numbers remote fetches and panel generations.
+    counter: u64,
+    /// Remote files copied here, to show in the preview tile.
+    opens: Vec<FilesOpen>,
+}
+
+/// What `files.open` from a remote panel turns into.
+pub(crate) enum RemoteOpen {
+    /// A command for the engine, with a path it can use.
+    Forward(FilesOpen),
+    /// Answered here (the copy for the preview runs off this thread).
+    Done(Box<Result<Outcome, Error>>),
 }
 
 /// Commands this module answers (the rest of `files.*` change the session
@@ -123,12 +204,63 @@ impl Files {
             log,
             tiles: HashMap::new(),
             panels: HashSet::new(),
+            machines: HashMap::new(),
+            cache: HashMap::new(),
+            counter: 0,
+            opens: Vec::new(),
         }
     }
 
     /// Whether `tile` names a files panel rather than a tile.
     pub(crate) fn is_panel(&self, tile: Option<TileId>) -> bool {
         tile.is_some_and(|t| self.panels.contains(&t))
+    }
+
+    /// Whether `tile` names a files panel on a remote machine.
+    pub(crate) fn is_remote_panel(&self, tile: Option<TileId>) -> bool {
+        tile.and_then(|t| self.tiles.get(&t))
+            .is_some_and(|st| st.remote.is_some())
+    }
+
+    /// A remote machine remote panels can list (`Some`, once it's
+    /// connected) or can't any more (`None`). Panels on a machine that
+    /// comes back list their open folders again at once.
+    pub(crate) fn set_machine(&mut self, id: String, machine: Option<RemoteMachine>) -> Vec<Event> {
+        let back = machine.is_some();
+        match machine {
+            Some(m) => self.machines.insert(id.clone(), m),
+            None => self.machines.remove(&id),
+        };
+        if !back {
+            return Vec::new();
+        }
+        let tiles: Vec<TileId> = self
+            .tiles
+            .iter()
+            .filter(|(_, st)| st.machine() == Some(id.as_str()))
+            .map(|(t, _)| *t)
+            .collect();
+        let mut events = Vec::new();
+        for tile in tiles {
+            let dirs = match self.tiles.get_mut(&tile) {
+                Some(st) => {
+                    if let Some(r) = st.remote.as_mut() {
+                        r.failed_at = None;
+                    }
+                    st.expanded.iter().cloned().collect()
+                }
+                None => continue,
+            };
+            let failed = self.fetch(tile, dirs);
+            events.extend(changed_event(tile, failed));
+        }
+        events
+    }
+
+    /// Remote files copied for the preview tile since the last call: the
+    /// driver shows them with `files.open`.
+    pub(crate) fn take_opens(&mut self) -> Vec<FilesOpen> {
+        std::mem::take(&mut self.opens)
     }
 
     /// Matches state to the session's files tiles: new tiles and new roots
@@ -174,15 +306,71 @@ impl Files {
                 git_running: false,
                 git_again: false,
                 git_started: None,
+                remote: None,
             },
         );
         self.watch(id, &root);
         self.refresh_git(id);
     }
 
-    /// Forgets `id` and stops watching its folders.
+    /// Starts showing `root` on remote `machine` for panel `id`: its root
+    /// open, listed now and every [`REMOTE_POLL`] after.
+    fn start_remote(&mut self, id: TileId, root: PathBuf, machine: String) {
+        self.counter += 1;
+        let generation = self.counter;
+        let alive = Arc::new(AtomicBool::new(true));
+        {
+            let alive = alive.clone();
+            let deliver = self.deliver.clone();
+            let _ = std::thread::Builder::new()
+                .name("azulejo-files-poll".into())
+                .spawn(move || {
+                    loop {
+                        std::thread::sleep(REMOTE_POLL);
+                        if !alive.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        deliver(Delivery::Poll(id, generation));
+                    }
+                });
+        }
+        self.tiles.insert(
+            id,
+            TileState {
+                configured: root.clone(),
+                root: root.clone(),
+                show_hidden: false,
+                expanded: BTreeSet::from([root.clone()]),
+                signatures: HashMap::new(),
+                git: None,
+                git_running: false,
+                git_again: false,
+                git_started: None,
+                remote: Some(RemoteState {
+                    machine,
+                    generation,
+                    alive,
+                    running: HashMap::new(),
+                    fetching: HashSet::new(),
+                    errors: HashMap::new(),
+                    failed_at: None,
+                }),
+            },
+        );
+        self.fetch(id, vec![root]);
+    }
+
+    /// Forgets `id` and stops watching its folders; a remote panel's
+    /// listings still running are cancelled.
     fn stop(&mut self, id: TileId) {
-        self.tiles.remove(&id);
+        if let Some(st) = self.tiles.remove(&id)
+            && let Some(r) = st.remote
+        {
+            r.alive.store(false, Ordering::Relaxed);
+            for cancel in r.running.values() {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        }
         if let Some(w) = &mut self.watcher {
             w.unwatch_all(&id);
         }
@@ -210,11 +398,20 @@ impl Files {
             Command::FilesList(p) => {
                 let tile = self.target(engine, p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
+                if self.is_remote_panel(Some(tile)) {
+                    let listing = self.remote_listing(tile, dir)?;
+                    return Ok(done(Reply::Files(listing), Vec::new()));
+                }
                 Ok(Handled::Later(self.list_job(tile, dir)?))
             }
             Command::FilesExpand(p) => {
                 let tile = self.target(engine, p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
+                if self.is_remote_panel(Some(tile)) {
+                    self.watch(tile, &dir);
+                    let listing = self.remote_listing(tile, dir)?;
+                    return Ok(done(Reply::Files(listing), Vec::new()));
+                }
                 if !dir.is_dir() {
                     return Err(Error::new(
                         ErrorCode::InvalidParams,
@@ -271,8 +468,25 @@ impl Files {
                 Ok(done(Reply::Ok, vec![event]))
             }
             Command::FilesPanel(p) => {
-                let configured = configured_root(Some(&p.root));
-                if !configured.is_dir() {
+                let machine = p
+                    .machine
+                    .filter(|m| !m.is_empty() && m != azulejo_protocol::LOCAL_MACHINE);
+                let configured = match &machine {
+                    // Remote: nothing to check here; a bad root shows as
+                    // the listing's error.
+                    Some(_) => {
+                        let root = PathBuf::from(&p.root);
+                        if !root.is_absolute() {
+                            return Err(Error::new(
+                                ErrorCode::InvalidParams,
+                                format!("{} isn't an absolute path", p.root),
+                            ));
+                        }
+                        remote_files::normalize(&root)
+                    }
+                    None => configured_root(Some(&p.root)),
+                };
+                if machine.is_none() && !configured.is_dir() {
                     return Err(Error::new(
                         ErrorCode::InvalidParams,
                         format!("{} isn't a folder", configured.display()),
@@ -280,14 +494,16 @@ impl Files {
                 }
                 let id = p.panel.unwrap_or_else(TileId::new);
                 let same = self.panels.contains(&id)
-                    && self
-                        .tiles
-                        .get(&id)
-                        .is_some_and(|st| st.configured == configured);
+                    && self.tiles.get(&id).is_some_and(|st| {
+                        st.configured == configured && st.machine() == machine.as_deref()
+                    });
                 if !same {
                     self.stop(id);
                     self.panels.insert(id);
-                    self.start(id, configured);
+                    match machine {
+                        Some(machine) => self.start_remote(id, configured, machine),
+                        None => self.start(id, configured),
+                    }
                 }
                 let created = Created {
                     tile: Some(id),
@@ -321,6 +537,336 @@ impl Files {
             }
             Delivery::Changed(tile, changes) => self.changed(tile, changes),
             Delivery::Git(tile, root, status) => self.git_done(tile, &root, status),
+            Delivery::Remote {
+                tile,
+                fetch,
+                dirs,
+                result,
+            } => self.remote_done(tile, fetch, dirs, result),
+            Delivery::Poll(tile, generation) => self.poll(tile, generation),
+            Delivery::Read { remote, result } => {
+                match result {
+                    Ok(local) => self.opens.push(FilesOpen {
+                        tile: None,
+                        path: display(&local),
+                        target: FilesOpenTarget::Preview,
+                    }),
+                    Err(why) => (self.log)(format!("can't preview {}: {why}", remote.display())),
+                }
+                Vec::new()
+            }
+        }
+    }
+
+    // MARK: Remote panels
+
+    /// Lists `dirs` of remote panel `tile` off this thread, skipping those
+    /// a running listing already covers. Returns the folders that failed at
+    /// once (the machine isn't connected), whose error changed.
+    fn fetch(&mut self, tile: TileId, dirs: Vec<PathBuf>) -> Vec<PathBuf> {
+        let Some(r) = self.tiles.get_mut(&tile).and_then(|st| st.remote.as_mut()) else {
+            return Vec::new();
+        };
+        let dirs: Vec<PathBuf> = dirs
+            .into_iter()
+            .filter(|d| !r.fetching.contains(d))
+            .collect();
+        if dirs.is_empty() {
+            return Vec::new();
+        }
+        let Some(machine) = self.machines.get(&r.machine) else {
+            let why = "the machine isn't connected".to_owned();
+            return dirs
+                .into_iter()
+                .filter(|d| r.errors.insert(d.clone(), why.clone()).as_ref() != Some(&why))
+                .collect();
+        };
+        self.counter += 1;
+        let fetch = self.counter;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let command = machine.exec(remote_files::list_script(&dirs, remote_files::MAX_ENTRIES));
+        let deliver = self.deliver.clone();
+        let spawned = std::thread::Builder::new()
+            .name("azulejo-files-remote".into())
+            .spawn({
+                let cancel = cancel.clone();
+                let dirs = dirs.clone();
+                move || {
+                    let result = remote_files::run(&command, &cancel, remote_files::TIMEOUT)
+                        .map(|out| remote_files::parse_listing(&out, &dirs));
+                    deliver(Delivery::Remote {
+                        tile,
+                        fetch,
+                        dirs,
+                        result,
+                    });
+                }
+            });
+        if spawned.is_err() {
+            let why = "couldn't start a thread to list the folder".to_owned();
+            for d in dirs {
+                r.errors.insert(d, why.clone());
+            }
+            return Vec::new();
+        }
+        r.running.insert(fetch, cancel);
+        r.fetching.extend(dirs);
+        Vec::new()
+    }
+
+    /// A remote listing came back: cache it, note errors, and name the open
+    /// folders whose listing or error changed.
+    fn remote_done(
+        &mut self,
+        tile: TileId,
+        fetch: u64,
+        dirs: Vec<PathBuf>,
+        result: remote_files::Listed,
+    ) -> Vec<Event> {
+        let Some(st) = self.tiles.get_mut(&tile) else {
+            return Vec::new();
+        };
+        let Some(r) = st.remote.as_mut() else {
+            return Vec::new();
+        };
+        // Cancelled, or from before the panel moved on.
+        if r.running.remove(&fetch).is_none() {
+            return Vec::new();
+        }
+        for d in &dirs {
+            r.fetching.remove(d);
+        }
+        let now = Instant::now();
+        let mut changed = Vec::new();
+        match result {
+            Err(RunError::Cancelled) => {}
+            Err(e) => {
+                let label = self
+                    .machines
+                    .get(&r.machine)
+                    .map_or_else(|| "the machine".to_owned(), |m| m.profile.label.clone());
+                let why = e.message(&label);
+                r.failed_at = Some(now);
+                for d in dirs {
+                    if r.errors.insert(d.clone(), why.clone()).as_ref() != Some(&why) {
+                        changed.push(d);
+                    }
+                }
+            }
+            Ok(results) => {
+                r.failed_at = None;
+                for (d, listing) in results {
+                    match listing {
+                        Ok(mut listing) => {
+                            sort_remote(&mut listing);
+                            let key = (r.machine.clone(), d.clone());
+                            let had_error = r.errors.remove(&d).is_some();
+                            let same = self
+                                .cache
+                                .get(&key)
+                                .is_some_and(|(_, old)| **old == listing);
+                            self.cache.insert(key, (now, Arc::new(listing)));
+                            if !same || had_error {
+                                changed.push(d);
+                            }
+                        }
+                        Err(why) => {
+                            if r.errors.insert(d.clone(), why.clone()).as_ref() != Some(&why) {
+                                changed.push(d);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        changed.retain(|d| st.expanded.contains(d));
+        self.trim_cache();
+        changed_event(tile, changed).into_iter().collect()
+    }
+
+    /// A remote panel's poll: list its open folders again, unless a listing
+    /// still runs or the last one failed a moment ago.
+    fn poll(&mut self, tile: TileId, generation: u64) -> Vec<Event> {
+        let Some(st) = self.tiles.get(&tile) else {
+            return Vec::new();
+        };
+        let Some(r) = &st.remote else {
+            return Vec::new();
+        };
+        if r.generation != generation
+            || !r.running.is_empty()
+            || r.failed_at.is_some_and(|t| t.elapsed() < REMOTE_RETRY)
+        {
+            return Vec::new();
+        }
+        let dirs = st.expanded.iter().cloned().collect();
+        let failed = self.fetch(tile, dirs);
+        changed_event(tile, failed).into_iter().collect()
+    }
+
+    /// A remote folder's listing for a shell: from the cache (listed again
+    /// in the background when it's old), else empty and `loading`.
+    fn remote_listing(&mut self, tile: TileId, dir: PathBuf) -> Result<FilesListing, Error> {
+        let st = self.state(tile)?;
+        let Some(r) = &st.remote else {
+            return Err(not_ready(tile));
+        };
+        let key = (r.machine.clone(), dir.clone());
+        let cached = self.cache.get(&key).cloned();
+        let stale = cached
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() > REMOTE_FRESH);
+        // A folder that failed with nothing cached isn't retried on every
+        // read (that would loop with `files.changed`); polls retry it.
+        if stale && (cached.is_some() || !r.errors.contains_key(&dir)) {
+            self.fetch(tile, vec![dir.clone()]);
+        }
+        let st = self.state(tile)?;
+        let Some(r) = &st.remote else {
+            return Err(not_ready(tile));
+        };
+        let show_hidden = st.show_hidden;
+        let (entries, truncated) = match &cached {
+            Some((_, listing)) => (
+                listing
+                    .entries
+                    .iter()
+                    .filter(|e| show_hidden || !e.name.starts_with('.'))
+                    .map(|e| FileEntry {
+                        path: display(&dir.join(&e.name)),
+                        name: e.name.clone(),
+                        dir: e.dir,
+                        symlink: e.symlink,
+                        hidden: e.name.starts_with('.'),
+                        ignored: false,
+                        git: None,
+                    })
+                    .collect(),
+                listing.truncated,
+            ),
+            None => (Vec::new(), false),
+        };
+        Ok(FilesListing {
+            tile,
+            root: display(&st.root),
+            dir: display(&dir),
+            show_hidden,
+            entries,
+            truncated,
+            machine: Some(r.machine.clone()),
+            loading: cached.is_none() && r.fetching.contains(&dir),
+            error: r.errors.get(&dir).cloned(),
+        })
+    }
+
+    /// Drops the oldest remote listings past [`REMOTE_CACHE`].
+    fn trim_cache(&mut self) {
+        if self.cache.len() <= REMOTE_CACHE {
+            return;
+        }
+        let mut ages: Vec<(Instant, (String, PathBuf))> = self
+            .cache
+            .iter()
+            .map(|(k, (at, _))| (*at, k.clone()))
+            .collect();
+        ages.sort_by_key(|(at, _)| *at);
+        for (_, key) in ages.into_iter().take(self.cache.len() - REMOTE_CACHE / 2) {
+            self.cache.remove(&key);
+        }
+    }
+
+    /// Whether a remote panel's listings say `path` is a folder.
+    fn remote_is_dir(&self, tile: TileId, path: &Path) -> Option<bool> {
+        let st = self.tiles.get(&tile)?;
+        let machine = st.machine()?;
+        if path == st.root || st.expanded.contains(path) {
+            return Some(true);
+        }
+        let parent = path.parent()?;
+        let name = path.file_name()?.to_string_lossy();
+        let (_, listing) = self
+            .cache
+            .get(&(machine.to_owned(), parent.to_path_buf()))?;
+        listing
+            .entries
+            .iter()
+            .find(|e| e.name == name)
+            .map(|e| e.dir)
+    }
+
+    /// `files.open` from a remote panel. A terminal opens beside the
+    /// focused tile in the folder (on the focused workspace's machine); a
+    /// file is copied here off this thread, then shown in the preview tile
+    /// ([`Files::take_opens`]).
+    pub(crate) fn remote_open(&mut self, p: FilesOpen) -> RemoteOpen {
+        let Some(panel) = p.tile else {
+            return RemoteOpen::Forward(p);
+        };
+        let path = match self.resolve(panel, Some(&p.path)) {
+            Ok(path) => path,
+            Err(e) => return answered(Err(e)),
+        };
+        let is_dir = self.remote_is_dir(panel, &path);
+        match p.target {
+            FilesOpenTarget::Terminal => {
+                let folder = match is_dir {
+                    Some(false) => path.parent().map_or(path.clone(), Path::to_path_buf),
+                    _ => path,
+                };
+                RemoteOpen::Forward(FilesOpen {
+                    tile: None,
+                    path: display(&folder),
+                    target: FilesOpenTarget::Terminal,
+                })
+            }
+            FilesOpenTarget::Preview => {
+                if is_dir == Some(true) {
+                    return answered(Err(Error::new(
+                        ErrorCode::InvalidParams,
+                        format!("{} is a folder", path.display()),
+                    )));
+                }
+                let Some(id) = self.tiles.get(&panel).and_then(TileState::machine) else {
+                    return answered(Err(not_ready(panel)));
+                };
+                let id = id.to_owned();
+                let Some(machine) = self.machines.get(&id) else {
+                    return answered(Err(Error::new(
+                        ErrorCode::Unavailable,
+                        "the machine isn't connected",
+                    )));
+                };
+                let command =
+                    machine.exec(remote_files::read_script(&path, remote_files::MAX_READ));
+                let label = machine.profile.label.clone();
+                let deliver = self.deliver.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("azulejo-files-read".into())
+                    .spawn(move || {
+                        let never = AtomicBool::new(false);
+                        let result =
+                            match remote_files::run(&command, &never, remote_files::TIMEOUT) {
+                                Ok(bytes) if bytes.len() > remote_files::MAX_READ => Err(format!(
+                                    "it's over {} MiB",
+                                    remote_files::MAX_READ / 1024 / 1024
+                                )),
+                                Ok(bytes) => remote_files::save_copy(&id, &path, &bytes)
+                                    .map_err(|e| format!("can't save a copy: {e}")),
+                                Err(e) => Err(e.message(&label)),
+                            };
+                        deliver(Delivery::Read {
+                            remote: path,
+                            result,
+                        });
+                    });
+                answered(match spawned {
+                    Ok(_) => Ok(Outcome {
+                        reply: Reply::Ok,
+                        events: Vec::new(),
+                    }),
+                    Err(e) => Err(Error::new(ErrorCode::Internal, e.to_string())),
+                })
+            }
         }
     }
 
@@ -439,6 +985,9 @@ impl Files {
         let git = st.git.clone();
         let deliver = self.deliver.clone();
         Ok(Box::new(move || {
+            if let Some(delay) = list_delay() {
+                std::thread::sleep(delay);
+            }
             let listing = azulejo_files::list(&dir, show_hidden, azulejo_files::MAX_ENTRIES)
                 .map_err(|e| {
                     Error::new(
@@ -471,6 +1020,9 @@ impl Files {
                     show_hidden,
                     entries,
                     truncated: listing.truncated,
+                    machine: None,
+                    loading: false,
+                    error: None,
                 }),
                 events: Vec::new(),
             })
@@ -481,7 +1033,7 @@ impl Files {
         let Some(st) = self.tiles.get_mut(&tile) else {
             return;
         };
-        if !st.expanded.insert(dir.to_path_buf()) {
+        if !st.expanded.insert(dir.to_path_buf()) || st.remote.is_some() {
             return;
         }
         if let Some(w) = &mut self.watcher
@@ -508,7 +1060,9 @@ impl Files {
         for d in closing {
             st.expanded.remove(&d);
             st.signatures.remove(&d);
-            if let Some(w) = &mut self.watcher {
+            if st.remote.is_none()
+                && let Some(w) = &mut self.watcher
+            {
                 w.unwatch(&tile, &d);
             }
         }
@@ -524,8 +1078,12 @@ impl Files {
 
     /// An existing path for `tile`: absolute, or relative to its root;
     /// resolved (symlinks followed) so it matches listings and events.
+    /// A remote panel's paths are worked out by name instead.
     fn resolve(&self, tile: TileId, path: Option<&str>) -> Result<PathBuf, Error> {
         let joined = self.join(tile, path)?;
+        if self.is_remote_panel(Some(tile)) {
+            return Ok(remote_files::normalize(&joined));
+        }
         joined
             .canonicalize()
             .map_err(|e| Error::new(ErrorCode::NotFound, format!("{}: {e}", joined.display())))
@@ -534,6 +1092,9 @@ impl Files {
     /// Like `resolve`, but a path that's gone still names what was open.
     fn resolve_lenient(&self, tile: TileId, path: Option<&str>) -> Result<PathBuf, Error> {
         let joined = self.join(tile, path)?;
+        if self.is_remote_panel(Some(tile)) {
+            return Ok(remote_files::normalize(&joined));
+        }
         Ok(joined.canonicalize().unwrap_or(joined))
     }
 
@@ -546,19 +1107,67 @@ impl Files {
     }
 
     fn join(&self, tile: TileId, path: Option<&str>) -> Result<PathBuf, Error> {
-        let root = &self.state(tile)?.root;
+        let st = self.state(tile)?;
+        let root = &st.root;
         Ok(match path {
             None | Some("") => root.clone(),
             Some(p) => {
-                let p = expand_home(p);
+                // `~` is this machine's home, not a remote one's.
+                let p = if st.remote.is_some() {
+                    PathBuf::from(p)
+                } else {
+                    expand_home(p)
+                };
                 if p.is_absolute() { p } else { root.join(p) }
             }
         })
     }
 }
 
+/// Test hook: `AZJ_FILES_LIST_DELAY_MS` holds every listing back that long,
+/// standing in for a slow folder (a network volume, a permission prompt) so
+/// the shell's automation can check that nothing waits for one.
+fn list_delay() -> Option<Duration> {
+    static DELAY: OnceLock<Option<Duration>> = OnceLock::new();
+    *DELAY.get_or_init(|| {
+        std::env::var("AZJ_FILES_LIST_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|ms| *ms > 0)
+            .map(Duration::from_millis)
+    })
+}
+
 fn done(reply: Reply, events: Vec<Event>) -> Handled {
     Handled::Done(Box::new(Ok(Outcome { reply, events })))
+}
+
+/// A remote panel's `files.open`, answered here.
+fn answered(result: Result<Outcome, Error>) -> RemoteOpen {
+    RemoteOpen::Done(Box::new(result))
+}
+
+/// `files.changed` for `dirs` of `tile`, unless there are none.
+fn changed_event(tile: TileId, mut dirs: Vec<PathBuf>) -> Option<Event> {
+    if dirs.is_empty() {
+        return None;
+    }
+    dirs.sort();
+    dirs.dedup();
+    Some(Event::FilesChanged(FilesChanged {
+        tile,
+        dirs: dirs.iter().map(|d| display(d)).collect(),
+    }))
+}
+
+/// A remote listing in a listing's order: folders first, then natural name
+/// order.
+fn sort_remote(listing: &mut RemoteDir) {
+    listing.entries.sort_by(|a, b| {
+        b.dir
+            .cmp(&a.dir)
+            .then_with(|| azulejo_files::natural_cmp(&a.name, &b.name))
+    });
 }
 
 fn not_ready(tile: TileId) -> Error {

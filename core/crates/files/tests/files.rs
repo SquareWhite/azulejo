@@ -80,6 +80,93 @@ fn ignore_rules_only_apply_in_a_work_tree() {
     assert_eq!(names(t.path(), false), ["a.log"]);
 }
 
+/// What `ignore`'s own walker lets through in `dir` (the reference the
+/// listing's rules follow).
+fn walker_keeps(dir: &Path) -> Vec<String> {
+    let mut kept: Vec<String> = ignore::WalkBuilder::new(dir)
+        .max_depth(Some(1))
+        .hidden(false)
+        .parents(true)
+        .follow_links(false)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.depth() == 1)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    kept.sort();
+    kept
+}
+
+#[test]
+fn ignore_rules_match_the_ignore_crates_walker() {
+    let t = tempfile::tempdir().unwrap();
+    let outer = t.path();
+    // Above the work tree: .gitignore doesn't apply there, .ignore does.
+    fs::write(outer.join(".gitignore"), "*.rs\n").unwrap();
+    fs::write(outer.join(".ignore"), "secret*\n").unwrap();
+    let repo = outer.join("repo");
+    let sub = repo.join("sub");
+    fs::create_dir_all(repo.join(".git/info")).unwrap();
+    fs::write(repo.join(".git/info/exclude"), "*.tmp\n").unwrap();
+    fs::write(
+        repo.join(".gitignore"),
+        "*.log\n!keep.log\nbuild/\n/top.md\n",
+    )
+    .unwrap();
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join(".gitignore"), "!a.log\n*.md\n").unwrap();
+    fs::write(sub.join(".ignore"), "!README.md\n").unwrap();
+    for dir in [outer, repo.as_path(), sub.as_path()] {
+        for f in [
+            "a.log",
+            "b.log",
+            "keep.log",
+            "b.md",
+            "top.md",
+            "README.md",
+            "c.tmp",
+            "secret.txt",
+            "plain.rs",
+        ] {
+            fs::write(dir.join(f), "x").unwrap();
+        }
+        fs::create_dir_all(dir.join("build")).unwrap();
+        fs::create_dir_all(dir.join("real")).unwrap();
+        // A dir-only rule doesn't catch a symlink to a folder.
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("linked")).unwrap();
+    }
+    fs::write(sub.join(".gitignore"), "!a.log\n*.md\nlinked\nreal/\n").unwrap();
+    for dir in [outer, repo.as_path(), sub.as_path()] {
+        let mut kept: Vec<String> = list(dir, true, MAX_ENTRIES)
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter(|e| !e.ignored)
+            .map(|e| e.name)
+            .collect();
+        kept.sort();
+        assert_eq!(kept, walker_keeps(dir), "in {}", dir.display());
+    }
+}
+
+#[test]
+fn ignore_rules_follow_a_linked_work_trees_common_dir() {
+    let t = tempfile::tempdir().unwrap();
+    let main = t.path().join("main");
+    let wt = t.path().join("wt");
+    let gitdir = main.join(".git/worktrees/wt");
+    fs::create_dir_all(main.join(".git/info")).unwrap();
+    fs::create_dir_all(&gitdir).unwrap();
+    fs::create_dir_all(&wt).unwrap();
+    fs::write(main.join(".git/info/exclude"), "*.tmp\n").unwrap();
+    fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+    fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+    fs::write(wt.join("a.tmp"), "").unwrap();
+    fs::write(wt.join("b.rs"), "").unwrap();
+    assert_eq!(names(&wt, false), ["b.rs"]);
+    assert_eq!(walker_keeps(&wt), [".git", "b.rs"]);
+}
+
 #[test]
 fn truncates_and_signature_tracks_names_not_contents() {
     let t = tempfile::tempdir().unwrap();

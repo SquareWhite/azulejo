@@ -18,3 +18,4 @@ One file per decision: `NNNN-short-title.md`, numbered in order. Each record say
 | [0012](0012-mirror-layout-into-herdr.md) | Mirror each tab's layout into herdr, both ways: one herdr tab per Azulejo tab, its splits, zoom and Monocle; migration moves panes, never kills; only Azulejo ops change herdr's structure |
 | [0013](0013-workspace-order.md) | Workspace order (sidebar, ⌘1…⌘9, API) is Azulejo's own; herdr's isn't mirrored either way |
 | [0014](0014-workspace-close-and-rename-reach-herdr.md) | Closing and renaming a workspace reach herdr; renames in herdr come back; a survey pushes Azulejo's names; orphaned herdr workspaces are reported, never closed |
+| [0015](0015-remote-files-over-ssh.md) | The files panel lists a remote machine's folders with a shell command over the machine's shared SSH connection: async, cached, polled, cancelled when the panel moves on |

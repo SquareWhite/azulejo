@@ -6,6 +6,7 @@ header = """
  * Threading: call every azj_core_* function on one thread. The event callback
  * runs on a background thread, never inside azj_core_send; hop to the main
  * thread before touching UI. Event JSON is only valid during the callback. No
- * callback runs after azj_core_free returns.
+ * event callback runs after azj_core_free returns; an azj_core_execute_async
+ * reply callback runs once per call, on a background thread, and may.
  */
 """

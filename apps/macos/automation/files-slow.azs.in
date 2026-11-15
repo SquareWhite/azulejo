@@ -1,0 +1,60 @@
+# Slow folders never freeze the app. files-slow.sh fills in @BIG@ (20,000
+# files, sub/ and repo/, a small git repo) and @SMALL@ (two files), and
+# holds every folder listing back (AZJ_FILES_LIST_DELAY_MS, 2.5 s by default).
+# Each step below needs the main thread: one that waited for a listing would
+# only run once the rows were in, and the "still loading" checks would fail.
+
+log start
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@BIG@"}}}
+until tile.kind files 1000
+expect tile.loading yes
+expect tile.rows 0
+# Round trips through the core and keys on the empty tree, meanwhile.
+core {"method":"session.get"}
+key j
+key k
+wait 800
+expect tile.loading yes
+expect tile.rows 0
+shot 01-loading
+until tile.loading no 10000
+# Folders first: repo, sub, then the 20,000 files.
+expect tile.rows 20002
+expect tile.names repo,sub,f00000.txt,f00001.txt,f00002.txt,f00003.txt,f00004.txt,f00005.txt,f00006.txt,f00007.txt,f00008.txt,f00009.txt
+shot 02-listed
+
+# A folder opens at once; its rows land when its listing does.
+tile select sub
+key l
+wait 500
+expect tile.rows 20002
+expect tile.selected sub
+key k
+expect tile.selected repo
+until tile.rows 20102 6000
+expect tile.selected repo
+
+# A new root while a folder listing is held back: the old listing is
+# dropped when it lands, the new root's rows stay.
+tile select repo
+key l
+core {"method":"files.set_root","params":{"root":"@SMALL@"}}
+until tile.root @SMALL@ 10000
+expect tile.rows 2
+wait 3000
+expect tile.root @SMALL@
+expect tile.rows 2
+expect tile.names a.txt,b.txt
+
+# The sidebar's Files view on a slow folder: the panel opens, its rows follow.
+core {"method":"workspace.set_repo","params":{"path":"@BIG@/repo"}}
+sidebar mode files
+until sidebar.files.loading yes 3000
+wait 800
+expect sidebar.files.loading yes
+expect sidebar.files.rows 0
+until sidebar.files.loading no 10000
+until sidebar.files.names src,README.md 3000
+shot 03-sidebar
+sidebar mode agents
+quit

@@ -451,6 +451,7 @@ fn open_panel(core: &Core, panel: Option<TileId>, root: &Path) -> TileId {
         .execute(Command::FilesPanel(FilesPanel {
             panel,
             root: root.display().to_string(),
+            machine: None,
         }))
         .unwrap()
         .reply
@@ -553,6 +554,7 @@ fn a_panel_lists_watches_and_opens_outside_the_layout() {
         .execute(Command::FilesPanel(FilesPanel {
             panel: Some(panel),
             root: root.join("README.md").display().to_string(),
+            machine: None,
         }))
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidParams);
@@ -579,4 +581,284 @@ fn expand_err(core: &Core, tile: TileId) -> azulejo_protocol::Error {
         dir: None,
     }))
     .unwrap_err()
+}
+
+// MARK: Remote panels (ADR 0015), through the ssh stand-in
+
+const MACHINE: &str = "0123456789abcdef0123456789abcdef";
+
+/// A "remote" machine whose ssh is scripts/ssh-standin.sh (copied into `dir`
+/// so tests can cut its link), optionally waiting `delay` before each run.
+fn standin_machine(dir: &Path, delay: Option<&str>) -> azulejo_herdr::RemoteMachine {
+    use std::os::unix::fs::PermissionsExt;
+    let standin = dir.join("standin");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh"),
+        &standin,
+    )
+    .unwrap();
+    let ssh = match delay {
+        None => standin,
+        Some(delay) => {
+            let wrapper = dir.join("slow-ssh");
+            fs::write(
+                &wrapper,
+                format!(
+                    "#!/bin/sh\nsleep {delay}\nexec {} \"$@\"\n",
+                    standin.display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+            wrapper
+        }
+    };
+    azulejo_herdr::RemoteMachine::new(
+        azulejo_herdr::MachineProfile {
+            id: MACHINE.into(),
+            label: "standin".into(),
+            target: "standin-host".into(),
+            session: "azj-test".into(),
+            enabled: true,
+        },
+        azulejo_herdr::Ssh {
+            program: ssh,
+            control_dir: dir.join("ctl"),
+        },
+    )
+}
+
+fn open_remote(core: &Core, panel: Option<TileId>, root: &Path, machine: &str) -> TileId {
+    match core
+        .execute(Command::FilesPanel(FilesPanel {
+            panel,
+            root: root.display().to_string(),
+            machine: Some(machine.into()),
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::Created(c) => c.tile.unwrap(),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+/// Waits for `files.changed` naming `dir` of `panel`.
+fn changed_for(events: &mpsc::Receiver<Event>, panel: TileId, dir: &Path, wait: Duration) -> bool {
+    let want = dir.display().to_string();
+    next(events, wait, |e| {
+        changed_dirs(e, panel).is_some_and(|d| d.contains(&want))
+    })
+    .is_some()
+}
+
+/// Expands `dir` of a remote panel until its listing is in (loading, then
+/// `files.changed`), and returns it.
+fn expand_remote(
+    core: &Core,
+    events: &mpsc::Receiver<Event>,
+    panel: TileId,
+    dir: &Path,
+) -> FilesListing {
+    let first = expand(core, panel, Some(&dir.display().to_string()));
+    if !first.loading {
+        return first;
+    }
+    assert!(first.entries.is_empty());
+    assert!(
+        changed_for(events, panel, dir, Duration::from_secs(5)),
+        "files.changed once the remote listing is in"
+    );
+    let l = expand(core, panel, Some(&dir.display().to_string()));
+    assert!(!l.loading);
+    l
+}
+
+#[test]
+fn a_remote_panel_lists_over_ssh_polls_and_opens() {
+    let (t, root) = tree();
+    let core = core();
+    let events = core.subscribe();
+    core.set_machine_files(MACHINE.into(), Some(standin_machine(t.path(), None)));
+    let panel = open_remote(&core, None, &root, MACHINE);
+
+    let l = expand_remote(&core, &events, panel, &root);
+    assert_eq!(names(&l), ["src/", "README.md"]);
+    assert_eq!(l.machine.as_deref(), Some(MACHINE));
+    assert_eq!(l.root, root.display().to_string());
+    assert!(l.error.is_none());
+    let src = expand_remote(&core, &events, panel, &root.join("src"));
+    assert_eq!(names(&src), ["deep/", "main.rs"]);
+    assert_eq!(
+        src.entries[1].path,
+        root.join("src/main.rs").display().to_string()
+    );
+    // Asked again, it comes from the cache at once.
+    let again = expand(&core, panel, Some("src"));
+    assert!(!again.loading);
+    assert_eq!(names(&again), ["deep/", "main.rs"]);
+
+    // Hidden entries come with the listing; the toggle filters them.
+    core.execute(Command::FilesToggleHidden(FilesToggleHidden {
+        tile: Some(panel),
+        show: Some(true),
+    }))
+    .unwrap();
+    assert_eq!(
+        names(&expand(&core, panel, None)),
+        ["src/", ".env", "README.md"]
+    );
+    core.execute(Command::FilesToggleHidden(FilesToggleHidden {
+        tile: Some(panel),
+        show: Some(false),
+    }))
+    .unwrap();
+
+    // No watching: polls pick up a new file in an open folder.
+    while events.try_recv().is_ok() {}
+    fs::write(root.join("src/new.rs"), "").unwrap();
+    assert!(
+        changed_for(&events, panel, &root.join("src"), Duration::from_secs(8)),
+        "a poll lists src again"
+    );
+    assert_eq!(
+        names(&expand(&core, panel, Some("src"))),
+        ["deep/", "main.rs", "new.rs"]
+    );
+
+    // A terminal opens in the folder (a file's folder for a file).
+    let outcome = core
+        .execute(Command::FilesOpen(FilesOpen {
+            tile: Some(panel),
+            path: "src/main.rs".into(),
+            target: FilesOpenTarget::Terminal,
+        }))
+        .unwrap();
+    let Reply::Created(created) = outcome.reply else {
+        panic!("unexpected {:?}", outcome.reply);
+    };
+    let session = core.session().unwrap();
+    let terminal = session
+        .tiles()
+        .find(|(_, t)| Some(t.id) == created.tile)
+        .map(|(_, t)| t.content.clone());
+    let src_dir = root.join("src").display().to_string();
+    assert!(
+        matches!(&terminal, Some(TileContent::Terminal { cwd: Some(cwd), .. }) if *cwd == src_dir),
+        "{terminal:?}"
+    );
+
+    // A file shows in the preview tile as a local copy, once it's here.
+    fs::write(root.join("README.md"), "# remote readme\n").unwrap();
+    let reply = core
+        .execute(Command::FilesOpen(FilesOpen {
+            tile: Some(panel),
+            path: root.join("README.md").display().to_string(),
+            target: FilesOpenTarget::Preview,
+        }))
+        .unwrap()
+        .reply;
+    assert_eq!(reply, Reply::Ok);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let copy = loop {
+        let session = core.session().unwrap();
+        let shown = session.tiles().find_map(|(_, t)| match &t.content {
+            TileContent::Preview { path: Some(p) } if p.ends_with("proj/README.md") => {
+                Some(PathBuf::from(p))
+            }
+            _ => None,
+        });
+        if let Some(p) = shown {
+            break p;
+        }
+        assert!(Instant::now() < deadline, "no preview of the remote file");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let copies = std::env::temp_dir().join("azulejo-remote").join(MACHINE);
+    assert_ne!(copy, root.join("README.md"));
+    assert!(copy.starts_with(&copies), "{}", copy.display());
+    assert_eq!(fs::read_to_string(&copy).unwrap(), "# remote readme\n");
+    let _ = fs::remove_dir_all(&copies);
+
+    // Cutting the link: the open folders keep their listing and say why.
+    while events.try_recv().is_ok() {}
+    fs::write(t.path().join("standin.fail"), "").unwrap();
+    assert!(
+        changed_for(&events, panel, &root, Duration::from_secs(8)),
+        "files.changed when the machine stops answering"
+    );
+    let l = expand(&core, panel, None);
+    assert_eq!(names(&l), ["src/", "README.md"]);
+    let error = l.error.expect("an error");
+    assert!(error.starts_with("can't reach standin"), "{error}");
+
+    // Back: the machine reconnecting lists again at once.
+    fs::remove_file(t.path().join("standin.fail")).unwrap();
+    while events.try_recv().is_ok() {}
+    core.set_machine_files(MACHINE.into(), Some(standin_machine(t.path(), None)));
+    assert!(
+        changed_for(&events, panel, &root, Duration::from_secs(5)),
+        "files.changed once it's back"
+    );
+    assert!(expand(&core, panel, None).error.is_none());
+
+    // A folder that isn't there is an error, not a hang.
+    let gone = root.join("gone");
+    let first = expand(&core, panel, Some(&gone.display().to_string()));
+    let l = if first.error.is_some() {
+        first
+    } else {
+        assert!(changed_for(&events, panel, &gone, Duration::from_secs(5)));
+        expand(&core, panel, Some(&gone.display().to_string()))
+    };
+    assert_eq!(l.error.as_deref(), Some("no such folder"));
+    assert!(!l.loading);
+    core.execute(Command::FilesPanelClose(FilesPanelClose { panel }))
+        .unwrap();
+}
+
+#[test]
+fn a_remote_panel_on_a_machine_that_isnt_connected_says_so() {
+    let (_t, root) = tree();
+    let core = core();
+    let panel = open_remote(&core, None, &root, "fedcba9876543210fedcba9876543210");
+    let l = expand(&core, panel, None);
+    assert!(!l.loading);
+    assert!(l.entries.is_empty());
+    assert_eq!(l.error.as_deref(), Some("the machine isn't connected"));
+    // A remote root must be absolute: there's no remote `~` here.
+    let err = core
+        .execute(Command::FilesPanel(FilesPanel {
+            panel: Some(panel),
+            root: "src".into(),
+            machine: Some(MACHINE.into()),
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+}
+
+#[test]
+fn moving_a_remote_panel_on_cancels_what_it_was_listing() {
+    let (t, root) = tree();
+    let core = core();
+    let events = core.subscribe();
+    core.set_machine_files(MACHINE.into(), Some(standin_machine(t.path(), Some("1"))));
+    let panel = open_remote(&core, None, &root, MACHINE);
+    assert!(expand(&core, panel, None).loading);
+    // The user cd'd elsewhere before the slow listing came back.
+    let src = root.join("src");
+    assert_eq!(open_remote(&core, Some(panel), &src, MACHINE), panel);
+    let first = expand(&core, panel, None);
+    assert!(first.loading);
+    assert_eq!(first.root, src.display().to_string());
+    let mut seen = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while let Ok(e) = events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        if let Some(dirs) = changed_dirs(&e, panel) {
+            seen.extend(dirs);
+        }
+    }
+    // Only the new root's listing reached the panel.
+    assert_eq!(seen, vec![src.display().to_string()]);
+    assert_eq!(names(&expand(&core, panel, None)), ["deep/", "main.rs"]);
 }

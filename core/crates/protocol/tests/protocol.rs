@@ -260,10 +260,12 @@ fn sample_commands() -> Vec<Command> {
         Command::FilesPanel(FilesPanel {
             panel: None,
             root: "~/src/shop".into(),
+            machine: None,
         }),
         Command::FilesPanel(FilesPanel {
             panel: Some(tile),
             root: "/src/shop".into(),
+            machine: Some("0123456789abcdef0123456789abcdef".into()),
         }),
         Command::FilesPanelClose(FilesPanelClose { panel: tile }),
         Command::LayoutApply(LayoutApply {
@@ -558,6 +560,20 @@ fn replies_round_trip() {
                 },
             ],
             truncated: false,
+            machine: None,
+            loading: false,
+            error: None,
+        }),
+        Reply::Files(FilesListing {
+            tile: tile.id,
+            root: "/srv/app".into(),
+            dir: "/srv/app/src".into(),
+            show_hidden: false,
+            entries: Vec::new(),
+            truncated: false,
+            machine: Some("0123456789abcdef0123456789abcdef".into()),
+            loading: true,
+            error: Some("can't reach build-box".into()),
         }),
         Reply::Layout(LayoutState {
             window: WindowId::new(),

@@ -80,13 +80,26 @@ pub struct FilesOpen {
 /// It answers `files.list`, `files.expand`, `files.collapse`,
 /// `files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,
 /// with its id as `tile`, and its events carry that id.
+///
+/// With `machine`, the panel shows that herdr machine's files (ADR 0015):
+/// the core lists folders over the machine's SSH connection, off its
+/// thread. A folder it hasn't listed yet comes back empty with `loading`,
+/// and `files.changed` names the folder once its listing is in (or failed,
+/// with `error`). Open folders are listed again every few seconds; nothing
+/// is watched. `files.open` shows a copy of a remote file in the preview
+/// tile and opens terminals on the machine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesPanel {
     /// The panel to point at `root`; a new panel when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel: Option<TileId>,
-    /// The folder to show; `~` expands to the home folder.
+    /// The folder to show; `~` expands to the home folder. On a remote
+    /// machine, an absolute path there.
     pub root: String,
+    /// A herdr machine's ID (`machines.list`) whose files to show; Local
+    /// when absent or `local`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -141,6 +154,17 @@ pub struct FilesListing {
     /// The folder had more entries than a listing returns; the rest are cut.
     #[serde(default, skip_serializing_if = "is_false")]
     pub truncated: bool,
+    /// The herdr machine the files are on; absent for Local.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
+    /// A remote folder the core hasn't listed yet: `entries` is empty and
+    /// `files.changed` names the folder when its listing is in.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub loading: bool,
+    /// Why a remote folder couldn't be listed (the machine is unreachable,
+    /// the folder is gone). `entries` then holds the last listing, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Payload of `files.changed`.

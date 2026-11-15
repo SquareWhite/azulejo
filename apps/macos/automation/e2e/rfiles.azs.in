@@ -1,0 +1,58 @@
+# Remote files panel (ADR 0015). rfiles.sh sets up the "remote" machine
+# `standin` (a throwaway herdr session reached only through
+# scripts/ssh-standin.sh) and fills @FX@ (fixtures, resolved), @SIDE@ (the
+# stand-in's folder) and @ID@ (standin's herdr machine ID).
+log rfiles
+delivery direct
+until machines Local=connected,standin=connected 20000
+sidebar mode agents
+
+# A workspace on standin, its shell in the fixture project.
+machine-add standin
+until workspace.machine standin 5000
+until terminal.phase attached 10000
+wait 800
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/remote-proj\n"}}
+
+# Files: standin's folder, listed over the stand-in's ssh.
+sidebar mode files
+until sidebar.files.root @FX@/remote-proj 10000
+expect sidebar.files.machine @ID@
+until sidebar.files.names docs,src,alpha.txt,notes.md 5000
+expect sidebar.files.status ok
+expect sidebar.files.title standin: @FX@/remote-proj
+shot 01-remote-files
+
+# A folder opens like a local one (listed when it's opened).
+sidebar files select src
+sidebar files activate
+until sidebar.files.names docs,src,lib.rs,alpha.txt,notes.md 5000
+
+# Nothing watches a remote folder: a poll picks up a file made there.
+core {"method":"terminal.send_text","params":{"text":"touch @FX@/remote-proj/src/zeta.rs\n"}}
+until sidebar.files.names docs,src,lib.rs,zeta.rs,alpha.txt,notes.md 8000
+shot 02-expanded
+
+# Return on a file: a copy shows in a preview tile beside the terminal.
+sidebar files select notes.md
+sidebar files activate
+until tiles 2 5000
+shot 03-preview
+
+# cd in the remote shell: the panel follows.
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/other\n"}}
+until sidebar.files.root @FX@/other 5000
+until sidebar.files.names beta.md 5000
+expect sidebar.files.title standin: @FX@/other
+
+# Cut the "SSH link": the panel keeps its listing and says why.
+sh touch @SIDE@/ssh.fail
+until sidebar.files.status error: can't reach standin: ssh: connect to host standin port 22: Connection refused 15000
+expect sidebar.files.names beta.md
+shot 04-unreachable
+
+# The link comes back: listed again.
+sh rm -f @SIDE@/ssh.fail
+until sidebar.files.status ok 40000
+until sidebar.files.names beta.md 5000
+quit

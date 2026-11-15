@@ -198,6 +198,7 @@ fn apply(
         if let Ok(mut r) = registry.lock() {
             r.remove(&id);
         }
+        core.set_machine_files(id.clone(), None);
         core.remove_machine(id);
     }
     for (id, next) in want {
@@ -209,14 +210,16 @@ fn apply(
                 let machine = RemoteMachine::new(profile.clone(), ssh.clone());
                 let client = machine.client();
                 if let Ok(mut r) = registry.lock() {
-                    r.insert(id.clone(), machine);
+                    r.insert(id.clone(), machine.clone());
                 }
                 core.add_machine(id.clone(), profile.label.clone(), client);
+                core.set_machine_files(id.clone(), Some(machine));
             }
             Shown::Off(profile) => {
                 if let Ok(mut r) = registry.lock() {
                     r.remove(&id);
                 }
+                core.set_machine_files(id.clone(), None);
                 core.show_machine(MachineInfo {
                     id: id.clone(),
                     label: profile.label.clone(),

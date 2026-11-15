@@ -74,6 +74,8 @@ enum Msg {
     ShowMachine(MachineInfo),
     /// A machine left herdr's list (or is hidden now).
     RemoveMachine(String),
+    /// How remote files panels reach a machine, or that they can't.
+    MachineFiles(String, Option<azulejo_herdr::RemoteMachine>),
     /// A preview tile's file finished rendering.
     Preview(
         azulejo_protocol::TileId,
@@ -150,11 +152,17 @@ impl Core {
 
     /// Runs a command on the core's thread and waits for the result.
     pub fn execute(&self, command: Command) -> Result<Outcome, Error> {
+        self.submit(command).recv().map_err(|_| stopped())?
+    }
+
+    /// Queues a command without waiting: the result arrives on the returned
+    /// channel (a closed channel means the core stopped). Shells use it for
+    /// commands that can take long, such as listing a big or slow folder.
+    pub fn submit(&self, command: Command) -> mpsc::Receiver<Result<Outcome, Error>> {
         let (reply, wait) = mpsc::channel();
-        self.tx
-            .send(Msg::Command(command, reply))
-            .map_err(|_| stopped())?;
-        wait.recv().map_err(|_| stopped())?
+        // A failed send drops `reply`, so the caller sees a closed channel.
+        let _ = self.tx.send(Msg::Command(command, reply));
+        wait
     }
 
     /// A snapshot of the whole session.
@@ -192,6 +200,12 @@ impl Core {
     /// workspaces stay, unconnected, until it comes back.
     pub fn remove_machine(&self, id: String) {
         let _ = self.tx.send(Msg::RemoveMachine(id));
+    }
+
+    /// Lets files panels show machine `id`'s files over its SSH connection
+    /// (ADR 0015), or stops them (`None`: removed, off).
+    pub fn set_machine_files(&self, id: String, machine: Option<azulejo_herdr::RemoteMachine>) {
+        let _ = self.tx.send(Msg::MachineFiles(id, machine));
     }
 
     /// Every event from now on, including those caused by herdr.
@@ -399,6 +413,19 @@ fn run<P: HerdrPort>(
         // A files panel isn't in the session: its paths, made absolute
         // against its root, open beside the focused tile.
         let msg = match msg {
+            // A remote panel's paths are on its machine: a terminal opens
+            // there, a file shows as a copy once it's here.
+            Msg::Command(Command::FilesOpen(p), reply) if files.is_remote_panel(p.tile) => {
+                match files.remote_open(p) {
+                    file_tiles::RemoteOpen::Forward(p) => {
+                        Msg::Command(Command::FilesOpen(p), reply)
+                    }
+                    file_tiles::RemoteOpen::Done(result) => {
+                        let _ = reply.send(*result);
+                        continue;
+                    }
+                }
+            }
             Msg::Command(Command::FilesOpen(mut p), reply) if files.is_panel(p.tile) => {
                 if let Some(panel) = p.tile.take() {
                     p.path = files.absolute(panel, &p.path);
@@ -795,6 +822,26 @@ fn run<P: HerdrPort>(
             }
             Msg::Files(delivery) => {
                 for event in files.accept(delivery) {
+                    listeners.retain(|l| l.send(event.clone()).is_ok());
+                }
+                // Remote files copied here for the preview tile.
+                for open in files.take_opens() {
+                    match engine.execute(Command::FilesOpen(open)) {
+                        Ok(outcome) => publish(
+                            &engine,
+                            &outcome.events,
+                            &herdr,
+                            &mut listeners,
+                            &mut previews,
+                            &mut files,
+                            &mut repos,
+                        ),
+                        Err(e) => (opts.log)(format!("files: can't show a remote file: {e}")),
+                    }
+                }
+            }
+            Msg::MachineFiles(id, machine) => {
+                for event in files.set_machine(id, machine) {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
             }

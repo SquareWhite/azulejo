@@ -47,6 +47,7 @@ name a herdr session other than `default`.
 - `AZULEJO_BACKGROUND=1`: never `NSApp.activate()`; windows are ordered to the back
 - `AZULEJO_AUTOMATION` / `AZULEJO_AUTOMATION_OUT`: run a script, then quit
 - `AZJ_DEBUG_MIRROR`, when set in `dev.sh`'s environment: the core logs every mirror push and pull (ADR 0012) to the app log
+- `AZJ_FILES_LIST_DELAY_MS`, likewise: the core holds every folder listing back that long, standing in for a slow folder (`automation/files-slow.sh`)
 
 ## Automation (no OS input)
 
@@ -138,6 +139,14 @@ keyboard back, and refreshes don't take it while the tree has it
 (`KeepsKeyboard` in `TileFocus.swift`). `apps/macos/automation/sidebar.sh`
 checks both views with fixture repositories (`sidebar mode|select|focus|files
 …` in scripts; `sidebar.*` state keys).
+
+Folder listings never block the main thread: a home folder with thousands of
+entries, a network volume or a folder behind a permission prompt can take
+seconds. Files tiles and the Files view list through `Core.executeAsync`
+(`azj_core_execute_async`), show "Loading…" until the root's rows land, and
+drop a listing for a root that changed since. `apps/macos/automation/files-slow.sh`
+holds every listing back 2.5 s and checks that the script keeps running,
+the rows arrive and a stale listing is dropped, on dev instance `fslow`.
 
 Collapsed, the sidebar is a rail (`SidebarRail.swift`): each machine group's
 letter and dot, then its workspaces' ⌘ numbers and status icons, centred

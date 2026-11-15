@@ -12,7 +12,9 @@
 //!   `azj_core_send`. Hop to the main thread (`DispatchQueue.main` in Swift)
 //!   before touching UI.
 //! - The event JSON pointer is only valid during the callback; copy it.
-//! - After `azj_core_free` returns, the callback is never called again.
+//! - After `azj_core_free` returns, the event callback is never called again.
+//! - `azj_core_execute_async` replies on a background thread too, once per
+//!   call, possibly after `azj_core_free` (see there).
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
@@ -281,6 +283,71 @@ pub unsafe extern "C" fn azj_core_execute(
         },
     };
     out(result)
+}
+
+/// Called once with an `azj_core_execute_async` result: the same JSON
+/// `azj_core_execute` returns, valid only for the call.
+pub type AzjReplyCallback = extern "C" fn(context: *mut c_void, result_json: *const c_char);
+
+struct ReplyTo {
+    callback: AzjReplyCallback,
+    context: *mut c_void,
+}
+
+// SAFETY: the context pointer is only handed back to the shell's callback,
+// which `azj_core_execute_async` requires to be callable from any thread.
+unsafe impl Send for ReplyTo {}
+
+impl ReplyTo {
+    fn call(self, result: &Value) {
+        let json = CString::new(result.to_string()).expect("JSON never contains NUL");
+        (self.callback)(self.context, json.as_ptr());
+    }
+}
+
+/// Like `azj_core_execute`, without waiting for the result: for commands that
+/// can take long (listing a big or slow folder). Returns 0 when the command
+/// was queued: `callback` then runs exactly once with the result, on a
+/// background thread and never inside this call, possibly after
+/// `azj_core_free` (with an error saying the core stopped), so `context` must
+/// not depend on the core handle. Returns -1, without calling back, on a bad
+/// handle, a command that doesn't parse, or no thread to wait on (the
+/// command may run anyway).
+///
+/// # Safety
+/// `core` must come from `azj_core_new*`; `command_json` must be a valid C
+/// string or NULL; `callback` must be callable from any thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_core_execute_async(
+    core: *const AzjCore,
+    command_json: *const c_char,
+    callback: AzjReplyCallback,
+    context: *mut c_void,
+) -> i32 {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
+        return -1;
+    };
+    let Some(command) = (unsafe { arg(command_json) }).and_then(|t| Command::from_json(t).ok())
+    else {
+        return -1;
+    };
+    let wait = app.core().submit(command);
+    let reply = ReplyTo { callback, context };
+    let spawned = std::thread::Builder::new()
+        .name("azulejo-ffi-reply".into())
+        .spawn(move || {
+            let result = match wait.recv() {
+                Ok(Ok(outcome)) => json!({"ok": true, "reply": outcome.reply}),
+                Ok(Err(e)) => json!({"ok": false, "error": e}),
+                Err(_) => failure("unavailable", "the core has stopped"),
+            };
+            reply.call(&result);
+        });
+    match spawned {
+        Ok(_) => 0,
+        // No thread to wait on: leave the result unread and say so.
+        Err(_) => -1,
+    }
 }
 
 /// Routes one key chord through the user's keymap, keeping prefix state
@@ -756,6 +823,60 @@ mod tests {
             assert_eq!(null["ok"], false);
             azj_core_free(core);
         }
+    }
+
+    extern "C" fn reply_to_channel(context: *mut c_void, json: *const c_char) {
+        let tx = unsafe { Box::from_raw(context.cast::<mpsc::Sender<(String, String)>>()) };
+        let text = unsafe { CStr::from_ptr(json) }
+            .to_string_lossy()
+            .into_owned();
+        let thread = std::thread::current().name().unwrap_or("").to_owned();
+        let _ = tx.send((text, thread));
+    }
+
+    #[test]
+    fn execute_async_replies_once_off_the_calling_thread() {
+        let (tx, rx) = mpsc::channel::<(String, String)>();
+        let context = || Box::into_raw(Box::new(tx.clone())).cast::<c_void>();
+        unsafe {
+            let core = azj_core_new_with_options(IN_MEMORY.as_ptr());
+            let queued = azj_core_execute_async(
+                core,
+                c"{\"method\":\"session.get\"}".as_ptr(),
+                reply_to_channel,
+                context(),
+            );
+            assert_eq!(queued, 0);
+            let (json, thread) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let reply: Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(reply["ok"], true);
+            assert_eq!(reply["reply"]["type"], "session");
+            assert_eq!(thread, "azulejo-ffi-reply");
+
+            // A refusal arrives the same way.
+            let queued = azj_core_execute_async(
+                core,
+                c"{\"method\":\"layout.focus\",\"params\":{\"direction\":\"left\"}}".as_ptr(),
+                reply_to_channel,
+                context(),
+            );
+            assert_eq!(queued, 0);
+            let (json, _) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let refused: Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(refused["error"]["code"], "invalid_state");
+
+            // Unparsable: refused at once, never called back.
+            let leaked = context();
+            assert_eq!(
+                azj_core_execute_async(core, c"nope".as_ptr(), reply_to_channel, leaked),
+                -1
+            );
+            drop(Box::from_raw(
+                leaked.cast::<mpsc::Sender<(String, String)>>(),
+            ));
+            azj_core_free(core);
+        }
+        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
     }
 
     fn focus_context(key: &dyn Fn(&CStr) -> Value) -> Value {

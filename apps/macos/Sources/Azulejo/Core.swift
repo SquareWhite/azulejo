@@ -46,6 +46,36 @@ final class Core {
         guard let object = take(azj_core_execute(handle, json)) else {
             return .failure(CoreError(code: "internal", message: "no result"))
         }
+        return Self.result(object)
+    }
+
+    /// Runs a command without waiting, for commands that can take long
+    /// (listing a big or slow folder: the main thread must never wait on the
+    /// file system). `decode` turns the result into what `then` needs, off
+    /// the main thread (parsing a 20k-entry listing isn't free); `then` runs
+    /// on the main actor, also after `shutdown` (with an error), so it must
+    /// check that what it updates is still there.
+    func executeAsync<T: Sendable>(
+        _ command: [String: Any],
+        decode: @escaping @Sendable (Result<[String: Any], CoreError>) -> T,
+        then: @escaping @MainActor (T) -> Void
+    ) {
+        let finish: @Sendable (String?) -> Void = { text in
+            let value = decode(Self.result(text.flatMap(Self.parse)))
+            DispatchQueue.main.async { MainActor.assumeIsolated { then(value) } }
+        }
+        guard !freed, let json = Self.encode(command) else { return finish(nil) }
+        let context = Unmanaged.passRetained(ReplyBox(finish)).toOpaque()
+        if azj_core_execute_async(handle, json, coreReplyCallback, context) != 0 {
+            Unmanaged<ReplyBox>.fromOpaque(context).release()
+            finish(nil)
+        }
+    }
+
+    /// `{"ok":true,"reply":…}` or `{"ok":false,"error":…}` as a result; nil
+    /// (no result at all) is an internal error.
+    nonisolated private static func result(_ object: [String: Any]?) -> Result<[String: Any], CoreError> {
+        guard let object else { return .failure(CoreError(code: "internal", message: "no result")) }
         if object["ok"] as? Bool == true {
             return .success(object["reply"] as? [String: Any] ?? [:])
         }
@@ -54,6 +84,10 @@ final class Core {
             code: error["code"] as? String ?? "internal",
             message: error["message"] as? String ?? "unknown error",
             reason: (error["data"] as? [String: Any])?["reason"] as? String))
+    }
+
+    nonisolated private static func parse(_ text: String) -> [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any]
     }
 
     /// Decodes a reply field (e.g. `session`) into a Codable type.
@@ -206,7 +240,7 @@ struct FieldEnvelope<T: Decodable>: Decodable {
     }
 }
 
-struct CoreError: Error, CustomStringConvertible {
+struct CoreError: Error, Sendable, CustomStringConvertible {
     let code: String
     let message: String
     /// The core's finer code in the error's data (`no_neighbour`, `no_edge`).
@@ -243,4 +277,20 @@ private func coreEventCallback(context: UnsafeMutableRawPointer?, json: UnsafePo
             Unmanaged<Core>.fromOpaque(pointer).takeUnretainedValue().onEvent?(text)
         }
     }
+}
+
+/// What an `azj_core_execute_async` call hands back to: retained for the
+/// call, released by the reply callback.
+private final class ReplyBox: Sendable {
+    let finish: @Sendable (String?) -> Void
+    init(_ finish: @escaping @Sendable (String?) -> Void) { self.finish = finish }
+}
+
+/// The core's reply callback for `executeAsync`: runs once per call on a
+/// background thread (possibly after `shutdown`; it never touches the core).
+/// A plain global function for the same reason as `coreEventCallback`.
+private func coreReplyCallback(context: UnsafeMutableRawPointer?, json: UnsafePointer<CChar>?) {
+    guard let context else { return }
+    let box = Unmanaged<ReplyBox>.fromOpaque(context).takeRetainedValue()
+    box.finish(json.map { String(cString: $0) })
 }

@@ -2600,6 +2600,24 @@
           },
           "type": "array"
         },
+        "error": {
+          "description": "Why a remote folder couldn't be listed (the machine is unreachable,\nthe folder is gone). `entries` then holds the last listing, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loading": {
+          "description": "A remote folder the core hasn't listed yet: `entries` is empty and\n`files.changed` names the folder when its listing is in.",
+          "type": "boolean"
+        },
+        "machine": {
+          "description": "The herdr machine the files are on; absent for Local.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "root": {
           "description": "The tile's root, absolute and resolved (symlinks followed).",
           "type": "string"
@@ -2667,8 +2685,15 @@
       ]
     },
     "FilesPanel": {
-      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.",
+      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.\n\nWith `machine`, the panel shows that herdr machine's files (ADR 0015):\nthe core lists folders over the machine's SSH connection, off its\nthread. A folder it hasn't listed yet comes back empty with `loading`,\nand `files.changed` names the folder once its listing is in (or failed,\nwith `error`). Open folders are listed again every few seconds; nothing\nis watched. `files.open` shows a copy of a remote file in the preview\ntile and opens terminals on the machine.",
       "properties": {
+        "machine": {
+          "description": "A herdr machine's ID (`machines.list`) whose files to show; Local\nwhen absent or `local`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "panel": {
           "anyOf": [
             {
@@ -2681,7 +2706,7 @@
           "description": "The panel to point at `root`; a new panel when absent."
         },
         "root": {
-          "description": "The folder to show; `~` expands to the home folder.",
+          "description": "The folder to show; `~` expands to the home folder. On a remote\nmachine, an absolute path there.",
           "type": "string"
         }
       },

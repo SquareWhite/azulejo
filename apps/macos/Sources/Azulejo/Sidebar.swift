@@ -14,7 +14,9 @@ import AppKit
 ///
 /// Files: a `files.panel` the core lists and watches like a files tile, on
 /// the focused workspace's repository (else its cwd). Return opens a file
-/// beside the focused tile; Esc hands the keyboard back to the tiles.
+/// beside the focused tile; Esc hands the keyboard back to the tiles. A
+/// remote workspace shows its terminal's folder on its machine, listed over
+/// SSH (ADR 0015).
 @MainActor
 final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     enum Mode: String { case agents, files }
@@ -48,7 +50,14 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     // The Files view's panel and what it shows.
     private var panelID: String?
     private var panelRoot: String?
+    /// The herdr machine the panel's files are on; nil for Local.
+    private var panelMachine: String?
     private var panelView: FilesTileView?
+    /// A `files.panel` in flight (the core checks the folder on disk, so
+    /// the main thread doesn't wait for it): its root and machine, and a
+    /// number that tells its reply from an older one's.
+    private var panelOpening: (root: String, machine: String?, request: Int)?
+    private var panelRequests = 0
 
     override var isFlipped: Bool { true }
     /// A click on empty space does nothing (the card it sits in would move
@@ -266,22 +275,34 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         needsLayout = true
     }
 
-    /// The folder the Files view shows for the focused workspace, or why it
-    /// shows none.
-    private func filesRoot() -> (root: String?, note: String?) {
-        guard let window = window_, let ws = window.workspace else { return (nil, "No workspace.") }
-        if ws.machineID != MachineModel.local {
-            let name = machines.first { $0.id == ws.machineID }?.label ?? ws.machineID
-            return (nil, "\(ws.name) runs on \(name). Its files aren't shown here yet.")
-        }
+    /// The folder the Files view shows for the focused workspace (on its
+    /// machine; nil for Local), or why it shows none.
+    private func filesRoot() -> (root: String?, machine: String?, note: String?) {
+        guard let window = window_, let ws = window.workspace else { return (nil, nil, "No workspace.") }
         let focused = ws.tab?.tile(ws.tab?.focused ?? "")
+        if ws.machineID != MachineModel.local {
+            // A remote workspace: its terminal's folder there (ADR 0015).
+            let machine = machines.first { $0.id == ws.machineID }
+            let name = machine?.label ?? ws.machineID
+            // While it reconnects the panel stays, with the last listing
+            // and the core's error; off or gone from herdr, there's no link.
+            guard let state = machine?.state, state != .off else {
+                return (nil, nil, "\(name) isn't connected. \(ws.name)'s files show here once it is.")
+            }
+            let terminals = [focused].compactMap { $0 } + (ws.tab?.tiles ?? [])
+            let candidates = terminals.filter { $0.kind == .terminal }.flatMap { [$0.pane?.cwd, $0.cwd] } + [ws.cwd]
+            guard let root = candidates.compactMap({ $0 }).first(where: { $0.hasPrefix("/") }) else {
+                return (nil, nil, "Waiting for \(ws.name)'s folder on \(name).")
+            }
+            return (root, ws.machineID, nil)
+        }
         let candidates = [ws.git?.repo, ws.cwd, focused?.cwd, focused?.root]
-        if let root = candidates.compactMap({ $0 }).first(where: { !$0.isEmpty }) { return (root, nil) }
-        return (NSHomeDirectory(), nil)
+        if let root = candidates.compactMap({ $0 }).first(where: { !$0.isEmpty }) { return (root, nil, nil) }
+        return (NSHomeDirectory(), nil, nil)
     }
 
     private func syncPanel() {
-        let (root, note) = filesRoot()
+        let (root, machine, note) = filesRoot()
         filesNote.stringValue = note ?? ""
         filesNote.isHidden = note == nil
         guard let root else {
@@ -289,22 +310,45 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
             filesTitle.stringValue = ""
             return
         }
-        filesTitle.stringValue = Self.tilde(root)
-        filesTitle.toolTip = root
-        guard root != panelRoot || panelView == nil else { return }
-        guard let id = FilesTileView.openPanel(root: root, reuse: panelID) else {
+        let label = machine.map { id in machines.first { $0.id == id }?.label ?? id }
+        filesTitle.stringValue = label.map { "\($0): \(root)" } ?? Self.tilde(root)
+        filesTitle.toolTip = label.map { "\(root) on \($0)" } ?? root
+        if let opening = panelOpening {
+            // On its way already; another root in flight is overtaken below.
+            if opening.root == root, opening.machine == machine { return }
+        } else if root == panelRoot, machine == panelMachine, panelView != nil {
+            return
+        }
+        panelRequests += 1
+        let request = panelRequests
+        panelOpening = (root, machine, request)
+        FilesTileView.openPanel(root: root, machine: machine, reuse: panelID) { [weak self] id in
+            guard let self, self.panelOpening?.request == request else {
+                // Closed or re-rooted meanwhile: don't leave a stray panel
+                // in the core.
+                if let id, id != self?.panelID { FilesTileView.closePanel(id) }
+                return
+            }
+            self.panelOpening = nil
+            self.showPanel(id, root: root, machine: machine)
+        }
+    }
+
+    private func showPanel(_ id: String?, root: String, machine: String?) {
+        guard let id else {
             closePanel()
             filesNote.stringValue = "Can't list \(Self.tilde(root))."
             filesNote.isHidden = false
             return
         }
         panelRoot = root
-        if let view = panelView, id == panelID {
+        panelMachine = machine
+        if let view = panelView, id == panelID, view.machine == machine {
             view.update(TileModel(id: id, kind: .files, root: root))
         } else {
             panelView?.tileWillClose()
             panelView?.removeFromSuperview()
-            let view = FilesTileView(panel: id, root: root)
+            let view = FilesTileView(panel: id, root: root, machine: machine)
             view.onEscape = { [weak self] in self?.onReturnFocus?() }
             files.addSubview(view)
             panelView = view
@@ -315,12 +359,14 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
 
     /// Stops the Files view's panel (switching to Agents, closing the window).
     func closePanel() {
+        panelOpening = nil
         if let panelID { FilesTileView.closePanel(panelID) }
         panelView?.tileWillClose()
         panelView?.removeFromSuperview()
         panelView = nil
         panelID = nil
         panelRoot = nil
+        panelMachine = nil
     }
 
     /// A status icon for the sidebar. Filled symbols (blocked's
@@ -377,6 +423,11 @@ extension SidebarView {
 
     /// Automation: the Files view's panel, when it's shown.
     var filesPanel: FilesTileView? { mode == .files ? panelView : nil }
+
+    /// Automation: the Files view's title (its folder, with the machine for
+    /// a remote one) and its note ("" when none shows).
+    var filesTitleText: String { filesTitle.stringValue }
+    var filesNoteText: String { filesNote.isHidden ? "" : filesNote.stringValue }
 
     /// The branch a row shows (F26): its name, `@abc1234` when detached, and
     /// a dot when tracked files changed.
@@ -907,6 +958,10 @@ enum SidebarAutomation {
         s.merge(DragAutomation.state(host: dragHost(controller))) { $1 }
         let responder = controller.window.firstResponder as? NSView
         s["rail.keyboard"] = responder.map { $0.isDescendant(of: rail) } == true ? "yes" : "no"
+        if sidebar.mode == .files {
+            s["sidebar.files.title"] = sidebar.filesTitleText
+            s["sidebar.files.note"] = sidebar.filesNoteText.isEmpty ? "-" : sidebar.filesNoteText
+        }
         if let panel = sidebar.filesPanel {
             for (key, value) in panel.automationState() {
                 s["sidebar.files." + key.replacingOccurrences(of: "tile.", with: "")] = value

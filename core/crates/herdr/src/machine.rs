@@ -257,6 +257,18 @@ impl RemoteMachine {
         }
     }
 
+    /// `ssh -T … <target> -- <script>`: runs a shell command on the machine
+    /// over its shared SSH connection (ADR 0015: the files panel lists
+    /// remote folders this way). `script` reaches the remote user's login
+    /// shell as is, so it must quote its own arguments.
+    pub fn exec(&self, script: String) -> AttachCommand {
+        AttachCommand {
+            program: self.ssh.program.clone(),
+            args: self.ssh_args("-T", script),
+            env: Self::env(),
+        }
+    }
+
     pub fn control_dir(&self) -> &Path {
         &self.ssh.control_dir
     }
@@ -376,6 +388,16 @@ mod tests {
         let script = cmd.args.last().unwrap();
         assert!(script.ends_with("terminal session observe w1:p2 --cols 80 --rows 24"));
         assert!(cmd.args.iter().any(|a| a == "-T"));
+    }
+
+    #[test]
+    fn exec_runs_a_script_without_a_tty() {
+        let cmd = machine().exec("ls /srv".into());
+        let target = cmd.args.iter().position(|a| a == "build-host").unwrap();
+        assert_eq!(cmd.args[target - 1], "-T");
+        assert_eq!(cmd.args[target + 1], "--");
+        assert_eq!(cmd.args.last().unwrap(), "ls /srv");
+        assert!(cmd.args.iter().any(|a| a == "ControlMaster=auto"));
     }
 
     #[test]

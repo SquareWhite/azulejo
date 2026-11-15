@@ -9,6 +9,13 @@ import UniformTypeIdentifiers
 /// again), `files.revealed` (open folders down to a path and select it) and
 /// `files.git` (decorations).
 ///
+/// Listings never block the main thread: a home folder with thousands of
+/// entries, a network volume or a folder behind a permission prompt can
+/// take seconds. Each one is requested with `Core.executeAsync` and applied
+/// when it lands: the root shows "Loading…" meanwhile, a folder opens once
+/// its rows arrive, and a listing for a root that changed since, or older
+/// than one already shown for that folder, is dropped.
+///
 /// Keys while the tree has focus come from the keymap's `files` context
 /// (defaults: ↓↑ or j/k move, h/l close and open folders, Return opens a file
 /// in the tab's preview tile or toggles a folder, ⌘↓ opens in the default
@@ -23,13 +30,22 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     private var model: TileModel
     private let header = FilesHeader()
     private let filter = NSSearchField()
+    /// "Loading…", "Can't list this folder." or a remote folder's error,
+    /// in a strip above the tree.
+    private let status = NSTextField(wrappingLabelWithString: "")
     private let scroll = NSScrollView()
     private let outline = FilesOutlineView()
     private var filterHeight: NSLayoutConstraint!
+    private var statusHeight: NSLayoutConstraint!
     /// Shown as the sidebar's Files view (`files.panel`) rather than a tile:
     /// no card of its own, and Esc hands the keyboard back to the tiles.
     private(set) var isPanel = false
     var onEscape: (() -> Void)?
+    /// The herdr machine whose files this panel shows (ADR 0015); nil for
+    /// Local. Remote paths aren't on this Mac: Finder, the default app and
+    /// Quick Look don't apply, files open as a copy in the preview tile.
+    private(set) var machine: String?
+    var isRemote: Bool { machine != nil }
 
     /// The root's node; its children are the outline's top level.
     private var root = FileNode(path: "", name: "", dir: true)
@@ -41,6 +57,22 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     /// With a filter: each node's kept children (matches and folders holding
     /// one), by identity.
     private var filtered: [ObjectIdentifier: [FileNode]] = [:]
+
+    // Listings in flight (see the type's docs).
+    /// Bumped when the root loads (again): replies for an older root drop.
+    private var generation = 0
+    /// The root's listing hasn't landed yet.
+    private var loadingRoot = false
+    /// The core couldn't list the root at all.
+    private var rootFailed = false
+    /// Folders being listed for the first time.
+    private var loading = Set<String>()
+    /// Numbers listing requests, so an older listing never replaces a newer
+    /// one of the same folder (replies can land out of order).
+    private var requests = 0
+    private var shownRequest: [String: Int] = [:]
+    /// A `files.revealed` that came before the root's rows.
+    private var pendingReveal: (path: String, dirs: [String])?
 
     // Timings and counters for automation and measurements.
     private let created = CACurrentMediaTime()
@@ -130,15 +162,29 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
 
+        status.translatesAutoresizingMaskIntoConstraints = false
+        status.font = Design.Font.caption
+        status.textColor = Design.Color.textMuted
+        status.maximumNumberOfLines = 2
+        status.lineBreakMode = .byWordWrapping
+        status.cell?.truncatesLastVisibleLine = true
+        status.isHidden = true
+
         addSubview(filter)
+        addSubview(status)
         addSubview(scroll)
         filterHeight = filter.heightAnchor.constraint(equalToConstant: 0)
+        statusHeight = status.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             filter.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             filter.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             filter.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             filterHeight,
-            scroll.topAnchor.constraint(equalTo: filter.bottomAnchor, constant: 2),
+            status.topAnchor.constraint(equalTo: filter.bottomAnchor),
+            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            statusHeight,
+            scroll.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 2),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -153,25 +199,36 @@ final class FilesTileView: NSView, TileView, ThemeAware {
 
     /// A files panel: the same tree for `panel`, a `files.panel` the core
     /// shows outside the layout.
-    convenience init(panel: String, root: String) {
+    convenience init(panel: String, root: String, machine: String? = nil) {
         self.init(TileModel(id: panel, kind: .files, root: root))
         isPanel = true
+        self.machine = machine
         layer?.cornerRadius = 0
         layer?.backgroundColor = nil
     }
 
-    /// Opens (or re-roots) a files panel; its id, or nil when the core
-    /// can't show `root`.
-    static func openPanel(root: String, reuse panel: String?) -> String? {
+    /// Opens (or re-roots) a files panel, on herdr machine `machine` when
+    /// set, without waiting (the core checks `root` on disk); `then` gets
+    /// its id, or nil when the core can't show `root`.
+    static func openPanel(
+        root: String, machine: String? = nil, reuse panel: String?,
+        then: @escaping @MainActor (String?) -> Void
+    ) {
+        guard let core else { return then(nil) }
         var params: [String: Any] = ["root": root]
         if let panel { params["panel"] = panel }
-        switch core?.execute(["method": "files.panel", "params": params]) {
-        case .success(let reply): return reply["tile"] as? String
-        case .failure(let error):
-            log("files: panel on \(root) failed: \(error.message)")
-            return nil
-        case nil: return nil
-        }
+        if let machine { params["machine"] = machine }
+        core.executeAsync(
+            ["method": "files.panel", "params": params],
+            decode: { result in result.map { $0["tile"] as? String } },
+            then: { result in
+                switch result {
+                case .success(let id): then(id)
+                case .failure(let error):
+                    log("files: panel on \(root) failed: \(error.message)")
+                    then(nil)
+                }
+            })
     }
 
     static func closePanel(_ panel: String) {
@@ -228,22 +285,50 @@ final class FilesTileView: NSView, TileView, ThemeAware {
 
     // MARK: Loading
 
+    /// Lists the root again (a new tile, or a new root): the old tree goes
+    /// at once and "Loading…" shows until the listing lands.
     private func loadRoot() {
+        generation += 1
+        loadingRoot = true
+        rootFailed = false
+        loading = []
+        shownRequest = [:]
+        pendingReveal = nil
+        root = FileNode(path: "", name: "", dir: true)
+        nodes = [:]
+        git = [:]
+        rebuildFilter()
+        outline.reloadData()
+        header.setRoot(model.root, detail: "loading…")
+        showStatus()
         let started = CACurrentMediaTime()
-        guard let listing = list(dir: nil, method: "files.expand") else {
-            header.setRoot(model.root, detail: "can't list")
-            return
+        list(dir: nil, method: "files.expand") { [weak self] listing in
+            guard let self else { return }
+            self.loadingRoot = false
+            guard let listing else {
+                self.rootFailed = true
+                self.header.setRoot(self.model.root, detail: "can't list")
+                self.showStatus()
+                return
+            }
+            self.listMs = (CACurrentMediaTime() - started) * 1000
+            self.showRoot(listing)
         }
-        listMs = (CACurrentMediaTime() - started) * 1000
+    }
+
+    private func showRoot(_ listing: Listing) {
         root = FileNode(path: listing.dir, name: (listing.dir as NSString).lastPathComponent, dir: true)
         nodes = [listing.dir: root]
-        git = [:]
         showHidden = listing.showHidden
         apply(listing, to: root)
         rebuildFilter()
         outline.reloadData()
         header.setRoot(listing.root, detail: listing.truncated ? "truncated" : nil)
         header.setHidden(showHidden)
+        if window?.firstResponder === outline, outline.selectedRow < 0, outline.numberOfRows > 0 {
+            outline.selectRowIndexes([0], byExtendingSelection: false)
+        }
+        showStatus()
         if firstRowsMs == nil {
             outline.layoutSubtreeIfNeeded()
             outline.displayIfNeeded()
@@ -252,24 +337,68 @@ final class FilesTileView: NSView, TileView, ThemeAware {
                 format: "files: %@ first rows %.1f ms (list %.1f ms, %d rows)",
                 Short.id(tileID), firstRowsMs ?? 0, listMs ?? 0, outline.numberOfRows))
         }
-    }
-
-    /// Lists a folder through the core; `files.expand` also watches it.
-    private func list(dir: String?, method: String) -> Listing? {
-        guard let core = Self.core else { return nil }
-        var params: [String: Any] = ["tile": tileID]
-        if let dir { params["dir"] = dir }
-        switch core.execute(["method": method, "params": params]) {
-        case .success(let reply): return Listing(reply)
-        case .failure(let error):
-            Self.log("files: \(method) \(dir ?? "root") failed: \(error.message)")
-            return nil
+        if let (path, dirs) = pendingReveal {
+            pendingReveal = nil
+            reveal(path: path, dirs: dirs)
         }
     }
 
+    /// The root's state in the status line: loading, can't be listed, or a
+    /// remote folder's error (with the last listing still shown), hidden
+    /// otherwise.
+    private func showStatus() {
+        let text: String? = if loadingRoot {
+            "Loading…"
+        } else if rootFailed {
+            "Can't list this folder."
+        } else if let error = root.error {
+            root.children?.isEmpty == false ? "\(error) (showing the last listing)" : error
+        } else if root.loading {
+            "Loading…"
+        } else {
+            nil
+        }
+        status.stringValue = text ?? ""
+        status.toolTip = text
+        status.isHidden = text == nil
+        statusHeight.constant = text == nil ? 0 : (root.error != nil ? 32 : 16)
+    }
+
+    /// Lists a folder through the core without waiting; `files.expand` also
+    /// watches it. `then` runs on the main actor with the listing, or nil
+    /// when the core couldn't list it; never when the root changed since.
+    private func list(dir: String?, method: String, then: @escaping @MainActor (Listing?) -> Void) {
+        guard let core = Self.core else { return then(nil) }
+        var params: [String: Any] = ["tile": tileID]
+        if let dir { params["dir"] = dir }
+        requests += 1
+        let request = requests
+        let generation = generation
+        core.executeAsync(
+            ["method": method, "params": params],
+            decode: { result in result.map { Listing($0, request: request) } },
+            then: { [weak self] result in
+                guard let self, generation == self.generation else { return }
+                switch result {
+                case .success(let listing):
+                    if listing == nil { Self.log("files: \(method) \(dir ?? "root"): unexpected reply") }
+                    then(listing)
+                case .failure(let error):
+                    Self.log("files: \(method) \(dir ?? "root") failed: \(error.message)")
+                    then(nil)
+                }
+            })
+    }
+
     /// Merges a listing into `node`: entries that stay keep their node (and
-    /// so their open children); gone ones drop out of the index.
-    private func apply(_ listing: Listing, to node: FileNode) {
+    /// so their open children); gone ones drop out of the index. False (and
+    /// nothing changes) when a newer listing of the folder is already shown.
+    @discardableResult
+    private func apply(_ listing: Listing, to node: FileNode) -> Bool {
+        guard listing.request >= shownRequest[node.path, default: 0] else { return false }
+        shownRequest[node.path] = listing.request
+        node.loading = listing.loading
+        node.error = listing.error
         let old = Dictionary((node.children ?? []).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
         var kept = Set<String>()
         node.children = listing.entries.map { e in
@@ -289,33 +418,72 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         for (path, gone) in old where !kept.contains(path) {
             forget(gone)
         }
+        return true
     }
 
     private func forget(_ node: FileNode) {
         nodes[node.path] = nil
+        shownRequest[node.path] = nil
         for child in node.children ?? [] { forget(child) }
     }
 
-    private func ensureLoaded(_ node: FileNode) {
-        guard node.dir, node.children == nil,
-              let listing = list(dir: node.path, method: "files.expand")
-        else { return }
-        apply(listing, to: node)
+    /// Lists a folder the first time it opens; it shows open and empty
+    /// until its rows land.
+    private func load(_ node: FileNode) {
+        guard node.dir, node.children == nil, !loading.contains(node.path) else { return }
+        loading.insert(node.path)
+        list(dir: node.path, method: "files.expand") { [weak self] listing in
+            guard let self else { return }
+            self.loading.remove(node.path)
+            guard let listing, self.nodes[node.path] === node, self.apply(listing, to: node) else { return }
+            let selected = self.selectedNode
+            self.rebuildFilter()
+            self.outline.reloadItem(node, reloadChildren: true)
+            if node.open, self.query.isEmpty {
+                self.outline.expandItem(node)
+                self.restoreExpansion(node)
+            }
+            self.keepSelection(selected)
+        }
+    }
+
+    /// Selects `node` again after rows moved, without scrolling.
+    private func keepSelection(_ node: FileNode?) {
+        guard let node else { return }
+        let row = outline.row(forItem: node)
+        if row >= 0, row != outline.selectedRow {
+            outline.selectRowIndexes([row], byExtendingSelection: false)
+        }
     }
 
     // MARK: Events
 
-    /// `files.changed`: list the open folders that changed again.
+    /// `files.changed`: list the open folders that changed again, then show
+    /// them all at once.
     private func changed(_ dirs: [String]) {
+        let open = dirs.filter { dir in
+            guard let node = nodes[dir], node.children != nil else { return false }
+            return node === root || outline.isItemExpanded(node)
+        }
+        guard !open.isEmpty else { return }
+        let batch = ListingBatch(open.count)
+        for dir in open {
+            list(dir: dir, method: "files.list") { [weak self] listing in
+                guard batch.add(listing, for: dir) else { return }
+                self?.showChanges(batch.listings, dirs: open)
+            }
+        }
+    }
+
+    private func showChanges(_ listings: [String: Listing], dirs: [String]) {
         var reloaded = false
         let selected = selectedNode?.path
         for dir in dirs {
-            guard let node = nodes[dir], node.children != nil,
+            guard let listing = listings[dir], let node = nodes[dir], node.children != nil,
                   node === root || outline.isItemExpanded(node),
-                  let listing = list(dir: dir, method: "files.list")
+                  apply(listing, to: node)
             else { continue }
             showHidden = listing.showHidden
-            apply(listing, to: node)
             reloaded = true
         }
         guard reloaded else { return }
@@ -324,6 +492,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         restoreExpansion(root)
         if let selected, let node = nodes[selected] { select(node) }
         header.setHidden(showHidden)
+        showStatus()
         changesApplied += 1
         lastChangeAt = Date().timeIntervalSince1970 * 1000
         Self.log(String(format: "files: %@ change applied at %.0f (%@)",
@@ -339,10 +508,30 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     }
 
     /// `files.revealed`: open each folder down to `path`, then select it.
+    /// The folders not listed yet are listed together first.
     private func reveal(path: String, dirs: [String]) {
+        if loadingRoot {
+            pendingReveal = (path, dirs)
+            return
+        }
+        let unlisted = dirs.filter { nodes[$0]?.children == nil }
+        guard !unlisted.isEmpty else { return showReveal(path: path, dirs: dirs, listings: [:]) }
+        let batch = ListingBatch(unlisted.count)
+        for dir in unlisted {
+            list(dir: dir, method: "files.expand") { [weak self] listing in
+                guard batch.add(listing, for: dir) else { return }
+                self?.showReveal(path: path, dirs: dirs, listings: batch.listings)
+            }
+        }
+    }
+
+    private func showReveal(path: String, dirs: [String], listings: [String: Listing]) {
+        // Root first, so each folder's node exists by the time it's opened.
         for dir in dirs {
             guard let node = nodes[dir] else { continue }
-            ensureLoaded(node)
+            if node.children == nil, let listing = listings[dir], apply(listing, to: node) {
+                outline.reloadItem(node, reloadChildren: true)
+            }
             if node !== root {
                 node.open = true
                 outline.expandItem(node)
@@ -396,11 +585,19 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         if case .failure(let error) = result { Self.log("files: open failed: \(error.message)") }
     }
 
+    /// A remote file has no local app to open it: it goes to the preview
+    /// tile instead, as a copy.
     func openInDefaultApp(_ node: FileNode) {
+        if isRemote {
+            if !node.dir { open(node, target: "preview") }
+            return
+        }
         NSWorkspace.shared.open(URL(fileURLWithPath: node.path))
     }
 
+    /// Local files only: Finder can't show a remote path.
     func revealInFinder(_ node: FileNode) {
+        guard !isRemote else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
     }
 
@@ -517,8 +714,8 @@ extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
         // While filtering, folders open to show matches; that isn't the
         // user's choice and loads nothing new.
         guard let node = notification.userInfo?["NSObject"] as? FileNode, query.isEmpty else { return }
-        ensureLoaded(node)
         node.open = true
+        load(node)
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
@@ -592,6 +789,9 @@ extension FilesTileView: AutomatableTile {
         var s: [String: String] = [
             "tile.kind": "files",
             "tile.root": root.path,
+            "tile.machine": machine ?? "local",
+            "tile.status": rootFailed ? "error: can't list" : root.error.map { "error: \($0)" }
+                ?? (loadingRoot || root.loading ? "loading" : "ok"),
             "tile.rows": "\(outline.numberOfRows)",
             "tile.hidden": showHidden ? "shown" : "hidden",
             "tile.changes": "\(changesApplied)",
@@ -599,6 +799,7 @@ extension FilesTileView: AutomatableTile {
             "tile.git": "\(git.count)",
             "tile.first-rows-ms": firstRowsMs.map { String(format: "%.1f", $0) } ?? "-",
             "tile.list-ms": listMs.map { String(format: "%.1f", $0) } ?? "-",
+            "tile.loading": loadingRoot ? "yes" : "no",
             "tile.last-change-at": lastChangeAt.map { String(format: "%.0f", $0) } ?? "-",
         ]
         if let node = selectedNode {
@@ -629,6 +830,10 @@ final class FileNode {
     weak var parent: FileNode?
     /// Open in the outline (kept across reloads).
     var open = false
+    /// A remote folder whose listing hasn't come in yet.
+    var loading = false
+    /// Why a remote folder couldn't be listed.
+    var error: String?
 
     init(path: String, name: String, dir: Bool) {
         self.path = path
@@ -637,9 +842,9 @@ final class FileNode {
     }
 }
 
-/// A `files` reply.
-private struct Listing {
-    struct Entry {
+/// A `files` reply, parsed off the main thread.
+private struct Listing: Sendable {
+    struct Entry: Sendable {
         let name: String
         let path: String
         let dir: Bool
@@ -654,13 +859,21 @@ private struct Listing {
     let showHidden: Bool
     let truncated: Bool
     let entries: [Entry]
+    /// Which request it answers (`FilesTileView.list`).
+    let request: Int
+    /// Remote folders (ADR 0015): not listed yet, or why they can't be.
+    let loading: Bool
+    let error: String?
 
-    init?(_ reply: [String: Any]) {
+    init?(_ reply: [String: Any], request: Int) {
         guard let root = reply["root"] as? String, let dir = reply["dir"] as? String else { return nil }
+        self.request = request
         self.root = root
         self.dir = dir
         showHidden = reply["show_hidden"] as? Bool ?? false
         truncated = reply["truncated"] as? Bool ?? false
+        loading = reply["loading"] as? Bool ?? false
+        error = reply["error"] as? String
         entries = (reply["entries"] as? [[String: Any]] ?? []).compactMap { e in
             guard let name = e["name"] as? String, let path = e["path"] as? String else { return nil }
             return Entry(
@@ -668,6 +881,24 @@ private struct Listing {
                 symlink: e["symlink"] as? Bool ?? false, hidden: e["hidden"] as? Bool ?? false,
                 ignored: e["ignored"] as? Bool ?? false, git: e["git"] as? String)
         }
+    }
+}
+
+/// Listings requested together (a `files.changed` or `files.revealed`),
+/// shown together once the last one lands.
+@MainActor
+private final class ListingBatch {
+    private var waiting: Int
+    private(set) var listings: [String: Listing] = [:]
+
+    init(_ count: Int) { waiting = count }
+
+    /// Records one reply (nil: that folder couldn't be listed); true once
+    /// every folder has answered.
+    func add(_ listing: Listing?, for dir: String) -> Bool {
+        if let listing { listings[dir] = listing }
+        waiting -= 1
+        return waiting == 0
     }
 }
 
@@ -710,8 +941,11 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
         }
         if !node.dir { add("Open in Preview") { owner.open(node, target: "preview") } }
         add("Open Terminal Here") { owner.open(node, target: "terminal") }
-        add("Open in Default App") { owner.openInDefaultApp(node) }
-        add("Reveal in Finder") { owner.revealInFinder(node) }
+        // A remote path isn't on this Mac (ADR 0015).
+        if !owner.isRemote {
+            add("Open in Default App") { owner.openInDefaultApp(node) }
+            add("Reveal in Finder") { owner.revealInFinder(node) }
+        }
         add("Copy Path") { owner.copyPath(node) }
         menu.addItem(.separator())
         add("Show or Hide Hidden Files") { owner.toggleHidden() }
@@ -721,6 +955,8 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
     // Quick Look: the selected entry, toggled with Space.
 
     fileprivate func toggleQuickLook() {
+        // Quick Look reads local files only.
+        if owner?.isRemote == true { return }
         let panel = QLPreviewPanel.shared()!
         if panel.isVisible { panel.orderOut(nil) } else { panel.makeKeyAndOrderFront(nil) }
     }
@@ -742,7 +978,7 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
     }
 
     nonisolated func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
-        MainActor.assumeIsolated { owner?.selectedNode == nil ? 0 : 1 }
+        MainActor.assumeIsolated { owner?.selectedNode == nil || owner?.isRemote == true ? 0 : 1 }
     }
 
     nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
@@ -810,6 +1046,15 @@ private final class FileCell: NSTableCellView {
             name.textColor = node.hidden || node.ignored ? Design.Color.textMuted : Design.Color.textPrimary
         }
         toolTip = node.symlink ? "\(node.path) (symlink)" : node.path
+        // An open remote folder still listing, or one that failed.
+        if let error = node.error {
+            badge.stringValue = "!"
+            badge.textColor = Design.Color.textMuted
+            toolTip = "\(node.path): \(error)"
+        } else if node.loading {
+            badge.stringValue = "…"
+            badge.textColor = Design.Color.textMuted
+        }
     }
 
     private static func badge(_ git: String?) -> (String, NSColor?) {
