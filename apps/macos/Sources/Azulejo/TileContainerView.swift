@@ -244,6 +244,9 @@ final class TileContainerView: NSView, ThemeAware {
         return tab.order
     }
 
+    /// Whether a tile is on screen: not behind Monocle's top tile or a zoom.
+    func isVisible(_ id: String) -> Bool { visibleTiles.contains(id) }
+
     /// Where each visible tile sits, in this view's coordinates.
     func tileFrames() -> [String: CGRect] {
         guard let tab else { return [:] }

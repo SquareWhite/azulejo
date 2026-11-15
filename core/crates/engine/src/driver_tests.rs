@@ -1539,23 +1539,29 @@ fn agent_status_follows_bound_panes_and_lights_attention() {
     assert!(seen.iter().any(|e| matches!(e,
         Event::WorkspaceUpdated { workspace, .. } if workspace.blocked == 1)));
 
-    // Looking at it clears the attention; it's still blocked.
+    // Looking at it doesn't answer it: focus and `tile.seen` leave it lit.
     core.execute(Command::TileFocus(azulejo_protocol::TileTarget {
         tile: Some(first),
     }))
     .unwrap();
+    core.execute(Command::TileSeen(azulejo_protocol::TileTarget {
+        tile: None,
+    }))
+    .unwrap();
     let a = agent_of(&core.session().unwrap(), first).unwrap();
-    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, false));
+    assert_eq!((a.status, a.attention), (AgentStatus::Blocked, true));
 
-    // The focused tile lights up too; `tile.seen` clears it in place.
+    // Answered, then finished while focused: lit until `tile.seen`.
     fake.send_agent(&panes[0], herdr::AgentStatus::Working);
+    wait_until(&core, |s| agent_of(s, first).is_some_and(|a| !a.attention));
     fake.send_agent(&panes[0], herdr::AgentStatus::Done);
     wait_until(&core, |s| agent_of(s, first).is_some_and(|a| a.attention));
     core.execute(Command::TileSeen(azulejo_protocol::TileTarget {
         tile: None,
     }))
     .unwrap();
-    assert!(!agent_of(&core.session().unwrap(), first).unwrap().attention);
+    let a = agent_of(&core.session().unwrap(), first).unwrap();
+    assert_eq!((a.status, a.attention), (AgentStatus::Done, false));
     assert_eq!(core.session().unwrap().focused_tile(), Some(first));
     let _ = second;
 }

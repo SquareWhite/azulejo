@@ -168,8 +168,10 @@ pub struct AgentInfo {
     pub status: AgentStatus,
     /// When `status` last changed, in milliseconds since the Unix epoch.
     pub since_ms: u64,
-    /// The agent became blocked or finished and nobody has looked since:
-    /// focusing the tile, or `tile.seen`, clears it.
+    /// The agent became blocked or finished and needs a look. A finish
+    /// stays lit until the user reads it (`tile.seen`); blocked stays lit
+    /// until the agent's state changes. herdr's `done` status can outlive a
+    /// read, so this, not `status`, is the "unseen" flag.
     #[serde(default, skip_serializing_if = "is_false")]
     pub attention: bool,
 }

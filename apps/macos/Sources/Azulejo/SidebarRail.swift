@@ -99,15 +99,12 @@ final class SidebarRailView: NSView, ThemeAware {
     }
 
     /// One agent's icon, ranked as the sidebar ranks a workspace: blocked,
-    /// then finished and not looked at, then its own state.
+    /// then finished and not read, then working, else idle (a read finish
+    /// is idle even while herdr still says `done`).
     static func status(_ agent: AgentModel) -> Design.Status {
         if agent.status == .blocked { return .blocked }
         if agent.attention { return .done }
-        switch agent.status {
-        case .working: return .working
-        case .done: return .done
-        case .idle, .blocked, .unknown: return .idle
-        }
+        return agent.status == .working ? .working : .idle
     }
 
     /// A machine's letter: "L" for Local, else its label's first letter.

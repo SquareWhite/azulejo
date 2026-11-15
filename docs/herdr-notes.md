@@ -196,6 +196,25 @@ Details that shaped ADR 0012:
 - `tab_closed` for a tab emptied by a move arrives **before** that move's `pane_moved` on the lifecycle stream (seen in the engine's migration test; the probe's single subscriber saw them in the other order). Don't close a tile on `tab_closed` without checking its pane.
 - The headless server lays a tab out in a 120×40 area. With no client attached a pane's size follows its slot; an attached client keeps its own size whatever the slot.
 
+## 11. `done` versus `idle`: herdr's "seen" state
+
+Probed Nov 5, 2026 on herdr 0.9.1 in a throwaway session. Reproduce with `python3 scripts/herdr-probe/seen.py` (session `azj-test-probe-seen`, deleted afterwards; one JSON line per check).
+
+**Answer.** herdr keeps one server-side "seen" flag per pane. `done` means the agent finished and no herdr focus has landed on the pane since; `idle` means it has (`herdr agent --help`: "explicit focus commands mark the target seen, while reads do not"). There's no acknowledge call: only focus marks seen.
+
+| What | Result |
+| --- | --- |
+| Agent goes working → idle in a pane that isn't herdr's focused one | `done`, and it stays `done` |
+| The same in herdr's focused pane | `idle` straight away: herdr counts it seen |
+| `pane.read` on a `done` pane | still `done` |
+| `pane.focus` (or `agent.focus`) on a `done` pane | `idle`, with a `pane.agent_status_changed` event; herdr's focused workspace, tab and pane move there too |
+| A new run that finishes | `done` again (unless focused) |
+| `pane.focus` on a `blocked` pane | still `blocked` |
+
+The TUI tracks viewed completions per client, so its Done badge can differ from the API's anyway (`herdr agent --help`).
+
+**Implication.** Azulejo doesn't mark panes seen in herdr. Doing it means `pane.focus`, which moves herdr's session focus: the TUI and a phone would jump to whatever Azulejo is reading, and ADR 0012 leaves herdr's focus alone on purpose. It wouldn't clear the TUI's per-client badge either. So herdr's `done` outlives a read in Azulejo, and a finish in herdr's focused pane arrives as `idle`. The core treats both as finishes and keeps its own unread flag, `tile.agent.attention`, which `tile.seen` clears. Views show the checkmark from `attention`, never from `status == done`.
+
 ## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
 
 | Situation | Exit status | Last stderr line |

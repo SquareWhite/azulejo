@@ -711,7 +711,7 @@ fn rotate_turns_any_manual_tree_four_ways_and_monocle_stays_silent() {
 }
 
 #[test]
-fn moving_focus_onto_a_tile_clears_its_agent_attention() {
+fn focus_alone_keeps_a_done_mark_and_tile_seen_clears_it() {
     use azulejo_model::{AgentInfo, AgentStatus};
     let mut engine = Engine::new();
     let first = engine.session().focused_tile().unwrap();
@@ -720,21 +720,31 @@ fn moving_focus_onto_a_tile_clears_its_agent_attention() {
         direction: Direction::Right,
         content: None,
     }));
-    engine.session.tile_mut(first).unwrap().agent = Some(AgentInfo {
+    let finished = |status| AgentInfo {
         name: Some("claude".into()),
-        status: AgentStatus::Blocked,
+        status,
         since_ms: 1,
         attention: true,
-    });
-    // Unrelated commands leave it lit.
-    engine.handle(Command::LayoutEqualize(Default::default()));
-    assert!(engine.session().tile(first).unwrap().needs_attention());
-    let events = engine.handle(Command::LayoutFocus(azulejo_protocol::LayoutFocus {
+    };
+    engine.session.tile_mut(first).unwrap().agent = Some(finished(AgentStatus::Done));
+    // Moving focus onto it (the shell decides whether anyone's looking), or
+    // focusing it by id, leaves it lit.
+    engine.handle(Command::LayoutFocus(azulejo_protocol::LayoutFocus {
         direction: Direction::Left,
     }));
+    assert_eq!(engine.session().focused_tile(), Some(first));
+    engine.handle(Command::TileFocus(TileTarget { tile: Some(first) }));
+    assert!(engine.session().tile(first).unwrap().needs_attention());
+    // `tile.seen` reads it.
+    let events = engine.handle(Command::TileSeen(TileTarget { tile: None }));
     assert!(!engine.session().tile(first).unwrap().needs_attention());
     assert!(events.iter().any(|e| matches!(e,
         Event::TileAttentionChanged { tile, attention: false, .. } if *tile == first)));
+    // A blocked agent isn't answered by looking.
+    engine.session.tile_mut(first).unwrap().agent = Some(finished(AgentStatus::Blocked));
+    let events = engine.handle(Command::TileSeen(TileTarget { tile: Some(first) }));
+    assert!(engine.session().tile(first).unwrap().needs_attention());
+    assert!(events.is_empty(), "{:?}", names(&events));
 }
 
 // ----- dynamic layouts (ADR 0010) -----

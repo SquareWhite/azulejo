@@ -114,7 +114,7 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "tab.list",
     "tile.list",
     "tile.get",
-    // Shells send it when a focused tile's agent attention lights up.
+    // Shells send it once the user has read a focused tile's finished agent.
     "tile.seen",
     "browser.state",
     "preview.get",

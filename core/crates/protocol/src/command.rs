@@ -99,12 +99,15 @@ pub enum Command {
     /// `kill` is set (F14).
     #[serde(rename = "tile.close")]
     TileClose(TileClose),
-    /// Focuses a tile; counts as looking at it, so its agent's attention
-    /// clears (F11).
+    /// Focuses a tile. Focus alone doesn't count as reading its agent's
+    /// result: that's `tile.seen` (F11).
     #[serde(rename = "tile.focus")]
     TileFocus(TileTarget),
-    /// Clears a tile's agent attention without moving focus: shells send it
-    /// when a focused tile's attention lights up while the user is looking.
+    /// The user has read the tile's agent's result: clears a finished
+    /// agent's attention (the done mark) without moving focus. A blocked
+    /// agent keeps its attention until its state changes. The macOS shell
+    /// sends it once the tile has been focused, on screen, in the key window
+    /// for 0.75 s.
     #[serde(rename = "tile.seen")]
     TileSeen(TileTarget),
     /// Sets or clears a tile's title.

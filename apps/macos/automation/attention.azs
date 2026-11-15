@@ -1,5 +1,5 @@
 # Agent state and attention (F11, F16): badges on tiles, sidebar and tab-bar
-# markers, the Dock badge and `tile.seen`. Agent states are simulated with
+# markers, the Dock badge, and what reading does and doesn't clear. Agent states are simulated with
 # `herdr pane report-agent` on the dev instance's own herdr session.
 #   apps/macos/automation/chrome.sh
 
@@ -36,10 +36,13 @@ expect tab.markers ●1
 expect dock 1
 shot 21-blocked
 
-# Focusing it clears attention; it's still blocked (Dock badge stays).
+# Looking doesn't answer it: still blocked and lit (Dock badge stays).
+seen-visible on
 key alt+h
 expect focus 1
-until agents blocked,none 3000
+wait 1200
+expect agents blocked!,none
+seen-visible off
 expect dock 1
 expect sidebar.markers ●1
 
@@ -48,17 +51,16 @@ sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --ag
 until agents working,none 3000
 expect dock none
 
-# Finished while unfocused. A reported working → idle stays plain idle (no
-# attention): `report-agent` can't say "done"; herdr's own detection does.
+# Finished while unfocused: working → idle is a finish (herdr says done, or
+# idle when its own focus is on the pane) and stays lit until read.
 key alt+l
 expect focus 2
 sh {herdr} --session {session} pane report-agent {pane:1} --source azj-test --agent claude --state idle
-until agents idle,none 3000
-expect sidebar.markers -
+until tab.markers ●1 3000
+expect sidebar.markers ●1
 shot 22-idle
 
-# Blocked on the focused tile while the window isn't on screen: attention
-# stays lit until it's seen.
+# Blocked on the focused tile: attention stays lit, on screen or not.
 sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --agent codex --state working
 wait 400
 sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --agent codex --state working
@@ -67,9 +69,9 @@ sh {herdr} --session {session} pane report-agent {pane:2} --source azj-test --ag
 until focused.agent blocked! 3000
 wait 300
 expect focused.agent blocked!
-# Once the window counts as visible, the shell sends tile.seen.
 seen-visible on
-until focused.agent blocked 3000
+wait 1200
+expect focused.agent blocked!
 seen-visible off
 
 # ⌘K shows the agents too (dot) and finds tiles by agent name.

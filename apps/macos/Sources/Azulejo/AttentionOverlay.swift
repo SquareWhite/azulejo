@@ -279,7 +279,7 @@ final class AgentBadgeView: NSView, ThemeAware {
         let name = agent.name.flatMap { $0.isEmpty ? nil : $0 } ?? "agent"
         let status: String = switch agent.status {
         case .blocked: "blocked"
-        case .done: "done"
+        case .done: agent.attention ? "done" : "idle"
         case .working: "working"
         case .idle: agent.attention ? "done" : "idle"
         case .unknown: "…"
@@ -318,11 +318,18 @@ final class AgentBadgeView: NSView, ThemeAware {
 }
 
 /// App-wide attention bookkeeping: the Dock badge (blocked agents) and
-/// telling the core a tile was seen when it's focused on screen.
+/// telling the core the user read a finished agent's result.
 @MainActor
 enum AttentionTracker {
     /// Automation: treat background windows as visible to the user.
     static var assumeVisible = false
+    /// How long a finished agent's tile has to stay in front of the user
+    /// before its done mark clears. Longer than a keyboard hop through tiles
+    /// or workspaces (a focus move plus its 150–250 ms motion), so passing
+    /// through doesn't count as reading; short enough that a glance does.
+    static let dwell: TimeInterval = 0.75
+    /// Tiles in front of the user with an unread finish, and since when.
+    private static var looking: [String: CFTimeInterval] = [:]
     /// Tiles we've sent `tile.seen` for and the core hasn't cleared yet.
     private static var pending: Set<String> = []
 
@@ -336,23 +343,43 @@ enum AttentionTracker {
         if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
 
-    /// For each window the user can see, a focused tile that needs a look
-    /// has now been seen.
-    static func markSeen(_ session: SessionModel, controllers: [WindowController], send: ([String: Any]) -> Void) {
+    /// A finished agent's result counts as read once its tile has been the
+    /// focused, visible tile of the key window (app active, palette closed)
+    /// for `dwell`: then the core gets `tile.seen`. Blocked agents aren't
+    /// answered by looking, so they're left alone. `again` runs this once
+    /// more when a dwell is up, with whatever the session is by then.
+    static func markSeen(
+        _ session: SessionModel, controllers: [WindowController],
+        send: ([String: Any]) -> Void, again: @escaping @MainActor () -> Void
+    ) {
+        let now = CACurrentMediaTime()
+        var front: [String: CFTimeInterval] = [:]
         var still: Set<String> = []
         for controller in controllers {
             guard let tab = session.window(controller.windowID)?.workspace?.tab,
-                  let tile = tab.tile(tab.focused), tile.needsAttention
+                  let tile = tab.tile(tab.focused), let agent = tile.agent,
+                  agent.attention, agent.status != .blocked
             else { continue }
             let visible = assumeVisible
                 || (NSApp.isActive && controller.window.isKeyWindow
                     && controller.window.occlusionState.contains(.visible))
-            guard visible, !controller.palette.isOpen else { continue }
+            guard visible, !controller.palette.isOpen,
+                  controller.tiles.isVisible(tile.id)
+            else { continue }
+            let since = looking[tile.id] ?? now
+            front[tile.id] = since
+            if now - since < dwell {
+                if looking[tile.id] == nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dwell + 0.02) { again() }
+                }
+                continue
+            }
             still.insert(tile.id)
             if !pending.contains(tile.id) {
                 send(["method": "tile.seen", "params": ["tile": tile.id]])
             }
         }
+        looking = front
         pending = still
     }
 }

@@ -216,14 +216,14 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware {
     }
 
     /// One state for a workspace's row and the footer: blocked wins, then a
-    /// finished agent nobody has looked at, then working, then done, else
-    /// idle.
+    /// finished agent nobody has read, then working, else idle. A read
+    /// finish is idle even while herdr still says `done` (only `attention`
+    /// knows it was read).
     static func status(_ ws: WorkspaceModel) -> Design.Status {
         let agents = ws.tabs.flatMap(\.tiles).compactMap(\.agent)
         if agents.contains(where: { $0.status == .blocked }) { return .blocked }
         if agents.contains(where: \.attention) { return .done }
         if agents.contains(where: { $0.status == .working }) { return .working }
-        if agents.contains(where: { $0.status == .done }) { return .done }
         return .idle
     }
 

@@ -219,13 +219,15 @@ wait 800
 key alt+h
 expect focus 1
 expect tile.header.inset 0
-# Blocked and seen (focused): the icon stays, without text. Up the stack
-# from its last tile (tile 3 is seen on the way).
+# Blocked and focused: the icon stays, without text. Up the stack from its
+# last tile. Focus alone answers nothing and reads nothing (tile 3 is passed
+# on the way; reading is the shell's dwell, see agents.azs).
 key alt+l
 key alt+k
 key alt+k
 expect focus 2
-until agents working,blocked,done,none 3000
+wait 300
+expect agents working,blocked!,done!,none
 expect header.agents none,blocked,none,none
 remember tile.header.inset
 key alt+h
