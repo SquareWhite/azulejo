@@ -8,7 +8,7 @@
 
 ## Dock check
 
-the maintainer's Dock in dark mode (Nov 5, `dock-neighbours.png` (local capture)) had the first cut between Zed and Obsidian, and it read flat, grey-blue and low in contrast next to them. Their bodies are near black, every one has a bright glass edge (brightest along the top), and the one thing in the middle glows. So Y now has (`KeyVersion.tahoe` in `draw.swift`; the first cut stays as `.first`):
+The first cut read flat and low in contrast beside reference application icons. Their bodies are near black, each has a bright glass edge, and the central mark glows. Y now has (`KeyVersion.tahoe` in `draw.swift`; the first cut stays as `.first`):
 
 - **The glass edge** (`Bevel`). Measured off Zed, Obsidian, Terminal, Notes and TextEdit as IconServices draws them: at the very edge white at about 60 % along the top, 45 % down the sides and 34 % along the foot on a dark icon, and fully white on a light one, fading linearly to nothing about 9 px in at 512. Y's fades over 15 of the 824 body pixels, a touch crisper. It replaces the rim light and the hairline.
 - **Apple's shadow.** Theirs is much lighter than the old template's: about 17 % black under the foot, gone 20 px out at 1024. Y's is black at 30 % (dark) or 22 % (light), blur 22, 6 px down.

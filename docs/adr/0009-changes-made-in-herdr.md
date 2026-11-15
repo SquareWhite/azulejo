@@ -37,7 +37,7 @@ Probed on herdr 0.9.1 (throwaway sessions):
 
 ## Evidence
 
-- `core/crates/engine/tests/live.rs`: `agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second`. Measured on an Apple Silicon, herdr 0.9.1, 5 runs, times from starting the herdr CLI command (≈ 95 ms of it is the CLI itself): blocked → `agent.state_changed` and `tile.attention_changed` 101–107 ms; `pane split` → `tile.created` 99–102 ms; `pane close` → `tile.closed` 103–104 ms. Target: under 1 s.
+- `core/crates/engine/tests/live.rs`: `agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second`. Measured on Apple Silicon, herdr 0.9.1, 5 runs, times from starting the herdr CLI command (≈ 95 ms of it is the CLI itself): blocked → `agent.state_changed` and `tile.attention_changed` 101–107 ms; `pane split` → `tile.created` 99–102 ms; `pane close` → `tile.closed` 103–104 ms. Target: under 1 s.
 - `core/crates/engine/src/driver_tests.rs`: `herdr_events_end_close_or_rebind_tiles`, `a_closed_herdr_workspace_takes_its_tiles_and_binding`, `agent_status_follows_bound_panes_and_lights_attention`, `panes_split_off_elsewhere_become_tiles_and_closing_there_removes_them`.
 - `core/crates/engine/src/adopt_tests.rs`: `a_pane_split_off_in_herdr_lands_beside_its_sibling`, `split_panes_without_a_tree_go_to_the_stack_unless_closed_here`.
 - `core/crates/engine/src/agent.rs`: attention rules.

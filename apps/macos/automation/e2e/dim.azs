@@ -1,4 +1,4 @@
-# Focus dim (the maintainer's feedback, Nov 4): no outline round the focused tile;
+# Focus dim (feedback, Nov 4): no outline round the focused tile;
 # every other tile on screen dims, header strip included. Nothing dims with
 # one tile on screen (a lone tile, Monocle, zoom). The keyboard leaving the
 # tiles (⌘K, the sidebar's Files panel) keeps the last focused tile bright.

@@ -10,7 +10,7 @@
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
 //   swift scripts/icon/draw.swift --iconset-dark DIR  # the same, dark look
 //   swift scripts/icon/draw.swift --key DIR       # prompt.png, prompt-vs-mockup.png (reads DIR/prompt-mockup.png), dock-check.png
-//   swift scripts/icon/draw.swift --dock DIR      # dock-check.png only (reads DIR/dock-neighbours.png)
+//   swift scripts/icon/draw.swift --dock DIR      # generated dock-check.png only
 //   swift scripts/icon/draw.swift --composer DIR  # Y's layers as SVG, for Icon Composer
 //   swift scripts/icon/draw.swift --docs DIR      # everything below, plus candidates, variants, sheet.png, options.png
 //   swift scripts/icon/draw.swift --minimal DIR   # minimal.png only
@@ -2931,8 +2931,8 @@ func keyWall(_ g: CGContext, _ look: Look, at origin: CGPoint, tile: Int, grout:
   }
 }
 
-/// dock-check.png: Y between real neighbours on a dark and a light Dock, the
-/// way the maintainer's Dock screenshot (dock-neighbours.png, at the top) shows it.
+/// dock-check.png: Y between reference application icons on a dark and a light
+/// Dock. This is generated artwork, never an embedded desktop screenshot.
 /// Each row is one of our icons in the middle of Terminal, Zed | Y |
 /// Obsidian, Notes and Safari (whichever are installed; read through
 /// IconServices, as the Dock gets them), at 64 and 128 px, then Zed, Y and
@@ -2957,7 +2957,7 @@ func writeDockCheck(_ dir: URL) {
     ("Dark Dock (system in dark mode)", rgb(0x1B1D24), rgb(0x2B2E3A), rgb(0x4C4E57, 0.92), rgb(0x3A3C44, 0.92), NSColor(white: 0.9, alpha: 1), [
       Row(name: "Now · dark look: app_icon = \"dark\", or \"auto\" in dark mode", look: .dark, version: .tahoe),
       Row(name: "Now · light look: the default (app_icon = \"light\")", look: .light, version: .tahoe),
-      Row(name: "Before · the first cut's dark look (the maintainer's screenshot)", look: .dark, version: .first),
+      Row(name: "Before · the first cut's dark look", look: .dark, version: .first),
       Row(name: "Before · the first cut's light look", look: .light, version: .first),
     ]),
     ("Light Dock (system in light mode)", rgb(0xB9C6DC), rgb(0xE6E3EE), rgb(0xF6F6F8, 0.78), rgb(0xE9EAEE, 0.78), NSColor(white: 0.12, alpha: 1), [
@@ -2966,23 +2966,12 @@ func writeDockCheck(_ dir: URL) {
       Row(name: "Before · the first cut's light look", look: .light, version: .first),
     ]),
   ]
-  let shot = cgImage(dir.appendingPathComponent("dock-neighbours.png"))
-  let shotZoom: CGFloat = 2
-  let shotH = shot.map { CGFloat($0.height) * shotZoom + 60 + gap } ?? 0
-  let height = Int(shotH + bands.reduce(CGFloat(0)) { $0 + 70 + CGFloat($1.6.count) * rowH })
+  let height = Int(bands.reduce(CGFloat(0)) { $0 + 70 + CGFloat($1.6.count) * rowH })
   let g = CGContext(
     data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
   let cs = CGColorSpace(name: CGColorSpace.sRGB)!
   var top = CGFloat(height)
-  if let shot {
-    g.setFillColor(rgb(0x1E1F23))
-    g.fill(CGRect(x: 0, y: top - shotH, width: CGFloat(width), height: shotH))
-    label(g, "the maintainer's Dock, Nov 5 (the first cut's dark look between Zed and Obsidian), at 2×", at: CGPoint(x: gap, y: top - 44), size: 18, color: NSColor(white: 0.88, alpha: 1), bold: true)
-    g.interpolationQuality = .high
-    g.draw(shot, in: CGRect(x: gap, y: top - shotH + gap, width: CGFloat(shot.width) * shotZoom, height: CGFloat(shot.height) * shotZoom))
-    top -= shotH
-  }
   for (title, low, high, shelfTop, shelfFoot, ink, rows) in bands {
     let bandH = 70 + CGFloat(rows.count) * rowH
     let rect = CGRect(x: 0, y: top - bandH, width: CGFloat(width), height: bandH)

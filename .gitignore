@@ -26,8 +26,6 @@ spikes/*/build/
 spikes/*/.build/
 spikes/*/.deps/
 spikes/*/out/*
-!spikes/linux-terminal/out/*.png
-!spikes/linux-terminal/out/vtdump.txt
 scripts/latency/build/
 scripts/*/build/
 
@@ -42,6 +40,26 @@ clients/python/dist/
 .claude-last-session
 .claude/settings.local.json
 .dev/
+/.claude/
 
 # Frozen dogfood builds (docs/dogfooding.md)
 /dist/
+
+# Local captures can contain usernames, private projects and screen content.
+/docs/testing/**/*.png
+/docs/design/*.png
+/docs/design/icon/dock-neighbours.png
+
+# Local credentials and signing material; publish examples, never real values.
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.ips
+*.log
+*.bundle

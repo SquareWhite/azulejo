@@ -1,8 +1,8 @@
 # Design: mockup v1
 
-`mockup-v1.png` (local capture)
+The original mockup and app captures are local-only: they contained workstation and project details. The layout and colour notes below remain the design reference. Recreate the app scene with `apps/macos/automation/mockup.sh`; its captures stay under `.dev/`.
 
-`mockup-v1.png` is the designer's mockup the maintainer shared on Nov 3, 2026: 1440 × 900 at @1x, 297 KB. the maintainer's direction: "that's how I want the app to look like. Let's get the basic functionality working first, then we'll polish the GUI." The visual work is planned as **M2.5** in [PLAN.md](../../PLAN.md); the functional items it implies were decided on Nov 3, 2026 (end of this file, and PLAN under "Decided from the mockup").
+The visual work is planned as **M2.5** in [PLAN.md](../../PLAN.md). The functional items implied by the mockup were decided on Nov 3, 2026 (end of this file, and PLAN under "Decided from the mockup").
 
 Colours below were sampled from the PNG with PIL. Anti-aliased text gives approximate values; flat fills are exact. The palette matches Atom's One Dark closely, so where a sample is fuzzy the One Dark value is given.
 
