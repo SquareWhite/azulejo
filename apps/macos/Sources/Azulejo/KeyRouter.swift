@@ -63,6 +63,12 @@ final class KeyRouter {
         // Sheets and panels (rename, alerts) get their keys untouched.
         if let window = event.window, !app.owns(window) { return false }
         guard let controller = app.controller(for: event.window) else { return false }
+        // Escape mid-way through dragging a tab puts it back; nothing else
+        // sees that key.
+        if event.keyCode == 53, controller.tabStrip.cancelDrag() { // escape
+            lastOutcome = "tab-drag-cancel"
+            return true
+        }
         guard let chord = Self.chord(for: event) else {
             lastOutcome = "unnamed"
             return false

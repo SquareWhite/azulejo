@@ -114,6 +114,12 @@ final class WindowController: NSObject, NSWindowDelegate {
         palette.onShownChange = { [weak self] shown in self?.search.active = shown }
         tabBar.onAdd = { [weak app] in app?.perform(action: "new_tab") }
         tabBar.onMenu = { [weak self] id in self.flatMap { ContextMenus.tabMenu(id, in: $0) } }
+        // A tab dropped in a new place: the core's `tab.move`, as Move Left /
+        // Right in its menu.
+        tabBar.onMove = { [weak self, weak app] id, index in
+            guard let self, let app else { return }
+            app.perform(["command": ["method": "tab.move", "params": ["tab": id, "index": index]]], in: self)
+        }
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
         sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }
@@ -782,7 +788,9 @@ extension WindowController {
     /// `chrome.lights` (close button centre from the top left, "29,26"),
     /// `chrome.hit.<part>` (the view class a click there reaches: `tab1`,
     /// `add`, `search`, `picker` (its Monocle segment), `toggle`, `toolbar` (an empty spot in the row),
-    /// `close`), `chrome.tiles` (the tile area, top-left coordinates),
+    /// `close`), `chrome.winmove.<part>` (`moves` where a drag in the title
+    /// bar moves the window before the app sees it, else `stays`; `tabs`
+    /// lists every tab shown), `chrome.tiles` (the tile area, top-left coordinates),
     /// `chrome.fits`, `tab.statuses`, `search.chord`, `search.active` and
     /// `palette.anchor` (`search` while the ⌘K dropdown hangs from the field).
     func chromeState() -> [String: String] {
@@ -805,6 +813,21 @@ extension WindowController {
         let gap = NSPoint(x: (tabBar.frame.maxX + right) / 2, y: search.frame.midY)
         s["chrome.hit.toolbar"] = hit(content, at: content.convert(gap, to: theme))
         s["chrome.hit.close"] = hit(window.standardWindowButton(.closeButton))
+        // Where a drag moves the window before the app sees it.
+        let region = Self.dragRegion(of: window)
+        func winmove(_ view: NSView?, at point: NSPoint? = nil) -> String {
+            guard let view, !view.isHidden else { return "hidden" }
+            guard let region else { return "unknown" }
+            let p = point ?? view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+            return region.contains { $0.contains(p) } ? "moves" : "stays"
+        }
+        s["chrome.winmove.tabs"] = tabBar.tabButtons.filter { !$0.isHidden }.map { winmove($0) }
+            .joined(separator: ",")
+        s["chrome.winmove.add"] = winmove(tabBar.subviews.first { $0 is NSButton })
+        s["chrome.winmove.search"] = winmove(search)
+        s["chrome.winmove.picker"] = winmove(layoutPicker.isHidden ? nil : layoutPicker.segment(.monocle))
+        s["chrome.winmove.toggle"] = winmove(sidebarToggle)
+        s["chrome.winmove.toolbar"] = winmove(content, at: content.convert(gap, to: nil))
         let t = tiles.frame
         s["chrome.tiles"] = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
         // The tabs end before the picker, the picker before the search field.
@@ -839,5 +862,23 @@ extension WindowController {
             s["palette.anchor"] = abs(p.maxX - f.maxX) < 1 && p.maxY >= f.maxY ? "search" : "elsewhere"
         }
         return s
+    }
+
+    /// Automation only: the rectangles (window coordinates) where the window
+    /// server moves the window on a drag, as AppKit last sent them: the title
+    /// bar, less the controls in it. A private AppKit diagnostic, so nil when
+    /// it's missing; nothing but `chrome.winmove.*` reads it.
+    static func dragRegion(of window: NSWindow) -> [NSRect]? {
+        let describe = NSSelectorFromString("_lastDragRegionDataDescription")
+        let reset = NSSelectorFromString("_resetDragMarginsIfNeeded")
+        guard window.responds(to: describe) else { return nil }
+        if window.responds(to: reset) { _ = window.perform(reset) }
+        guard let text = window.perform(describe)?.takeUnretainedValue() as? String else { return nil }
+        // "<NSWindow: …> has drag region made up of the following rectangles:"
+        // then one "{{x, y}, {w, h}}" per line.
+        return text.split(separator: "\n").compactMap { line in
+            let rect = line.trimmingCharacters(in: .whitespaces)
+            return rect.hasPrefix("{{") ? NSRectFromString(rect) : nil
+        }
     }
 }

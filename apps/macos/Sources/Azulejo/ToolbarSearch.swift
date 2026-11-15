@@ -92,6 +92,10 @@ final class ToolbarSearchView: NSView, ThemeAware {
     }
     override func mouseDown(with event: NSEvent) { onActivate?() }
     override var mouseDownCanMoveWindow: Bool { false }
+    /// Out of the title bar's drag region: a press opens the search, never
+    /// moves the window as well (see `TabButton`'s).
+    @objc(_opaqueRectForWindowMoveWhenInTitlebar)
+    private func opaqueRectForWindowMove() -> NSRect { isHidden ? .zero : bounds }
     override func accessibilityPerformPress() -> Bool { onActivate?(); return true }
 }
 

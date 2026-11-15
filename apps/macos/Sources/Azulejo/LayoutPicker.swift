@@ -150,6 +150,10 @@ private final class LayoutSegment: NSView, ThemeAware {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { press() }
     }
     override var mouseDownCanMoveWindow: Bool { false }
+    /// Out of the title bar's drag region, so a click that wobbles still
+    /// picks instead of moving the window (see `TabButton`'s).
+    @objc(_opaqueRectForWindowMoveWhenInTitlebar)
+    private func opaqueRectForWindowMove() -> NSRect { isHidden ? .zero : bounds }
     override func accessibilityPerformPress() -> Bool { press(); return true }
 }
 

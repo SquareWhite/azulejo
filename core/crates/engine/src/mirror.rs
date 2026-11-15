@@ -24,7 +24,7 @@
 //! ([`Internal::MirrorFollow`]): a mismatch Azulejo didn't cause resolves
 //! as a pull, never a push.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -213,8 +213,14 @@ fn zoom_tile(tab: &Tab, live: &dyn Fn(TileId) -> bool) -> Option<TileId> {
 /// have them. Each herdr tab goes to at most one Azulejo tab: the one with
 /// the most panes there (ties to the first in window order); a tab that gets
 /// none makes its own.
+///
+/// Tab order isn't part of any target: like workspace order (ADR 0013) it's
+/// Azulejo's own, so reordering tabs (`tab.move`) changes no target and
+/// sends nothing (herdr 0.9.5 has a `tab.move` with an insert index; unused).
 pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::MirrorTarget> {
-    let known: Vec<herdr::PaneId> = session
+    // Sorted, so the list doesn't follow tab order (a reorder would
+    // otherwise look like a new target and cost every tab a push).
+    let known: BTreeSet<herdr::PaneId> = session
         .tiles()
         .filter_map(|(_, t)| match &t.content {
             TileContent::Terminal { herdr: Some(h), .. } if h.machine == *machine => {

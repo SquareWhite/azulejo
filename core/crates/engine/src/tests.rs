@@ -28,6 +28,60 @@ fn starts_with_one_terminal_and_answers_ping() {
 }
 
 #[test]
+fn tab_move_takes_any_index_and_keeps_the_active_tab() {
+    // What a drag in the top bar sends: the dragged tab and where it lands.
+    let mut engine = Engine::new();
+    for _ in 0..3 {
+        engine
+            .execute(Command::TabCreate(TabCreate::default()))
+            .unwrap();
+    }
+    let ws = engine.session().focus().workspace.unwrap();
+    let order = |e: &Engine| -> Vec<TabId> {
+        e.session().windows[0].workspaces[0]
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .collect()
+    };
+    let start = order(&engine);
+    let [a, b, c, d] = start[..] else {
+        panic!("four tabs, got {start:?}")
+    };
+    let active = engine.session().focus().tab.unwrap();
+    assert_eq!(active, d);
+    let mut drag = |tab: TabId, index: usize| {
+        let outcome = engine
+            .execute(Command::TabMove(TabMove {
+                tab: Some(tab),
+                index,
+            }))
+            .unwrap();
+        let [Event::TabsReordered { workspace, order }] = &outcome.events[..] else {
+            panic!("expected tab.reordered, got {:?}", outcome.events);
+        };
+        assert_eq!(*workspace, ws);
+        order.clone()
+    };
+    // A background tab, first to third; the active one, last to first; one
+    // past the end goes last.
+    assert_eq!(drag(a, 2), [b, c, a, d]);
+    assert_eq!(drag(d, 0), [d, b, c, a]);
+    assert_eq!(drag(b, 9), [d, c, a, b]);
+    assert_eq!(order(&engine), [d, c, a, b]);
+    assert_eq!(engine.session().focus().tab, Some(active));
+    assert_eq!(engine.session().check_invariants(), Ok(()));
+    // Where it already is: nothing changes, nothing to report.
+    let same = engine
+        .execute(Command::TabMove(TabMove {
+            tab: Some(c),
+            index: 1,
+        }))
+        .unwrap();
+    assert!(same.events.is_empty(), "{:?}", same.events);
+}
+
+#[test]
 fn split_reports_the_new_tile_layout_and_focus() {
     let mut engine = Engine::new();
     let outcome = split(&mut engine, Direction::Right);

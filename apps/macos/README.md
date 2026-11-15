@@ -95,6 +95,35 @@ comparing with `docs/design/mockup-v1.png`. `apps/macos/automation/topbar.sh
 LABEL` captures the toolbar row in all four themes with the sidebar full, as
 a rail and hidden, into `docs/testing/topbar/LABEL/`.
 
+Tabs reorder by dragging, as in Safari: past a 4 pt threshold the pressed
+tab lifts (filled, with a shadow) and follows the pointer along the strip
+while the others slide aside; letting go sends the core's `tab.move`, so the
+order shows in the API and the CLI and is saved. A shorter press is a
+click, which selects on mouse up as before. Escape (caught by `KeyRouter`
+first), or letting go more than 18 pt above or below the strip, puts it
+back. Dragging doesn't select a tab, and the active tab stays active
+wherever it goes; ctrl+number follows the new order. The slides follow
+`[animation]` and Reduce Motion; an overflowing strip scrolls when the tab
+nears a faded edge, and there's no drag when only the selected tab fits.
+The herdr mirror sees nothing: tab order is in no mirror target, so a
+reorder sends no push. Like workspace order (ADR 0013) it's Azulejo's own,
+saved with the session; herdr 0.9.5's API has `tab.move {tab_id,
+insert_index}`, but nothing sends it yet.
+The strip sits in the title bar's top band, where the window server moves
+the window on a drag before the app sees it, everywhere AppKit calls
+draggable. Each tab cuts itself out of that region
+(`_opaqueRectForWindowMoveWhenInTitlebar`), as do the layout picker's
+segments and the search field ("+" and the sidebar toggle are buttons,
+which AppKit already cuts out); without that a click on a tab selected it
+but a drag moved the window. Empty toolbar space still moves it. `chrome.winmove.*` reads the
+region AppKit last computed (`moves` / `stays` per part).
+`apps/macos/automation/e2e/tabdrag.sh` drives drags with mouse events made in
+the app and handed to the tabs (`tabdrag …` in scripts), and checks the
+mirror's log (`AZJ_DEBUG_MIRROR=1`) stays quiet. Handing events straight to
+the tabs skips the window server, so the suite also checks that every tab
+stays out of the window's drag region (`chrome.winmove.tabs`). Not yet: dragging a tab
+onto a workspace in the sidebar, or out into its own window.
+
 ## Sidebar (M2.5 D.3)
 
 `Sidebar.swift` is what sits in that card below its top band: an Agents |

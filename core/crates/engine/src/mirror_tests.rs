@@ -753,3 +753,40 @@ fn an_arrangement_is_compared_without_its_ratios() {
     assert!(!same_arrangement(&root, &swapped));
     let _ = c;
 }
+
+#[test]
+fn reordering_tabs_changes_no_target_and_authorises_nothing() {
+    // Three tabs in one workspace, each mirrored into its own herdr tab, and
+    // a pane closed here (known, so every target lists it).
+    let mut s = Session::new();
+    let (_, ws) = s.create_window("main", None);
+    let mut tabs = Vec::new();
+    for i in 1..=3 {
+        let t = terminal();
+        let id = t.id;
+        tabs.push(s.create_tab(ws, t, None).unwrap());
+        bind(&mut s, id, &format!("w1:p{i}"), &format!("w1:t{i}"));
+    }
+    s.detached_herdr
+        .push(HerdrRef::local("w1:p9", "term_w1:p9", "w1:t1"));
+    let before = targets(&s, &None);
+    let arranged = arrangements(&s);
+    // A drag in the top bar: first to last, then last to the middle.
+    s.move_tab(tabs[0], 2).unwrap();
+    s.move_tab(tabs[0], 1).unwrap();
+    let order: Vec<_> = s.windows[0].workspaces[0]
+        .tabs
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(order, [tabs[1], tabs[0], tabs[2]]);
+    assert_eq!(targets(&s, &None), before, "nothing new to push");
+    for (tab, root) in arrangements(&s) {
+        assert!(
+            same_arrangement(&arranged[&tab], &root),
+            "no intent for {tab}"
+        );
+    }
+    assert_eq!(before[&tabs[0]].tab, Some("w1:t1".into()));
+    assert_eq!(before[&tabs[2]].tab, Some("w1:t3".into()));
+}
