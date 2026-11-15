@@ -46,8 +46,21 @@ class TileFrame: NSView, TileView, ThemeAware {
     var kind: TileKind { content.kind }
     var keyContext: String { content.keyContext }
 
-    /// Tiles with their own chrome (the browser): no header strip.
+    /// Tiles with their own chrome (the browser): no header strip, except
+    /// for the tabs in a Monocle stack.
     private let ownsChrome: Bool
+    private var headerShown: Bool { !ownsChrome || header.showsTabs }
+
+    /// The tab's Monocle stack as tabs in the header strip, or nil for the
+    /// title (`TileHeaderView.setStack`). A tile with its own chrome (the
+    /// browser) gets the strip for the tabs, its toolbar under it.
+    func setStack(_ stack: TileStack?, animated: Bool) {
+        let shown = headerShown
+        header.setStack(stack, animated: animated)
+        guard shown != headerShown else { return }
+        header.isHidden = !headerShown
+        setFrameSize(frame.size)
+    }
     /// Margin round a terminal's text (`Design.Space.tileContentPad`); other
     /// kinds fill the card edge to edge.
     private let pad: CGFloat
@@ -108,7 +121,7 @@ class TileFrame: NSView, TileView, ThemeAware {
     /// a terminal's margin (at the sides and bottom, half of it under the
     /// header).
     func contentFrame(for size: NSSize) -> NSRect {
-        let h = ownsChrome ? 0 : min(Self.headerHeight, max(size.height, 0))
+        let h = headerShown ? min(Self.headerHeight, max(size.height, 0)) : 0
         let body = max(size.height - h, 0)
         let p = min(pad, size.width / 4, body / 4)
         return NSRect(x: p, y: p, width: max(size.width - 2 * p, 0), height: max(body - p - p / 2, 0))
@@ -116,7 +129,7 @@ class TileFrame: NSView, TileView, ThemeAware {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let h = ownsChrome ? 0 : min(Self.headerHeight, max(newSize.height, 0))
+        let h = headerShown ? min(Self.headerHeight, max(newSize.height, 0)) : 0
         header.frame = NSRect(x: 0, y: newSize.height - h, width: newSize.width, height: h)
         content.frame = contentFrame(for: newSize)
         // Same coordinates as this view's bounds, so the caps and the dim
@@ -403,6 +416,8 @@ final class MotionTileFrame: TileFrame, MotionAware {
 
 extension TileFrame: AutomatableTile {
     func automate(_ verb: String, _ arg: String) -> String? {
+        // `tile tabs …`: the Monocle tabs in this tile's header strip.
+        if verb == "tabs" { return TileTabAutomation.run(arg, strip: header.showsTabs ? header.tileTabs : nil) }
         guard let inner = content as? AutomatableTile else {
             return "the focused tile takes no automation verbs"
         }
@@ -417,6 +432,7 @@ extension TileFrame: AutomatableTile {
         state["tile.header.focused"] = header.focused ? "yes" : "no"
         // Room the strip keeps clear at its right end (status icon or badge; 0 without).
         state["tile.header.inset"] = "\(Int(header.trailingInset.rounded()))"
+        state.merge(TileTabAutomation.state(header)) { _, tabs in tabs }
         state["tile.dim"] = dimLevel > 0 ? "yes" : "no"
         state["tile.overlays.top"] = subviews.last === overlays && layer?.sublayers?.last === overlays.layer
             ? "yes" : "no"
@@ -431,6 +447,17 @@ extension TileFrame: AutomatableTile {
 /// the same: the focused tile's is set apart by the dim over the others
 /// (`TileFrame.setDim`), which turns the mockup's focused strip colour into
 /// its unfocused one.
+///
+/// Title content: what the strip shows between its left edge and its
+/// controls is one of three things (`contentKind`):
+/// - `title`: icon, title and subtitle, as above (the agent's status icon or
+///   badge at the right end);
+/// - `tabs`: in a Monocle tab with more than one tile, the stack as tabs
+///   (`TileTabStripView`, set with `setStack`); each tab carries its own
+///   status icon, so the strip's badge stands down;
+/// - `override`: a view someone else puts there for a while
+///   (`overrideContent`), over either of the others, which come back as
+///   they were when it goes. It's laid out in `contentRect`.
 @MainActor
 final class TileHeaderView: NSView, ThemeAware {
     /// The tile's right-click menu (`TileFrame.contextMenu`).
@@ -467,8 +494,128 @@ final class TileHeaderView: NSView, ThemeAware {
 
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 
-    /// Title and icon centred in the strip (no controls on the right).
-    var centred: Bool { accessory == nil }
+    /// Title and icon centred in the strip (no controls on the right, no tabs).
+    var centred: Bool { accessory == nil && !showsTabs }
+
+    // MARK: Title content
+
+    /// The Monocle stack this strip shows as tabs (nil: the title).
+    private(set) var stack: TileStack?
+    /// The tabs, made the first time a stack shows.
+    private(set) var tileTabs: TileTabStripView?
+    /// A tab was clicked, dragged or right-clicked: the container's
+    /// callbacks (`TileContainerView.applyStacks`).
+    var onSelectTile: ((String) -> Void)? { didSet { tileTabs?.onSelect = onSelectTile } }
+    var onMoveTile: ((String, Int) -> Void)? { didSet { tileTabs?.onMove = onMoveTile } }
+    var tileMenu: ((String) -> NSMenu?)? { didSet { tileTabs?.onMenu = tileMenu } }
+
+    /// Whether the strip shows tabs rather than the title (an override
+    /// over them aside).
+    var showsTabs: Bool { stack != nil }
+
+    /// Shows `stack`'s tiles as tabs, or the title again with nil. A switch
+    /// between the two cross-fades over the layout motion's length when
+    /// `animated` (and motion is on: `[animation]`, Reduce Motion), else
+    /// it's instant.
+    func setStack(_ stack: TileStack?, animated: Bool) {
+        let modeChanged = (stack == nil) != (self.stack == nil)
+        self.stack = stack
+        if let stack {
+            let tabs = tileTabs ?? makeTabs()
+            tabs.apply(stack)
+        }
+        guard modeChanged else { return }
+        let fade = animated && Motion.active && window != nil && !isHiddenOrHasHiddenAncestor
+        showContent(fade: fade)
+        needsLayout = true
+    }
+
+    private func makeTabs() -> TileTabStripView {
+        let tabs = TileTabStripView()
+        tabs.onSelect = onSelectTile
+        tabs.onMove = onMoveTile
+        tabs.onMenu = tileMenu
+        tabs.alphaValue = 0
+        tabs.isHidden = true
+        addSubview(tabs, positioned: .below, relativeTo: overrideContent)
+        tileTabs = tabs
+        return tabs
+    }
+
+    /// Temporarily replaces the title content (the title, or the tabs in
+    /// Monocle) with `view`, laid out in `contentRect` at every layout; nil
+    /// puts back what was there. The strip's controls on the right and its
+    /// status icon or badge stay as they are. For ⌘S's key legend, which
+    /// stands in for the title while hints are open.
+    var overrideContent: NSView? {
+        didSet {
+            guard oldValue !== overrideContent else { return }
+            if oldValue?.superview === self { oldValue?.removeFromSuperview() }
+            if let view = overrideContent {
+                view.translatesAutoresizingMaskIntoConstraints = true
+                addSubview(view)
+            }
+            showContent(fade: false)
+            needsLayout = true
+        }
+    }
+
+    /// What the title content is now: `title`, `tabs` or `override`.
+    var contentKind: String { overrideContent != nil ? "override" : showsTabs ? "tabs" : "title" }
+
+    /// Where the title content goes, in the strip's coordinates: from the
+    /// left margin (the tabs' inset with tabs) to the controls on the right
+    /// or the badge. Valid after a layout.
+    private(set) var contentRect = NSRect.zero
+
+    /// The title or the tabs on show, the other faded out; neither under
+    /// an override.
+    private func showContent(fade: Bool) {
+        let tabsOn = showsTabs && overrideContent == nil
+        let titleOn = !showsTabs && overrideContent == nil
+        var parts: [(view: NSView, on: Bool)] = [(icon, titleOn), (label, titleOn)]
+        if let tileTabs { parts.append((tileTabs, tabsOn)) }
+        contentFades += 1
+        let generation = contentFades
+        guard fade else {
+            for part in parts {
+                part.view.isHidden = !part.on
+                part.view.alphaValue = part.on ? 1 : 0
+            }
+            return
+        }
+        for part in parts where part.on { part.view.isHidden = false }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Motion.duration
+            context.timingFunction = Motion.timing
+            for part in parts { part.view.animator().alphaValue = part.on ? 1 : 0 }
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.contentFades == generation else { return }
+                for part in parts where !part.on { part.view.isHidden = true }
+            }
+        }
+    }
+
+    /// Bumped by every content switch: a fade's end only hides what it
+    /// faded out if nothing switched since.
+    private var contentFades = 0
+
+    /// Automation: the title and the tabs as they show right now
+    /// (mid-fade: their presentation opacity), "title=1.00 tabs=0.00".
+    var contentOpacity: String {
+        String(format: "title=%.2f tabs=%.2f", shownOpacity(label), shownOpacity(tileTabs))
+    }
+
+    /// Automation: the title or the tabs are partway through a cross-fade.
+    var contentFading: Bool {
+        [shownOpacity(label), shownOpacity(tileTabs)].contains { $0 > 0.02 && $0 < 0.98 }
+    }
+
+    private func shownOpacity(_ view: NSView?) -> Float {
+        guard let view, !view.isHidden, let layer = view.layer else { return 0 }
+        return (layer.presentation() ?? layer).opacity
+    }
 
     func setAccessory(_ view: NSView) {
         accessory?.removeFromSuperview()
@@ -577,7 +724,9 @@ final class TileHeaderView: NSView, ThemeAware {
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
         trailingInset = 0
-        if let badge {
+        // With tabs, each tab carries its tile's status icon.
+        badge?.isHidden = showsTabs
+        if let badge, !showsTabs {
             let size = badge.fittingSize, inset = Design.Space.badgeInset
             badge.frame = NSRect(x: bounds.width - inset - size.width, y: (h - size.height) / 2,
                                  width: size.width, height: size.height)
@@ -597,6 +746,16 @@ final class TileHeaderView: NSView, ThemeAware {
                 right -= size.width + spacing
             }
         }
+        if let tabs = tileTabs {
+            // The tabs span the strip, inset as a tab sits in it.
+            let inset = Design.Space.headerTabPadding
+            var end = bounds.width - inset
+            if let accessory, !accessory.isHidden { end = accessory.frame.minX - spacing }
+            tabs.frame = NSRect(x: inset, y: 0, width: max(0, end - inset), height: h)
+            if showsTabs { contentRect = tabs.frame }
+        }
+        if !showsTabs { contentRect = NSRect(x: margin, y: 0, width: max(0, right - margin), height: h) }
+        overrideContent?.frame = contentRect
         let room = max(right - margin - iconSize - spacing, 0)
         shownSubtitle = fittedSubtitle(room: room - 4)
         let key = "\(titleText)\u{0}\(shownSubtitle)"

@@ -116,6 +116,8 @@ enum Design {
         static let header = Theme.token("header")
         /// line under a tile's header strip
         static let headerHairline = Theme.token("headerHairline")
+        /// the selected tile tab's fill in a Monocle tile's header strip (its stack as tabs)
+        static let headerTabSelected = Theme.token("headerTabSelected")
         /// browser tile toolbar (back, forward, address, reload)
         static let browserChrome = Theme.token("browserChrome")
         /// browser address pill
@@ -222,6 +224,7 @@ enum Design {
             "ghostFill",
             "header",
             "headerHairline",
+            "headerTabSelected",
             "browserChrome",
             "browserField",
             "previewToggleTrack",
@@ -303,6 +306,7 @@ enum Design {
                     "ghostFill": .rgba(0x8080801a),
                     "header": .rgba(0x21252bff),
                     "headerHairline": .rgba(0x181a1fff),
+                    "headerTabSelected": .rgba(0x3a3f4bff),
                     "browserChrome": .rgba(0x202329ff),
                     "browserField": .rgba(0x252930ff),
                     "previewToggleTrack": .rgba(0x2c3036ff),
@@ -388,6 +392,7 @@ enum Design {
                     "ghostFill": .rgba(0x8080801a),
                     "header": .rgba(0xeaeaebff),
                     "headerHairline": .rgba(0xdbdbdcff),
+                    "headerTabSelected": .rgba(0xcbcbceff),
                     "browserChrome": .rgba(0xededeeff),
                     "browserField": .rgba(0xfafafaff),
                     "previewToggleTrack": .rgba(0xdfdfe1ff),
@@ -473,6 +478,7 @@ enum Design {
                     "ghostFill": .rgba(0x8080801a),
                     "header": .rgba(0x242424ff),
                     "headerHairline": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
+                    "headerTabSelected": .rgba(0x3a3a3aff),
                     "browserChrome": .rgba(0x242424ff),
                     "browserField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
                     "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
@@ -558,6 +564,7 @@ enum Design {
                     "ghostFill": .rgba(0x8080801a),
                     "header": .rgba(0xf5f5f5ff),
                     "headerHairline": .system("separatorColor", alpha: nil, fallback: 0x00000019),
+                    "headerTabSelected": .rgba(0xd5d5d5ff),
                     "browserChrome": .rgba(0xf5f5f5ff),
                     "browserField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
                     "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
@@ -668,6 +675,7 @@ enum Design {
         static let palette: CGFloat = 10
         static let tabStrip: CGFloat = 11
         static let tab: CGFloat = 8
+        static let headerTab: CGFloat = 6
         static let searchField: CGFloat = 8
         static let searchBadge: CGFloat = 4
         static let sidebarSegment: CGFloat = 7
@@ -729,6 +737,13 @@ enum Design {
         static let tabMaxWidth: CGFloat = 180
         static let tabFitMinWidth: CGFloat = 100
         static let tabFadeWidth: CGFloat = 24
+        static let headerTabHeight: CGFloat = 22
+        static let headerTabPadding: CGFloat = 3
+        static let headerTabPaddingX: CGFloat = 8
+        static let headerTabSpacing: CGFloat = 2
+        static let headerTabIconGap: CGFloat = 5
+        static let headerTabMinWidth: CGFloat = 96
+        static let headerTabMoreWidth: CGFloat = 34
         static let searchWidth: CGFloat = 280
         static let searchMinWidth: CGFloat = 170
         static let searchHeight: CGFloat = 30

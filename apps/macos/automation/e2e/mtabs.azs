@@ -1,0 +1,210 @@
+# Monocle tabs: in a Monocle tab with more than one tile, the tile's header
+# strip shows every tile in the stack as a tab (stack order, the focused one
+# selected); a click on a tab focuses its tile as alt+h / alt+l do, a drag
+# moves it in the stack, too many tabs collapse into a "+N" chip that keeps
+# the selected tab on show, and leaving Monocle brings the title back.
+# Clicks and drags are mouse events made in the app and handed to the tabs
+# (`tile tabs …`), no OS input. mtabs.sh runs it.
+log monocle tabs
+delivery direct
+until terminal.phase attached 10000
+core {"method":"tile.rename","params":{"title":"alpha"}}
+type cd /tmp
+key enter
+key ctrl+cmd+t
+until tiles 2 3000
+until terminal.phase attached 10000
+core {"method":"tile.rename","params":{"title":"beta"}}
+type cd /tmp
+key enter
+key ctrl+cmd+t
+until tiles 3 3000
+until terminal.phase attached 10000
+core {"method":"tile.rename","params":{"title":"gamma"}}
+type cd /tmp
+key enter
+wait 1500
+expect kind tile
+expect focus 3
+expect order t1,t2,t3
+# Not Monocle: the title, no tabs.
+expect tile.header.content title
+expect tile.tabs 0
+expect tile.header.title gamma
+
+# --- into Monocle ---
+key alt+z
+expect kind monocle
+wait 800
+expect tile.header.content tabs
+expect tile.header.opacity title=0.00 tabs=1.00
+expect tile.tabs 3
+expect tile.tabs.selected 3
+expect tile.tabs.shown 3
+expect tile.tabs.overflow 0
+expect tile.tabs.even yes
+until tile.tabs.titles alpha — tmp|beta — tmp|gamma — tmp 5000
+expect tile.tabs.tips alpha — /private/tmp|beta — /private/tmp|gamma — /private/tmp
+expect visible 1
+expect dimmed none
+shot mtabs-dark
+
+# --- a click on a tab focuses its tile, through tile.focus ---
+remember resizes
+tile tabs click 1
+until focus 1 3000
+wait 400
+expect tile.tabs.selected 1
+expect tile.header.title alpha
+expect visible 1
+tile tabs click 2
+until focus 2 3000
+wait 400
+expect tile.tabs.selected 2
+# alt+l (focus right) and the tabs agree.
+key alt+l
+until focus 3 3000
+wait 400
+expect tile.tabs.selected 3
+unchanged resizes
+
+# --- drag to reorder: tab 1 over tab 3 moves alpha to the end ---
+tile tabs drag 1 3
+until order t2,t3,t1 3000
+wait 400
+expect tile.tabs.titles beta — tmp|gamma — tmp|alpha — tmp
+expect tile.tabs.drag idle
+# Focus stays on gamma, now second.
+expect tile.header.title gamma
+expect tile.tabs.selected 2
+expect focus 2
+
+# --- out of Monocle and back in, slowly: the tabs and the title cross-fade
+# (after the resize check above: slow motion can leave a hidden terminal
+# short of its size, which it then takes when it's next shown) ---
+anim duration 1500
+key alt+z
+expect kind tile
+wait 400
+expect tile.header.fading yes
+until tile.header.opacity title=1.00 tabs=0.00 4000
+expect tile.header.content title
+expect tile.header.opacity title=1.00 tabs=0.00
+key alt+z
+expect kind monocle
+wait 400
+expect tile.header.fading yes
+capture mtabs-mid-in 0
+until tile.header.opacity title=0.00 tabs=1.00 4000
+anim duration default
+wait 300
+expect tile.header.content tabs
+expect tile.header.opacity title=0.00 tabs=1.00
+expect tile.tabs.selected 2
+
+# --- light theme ---
+theme set atom-one-light
+wait 600
+shot mtabs-light
+theme set atom-one-dark
+wait 400
+
+# --- overflow: six tiles in a narrow window ---
+key ctrl+cmd+t
+until tiles 4 3000
+key ctrl+cmd+t
+until tiles 5 3000
+key ctrl+cmd+t
+until tiles 6 3000
+wait 800
+window-size 760 520
+wait 800
+expect kind monocle
+expect tile.tabs 6
+expect tile.tabs.selected 6
+expect tile.tabs.overflow 2
+expect tile.tabs.window 3-6
+expect tile.tabs.even yes
+shot mtabs-overflow
+# The selected tab stays on show: the first one, picked from the "+2" menu.
+tile tabs more 1
+until focus 1 3000
+wait 400
+expect tile.tabs.selected 1
+expect tile.tabs.window 1-4
+expect tile.tabs.overflow 2
+# Too few to scroll the window: tab 4 is on show already.
+tile tabs click 4
+until focus 4 3000
+wait 400
+expect tile.tabs.window 1-4
+# No drag while tabs are hidden.
+remember order
+tile tabs drag 1 2
+wait 400
+unchanged order
+expect order t2,t3,t1,t4,t5,t6
+window-size 1280 800
+wait 800
+expect tile.tabs.overflow 0
+expect tile.tabs.shown 6
+
+# --- motion off: the switch is instant ---
+anim enabled false
+key alt+shift+backslash
+expect kind three_column
+wait 100
+expect tile.header.content title
+expect tile.header.opacity title=1.00 tabs=0.00
+expect tile.tabs 0
+key alt+z
+expect kind monocle
+wait 100
+expect tile.header.content tabs
+expect tile.header.opacity title=0.00 tabs=1.00
+anim enabled default
+
+# --- Reduce Motion: instant too ---
+anim reduce-motion true
+key alt+z
+wait 100
+expect tile.header.content title
+expect tile.header.fading no
+key alt+z
+wait 100
+expect tile.header.content tabs
+expect tile.header.fading no
+anim reduce-motion default
+
+# --- one tile in Monocle: the plain title ---
+key alt+shift+backslash
+wait 600
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 5 3000
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 4 3000
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 3 3000
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 2 3000
+key alt+z
+expect kind monocle
+wait 600
+expect tile.header.content tabs
+expect tile.tabs 2
+core {"method":"tile.close","params":{"kill":true}}
+until tiles 1 3000
+wait 600
+expect kind monocle
+expect tile.header.content title
+expect tile.tabs 0
+
+# --- leaving Monocle hides the tabs ---
+key ctrl+cmd+t
+until tiles 2 3000
+wait 600
+expect tile.header.content tabs
+key alt+shift+backslash
+wait 600
+expect tile.header.content title
+expect tile.tabs 0

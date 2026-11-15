@@ -71,6 +71,38 @@ tile view that wants controls in the strip conforms to `TileHeaderAccessory`
 frame forwards `TileView`, `MotionAware` and `AutomatableTile`, adding
 `tile.header.title` / `tile.header.subtitle` to automation state.
 
+### Monocle tabs
+
+In a Monocle tab with more than one tile, the strip on screen shows the whole
+stack as tabs (`TileTabs.swift`): one per tile in stack order, the focused one
+filled (`headerTabSelected`). Each tab has the tile's kind icon, its title and
+the subtitle's last folder ("claude — azulejo"), and its agent's status icon at
+its right end, so the strip's own status icon or badge stands down; the
+tooltip has the whole title. A click focuses the tile through `tile.focus`, as
+alt+h / alt+l do, so the stacked tiles dissolve as they do for the keys. A
+right-click opens that tile's menu (Close among it; there's no close button,
+as the top tabs have none). A drag along the strip moves the tile in the stack
+(`layout.move_order`), Safari-style as the top tabs. The tabs share the width
+evenly; below `headerTabMinWidth` each, the strip keeps as many as fit with the
+selected one always among them and a "+N" chip at the end, whose menu lists
+the rest (no dragging then). One tile in Monocle, or any other layout, shows
+the plain title. Into or out of Monocle the title and the tabs cross-fade over
+the layout motion (instant with `[animation]` off or Reduce Motion); tiles
+leaving the screen keep their title on the way out. A browser tile, which has
+no strip of its own, gets one for the tabs above its toolbar.
+
+The strip's middle is a swappable slot (`TileHeaderView.contentKind`: `title`,
+`tabs` or `override`): `overrideContent = view` puts any view in it for a while
+(laid out in `contentRect`), over the title or the tabs, and `nil` brings back
+what was there. The controls on the right and the badge stay.
+`TileContainerView.header(of:)` finds a tile's strip.
+
+Automation: `tile tabs click N|drag N M|more N` (mouse events handed to the
+tabs, no OS input) and the keys `tile.header.content`, `tile.tabs`,
+`tile.tabs.selected`, `.titles`, `.tips`, `.shown`, `.window`, `.overflow`,
+`.statuses`, `.even`, `tile.header.opacity` and `tile.header.fading`.
+`automation/e2e/mtabs.sh` covers it.
+
 The sidebar shows each workspace's branch from `workspace.git`.
 `apps/macos/automation/headers.sh` checks headers, a branch switch in a tile
 and the preview toggle across a relaunch, on dev instance `hdr`.

@@ -180,8 +180,9 @@ final class AttentionOverlayView: NSView, ThemeAware {
     /// A state's icon at the header's symbol size, drawn as the tab strip
     /// draws it. Filled symbols (blocked) get their mark in the strip's colour
     /// (the window's when the strip is see-through) on the status colour: a
-    /// one-colour palette would fill the "!" in too.
-    private static func headerIcon(_ status: Design.Status) -> NSImage? {
+    /// one-colour palette would fill the "!" in too. The Monocle tabs in a
+    /// header strip (`TileTabButton`) use it too.
+    static func headerIcon(_ status: Design.Status) -> NSImage? {
         guard status.symbol.hasSuffix(".fill") else {
             return Design.StatusIcon.image(status, pointSize: Design.Symbol.header)
         }

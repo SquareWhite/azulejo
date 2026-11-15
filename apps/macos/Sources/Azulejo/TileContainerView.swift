@@ -195,6 +195,8 @@ final class TileContainerView: NSView, ThemeAware {
             }
         }
 
+        Perf.measure("tiles.stacks") { applyStacks(window, animate: animate && sameTab) }
+
         tab = newTab
         position = Self.position(of: window)
         let visible = Set(visibleTiles)
@@ -263,6 +265,38 @@ final class TileContainerView: NSView, ThemeAware {
         // dim at once under it.
         Perf.measure("tiles.dim") { applyDim(animate: animate && sameTab) }
         if !keepDragging { updateDividerTracking() }
+    }
+
+    /// Every Monocle tab's stack as tabs in its tiles' header strips (each
+    /// tile's strip says which one it is); the title everywhere else. Into
+    /// or out of Monocle on screen, the strip cross-fades with the motion.
+    /// Runs before `tab` takes the new tab: a tile on screen now that won't
+    /// be (fading out behind Monocle's top tile, dissolving out under the
+    /// next one) keeps what it shows on its way out; a tile coming onto the
+    /// screen shows its new content from the start.
+    private func applyStacks(_ window: WindowModel, animate: Bool) {
+        let before = Set(visibleTiles)
+        var after: Set<String> = []
+        if let shown = window.workspace?.tab {
+            after = shown.zoomed.map { [$0] } ?? (shown.kind == .monocle ? [shown.focused] : Set(shown.order))
+        }
+        for tab in window.workspaces.flatMap(\.tabs) {
+            let stack = TileStack.of(tab)
+            for tile in tab.tiles {
+                guard let frame = views[tile.id] as? TileFrame else { continue }
+                if before.contains(tile.id), !after.contains(tile.id), frame.superview === self { continue }
+                let header = frame.header
+                if stack != nil, header.onSelectTile == nil {
+                    header.onSelectTile = { [weak self] id in self?.onClickTile?(id) }
+                    header.onMoveTile = { [weak self] id, step in self?.onMoveTile?(id, step) }
+                    header.tileMenu = { [weak self] id in
+                        guard let controller = ContextMenus.app?.controller(for: self?.window) else { return nil }
+                        return ContextMenus.tileMenu(id, in: controller)
+                    }
+                }
+                frame.setStack(stack, animated: animate && before.contains(tile.id) && after.contains(tile.id))
+            }
+        }
     }
 
     /// The tile area's new frame as the chrome around it changes (the
@@ -1483,8 +1517,11 @@ final class TileContainerView: NSView, ThemeAware {
 
     // MARK: Input
 
-    /// Clicking a tile focuses it in the core.
+    /// Clicking a tile (or its tab in a Monocle strip) focuses it in the core.
     var onClickTile: ((String) -> Void)?
+    /// A Monocle tab dragged along the strip: the tile and how many places
+    /// it moves in the stack (`layout.move_order`).
+    var onMoveTile: ((String, Int) -> Void)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)

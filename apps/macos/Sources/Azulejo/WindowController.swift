@@ -155,6 +155,9 @@ final class WindowController: NSObject, NSWindowDelegate {
         }
         tabBar.onSelect = { [weak app] id in app?.send(["method": "tab.focus", "params": ["tab": id]]) }
         tiles.onClickTile = { [weak app] id in app?.send(["method": "tile.focus", "params": ["tile": id]]) }
+        tiles.onMoveTile = { [weak app] id, step in
+            app?.send(["method": "layout.move_order", "params": ["tile": id, "step": step]])
+        }
         tiles.onSetRatio = { [weak app] tab, path, ratio in
             var params: [String: Any] = ["tab": tab, "path": path]
             if let ratio { params["ratio"] = ratio }

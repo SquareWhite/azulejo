@@ -70,7 +70,7 @@ Agent state shows in the sidebar rows, the rail, the tab strip's status icons, �
 | blocked (waiting for input) | `exclamationmark.circle.fill` | `statusBlocked` |
 | done, not read yet | `checkmark.circle` | `statusDone` |
 
-A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show no icon, so the title gets the whole strip.
+A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show no icon, so the title gets the whole strip. In a Monocle tab with more than one tile the strip shows the stack as tabs, and each tab carries its own tile's icon at its right end instead.
 
 **Mark as Unread.** To come back to an agent tile later, right-click its header and choose Mark as Unread (or run "Mark tile as unread" from ⌘K, or bind `toggle_unread`). It then looks like a finish nobody has read: the checkmark in its header, the sidebar's and tab strip's markers, the footer's done count and the Dock badge. It stays unread while its tile stays focused, and whatever the agent does next; a working or blocked agent keeps its own icon in the header until it stops. Once focus has moved to another tile, tab or workspace, coming back to the tile for the same 0.75 s reads it. Switching apps or windows doesn't count as leaving it, and the mark survives a relaunch. Mark as Read (the same menu item and ⌘K command once it's unread) clears it straight away; a workspace row's menu has Mark All as Read. Plain shells (no agent) can't be marked.
 
@@ -204,6 +204,7 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `ghostFill` | tile outlines during the outline animation style | `#8080801a` | `#8080801a` | `#8080801a` | `#8080801a` |
 | `header` | tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329) | `#21252b` | `#eaeaeb` | `#242424` | `#f5f5f5` |
 | `headerHairline` | line under a tile's header strip | `#181a1f` | `#dbdbdc` | separatorColor | separatorColor |
+| `headerTabSelected` | the selected tile tab's fill in a Monocle tile's header strip | `#3a3f4b` | `#cbcbce` | `#3a3a3a` | `#d5d5d5` |
 | `browserChrome` | browser tile toolbar (back, forward, address, reload) | `#202329` | `#ededee` | `#242424` | `#f5f5f5` |
 | `browserField` | browser address pill | `#252930` | `#fafafa` | secondarySystemFill | textBackgroundColor |
 | `previewToggleTrack` | Preview \| Source track | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
