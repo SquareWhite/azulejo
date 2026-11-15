@@ -88,6 +88,7 @@ impl Orientation {
     }
 
     /// One quarter turn: clockwise (left → top → right → bottom) or back.
+    /// Bismuth's Rotate (`Meta+R`, Azulejo's `alt+o`) and Rotate Reverse.
     pub fn turned(self, reverse: bool) -> Orientation {
         const CW: [Orientation; 4] = [
             Orientation::Left,
@@ -99,7 +100,8 @@ impl Orientation {
         CW[if reverse { (i + 3) % 4 } else { (i + 1) % 4 }]
     }
 
-    /// Left ↔ top, right ↔ bottom: the `alt+o` toggle.
+    /// Left ↔ top, right ↔ bottom: `tall.py`'s rotate, now the
+    /// `flip_layout` action.
     pub fn flipped(self) -> Orientation {
         match self {
             Orientation::Left => Orientation::Top,
@@ -163,7 +165,10 @@ impl Default for TileParams {
 pub struct ThreeColumnParams {
     /// How many tiles share the centre column: 1–10.
     pub masters: u8,
-    /// The centre column's share of the width: 0.2–0.75.
+    /// The centre column's weight against each side column's `1 − ratio`,
+    /// as in Bismuth: 0.2–0.75. With three columns the centre takes
+    /// `ratio / (2 − ratio)` of the width (0.6 gives 3/7); with two (the
+    /// masters and one stack tile) it takes `ratio` itself.
     pub ratio: f64,
 }
 
@@ -416,7 +421,7 @@ fn tile_groups(p: &TileParams, order: &[TileId]) -> Vec<Group> {
             role: Role::Masters,
             area: Rect::UNIT,
             axis: master_axis,
-            tiles: order.to_vec(),
+            tiles: masters_in_place(p, order),
         }];
     }
     let (master_area, stack_area) = if p.orientation.masters_first() {
@@ -430,7 +435,7 @@ fn tile_groups(p: &TileParams, order: &[TileId]) -> Vec<Group> {
             role: Role::Masters,
             area: master_area,
             axis: master_axis,
-            tiles: order[..m].to_vec(),
+            tiles: masters_in_place(p, &order[..m]),
         },
         Group {
             role: Role::Stack,
@@ -439,6 +444,19 @@ fn tile_groups(p: &TileParams, order: &[TileId]) -> Vec<Group> {
             tiles: order[m..].to_vec(),
         },
     ]
+}
+
+/// The masters in the order they sit, left or top first. Bismuth turns the
+/// whole layout, so with the master area on the right or at the bottom,
+/// masters lined up along the main axis ("rotate part") run from the far
+/// edge inward: mirrored, the first keeps the outer edge. Lined up across
+/// it, a turn leaves their order alone.
+fn masters_in_place(p: &TileParams, masters: &[TileId]) -> Vec<TileId> {
+    let mut tiles = masters.to_vec();
+    if p.rotate_part && !p.orientation.masters_first() {
+        tiles.reverse();
+    }
+    tiles
 }
 
 fn three_column_groups(p: &ThreeColumnParams, order: &[TileId]) -> Vec<Group> {
@@ -478,7 +496,10 @@ fn three_column_groups(p: &ThreeColumnParams, order: &[TileId]) -> Vec<Group> {
         ];
     }
     let right = (n - m) / 2;
-    let side = (1.0 - p.ratio) / 2.0;
+    // Bismuth weighs the columns side : centre : side as
+    // (1 − ratio) : ratio : (1 − ratio).
+    let side = (1.0 - p.ratio) / (2.0 - p.ratio);
+    let centre = 1.0 - 2.0 * side;
     vec![
         Group {
             role: Role::LeftStack,
@@ -488,13 +509,13 @@ fn three_column_groups(p: &ThreeColumnParams, order: &[TileId]) -> Vec<Group> {
         },
         Group {
             role: Role::Masters,
-            area: col(side, p.ratio),
+            area: col(side, centre),
             axis: Axis::Vertical,
             tiles: order[..m].to_vec(),
         },
         Group {
             role: Role::RightStack,
-            area: col(side + p.ratio, 1.0 - side - p.ratio),
+            area: col(side + centre, 1.0 - side - centre),
             axis: Axis::Vertical,
             tiles: order[m..m + right].to_vec(),
         },
@@ -776,14 +797,22 @@ pub(crate) fn adjust(
             }
             let p = &mut layout.params.three_column;
             let right = direction == Direction::Right;
+            // With three columns, moving an edge by `amount` changes the
+            // ratio by `amount · (2 − ratio)`, as Bismuth's adjust works it
+            // out; both sides then even out, so the centre stays centred.
+            let k = 2.0 - p.ratio;
             let delta = match (groups.len(), group.role, right) {
                 // master | stack
                 (2, Role::Masters, true) => amount,
                 (2, Role::RightStack, false) => -amount,
-                // left | masters | right, kept centred
-                (3, Role::Masters, _) => 2.0 * amount,
-                (3, Role::LeftStack, true) => -2.0 * amount,
-                (3, Role::RightStack, false) => -2.0 * amount,
+                // left | masters | right. The centre has an edge on both
+                // sides and they move together, so "the edge that way" would
+                // make left and right both grow it. As in Bismuth, its right
+                // edge decides: right grows the centre, left shrinks it.
+                (3, Role::Masters, true) => k * amount,
+                (3, Role::Masters, false) => -k * amount,
+                (3, Role::LeftStack, true) => -k * amount,
+                (3, Role::RightStack, false) => -k * amount,
                 _ => return false,
             };
             p.ratio = clamp_ratio(
@@ -907,6 +936,36 @@ mod tests {
         let p = arrange_kind(LayoutKind::Tile, params, &[a, b]);
         assert!(close(rect_of(&p, a), (0.5, 0.0, 0.5, 1.0)));
         assert!(close(rect_of(&p, b), (0.0, 0.0, 0.5, 1.0)));
+        // Two masters side by side on the right are mirrored, as Bismuth
+        // turns the whole layout: the first keeps the outer edge. Stacked,
+        // they keep their order.
+        params.tile = TileParams {
+            masters: 2,
+            orientation: Orientation::Right,
+            rotate_part: true,
+            ..TileParams::default()
+        };
+        let p = arrange_kind(LayoutKind::Tile, params, &[a, b, c, d]);
+        assert!(close(rect_of(&p, a), (0.75, 0.0, 0.25, 1.0)));
+        assert!(close(rect_of(&p, b), (0.5, 0.0, 0.25, 1.0)));
+        assert!(close(rect_of(&p, c), (0.0, 0.0, 0.5, 0.5)));
+        params.tile.rotate_part = false;
+        let p = arrange_kind(LayoutKind::Tile, params, &[a, b, c, d]);
+        assert!(close(rect_of(&p, a), (0.5, 0.0, 0.5, 0.5)));
+        assert!(close(rect_of(&p, b), (0.5, 0.5, 0.5, 0.5)));
+        // At the bottom, two masters stacked (rotate part): the first sits on
+        // the bottom edge. The stack runs left to right.
+        params.tile = TileParams {
+            masters: 2,
+            orientation: Orientation::Bottom,
+            rotate_part: true,
+            ..TileParams::default()
+        };
+        let p = arrange_kind(LayoutKind::Tile, params, &[a, b, c, d]);
+        assert!(close(rect_of(&p, a), (0.0, 0.75, 1.0, 0.25)));
+        assert!(close(rect_of(&p, b), (0.0, 0.5, 1.0, 0.25)));
+        assert!(close(rect_of(&p, c), (0.0, 0.0, 0.5, 0.5)));
+        assert!(close(rect_of(&p, d), (0.5, 0.0, 0.5, 0.5)));
 
         // No masters: one stack.
         params.tile = TileParams {
@@ -931,17 +990,20 @@ mod tests {
         let p = arrange_kind(LayoutKind::ThreeColumn, params, &[a, b]);
         assert!(close(rect_of(&p, a), (0.0, 0.0, 0.6, 1.0)));
         assert!(close(rect_of(&p, b), (0.6, 0.0, 0.4, 1.0)));
-        // 5 tiles, 1 master: right gets floor(4/2) = 2 (b, c), left the rest (d, e).
+        // 5 tiles, 1 master: right gets floor(4/2) = 2 (b, c), left the rest
+        // (d, e). The columns weigh 0.4 : 0.6 : 0.4, as in Bismuth: 2/7, 3/7,
+        // 2/7 of the width.
+        let (s, m) = (2.0 / 7.0, 3.0 / 7.0);
         let p = arrange_kind(LayoutKind::ThreeColumn, params, &[a, b, c, d, e]);
-        assert!(close(rect_of(&p, a), (0.2, 0.0, 0.6, 1.0)));
-        assert!(close(rect_of(&p, b), (0.8, 0.0, 0.2, 0.5)));
-        assert!(close(rect_of(&p, c), (0.8, 0.5, 0.2, 0.5)));
-        assert!(close(rect_of(&p, d), (0.0, 0.0, 0.2, 0.5)));
-        assert!(close(rect_of(&p, e), (0.0, 0.5, 0.2, 0.5)));
+        assert!(close(rect_of(&p, a), (s, 0.0, m, 1.0)));
+        assert!(close(rect_of(&p, b), (s + m, 0.0, s, 0.5)));
+        assert!(close(rect_of(&p, c), (s + m, 0.5, s, 0.5)));
+        assert!(close(rect_of(&p, d), (0.0, 0.0, s, 0.5)));
+        assert!(close(rect_of(&p, e), (0.0, 0.5, s, 0.5)));
         // 3 tiles: right gets 1, left gets 1.
         let p = arrange_kind(LayoutKind::ThreeColumn, params, &[a, b, c]);
-        assert!(close(rect_of(&p, b), (0.8, 0.0, 0.2, 1.0)));
-        assert!(close(rect_of(&p, c), (0.0, 0.0, 0.2, 1.0)));
+        assert!(close(rect_of(&p, b), (s + m, 0.0, s, 1.0)));
+        assert!(close(rect_of(&p, c), (0.0, 0.0, s, 1.0)));
     }
 
     #[test]
@@ -1034,12 +1096,28 @@ mod tests {
             order: vec![a, b, c],
             ..TabLayout::default()
         };
+        // The centre's right edge out by 0.05: ratio + 0.05 · (2 − 0.6).
         assert!(adjust(&mut l, a, Direction::Right, 0.05));
-        assert!((l.params.three_column.ratio - 0.7).abs() < 1e-9);
+        assert!((l.params.three_column.ratio - 0.67).abs() < 1e-9);
+        // Its left edge "out" shrinks it, as Bismuth's decrease width does;
+        // otherwise left and right would both grow the centre.
+        assert!(adjust(&mut l, a, Direction::Left, 0.05));
+        assert!((l.params.three_column.ratio - (0.67 - 0.05 * 1.33)).abs() < 1e-9);
+        l.params.three_column.ratio = 0.6;
+        // The left stack's right edge out: the centre shrinks.
         assert!(adjust(&mut l, c, Direction::Right, 0.05));
-        assert!((l.params.three_column.ratio - 0.6).abs() < 1e-9);
+        assert!((l.params.three_column.ratio - 0.53).abs() < 1e-9);
         assert!(!adjust(&mut l, c, Direction::Left, 0.05));
         assert!(!adjust(&mut l, b, Direction::Right, 0.05));
+        // Two columns (one master, one stack tile): the ratio is the
+        // master's share and moves with the edge.
+        let mut l = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: vec![a, b],
+            ..TabLayout::default()
+        };
+        assert!(adjust(&mut l, a, Direction::Right, 0.05));
+        assert!((l.params.three_column.ratio - 0.65).abs() < 1e-9);
     }
 
     #[test]

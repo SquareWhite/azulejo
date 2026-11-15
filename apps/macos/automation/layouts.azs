@@ -50,16 +50,37 @@ expect focus 1
 key alt+shift+l               # and back
 key alt+enter                 # promote: to the front of the order
 expect focus 1
-key alt+o                     # master on top
+key alt+o                     # Bismuth's rotate, clockwise: master on top
 expect orientation top
 expect axis v
+key alt+o                     # on the right
+expect orientation right
+expect axis h
+key alt+o                     # at the bottom
+expect orientation bottom
+key alt+o                     # and back on the left
+expect orientation left
+action rotate_anticlockwise   # palette-only: the other way round
+expect orientation bottom
+action rotate_anticlockwise
+expect orientation right
+action flip_layout            # palette-only: tall.py's flip, right ↔ bottom
+expect orientation bottom
+action flip_layout
+expect orientation right
+key alt+o
+expect orientation bottom
 key alt+o
 expect orientation left
 key alt+shift+bracketright    # move one place along the order
 expect focus 2
 
 # --- Monocle: one tile shown, focus restacks without resizing ---
-key alt+backslash             # tile → monocle
+key alt+bracketright          # tile → monocle (alt+] cycles layouts)
+expect kind monocle
+key alt+bracketleft           # and back
+expect kind tile
+key alt+backslash             # Bismuth's own chord: tile → monocle
 expect kind monocle
 expect visible 1
 wait 400
@@ -73,7 +94,7 @@ unchanged resizes
 shot 03-monocle
 
 # --- Three Column ---
-key alt+backslash             # monocle → three_column
+key alt+bracketright          # monocle → three_column
 expect kind three_column
 expect visible 4
 expect ratio 0.60

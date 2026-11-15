@@ -52,7 +52,8 @@ final class Core {
         let error = object["error"] as? [String: Any] ?? [:]
         return .failure(CoreError(
             code: error["code"] as? String ?? "internal",
-            message: error["message"] as? String ?? "unknown error"))
+            message: error["message"] as? String ?? "unknown error",
+            reason: (error["data"] as? [String: Any])?["reason"] as? String))
     }
 
     /// Decodes a reply field (e.g. `session`) into a Codable type.
@@ -208,7 +209,23 @@ struct FieldEnvelope<T: Decodable>: Decodable {
 struct CoreError: Error, CustomStringConvertible {
     let code: String
     let message: String
-    var description: String { "\(code): \(message)" }
+    /// The core's finer code in the error's data (`no_neighbour`, `no_edge`).
+    var reason: String?
+
+    init(code: String, message: String, reason: String? = nil) {
+        self.code = code
+        self.message = message
+        self.reason = reason
+    }
+
+    var description: String { "\(code)\(reason.map { "/\($0)" } ?? ""): \(message)" }
+
+    /// A directional key with nothing that way: focus or swap past the
+    /// last tile, a resize with no divider to move. Keys do nothing then,
+    /// silently; API and CLI callers still get the refusal.
+    var nothingThere: Bool {
+        code == "invalid_state" && (reason == "no_neighbour" || reason == "no_edge")
+    }
 }
 
 /// The core's event callback. A plain global function on purpose: it runs on

@@ -379,7 +379,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
             switch send(command) {
             case .failure(let error):
-                controller.flash(error.message)
+                controller.report(error)
             case .success(let reply):
                 // A new workspace from the keyboard gets a first terminal, as
                 // "+" in the sidebar does: an empty one has nothing to type into.

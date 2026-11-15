@@ -188,8 +188,13 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     private func applySurfaceSize() {
         pendingSurfaceResize = nil
         guard let surface, surface.frame.size != bounds.size || surface.frame.origin != .zero else { return }
-        surface.frame = bounds
+        Perf.measure("surface.resize") { surface.frame = bounds }
         lastSurfaceResize = CACurrentMediaTime()
+        // libghostty redraws a resized surface synchronously when its layer
+        // is displayed (waiting on the GPU). Left to the next Core Animation
+        // flush, that lands mid-motion, a separate run-loop pass; done here,
+        // it's part of the motion's set-up, under the snapshot (ADR 0004).
+        if window != nil { Perf.measure("surface.draw") { surface.layer?.displayIfNeeded() } }
     }
 
     /// While frozen, resize at once unless the last resize was under 50 ms
@@ -852,8 +857,6 @@ extension TerminalTileView: MotionAware {
 
     var snapshotFrame: CGRect? { freezeImage?.frame }
 
-    var snapshotContents: Any? { freezeImage?.layer?.contents }
-
     func placeSnapshot(_ frame: CGRect, cover: CGRect) {
         guard let freeze, let freezeImage, !freezeFills else { return }
         freezeImage.frame = frame
@@ -916,8 +919,10 @@ extension TerminalTileView: MotionAware {
 
     private func unfreeze(reason: String) {
         if freeze != nil { logReveal(reason) }
-        freezeImage?.removeFromSuperview()
-        freeze?.removeFromSuperview()
+        Perf.measure("motion.reveal") {
+            freezeImage?.removeFromSuperview()
+            freeze?.removeFromSuperview()
+        }
         freeze = nil
         freezeImage = nil
         freezeFills = true

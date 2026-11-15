@@ -120,8 +120,14 @@ final class TerminalSurfaceView: NSView {
         guard let surface else { return }
         let backing = convertToBacking(bounds)
         let scale = bounds.width > 0 ? backing.width / bounds.width : 2
-        layer?.contentsScale = scale
-        ghostty_surface_set_content_scale(surface, scale, scale)
+        // Only on a real change: a new scale has libghostty rebuild its font
+        // grid, and a tile coming back on screen (out of Monocle or zoom)
+        // passes through here with the same one.
+        if scale != contentScale {
+            contentScale = scale
+            layer?.contentsScale = scale
+            ghostty_surface_set_content_scale(surface, scale, scale)
+        }
         updateSurfaceSize()
     }
 
@@ -130,9 +136,16 @@ final class TerminalSurfaceView: NSView {
         guard let surface, let screen = window?.screen,
               let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
         else { return }
-        ghostty_surface_set_display_id(surface, id)
+        if id != displayID {
+            displayID = id
+            ghostty_surface_set_display_id(surface, id)
+        }
         viewDidChangeBackingProperties()
     }
+
+    /// What libghostty was last told, so re-attaching changes nothing.
+    private var contentScale: CGFloat = 0
+    private var displayID: UInt32?
 
     /// Every size change reaches the PTY (and so the herdr pane) at once.
     /// During layout motion the tile sets this view's frame once, at the

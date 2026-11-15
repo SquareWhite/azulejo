@@ -52,7 +52,7 @@ enum Perf {
         let top = overlap(from: start, to: end).filter { $0.key != "runloop" }
             .sorted { $0.value > $1.value }.prefix(8)
             .map { "\($0.key) \((($0.value) * 100).rounded() / 100)" }
-        longPasses.append(["ms": (ms * 100).rounded() / 100, "spans": top])
+        longPasses.append(["ms": (ms * 100).rounded() / 100, "spans": top, "kind": MotionStats.shared.currentKind])
     }
 
     /// Times `body` as `name`.

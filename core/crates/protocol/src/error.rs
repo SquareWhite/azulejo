@@ -52,6 +52,11 @@ pub struct Error {
     /// For programs: what the error is about, such as `{"tile": "tile_…",
     /// "direction": "right"}` or `{"param": "kind"}`. Over JSON-RPC these
     /// fields sit in the error's `data` beside `code`.
+    ///
+    /// `reason` narrows an `invalid_state` down for programs that act on
+    /// it: `no_neighbour` (no tile that way, for focus and swap) and
+    /// `no_edge` (no divider that way to move). Shells stay silent on both
+    /// when a key asked, since there's simply nothing there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
@@ -98,9 +103,11 @@ impl From<ModelError> for Error {
             ModelError::WorkspaceNotFound(id) => Some(json!({ "workspace": id })),
             ModelError::TabNotFound(id) => Some(json!({ "tab": id })),
             ModelError::TileNotFound(id) => Some(json!({ "tile": id })),
-            ModelError::NoNeighbour { tile, direction }
-            | ModelError::NoEdge { tile, direction } => {
-                Some(json!({ "tile": tile, "direction": direction }))
+            ModelError::NoNeighbour { tile, direction } => {
+                Some(json!({ "tile": tile, "direction": direction, "reason": "no_neighbour" }))
+            }
+            ModelError::NoEdge { tile, direction } => {
+                Some(json!({ "tile": tile, "direction": direction, "reason": "no_edge" }))
             }
             ModelError::DifferentTabs { a, b } => Some(json!({ "tiles": [a, b] })),
             ModelError::NothingFocused | ModelError::InvalidValue(_) => None,

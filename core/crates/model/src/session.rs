@@ -1162,10 +1162,10 @@ impl Session {
         Ok(changed)
     }
 
-    /// Turns the tab's tall layout on its side. Focus and zoom are kept.
-    /// Turns the tab on its side: master left ↔ master on top (and right ↔
-    /// bottom in a Tile tab). Other dynamic kinds have nothing to rotate.
-    pub fn rotate(&mut self, tab: TabId) -> Result<bool, ModelError> {
+    /// Flips the tab on its side: master left ↔ master on top (and right ↔
+    /// bottom in a Tile tab), `tall.py`'s rotate. Focus and zoom are kept.
+    /// Other dynamic kinds have nothing to flip.
+    pub fn flip(&mut self, tab: TabId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let tab = self.tab_at_mut(p);
         Ok(match tab.layout.kind {
@@ -1180,8 +1180,10 @@ impl Session {
         })
     }
 
-    /// A quarter turn of a Tile tab: master left → top → right → bottom, or
-    /// back with `reverse`. Manual tabs toggle as [`Session::rotate`].
+    /// A quarter turn of a Tile tab, Bismuth's rotate: master left → top →
+    /// right → bottom, or back with `reverse`. A split tree has no master on
+    /// the right or at the bottom (its tall reading puts the master first),
+    /// so manual tabs flip as [`Session::flip`] either way.
     pub fn rotate_turn(&mut self, tab: TabId, reverse: bool) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);
@@ -1347,9 +1349,11 @@ impl Session {
         Ok(t.layout.params != before)
     }
 
-    /// Moves a tile `step` places along its dynamic tab's order, one swap
-    /// with the neighbour at a time, wrapping at the ends. Manual tabs have
-    /// no order.
+    /// Moves a tile `step` places along its dynamic tab's order, one place at
+    /// a time. As Bismuth's move to next/previous position: a step swaps it
+    /// with its neighbour, and past either end it wraps round to the other
+    /// end, the rest shifting up one (the last tile becomes master; the
+    /// master goes to the end). Manual tabs have no order.
     pub fn move_in_order(&mut self, tile: TileId, step: i32) -> Result<bool, ModelError> {
         let p = self.locate(tile)?;
         let t = self.tab_at_mut(p);
@@ -1360,12 +1364,18 @@ impl Session {
         for _ in 0..step.unsigned_abs().min(n as u32) {
             let order = &mut t.layout.order;
             let i = order.iter().position(|x| *x == tile).expect("ordered");
-            let j = if step > 0 {
-                (i + 1) % n
-            } else {
-                (i + n - 1) % n
-            };
-            order.swap(i, j);
+            match (step > 0, i) {
+                (true, i) if i + 1 == n => {
+                    order.remove(i);
+                    order.insert(0, tile);
+                }
+                (true, i) => order.swap(i, i + 1),
+                (false, 0) => {
+                    order.remove(0);
+                    order.push(tile);
+                }
+                (false, i) => order.swap(i, i - 1),
+            }
         }
         t.zoomed = None;
         t.sync();

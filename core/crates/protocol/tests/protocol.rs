@@ -125,8 +125,15 @@ fn sample_commands() -> Vec<Command> {
         Command::LayoutPromote(TileTarget { tile: None }),
         Command::LayoutRotate(LayoutRotate {
             tab: None,
-            reverse: Some(true),
+            reverse: true,
             part: false,
+            flip: false,
+        }),
+        Command::LayoutRotate(LayoutRotate {
+            tab: Some(tab),
+            reverse: false,
+            part: false,
+            flip: true,
         }),
         Command::LayoutSet(LayoutSetKind {
             tab: Some(tab),

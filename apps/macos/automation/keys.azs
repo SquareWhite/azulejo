@@ -25,10 +25,14 @@ shot 01-tall-four
 
 key alt+enter                 # promote the focused stack tile to master
 expect focus 1
-key alt+o                     # rotate: master on top
+key alt+o                     # rotate: a split tree only flips, master on top
 expect axis v
 shot 02-rotated
 key alt+o                     # and back
+expect axis h
+action flip_layout            # the flip on its own (palette-only)
+expect axis v
+action flip_layout
 expect axis h
 
 # --- focus by direction ---
@@ -79,8 +83,8 @@ expect tiles 5
 key ctrl+cmd+shift+t          # split down
 expect tiles 6
 shot 05-six
-key alt+]
-key alt+[
+action cycle_tile_next        # next/previous tile: palette-only (alt+] / alt+[ switch layouts)
+action cycle_tile_previous
 key alt+w                     # close tile (detaches its herdr pane)
 expect tiles 5
 
@@ -135,6 +139,17 @@ expect sidebar rail
 shot 08-no-sidebar
 key cmd+a
 expect sidebar visible
+
+# --- alt+] / alt+[ switch layouts (the tab is manual: forward goes to the
+# first in [layout] cycle, back from there wraps to the last) ---
+key alt+]
+expect key.last action:cycle_layout_next
+expect kind tile
+key alt+[
+expect key.last action:cycle_layout_previous
+expect kind three_column
+key alt+]
+expect kind tile
 
 # --- unbound keys pass through untouched ---
 key x

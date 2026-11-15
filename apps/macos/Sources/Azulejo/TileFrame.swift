@@ -19,6 +19,16 @@ protocol HeaderHoverAware {
 @MainActor
 protocol TileOwnsChrome {}
 
+/// A tile view with strips across its top that are chrome, not content (an
+/// open find bar, the browser's toolbar): mid-motion they ride the top of
+/// the visible rect with the header, rather than being cut off with the
+/// content when it sticks to the bottom edge. Tiles that are `Findable`
+/// get their open find bar without this.
+@MainActor
+protocol RidesClipTop {
+    var clipTopStrips: [NSView] { get }
+}
+
 /// Every tile in the container: a card (D.5) with a header strip (kind icon,
 /// bold title, muted subtitle — what the core's `tile.header` says) above the
 /// tile's own view.
@@ -188,6 +198,7 @@ class TileFrame: NSView, TileView, ThemeAware {
         Motion.configure(group, duration: duration)
         corners.add(group, forKey: Self.cornerMotionKey)
         dim.add(group, forKey: Self.cornerMotionKey)
+        animateStrips(from: from, to: to, duration: duration, holdAtEnd: holdAtEnd)
     }
 
     func stopCornerMotion() {
@@ -195,6 +206,45 @@ class TileFrame: NSView, TileView, ThemeAware {
         dim.removeAnimation(forKey: Self.cornerMotionKey)
         header.layer?.removeAnimation(forKey: Self.cornerMotionKey)
         header.badge?.layer?.removeAnimation(forKey: Self.cornerMotionKey)
+        for strip in stripsInMotion { strip.layer?.removeAnimation(forKey: Self.cornerMotionKey) }
+        stripsInMotion = []
+    }
+
+    /// The content's chrome strips (an open find bar, the browser's toolbar).
+    private var clipTopStrips: [NSView] {
+        if let own = content as? RidesClipTop { return own.clipTopStrips }
+        guard let bar = (content as? Findable)?.findBar, bar.isOpen, bar.superview != nil else { return [] }
+        return [bar]
+    }
+
+    private var stripsInMotion: [NSView] = []
+
+    /// Find bars and the browser's toolbar keep to the top of the visible
+    /// rect, under the header, as the header does: each moves by as much
+    /// as the clip's top edge is off its resting place. Vertically only,
+    /// so a find bar stays over the columns it searches.
+    private func animateStrips(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
+        let strips = clipTopStrips
+        stripsInMotion = strips
+        // `to` is where the clip rests at the end (the full bounds, or a
+        // leaving tile's last clip); strips sit at their place for it.
+        let rest = CGRect(origin: .zero, size: bounds.size)
+        func lift(_ clip: CGRect) -> CGFloat { clip.maxY - rest.maxY }
+        for strip in strips {
+            guard let layer = strip.layer, let parent = strip.superview else { continue }
+            // Layer positions follow the parent view's flip.
+            let sign: CGFloat = parent.isFlipped ? -1 : 1
+            let y = layer.position.y
+            let move = CABasicAnimation(keyPath: "position.y")
+            move.fromValue = y + sign * lift(from)
+            move.toValue = y + sign * lift(to)
+            if holdAtEnd {
+                move.fillMode = .forwards
+                move.isRemovedOnCompletion = false
+            }
+            Motion.configure(move, duration: duration)
+            layer.add(move, forKey: Self.cornerMotionKey)
+        }
     }
 
     /// The header strip is chrome, not content: it rides the top of the
@@ -326,7 +376,6 @@ final class MotionTileFrame: TileFrame, MotionAware {
     }
 
     var snapshotFrame: CGRect? { aware.snapshotFrame.map { content.convert($0, to: self) } }
-    var snapshotContents: Any? { aware.snapshotContents }
 
     func placeSnapshot(_ frame: CGRect, cover: CGRect) {
         aware.placeSnapshot(convert(frame, to: content), cover: convert(cover, to: content))

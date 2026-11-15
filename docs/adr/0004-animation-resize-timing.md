@@ -27,13 +27,25 @@ Dogfooding: "animations stretch the content of the tile, which looks bad". `[ani
 
 - **Crop** animates each tile layer's bounds and position instead of a transform. The frame is a clip over content at 1:1, so nothing stretches. Content sticks to the edge that moves least, so it stays still on screen while the moving edge reveals or cuts it off.
 - The resize-at-start rule stands. A shrinking terminal keeps its snapshot, now at 1:1, until the motion ends. A growing one shows its 1:1 snapshot over a plain background until live content has drawn at the new size, then reveals live content, even mid-motion: live content is laid out at the final size, so it can't stretch, and the blank strip the growing edge uncovers fills in early.
-- New tiles sweep in with the divider (from the parent's far edge); closing tiles shrink away from the neighbour that takes their space; the tall rotate cross-fades, since sliding every tile across the tab looked wrong.
+- New tiles sweep in with the divider (from the parent's far edge); closing tiles shrink away from the neighbour that takes their space; the tall rotate cross-fades, since sliding every tile across the tab looked wrong. (Replaced Nov 4: rotates move too, see below.)
 - **Outline** hides content during the motion, moves outlines only, and fades content in over 80 ms at the end.
 - Same budget: 60-animation stress at 120 Hz, crop 0 dropped frames, outline 1, scale 3 (≤ 3 single missed ticks allowed); 114/114 PTY resizes in every style.
 
 ## Amendment, Nov 4, 2026: the reveal doesn't need the display link
 
 The e2e pass (V1) saw terminals stuck on their motion snapshot with the screen locked. The reveal polled only on the container's display link, which doesn't tick then; libghostty kept drawing (first frame at the new size 1–11 ms after the resize). A plain timer now takes the snapshot down 50 ms after the 250 ms deadline if the clock hasn't. With the screen on the clock still reveals first. Captures report what each terminal shows and flag a stale frame (`STALE` in automation.log, `<name>.fresh.json`); `apps/macos/automation/e2e/stale-check.sh` checks the screen-on path.
+
+## Amendment, Nov 4, 2026: every layout change moves
+
+the maintainer: rotate and the layout switches cross-faded (a ghost of the old card faded out while the new layout appeared), so they didn't read as motion. Now every change with a geometric relation moves each tile from its old frame to its new one, position and size together, on the configured curve and length, under the same crop rules (1:1 content, one PTY resize per changed terminal at the start, reveal on a fresh frame).
+
+- **Moves:** rotate (four-way and the manual flip), layout cycle and toggles, masters ±, master area ±, move along the order, promote, equalize, rotate part, plus swaps, splits, closes, zoom and the sidebar, which already moved. The focused (or zoomed) tile travels over the others where paths cross. Headers, corner caps, badges, the focus dim and now open find bars (and the browser's toolbar) ride the top of the moving clip.
+- **Monocle in:** the focused tile grows to fill the tab over the others, which fade and shrink 3 % where they are. Monocle sizes hidden tiles to the whole tab (ADR 0010), so they freeze under their snapshot first: their one resize happens at the start too. **Monocle out:** the focused tile shrinks to its slot while the others fade and grow in from 3 % inside theirs, their last frame at the top left until they've drawn at the new size.
+- **Focus inside Monocle** stays free of PTY resizes. The next tile dissolves in over the last one in 60 % of the motion's length (120 ms by default); the one underneath stays opaque until it's covered. The tiles are stacked in one place, so a slide would invent a direction that isn't there, and moving a whole terminal's text across the tab reads heavier than the switch is.
+- **Cross-fades left:** tab and workspace switches (another tab's tiles, no geometric relation) and the Monocle dissolve. The rotate ghosts are gone.
+- **Retargets:** a change mid-motion starts every tile from where it shows, snapshot and opacity included. A tile on its way out keeps going through refreshes, and one wanted back mid-fade (Monocle in and straight out) turns round from where it is. Snapshots that are already up stay up, so rapid repeats never resize a terminal more than once per motion that changes its size.
+- **Set-up, not mid-motion:** libghostty redraws a resized surface synchronously when Core Animation next displays its layer, waiting on the GPU (2–4 ms). That used to land in a separate run-loop pass after the motion had started (8–10 ms passes coming out of Monocle). The resize now displays the layer straight away, so the cost is part of the key press. A surface coming back on screen also no longer resets its content scale and display ID when neither changed.
+- Measured (`anim.sh`, 120 Hz, busy machine): 105 motions with 11 retargets (rotate ×4, the layout cycle both ways, Monocle in, focus and out, manual and back, rapid repeats), PTY resizes 345/345, 0 main-thread passes over a frame (max 4.8 ms), 3 single dropped ticks with no main-thread cause. `--slow`: 74 captures, 0 stray pixels, 0 STALE.
 
 ## Evidence
 

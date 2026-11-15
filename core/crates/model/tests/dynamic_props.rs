@@ -129,7 +129,7 @@ proptest! {
             s.split_auto(tab, Tile::new(TileContent::terminal())).unwrap();
         }
         if rotate {
-            s.rotate(tab).unwrap();
+            s.flip(tab).unwrap();
         }
         let master = s.tab(tab).unwrap().root.tall().master;
         let edge = if rotate { Direction::Down } else { Direction::Right };
@@ -145,6 +145,72 @@ proptest! {
         prop_assert!(s.set_layout(tab, LayoutKind::Manual).unwrap());
         prop_assert_eq!(&s.tab(tab).unwrap().root, &before);
         prop_assert_eq!(s.check_invariants(), Ok(()));
+    }
+
+    /// Bismuth's rotate: four clockwise quarter turns (`alt+o`) or a turn and
+    /// a turn back restore the arrangement exactly, as do two "rotate part"s.
+    /// After each clockwise turn the master area sits on the next side
+    /// (left → top → right → bottom) and the stack opposite it.
+    #[test]
+    fn quarter_turns_go_round_and_back(
+        n in 1usize..12,
+        params in params(),
+        weights in prop::collection::vec(0.1f64..5.0, 1..8),
+        reverse in any::<bool>(),
+    ) {
+        let mut s = Session::new();
+        s.prefs.default = LayoutKind::Tile;
+        s.prefs.params = params;
+        let (_, ws) = s.create_window("main", None);
+        s.create_tab(ws, Tile::new(TileContent::terminal()), None).unwrap();
+        let tab = s.focus().tab.unwrap();
+        for _ in 1..n {
+            s.split_auto(tab, Tile::new(TileContent::terminal())).unwrap();
+        }
+        // Uneven stack sizes, through resizes, so weights travel too.
+        let order = s.tab(tab).unwrap().layout.order.clone();
+        for (t, w) in order.iter().zip(weights.iter().cycle()) {
+            let _ = s.resize(*t, Direction::Down, (w - 1.0) / 20.0);
+        }
+        let start = s.tab(tab).unwrap().placements();
+        let masters = usize::from(s.tab(tab).unwrap().layout.params.tile.masters).min(n);
+        let mut orientation = s.tab(tab).unwrap().layout.params.tile.orientation;
+        for turn in 0..4 {
+            prop_assert!(s.rotate_turn(tab, reverse).unwrap());
+            orientation = orientation.turned(reverse);
+            let t = s.tab(tab).unwrap();
+            prop_assert_eq!(t.layout.params.tile.orientation, orientation);
+            prop_assert_eq!(s.check_invariants(), Ok(()));
+            if masters == 0 || masters == n {
+                continue;
+            }
+            // Every master lies on the master side of every stack tile.
+            let p = t.placements();
+            let rect = |id: &TileId| p.iter().find(|x| x.tile == *id).unwrap().rect;
+            let (ms, ss) = t.layout.order.split_at(masters);
+            for m in ms {
+                for s in ss {
+                    let (m, s) = (rect(m), rect(s));
+                    let before = match orientation {
+                        Orientation::Left => m.right() <= s.x + EPS,
+                        Orientation::Top => m.bottom() <= s.y + EPS,
+                        Orientation::Right => m.x >= s.right() - EPS,
+                        Orientation::Bottom => m.y >= s.bottom() - EPS,
+                    };
+                    prop_assert!(before, "turn {}: a master isn't {:?} of the stack", turn, orientation);
+                }
+            }
+            if turn == 0 {
+                // One turn back restores the start.
+                let mut back = s.clone();
+                back.rotate_turn(tab, !reverse).unwrap();
+                prop_assert_eq!(back.tab(tab).unwrap().placements(), start.clone());
+            }
+        }
+        prop_assert_eq!(s.tab(tab).unwrap().placements(), start.clone());
+        s.rotate_part(tab).unwrap();
+        s.rotate_part(tab).unwrap();
+        prop_assert_eq!(s.tab(tab).unwrap().placements(), start);
     }
 
     /// Swapping one way and then back restores the order when the two tiles
@@ -247,9 +313,18 @@ fn dynamic_ops_map_as_in_the_adr() {
     // Promote: to the front.
     assert!(s.promote(cid).unwrap());
     assert_eq!(s.tab(tab).unwrap().layout.order, vec![cid, a, bid]);
-    // Move in order wraps.
+    // Move in order: a swap with the neighbour, and past the end the tile
+    // wraps round to the front, the rest shifting up (Bismuth's swapOrder).
+    assert!(s.move_in_order(a, 1).unwrap());
+    assert_eq!(s.tab(tab).unwrap().layout.order, vec![cid, bid, a]);
+    assert!(s.move_in_order(a, 1).unwrap());
+    assert_eq!(s.tab(tab).unwrap().layout.order, vec![a, cid, bid]);
+    assert!(s.move_in_order(a, -1).unwrap());
+    assert_eq!(s.tab(tab).unwrap().layout.order, vec![cid, bid, a]);
     assert!(s.move_in_order(bid, 1).unwrap());
-    assert_eq!(s.tab(tab).unwrap().layout.order, vec![bid, a, cid]);
+    assert_eq!(s.tab(tab).unwrap().layout.order, vec![cid, a, bid]);
+    assert!(s.move_in_order(bid, 1).unwrap());
+    assert_eq!(s.tab(tab).unwrap().layout.order, vec![bid, cid, a]);
     // Masters: two masters stacked on the left.
     assert!(s.change_masters(tab, 1).unwrap());
     assert!(
