@@ -1,6 +1,16 @@
 import AppKit
 import QuartzCore
 
+/// A tile's view that keeps its own pointer shape (a terminal's, from
+/// libghostty). A divider sets the resize cursor over it; leaving the
+/// gutter puts this one back, since nothing else would.
+@MainActor
+protocol PointerShaped: AnyObject {
+    var pointerCursor: NSCursor { get }
+}
+
+extension TerminalSurfaceView: PointerShaped {}
+
 /// One split's divider: the gutter between its two sides, which the pointer
 /// drags (`layout.set_ratio`). `path` names the split in the tab's tree the
 /// way the core reads it: `a`/`b` steps from the root.
@@ -150,6 +160,7 @@ extension TileContainerView {
         }
         dividerDrag = drag
         divider.cursor.set()
+        dividerCursorSet = true
         showDividerHint(divider, dragging: true)
         MotionStats.shared.started(kind: "divider_drag", setup: 0)
         MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, CACurrentMediaTime() + 0.25)
@@ -183,8 +194,9 @@ extension TileContainerView {
         let point = convert(event.locationInWindow, from: nil)
         dragDivider(to: point)
         endDividerDrag()
-        // Released away from any divider: the cursor goes back.
-        if divider(at: point, under: nil) == nil { NSCursor.arrow.set() }
+        // The hover follows the pointer again: the divider under it or,
+        // released away from any, what lies below gets its cursor back.
+        dividerHover(at: point)
     }
 
     /// Ends the drag: every tile at its exact frame, and each terminal one
@@ -222,6 +234,8 @@ extension TileContainerView {
         ]
         MotionStats.shared.movingUntil = CACurrentMediaTime()
         showDividerHint(hoveredDivider.flatMap { path in dividers.first { $0.path == path } }, dragging: false)
+        // The pointer areas follow the divider (a refresh skips them mid-drag).
+        updateDividerTracking()
         Motion.log("divider drag \(drag.divider.path.isEmpty ? "root" : drag.divider.path): "
             + "\(drag.commands) command(s) over \(Int(duration * 1000)) ms")
     }
@@ -279,20 +293,54 @@ extension TileContainerView {
             }
             for area in dividerAreas { addTrackingArea(area) }
         }
-        if let hovered = hoveredDivider, dividerDrag == nil {
-            let still = dividers.first { $0.path == hovered }
-            if still == nil { hoverDivider(nil) } else { showDividerHint(still, dragging: false) }
+        // The dividers moved under a resting pointer (a new tile, a resize
+        // from the keyboard): hover what's under it now. Mid-motion nothing
+        // takes the pointer, so the hover only follows its divider there.
+        guard let hovered = hoveredDivider, dividerDrag == nil else { return }
+        if !isMoving, let point = pointerLocation {
+            dividerHover(at: point)
+        } else if !all.contains(where: { $0.path == hovered }) {
+            hoverDivider(nil, at: nil)
         }
+        if hoveredDivider == hovered { showDividerHint(all.first { $0.path == hovered }, dragging: false) }
     }
 
-    /// The pointer moved over (or off) a divider's zone.
+    /// Automation's in-app pointer (`DividerHoverAutomation`), in window
+    /// coordinates, in place of the real one; it answers nil when that
+    /// pointer is off the window.
+    static var pointerLocator: ((NSWindow) -> CGPoint?)?
+
+    /// Where the pointer is, in this view's coordinates.
+    var pointerLocation: CGPoint? {
+        guard let window else { return nil }
+        guard let locate = Self.pointerLocator else {
+            return convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        }
+        return locate(window).map { convert($0, from: nil) }
+    }
+
+    /// Whether a mouse-moved event at `point` is the dividers' to handle:
+    /// inside a divider's zone, or just out of one the hover still shows.
+    /// The point decides: a mouse-moved event has no tracking area (asking
+    /// it for one raises, and AppKit drops the rest of the event).
+    func dividerHoverWants(_ point: CGPoint) -> Bool {
+        hoveredDivider != nil || dividerCursorSet || dividerAreas.contains { $0.rect.contains(point) }
+    }
+
+    /// The pointer moved over, within or off a divider's zone. Only the
+    /// point counts, never whose area sent the event: zones overlap where
+    /// dividers meet, and AppKit orders their entered/exited events as it
+    /// likes.
     func dividerHover(at point: CGPoint) {
         guard dividerDrag == nil else { return }
         let under = hitTestBelowDividers(point)
-        hoverDivider(divider(at: point, under: under))
+        hoverDivider(divider(at: point, under: under), at: point)
     }
 
-    func hoverDivider(_ divider: TileDivider?) {
+    /// Hovers `divider` (nil: none). Its resize cursor goes up; when it
+    /// goes, what lies under the pointer gets its own cursor back (a
+    /// terminal's shape from libghostty, the arrow elsewhere).
+    func hoverDivider(_ divider: TileDivider?, at point: CGPoint?) {
         let was = hoveredDivider
         hoveredDivider = divider?.path
         if let divider {
@@ -300,9 +348,39 @@ extension TileContainerView {
             dividerCursorSet = true
         } else if dividerCursorSet {
             dividerCursorSet = false
-            NSCursor.arrow.set()
+            cursorBelowDividers(at: point).set()
         }
         if was != hoveredDivider { showDividerHint(divider, dragging: false) }
+    }
+
+    /// The cursor of what lies under `point` once no divider holds the
+    /// pointer: a view that keeps its own shape (`PointerShaped`), else
+    /// the arrow.
+    func cursorBelowDividers(at point: CGPoint?) -> NSCursor {
+        guard let point, bounds.contains(point) else { return .arrow }
+        var view = hitTestBelowDividers(point)
+        while let v = view, v !== self {
+            if let shaped = v as? PointerShaped { return shaped.pointerCursor }
+            view = v.superview
+        }
+        return .arrow
+    }
+
+    /// Whether a tile's `view` may set its own cursor: not while a divider
+    /// holds the pointer (hovered or dragged). `pointer` (window
+    /// coordinates): where the pointer came into or left the view; the
+    /// hover is checked against it first, since a divider's own exit can
+    /// go missing (a flick out of an area rebuilt under the pointer).
+    static func tileMaySetCursor(_ view: NSView, pointer: CGPoint? = nil) -> Bool {
+        var next = view.superview
+        while let v = next {
+            if let container = v as? TileContainerView {
+                if let pointer { container.dividerHover(at: container.convert(pointer, from: nil)) }
+                return container.dividerDrag == nil && !container.dividerCursorSet
+            }
+            next = v.superview
+        }
+        return true
     }
 
     /// A thin line along the divider: muted on hover, the accent while

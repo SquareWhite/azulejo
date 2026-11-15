@@ -109,19 +109,35 @@ final class TerminalSurfaceView: NSView {
 
     func titleChanged(_ title: String) { onTitle?(title) }
 
+    /// libghostty's last pointer shape (`PointerShaped`): a divider puts it
+    /// back when the pointer leaves the gutter for this terminal.
+    private(set) var pointerCursor: NSCursor = .iBeam
     /// The pointer libghostty last asked for (`text`, `pointer`, `arrow`).
     private(set) var cursorName = "arrow"
     /// The link under the pointer while it's highlighted, else nil.
     private(set) var hoveredLink: String?
 
     func setMouseShape(_ shape: ghostty_action_mouse_shape_e) {
-        let cursor: NSCursor
         switch shape {
-        case GHOSTTY_MOUSE_SHAPE_TEXT: cursor = .iBeam; cursorName = "text"
-        case GHOSTTY_MOUSE_SHAPE_POINTER: cursor = .pointingHand; cursorName = "pointer"
-        default: cursor = .arrow; cursorName = "arrow"
+        case GHOSTTY_MOUSE_SHAPE_TEXT: pointerCursor = .iBeam; cursorName = "text"
+        case GHOSTTY_MOUSE_SHAPE_POINTER: pointerCursor = .pointingHand; cursorName = "pointer"
+        default: pointerCursor = .arrow; cursorName = "arrow"
         }
-        cursor.set()
+        // A hovered or dragged divider keeps its resize cursor.
+        if TileContainerView.tileMaySetCursor(self) { pointerCursor.set() }
+    }
+
+    /// libghostty only sends a shape when it changes, so the pointer coming
+    /// back (from a divider, a card's margin, a header) puts it up again,
+    /// and leaving takes it down, unless a divider has the pointer.
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) { pointerCursor.set() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) { NSCursor.arrow.set() }
     }
 
     func mouseOverLink(_ url: String) { hoveredLink = url.isEmpty ? nil : url }

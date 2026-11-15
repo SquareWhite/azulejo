@@ -1209,8 +1209,10 @@ final class TileContainerView: NSView, ThemeAware {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard event.trackingArea?.userInfo?["divider"] != nil else { return super.mouseMoved(with: event) }
-        dividerHover(at: convert(event.locationInWindow, from: nil))
+        // Not `event.trackingArea`: a mouse-moved event has none, and asking raises.
+        let point = convert(event.locationInWindow, from: nil)
+        guard dividerHoverWants(point) else { return super.mouseMoved(with: event) }
+        dividerHover(at: point)
     }
 
     override func mouseEntered(with event: NSEvent) {

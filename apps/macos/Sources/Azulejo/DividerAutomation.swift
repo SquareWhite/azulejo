@@ -20,12 +20,16 @@ import AppKit
 ///     divider check                  every tile at its frame, every terminal's
 ///                                    surface at its tile's exact size
 ///     divider stats NAME             the last drag's numbers → <out>/NAME.json
+///     divider hover …                move an in-app pointer over the tiles,
+///                                    with AppKit's tracking events
+///                                    (`DividerHoverAutomation`)
 ///
 /// `expect` keys: `dividers` (how many), `divider.PATH` (that split's ratio,
 /// `divider.-` for the root), `rect.N` (the Nth tile in the tab's order,
 /// `x,y,wxh` in a 1000×1000 tab, top-left origin), `columns` (the tab's
 /// column widths, left to right), `drag.commands`, `drag.mid` (terminals'
-/// PTY resizes while the pointer was still down, summed), `drag.terminals`.
+/// PTY resizes while the pointer was still down, summed), `drag.terminals`;
+/// `hover`, `cursor`, `hint`, `shape` (`DividerHoverAutomation`).
 @MainActor
 enum DividerAutomation {
     /// Runs a verb. Returns a problem, or nil, and how long to wait before
@@ -34,6 +38,8 @@ enum DividerAutomation {
                     note: @escaping (String) -> Void) -> (problem: String?, wait: TimeInterval) {
         guard let controller = app?.focusedController else { return ("no window", 0) }
         let tiles = controller.tiles
+        // The hover goes by the in-app pointer, never the real one.
+        DividerHoverAutomation.install()
         let parts = arg.split(separator: " ").map(String.init)
         let path = parts.count > 1 ? (parts[1] == "-" ? "" : parts[1]) : ""
         switch parts.first ?? "" {
@@ -66,11 +72,16 @@ enum DividerAutomation {
                 target.mouseDown(with: event(.leftMouseDown, at: at, in: tiles, clicks: clicks))
                 target.mouseUp(with: event(.leftMouseUp, at: at, in: tiles, clicks: clicks))
             }
+            if let window = tiles.window {
+                DividerHoverAutomation.place(at: tiles.convert(at, to: nil), in: window)
+            }
             return (nil, 0)
         case "probe":
             return (probe(tiles, note: note), 0)
         case "check":
             return (check(tiles), 0)
+        case "hover":
+            return (DividerHoverAutomation.run(Array(parts.dropFirst()), tiles: tiles, note: note), 0)
         case "stats":
             let name = parts.count > 1 ? parts[1] : "drag-stats"
             let stats = tiles.lastDividerDrag
@@ -81,13 +92,14 @@ enum DividerAutomation {
                 + "\(stats["duration_ms"] ?? 0) ms, terminals \(stats["terminals"] ?? [])")
             return (nil, 0)
         default:
-            return ("divider list|drag|double|probe|check|stats", 0)
+            return ("divider list|drag|double|probe|check|stats|hover", 0)
         }
     }
 
     static func state(_ controller: WindowController) -> [String: String] {
         let tiles = controller.tiles
         var s: [String: String] = ["dividers": "\(tiles.dividers.count)"]
+        s.merge(DividerHoverAutomation.state(tiles)) { $1 }
         guard let tab = tiles.shownTab else { return s }
         for d in tab.root.dividers(in: CGRect(x: 0, y: 0, width: 1000, height: 1000), gap: 0) {
             s["divider.\(d.path.isEmpty ? "-" : d.path)"] = String(format: "%.2f", d.ratio)
@@ -182,6 +194,9 @@ enum DividerAutomation {
                 return
             }
             target.mouseUp(with: event(.leftMouseUp, at: end, in: tiles))
+            if let window = tiles.window {
+                DividerHoverAutomation.place(at: tiles.convert(end, to: nil), in: window)
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + frame) { step() }
         return nil

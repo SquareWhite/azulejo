@@ -1,0 +1,183 @@
+# D2: divider hover. An in-app pointer moves over the tiles and every
+# tracking area's owner gets the entered/exited/moved events AppKit would
+# send (DividerHoverAutomation): no OS input, the real pointer untouched.
+# The hovered divider, its hint line and the app's cursor follow the
+# pointer, whichever order a step's events arrive in.
+log D2 divider hover
+delivery direct
+until terminal.phase attached 10000
+expect kind manual
+# --- manual: a | (b / c): a T where b's gutter meets the root's ---
+core {"method":"layout.split","params":{"direction":"right"}}
+until tiles 2 3000
+core {"method":"layout.split","params":{"direction":"down"}}
+until tiles 3 3000
+wait 2500
+expect dividers 2
+divider list
+# libghostty's shape for every terminal: text.
+divider hover shape text
+divider hover jump tile 1
+expect hover none
+expect cursor ibeam
+expect hint none
+
+# Slowly (a point a step) onto the vertical divider, then over to the
+# horizontal one: the report's case.
+divider hover to gutter - 0.25
+expect hover -
+expect cursor resize-lr
+expect hint -
+divider hover to gutter b 0.5
+expect hover b
+expect cursor resize-ud
+expect hint b
+# Off it into a terminal: libghostty's shape comes back.
+divider hover to tile 2
+expect hover none
+expect cursor ibeam
+expect hint none
+# And straight from a terminal onto a gutter, then the other way.
+divider hover to gutter b 0.5
+expect hover b
+expect cursor resize-ud
+divider hover to gutter - 0.8
+expect hover -
+expect cursor resize-lr
+expect hint -
+divider hover to tile 3
+expect hover none
+expect cursor ibeam
+expect hint none
+
+# The T: down the root's gutter past where b's meets it (it stays the
+# root's), then a few points right onto b's, and back.
+divider hover to gutter - 0.25
+divider hover to gutter - 0.75
+expect hover -
+expect cursor resize-lr
+divider hover to gutter b 0
+divider hover to off 4 0
+expect hover b
+expect cursor resize-ud
+expect hint b
+divider hover to off -8 0
+expect hover -
+expect cursor resize-lr
+expect hint -
+
+# Fast flicks: one event each.
+divider hover jump tile 1
+expect hover none
+expect cursor ibeam
+divider hover jump gutter b 0.5
+expect hover b
+expect cursor resize-ud
+divider hover jump gutter - 0.5
+expect hover -
+expect cursor resize-lr
+divider hover jump tile 2
+expect hover none
+expect cursor ibeam
+
+# libghostty changing its shape doesn't take the cursor off a divider, and
+# its latest shape is the one that comes back.
+divider hover shape pointer
+expect cursor pointer
+divider hover to gutter b 0.5
+expect cursor resize-ud
+divider hover shape text
+expect cursor resize-ud
+divider hover shape pointer
+expect cursor resize-ud
+divider hover to tile 3
+expect cursor pointer
+divider hover shape text
+expect cursor ibeam
+
+# The same walks with each step's events in other orders.
+divider hover order enter-first
+divider hover to gutter - 0.3
+expect hover -
+divider hover to gutter b 0.5
+expect hover b
+expect cursor resize-ud
+expect hint b
+divider hover to gutter b 0
+divider hover to off -4 0
+expect hover -
+expect cursor resize-lr
+divider hover to tile 2
+expect hover none
+expect cursor ibeam
+expect hint none
+divider hover order moved-first
+divider hover to gutter - 0.3
+expect hover -
+divider hover to gutter b 0.5
+expect hover b
+expect cursor resize-ud
+expect hint b
+divider hover to tile 3
+expect hover none
+expect cursor ibeam
+expect hint none
+divider hover order exit-first
+
+# A drag: released on the divider, it's still hovered where it now is;
+# its pointer area moved with it, so leaving it lets go.
+divider drag b 0.30 250
+expect divider.b 0.30
+expect hover b
+expect hint b
+expect cursor resize-ud
+# (the mirror's echo may move the tiles a moment; nothing hovers mid-motion)
+wait 900
+# (libghostty may pick a new shape on a resize or a key with mouse
+# reporting on: set it again, the cursor goes by whatever it says)
+divider hover shape text
+divider hover to tile 3
+expect hover none
+expect cursor ibeam
+expect hint none
+divider hover to gutter b 0.5
+expect hover b
+expect hint b
+
+# --- a cross: (a / d) | (b / c), both stacked gutters meet the root's ---
+divider hover out
+divider double b
+wait 700
+expect divider.b 0.50
+key alt+h
+wait 300
+core {"method":"layout.split","params":{"direction":"down"}}
+until tiles 4 3000
+wait 1500
+divider list
+divider hover shape text
+divider hover jump tile 1
+expect hover none
+expect cursor ibeam
+divider hover to gutter a 0.5
+expect hover a
+expect cursor resize-ud
+expect hint a
+divider hover to gutter - 0.5
+expect hover -
+expect cursor resize-lr
+expect hint -
+divider hover to gutter b 0.5
+expect hover b
+expect cursor resize-ud
+expect hint b
+divider hover to gutter b 0
+divider hover to off -12 0
+expect hover a
+expect cursor resize-ud
+divider hover to tile 1
+expect hover none
+expect cursor ibeam
+expect hint none
+divider hover out
+expect hover none
