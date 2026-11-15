@@ -62,6 +62,7 @@ class TileFrame: NSView, TileView {
             header.setAccessory(accessory)
         }
         header.isHidden = ownsChrome
+        header.menuProvider = { [weak self] in self?.contextMenu() }
         // The header stays above the content, so a terminal's 1:1 motion
         // snapshot (crop style) can't cover it mid-motion; the corner caps sit
         // over both.
@@ -247,6 +248,27 @@ class TileFrame: NSView, TileView {
     func tileWillClose() { content.tileWillClose() }
 }
 
+/// Right-click on the header strip: the tile's menu (Split, Zoom, Rename,
+/// Copy, Reveal, Close, Kill). A tile with its own chrome (the browser)
+/// merges these into its chrome's menu. The terminal's body keeps its own
+/// right-click (libghostty, mouse-reporting apps).
+extension TileFrame: ContextMenuProviding {
+    func contextMenu() -> NSMenu? {
+        if let own = content as? ContextMenuProviding { return own.contextMenu() }
+        guard let controller = ContextMenus.app?.controller(for: window) else { return nil }
+        return ContextMenus.tileMenu(tileID, in: controller)
+    }
+
+    /// Where the menu opens, in window coordinates: the header strip, or the
+    /// top of a tile that draws its own chrome.
+    var menuAnchor: NSRect {
+        let strip = header.isHidden
+            ? NSRect(x: 0, y: bounds.height - Self.headerHeight, width: bounds.width, height: Self.headerHeight)
+            : header.frame
+        return convert(strip, to: nil)
+    }
+}
+
 /// A frame around a tile that freezes behind a snapshot while it moves. The
 /// container speaks in this frame's coordinates; the snapshot lives in the
 /// content's, below the header and inside a terminal's margin.
@@ -299,6 +321,8 @@ extension TileFrame: AutomatableTile {
 /// (as the mockup's focused tile is), with a hairline underneath.
 @MainActor
 final class TileHeaderView: NSView {
+    /// The tile's right-click menu (`TileFrame.contextMenu`).
+    var menuProvider: (() -> NSMenu?)?
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let hairline = CALayer()
@@ -332,6 +356,8 @@ final class TileHeaderView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 
     /// Title and icon centred in the strip (no controls on the right).
     var centred: Bool { accessory == nil }

@@ -338,6 +338,69 @@ fn closing_a_tile_without_kill_detaches() {
     core.shutdown();
 }
 
+/// ⌘W (`workspace.close`) detaches a whole workspace (F14): herdr keeps its
+/// workspace, tabs and panes, and neither a survey nor a relaunch adopts it
+/// again.
+#[test]
+#[ignore = "needs herdr; run with `just test-herdr`"]
+fn closing_a_workspace_detaches_it_and_a_relaunch_keeps_it_closed() {
+    use azulejo_protocol::WorkspaceTarget;
+    let h = TempHerdr::start();
+    h.cli(&["workspace", "create", "--label", "keep"]);
+    h.cli(&["workspace", "create", "--label", "probe"]);
+    let first_ws = h.panes()[0].workspace_id.clone();
+    let probe_pane = h
+        .panes()
+        .into_iter()
+        .find(|p| p.workspace_id != first_ws)
+        .unwrap();
+    h.cli(&[
+        "pane",
+        "split",
+        probe_pane.pane_id.as_str(),
+        "--direction",
+        "right",
+    ]);
+    h.cli(&[
+        "tab",
+        "create",
+        "--workspace",
+        probe_pane.workspace_id.as_str(),
+    ]);
+    let before = h.structure();
+
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    let core = Core::start_with_herdr(opts(&state), h.client.clone());
+    let session = wait_until(&core, Duration::from_secs(10), |s| {
+        bound_terminals(s).len() == 4 && all_bound(s)
+    });
+    let names = |s: &Session| -> Vec<String> {
+        s.windows[0]
+            .workspaces
+            .iter()
+            .map(|w| w.name.clone())
+            .collect()
+    };
+    assert_eq!(names(&session), ["keep", "probe"]);
+    let probe = session.windows[0].workspaces[1].id;
+    core.execute(Command::WorkspaceClose(WorkspaceTarget {
+        workspace: Some(probe),
+    }))
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(h.structure(), before, "herdr keeps everything");
+    assert_eq!(names(&core.session().unwrap()), ["keep"]);
+
+    // Relaunch: herdr's events and a fresh survey still leave it closed.
+    core.shutdown();
+    let core = Core::start_with_herdr(opts(&state), h.client.clone());
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(names(&core.session().unwrap()), ["keep"]);
+    assert_eq!(h.structure(), before, "herdr unchanged after relaunch");
+    core.shutdown();
+}
+
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
 fn terminal_io_round_trips_through_a_real_pane() {

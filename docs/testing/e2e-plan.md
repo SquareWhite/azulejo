@@ -58,7 +58,7 @@ Run each one and record pass/fail, duration and any flake. Re-run a failure up t
 | A6 | `just mac-automation` (keys.azs) |
 | A7 | `just mac-layouts` |
 | A8 | `just mac-focus` (38+ scenarios) |
-| A9 | `apps/macos/automation/{browser,preview,files,restore,headers,machines,sidebar,toolbar,chrome,polish}.sh`, `focus/focus.sh` (47 scenarios since ⌘F: S39–S47), and the `.azs` scripts not covered above (attention and palette run inside `chrome.sh`; browser-relaunch and headers-relaunch inside `browser.sh` and `headers.sh`). Run `polish.sh` with an `e2e-*` `AZJ_DEV_NAME` (its default is `polish-g`) |
+| A9 | `apps/macos/automation/{browser,preview,files,restore,headers,machines,sidebar,menus,toolbar,chrome,polish}.sh`, `focus/focus.sh` (47 scenarios since ⌘F: S39–S47), and the `.azs` scripts not covered above (attention and palette run inside `chrome.sh`; browser-relaunch and headers-relaunch inside `browser.sh` and `headers.sh`). Run `polish.sh` with an `e2e-*` `AZJ_DEV_NAME` (its default is `polish-g`) |
 | A10 | `apps/macos/automation/anim.sh` (crop stress): 0 dropped ticks expected, exact PTY resize counts, no `STALE` capture. With the screen unlocked only: `apps/macos/automation/e2e/stale-check.sh` (every reveal from the display link, a first frame at every new size, no stale capture) |
 | A11 | `just test-dogfood`, `just test-cli-installer` (only if they stay inside temp dirs; check the recipes before running) |
 

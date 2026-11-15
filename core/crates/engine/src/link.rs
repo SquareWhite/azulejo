@@ -388,6 +388,15 @@ impl Engine {
                 if unchanged {
                     return Vec::new();
                 }
+                // The tile (or its whole workspace) closed while herdr made
+                // its pane: that pane is closed here too, so adoption leaves
+                // it alone (F14, ADR 0008).
+                if self.session.tile(tile).is_err() {
+                    if !self.session.detached_herdr.contains(&herdr) {
+                        self.session.detached_herdr.push(herdr);
+                    }
+                    return Vec::new();
+                }
                 self.execute(Command::TerminalBind(TerminalBind { tile, herdr }))
                     .map(|o| o.events)
                     .unwrap_or_default()

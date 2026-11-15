@@ -23,6 +23,8 @@ final class SidebarView: NSView, KeepsKeyboard {
     var onSelect: ((String) -> Void)?
     /// "+" on a machine group: create a workspace on that machine.
     var onAdd: ((String) -> Void)?
+    /// A workspace row's right-click menu.
+    var onMenu: ((String) -> NSMenu?)?
     /// Esc in the Files view: give the keyboard back to the focused tile.
     var onReturnFocus: (() -> Void)?
 
@@ -186,6 +188,7 @@ final class SidebarView: NSView, KeepsKeyboard {
                     marker: rollups[ws.id]?.marker, selected: ws.id == window.activeWorkspace,
                     dimmed: dimmed
                 ) { [weak self] in self?.onSelect?(ws.id) }
+                row.menuProvider = { [weak self] in self?.onMenu?(ws.id) }
                 add(row, height: Design.Space.sidebarRowHeight)
             }
             // No "+" where nothing would run: off, or gone from herdr's list.
@@ -458,8 +461,10 @@ private final class Dot: NSView {
 
 /// A workspace: status icon, name, and its branch on the right.
 @MainActor
-final class WorkspaceRow: NSView {
+final class WorkspaceRow: NSView, ContextMenuProviding {
     let status: Design.Status
+    /// Right-click: Rename, New Tab, Close and the folder's items.
+    var menuProvider: (() -> NSMenu?)?
     /// Automation: the attention marker (" ● 2"), or "".
     let markerText: String
     /// Automation: the branch, or "".
@@ -541,6 +546,8 @@ final class WorkspaceRow: NSView {
         if bounds.contains(convert(event.locationInWindow, from: nil)) { handler() }
     }
     override func accessibilityPerformPress() -> Bool { handler(); return true }
+    override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
+    func contextMenu() -> NSMenu? { menuProvider?() }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()

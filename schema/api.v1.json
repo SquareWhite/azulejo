@@ -345,6 +345,7 @@
           "type": "object"
         },
         {
+          "description": "Closes a workspace and its tabs. Its terminals detach (F14): herdr\nkeeps the workspace, tabs and panes running, and Azulejo doesn't adopt\nthem again. Closing a window's last workspace closes the window.",
           "properties": {
             "method": {
               "const": "workspace.close",
@@ -477,6 +478,7 @@
           "type": "object"
         },
         {
+          "description": "Closes a tab and its tiles; terminals detach, as with `tile.close`.",
           "properties": {
             "method": {
               "const": "tab.close",

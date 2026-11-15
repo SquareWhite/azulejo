@@ -233,6 +233,128 @@ fn closed_tiles_stay_closed_until_herdr_drops_the_pane() {
     assert_eq!(engine.session().windows[0].workspaces[0].tabs.len(), 1);
 }
 
+/// ⌘W closes a workspace (F14): every pane detaches, nothing is killed, and
+/// neither the next survey nor a relaunch brings the workspace back.
+#[test]
+fn a_closed_workspace_detaches_and_stays_closed() {
+    use azulejo_protocol::WorkspaceTarget;
+    let mut engine = Engine::new();
+    survey(&mut engine, &fixture());
+    let api = engine.session().windows[0].workspaces[0].clone();
+    assert_eq!(api.herdr_workspace.as_deref(), Some("w1"));
+
+    let outcome = engine
+        .execute(Command::WorkspaceClose(WorkspaceTarget {
+            workspace: Some(api.id),
+        }))
+        .unwrap();
+    let closed: Vec<_> = outcome
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            Event::TileClosed { kill, .. } => Some(*kill),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(closed, [false; 4], "four tiles close, none killed");
+    assert!(
+        crate::link::effects(&outcome.events, engine.session()).is_empty(),
+        "nothing reaches herdr"
+    );
+    let mut detached: Vec<&str> = engine
+        .session()
+        .detached_herdr
+        .iter()
+        .map(|r| r.pane_id.as_str())
+        .collect();
+    detached.sort_unstable();
+    assert_eq!(detached, ["w1:p1", "w1:p2", "w1:p3", "w1:p4"]);
+
+    // herdr still runs all of it; the next survey adopts nothing.
+    assert!(survey(&mut engine, &fixture()).is_empty());
+    let names = |s: &Session| -> Vec<String> {
+        s.windows[0]
+            .workspaces
+            .iter()
+            .map(|w| w.name.clone())
+            .collect()
+    };
+    assert_eq!(names(engine.session()), ["herdr 2"]);
+
+    // Relaunch from the saved session: still closed.
+    let saved: Session =
+        serde_json::from_value(serde_json::to_value(engine.session()).unwrap()).unwrap();
+    let mut relaunched = Engine::with_session(saved);
+    assert!(survey(&mut relaunched, &fixture()).is_empty());
+    assert_eq!(names(relaunched.session()), ["herdr 2"]);
+    assert_eq!(relaunched.session().check_invariants(), Ok(()));
+}
+
+/// A workspace closed while herdr was still making a pane for one of its
+/// tiles: the pane arrives for a tile that's gone, and counts as detached.
+#[test]
+fn a_pane_made_for_a_closed_workspace_isnt_adopted() {
+    use azulejo_model::HerdrRef;
+    use azulejo_protocol::{TabCreate, WorkspaceCreate, WorkspaceTarget};
+    let mut engine = Engine::new();
+    survey(&mut engine, &fixture());
+    let created = engine
+        .execute(Command::WorkspaceCreate(WorkspaceCreate::default()))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(c) = created.reply else {
+        panic!("{:?}", created.reply)
+    };
+    let workspace = c.workspace.unwrap();
+    let tab = engine
+        .execute(Command::TabCreate(TabCreate {
+            workspace: Some(workspace),
+            ..TabCreate::default()
+        }))
+        .unwrap();
+    let azulejo_protocol::Reply::Created(t) = tab.reply else {
+        panic!("{:?}", tab.reply)
+    };
+    let tile = t.tile.unwrap();
+    engine
+        .execute(Command::WorkspaceClose(WorkspaceTarget {
+            workspace: Some(workspace),
+        }))
+        .unwrap();
+
+    // herdr made the pane (in a new herdr workspace w3) after all.
+    let late = HerdrRef {
+        pane_id: "w3:p1".into(),
+        terminal_id: "term_w3_p1".into(),
+        tab_id: "w3:t1".into(),
+        machine: None,
+    };
+    assert!(
+        engine
+            .apply_internal(Internal::BindTerminal {
+                tile,
+                herdr: late.clone(),
+            })
+            .is_empty()
+    );
+    assert!(engine.session().detached_herdr.contains(&late));
+    let mut more = fixture();
+    more.workspaces.push(
+        serde_json::from_value(json!({ "workspace_id": "w3", "number": 3, "label": "late" }))
+            .unwrap(),
+    );
+    more.tabs.push(
+        serde_json::from_value(json!({ "tab_id": "w3:t1", "workspace_id": "w3", "number": 1 }))
+            .unwrap(),
+    );
+    more.panes.push(
+        serde_json::from_value(json!({
+            "pane_id": "w3:p1", "terminal_id": "term_w3_p1", "workspace_id": "w3", "tab_id": "w3:t1"
+        }))
+        .unwrap(),
+    );
+    assert!(survey(&mut engine, &more).is_empty(), "not adopted");
+}
+
 fn extra_pane(id: &str, tab: &str) -> herdr::PaneInfo {
     serde_json::from_value(json!({
         "pane_id": id,

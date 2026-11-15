@@ -1,0 +1,9 @@
+# Second half of the menus walkthrough (menus.sh): after a relaunch, the
+# workspaces closed with Close Workspace and cmd+w stay closed even though
+# herdr still runs their panes (the survey on connect adopts nothing).
+log relaunch
+wait 2500
+expect workspaces 1
+expect workspace.names workspace 2
+sh {herdr} --session {session} workspace list >{out}/workspaces-relaunch.json
+sh {herdr} --session {session} pane list >{out}/panes-relaunch.json

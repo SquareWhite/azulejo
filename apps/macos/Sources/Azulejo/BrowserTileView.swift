@@ -399,8 +399,11 @@ final class BrowserTileView: NSView, TileView {
         NSMenu.popUpContextMenu(moreMenu(), with: event, for: toolbar)
     }
 
+    /// The page's items, then the tile's (Split, Zoom, Rename, Copy, Close):
+    /// one menu, not a second one on top of the chrome's.
     private func moreMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         menu.addItem(withTitle: "Web Inspector", action: #selector(showInspector), keyEquivalent: "i")
             .keyEquivalentModifierMask = [.command, .option]
         menu.addItem(withTitle: "Copy URL", action: #selector(copyURL), keyEquivalent: "")
@@ -408,6 +411,11 @@ final class BrowserTileView: NSView, TileView {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Reload from Origin", action: #selector(reloadFromOrigin), keyEquivalent: "")
         menu.items.forEach { $0.target = self }
+        if let controller = app?.controller(for: window) {
+            let tile = ContextMenus.tileItems(tileID, in: controller)
+            if !tile.isEmpty { menu.addItem(.separator()) }
+            tile.forEach(menu.addItem)
+        }
         return menu
     }
 
@@ -425,12 +433,12 @@ final class BrowserTileView: NSView, TileView {
 
     @objc private func copyURL() {
         guard let url = webView.url?.absoluteString ?? coreURL else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url, forType: .string)
+        ContextMenus.copy(url)
     }
 
     @objc private func openExternally() {
-        if let url = webView.url { NSWorkspace.shared.open(url) }
+        guard let url = webView.url, !ContextMenus.automating else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func reloadFromOrigin() { webView.reloadFromOrigin() }
@@ -913,6 +921,10 @@ extension BrowserTileView: AutomatableTile {
 }
 
 extension BrowserTileView: TileOwnsChrome {}
+
+extension BrowserTileView: ContextMenuProviding {
+    func contextMenu() -> NSMenu? { moreMenu() }
+}
 
 /// The browser's top strip; right-click shows the tile's menu.
 @MainActor

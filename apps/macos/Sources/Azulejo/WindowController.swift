@@ -81,6 +81,7 @@ final class WindowController: NSObject, NSWindowDelegate {
 
         sidebar.onSelect = { [weak app] id in app?.send(["method": "workspace.focus", "params": ["workspace": id]]) }
         sidebar.onAdd = { [weak app, windowID] machine in app?.newWorkspace(on: machine, window: windowID) }
+        sidebar.onMenu = { [weak self] id in self.flatMap { ContextMenus.workspaceMenu(id, in: $0) } }
         sidebar.onReturnFocus = { [weak self] in
             guard let self else { return }
             window.makeFirstResponder(nil)

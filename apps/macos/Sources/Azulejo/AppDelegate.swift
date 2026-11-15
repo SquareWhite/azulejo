@@ -37,6 +37,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         log("core: \(core.info())")
         installSignalHandlers()
         NSApp.mainMenu = MainMenu.build(app: self, keymap: core.keymap())
+        ContextMenus.app = self
         keys.install()
         BrowserTileView.register(app: self)
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
@@ -343,8 +344,30 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: Actions
 
     /// Runs a resolved keymap action (`azj_core_key` / `azj_core_action` JSON).
-    func perform(_ outcome: [String: Any], in controller: WindowController) {
-        if let command = outcome["command"] as? [String: Any] {
+    /// `target` is the workspace or tile a right-click menu was opened on;
+    /// without one, actions act on what's focused, as from the keyboard.
+    /// `extra` adds params to the command (a files tile's content for "Open
+    /// Folder in Files Tile").
+    func perform(_ outcome: [String: Any], in controller: WindowController, target: ActionTarget? = nil,
+                 extra: [String: Any] = [:]) {
+        if var command = outcome["command"] as? [String: Any] {
+            if target != nil || !extra.isEmpty {
+                var params = command["params"] as? [String: Any] ?? [:]
+                switch target {
+                case .workspace(let id)?: params["workspace"] = id
+                case .tile(let id)?: params["tile"] = id
+                case nil: break
+                }
+                params.merge(extra) { $1 }
+                command["params"] = params
+            }
+            if command["method"] as? String == "workspace.close" {
+                let id = (command["params"] as? [String: Any])?["workspace"] as? String
+                return closeWorkspace(id ?? session?.window(controller.windowID)?.activeWorkspace, in: controller)
+            }
+            if (command["params"] as? [String: Any])?["kill"] as? Bool == true {
+                return confirmKill(command, in: controller)
+            }
             switch send(command) {
             case .failure(let error):
                 controller.flash(error.message)
@@ -384,12 +407,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         switch name {
         case "switch_workspace":
             focusWorkspace(index.flatMap { workspaces.indices.contains($0 - 1) ? workspaces[$0 - 1].id : nil })
+        case "switch_workspace_last":
+            // The last one in the sidebar, as ⌘9 in a browser.
+            focusWorkspace(workspaces.last?.id)
         case "last_workspace":
+            // The one that was active before this one.
             focusWorkspace(previousWorkspace[window.id].flatMap { id in workspaces.first { $0.id == id }?.id })
         case "next_workspace": focusWorkspace(step(workspaces, from: wsIndex, by: 1)?.id)
         case "previous_workspace": focusWorkspace(step(workspaces, from: wsIndex, by: -1)?.id)
         case "switch_tab":
             focusTab(index.flatMap { tabs.indices.contains($0 - 1) ? tabs[$0 - 1].id : nil })
+        case "switch_tab_last":
+            focusTab(tabs.last?.id)
         case "last_tab":
             focusTab(ws.flatMap { w in previousTab[w.id] }.flatMap { id in tabs.first { $0.id == id }?.id })
         case "next_tab": focusTab(step(tabs, from: tabIndex, by: 1)?.id)
@@ -410,7 +439,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "resize_mode":
             keys.enterResizeMode(in: controller)
         case "rename_tile", "rename_tab", "rename_workspace":
-            rename(name, in: controller)
+            rename(name, in: controller, target: target)
         case "open_config":
             openConfig(in: controller)
         case "quick_open": openQuickOpen(in: controller)
@@ -433,30 +462,89 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Runs an action by config name (menus).
-    func perform(action name: String, index: Int? = nil) {
-        guard let controller = focusedController else { return }
+    /// Runs an action by config name (menus). `target`: see `perform(_:in:target:)`.
+    func perform(action name: String, index: Int? = nil, target: ActionTarget? = nil,
+                 extra: [String: Any] = [:], in controller: WindowController? = nil) {
+        guard let controller = controller ?? focusedController else { return }
         var request: [String: Any] = ["action": name]
         if let index { request["index"] = index }
         let outcome = core.action(request)
         guard outcome["outcome"] as? String == "action" else {
             return controller.flash("unknown action \(name)")
         }
-        perform(outcome, in: controller)
+        perform(outcome, in: controller, target: target, extra: extra)
     }
 
-    private func rename(_ action: String, in controller: WindowController) {
-        guard !env.background else { return controller.flash("rename needs the app in front") }
-        guard let window = session?.window(controller.windowID), let ws = window.workspace else { return }
+    /// `close_workspace` (⌘W): closes the workspace and detaches its
+    /// terminals, with no confirmation since nothing is killed (F14). The
+    /// app's last workspace gets a fresh one in its place first, so the
+    /// window stays; another window's last workspace closes that window.
+    private func closeWorkspace(_ id: String?, in controller: WindowController) {
+        guard let id, let session,
+              let window = session.windows.first(where: { $0.workspaces.contains { $0.id == id } })
+        else { return controller.flash("no such workspace") }
+        if session.windows.count == 1, window.workspaces.count == 1,
+           case .success(let reply) = send(["method": "workspace.create", "params": ["window": window.id]]),
+           let fresh = reply["workspace"] as? String {
+            send(["method": "tab.create", "params": ["workspace": fresh]])
+        }
+        if case .failure(let error) = send(["method": "workspace.close", "params": ["workspace": id]]) {
+            controller.flash(error.message)
+        }
+    }
+
+    /// `kill_tile`: ends the pane's process in herdr, so it asks first.
+    private func confirmKill(_ command: [String: Any], in controller: WindowController) {
+        let params = command["params"] as? [String: Any]
+        let tileID = params?["tile"] as? String ?? session?.window(controller.windowID)?.workspace?.tab?.focused
+        let tile = session?.windows.lazy.flatMap(\.workspaces).flatMap(\.tabs)
+            .compactMap { $0.tile(tileID ?? "") }.first
+        let name = tile.map(Self.tileTitle) ?? "this tile"
+        let run = { [weak self, weak controller] in
+            guard let self, case .failure(let error) = self.send(command) else { return }
+            controller?.flash(error.message)
+        }
+        // Only terminals have a process to kill; anything else just closes.
+        guard tile?.kind == .terminal, tile?.ended != true else { return run() }
+        Prompts.confirm(
+            "Kill “\(name)”?",
+            info: "Its process ends and herdr closes the pane. Close Tile keeps it running instead.",
+            button: "Kill", in: controller, background: env.background
+        ) { if $0 { run() } }
+    }
+
+    private func rename(_ action: String, in controller: WindowController, target: ActionTarget?) {
+        guard let window = session?.window(controller.windowID) else { return }
+        // A right-click menu's workspace or tile, else what's focused.
+        let all = session?.windows.flatMap(\.workspaces) ?? []
+        let ws: WorkspaceModel?
+        var tileID: String?
+        switch target {
+        case .workspace(let id)?:
+            ws = all.first { $0.id == id }
+        case .tile(let id)?:
+            ws = all.first { $0.tabs.contains { $0.tile(id) != nil } }
+            tileID = id
+        case nil:
+            ws = window.workspace
+        }
+        guard let ws else { return }
+        let tab = tileID.flatMap { id in ws.tabs.first { $0.tile(id) != nil } } ?? ws.tab
+        let tile = tileID ?? tab?.focused ?? ""
         let (title, current, build): (String, String?, (String) -> [String: Any]) = switch action {
         case "rename_workspace":
             ("Rename workspace", ws.name, { ["method": "workspace.rename", "params": ["workspace": ws.id, "name": $0]] })
         case "rename_tab":
-            ("Rename tab", ws.tab?.name, { ["method": "tab.rename", "params": ["tab": ws.tab?.id ?? "", "name": $0]] })
+            ("Rename tab", tab?.name, { ["method": "tab.rename", "params": ["tab": tab?.id ?? "", "name": $0]] })
         default:
-            ("Rename tile", ws.tab.flatMap { $0.tile($0.focused)?.title },
-             { ["method": "tile.rename", "params": ["tile": ws.tab?.focused ?? "", "title": $0]] })
+            ("Rename tile", tab?.tile(tile)?.title,
+             { ["method": "tile.rename", "params": ["tile": tile, "title": $0]] })
         }
+        if let answer = Prompts.takeAnswer() {
+            if answer != Prompts.cancel { send(build(answer)) }
+            return
+        }
+        guard !env.background else { return controller.flash("rename needs the app in front") }
         let alert = NSAlert()
         alert.messageText = title
         alert.addButton(withTitle: "Rename")

@@ -205,7 +205,7 @@ key ctrl+1
 expect key.last action:switch_tab(1)
 expect tab 1
 key ctrl+9
-expect key.last action:last_tab
+expect key.last action:switch_tab_last
 expect tab 2
 key ctrl+tab
 expect key.last action:next_tab
@@ -213,7 +213,7 @@ expect tab 1
 key ctrl+shift+tab
 expect key.last action:previous_tab
 expect tab 2
-key cmd+w
+key cmd+shift+w
 expect key.last action:close_tab
 until tabs 1 3000
 # --- workspaces ---
@@ -225,13 +225,16 @@ key cmd+1
 expect key.last action:switch_workspace(1)
 expect workspace 1
 key cmd+9
-expect key.last action:last_workspace
+expect key.last action:switch_workspace_last
 expect workspace 2
 key alt+0
 expect key.last action:last_workspace
 expect workspace 1
 key cmd+2
 expect workspace 2
+key cmd+w
+expect key.last action:close_workspace
+until workspaces 1 3000
 # --- menus and misc ---
 key cmd+k
 expect key.last action:quick_open
