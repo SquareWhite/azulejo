@@ -681,7 +681,7 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
     func applyTheme() {
         layer?.backgroundColor = selected
             ? Design.Color.selected.cgColor
-            : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover).cgColor : nil
+            : hovering ? Theme.faded(Design.Color.selected, Design.Alpha.rowHover).cgColor : nil
     }
 
     /// Automation: what a click does.

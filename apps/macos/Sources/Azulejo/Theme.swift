@@ -140,6 +140,40 @@ enum Theme {
         return out
     }
 
+    /// `color` at `factor` of its own alpha, resolved now: a fainter version
+    /// of a token that may already be see-through (macOS's `selected` is the
+    /// accent at 0.35; `withAlphaComponent` would replace that, not scale it).
+    nonisolated static func faded(_ color: NSColor, _ factor: CGFloat) -> NSColor {
+        let c = resolved(color)
+        return c.withAlphaComponent(c.alphaComponent * factor)
+    }
+
+    /// `color` drawn over `base`, opaque, resolved now (a see-through system
+    /// fill made solid before an alpha of its own is put on it).
+    nonisolated static func solid(_ color: NSColor, over base: NSColor) -> NSColor {
+        let top = resolved(color), under = resolved(base)
+        let a = top.alphaComponent
+        func mix(_ t: CGFloat, _ u: CGFloat) -> CGFloat { t * a + u * (1 - a) }
+        return NSColor(srgbRed: mix(top.redComponent, under.redComponent),
+                       green: mix(top.greenComponent, under.greenComponent),
+                       blue: mix(top.blueComponent, under.blueComponent), alpha: 1)
+    }
+
+    /// `text` when it reads on `fill` (WCAG 4.5:1), else black or white,
+    /// whichever reads better: labels on the accent, which a macOS theme
+    /// takes from the user's setting (scripts/theme-contrast's `readable`).
+    nonisolated static func readable(_ text: NSColor, on fill: NSColor) -> NSColor {
+        let back = resolved(fill)
+        func luminance(_ c: NSColor) -> CGFloat {
+            func ch(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return 0.2126 * ch(c.redComponent) + 0.7152 * ch(c.greenComponent) + 0.0722 * ch(c.blueComponent)
+        }
+        func contrast(_ a: CGFloat, _ b: CGFloat) -> CGFloat { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+        let lb = luminance(back)
+        if contrast(luminance(solid(text, over: back)), lb) >= 4.5 { return text }
+        return contrast(0, lb) >= contrast(1, lb) ? .black : .white
+    }
+
     /// `#rrggbb` or `rgba(…)` for CSS.
     nonisolated static func css(_ color: NSColor) -> String {
         let c = resolved(color)

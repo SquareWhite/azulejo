@@ -412,7 +412,8 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             Self.path(entry.badge, left: entry.badge.minX <= box.minX ? radius : 0,
                       right: entry.badge.maxX >= box.maxX ? radius : 0).fill()
             let font = NSFont.monospacedSystemFont(ofSize: entry.cell.height * 0.62, weight: .bold)
-            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: Design.Color.hintBadgeText]
+            let text = Theme.readable(Design.Color.hintBadgeText, on: Design.Color.hintBadge)
+            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: text]
             for (i, ch) in entry.label.uppercased().enumerated() {
                 let text = String(ch) as NSString
                 let size = text.size(withAttributes: attributes)
@@ -545,11 +546,14 @@ private enum HintBubble {
     }
 
     static func draw(_ label: String, in rect: CGRect, enabled: Bool = true) {
-        Design.Color.accent.withAlphaComponent(enabled ? 1 : 0.35).setFill()
+        // The item labels' colours (hintBadge, hintBadgeText), not white on
+        // the accent: that read at 2.4:1 in atom-one-dark.
+        Design.Color.hintBadge.withAlphaComponent(enabled ? 1 : 0.35).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
+        let text = Theme.readable(Design.Color.hintBadgeText, on: Design.Color.hintBadge)
         (label.uppercased() as NSString).draw(at: CGPoint(x: rect.minX + 5, y: rect.minY + 1),
             withAttributes: [.font: Design.Font.chord,
-                             .foregroundColor: Design.Color.textOnAccent.withAlphaComponent(enabled ? 1 : 0.5)])
+                             .foregroundColor: text.withAlphaComponent(enabled ? 1 : 0.5)])
     }
 }
 

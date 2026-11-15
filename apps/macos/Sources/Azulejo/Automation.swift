@@ -728,6 +728,8 @@ final class Automation {
                 "drag.last", "drag.landed", "drag.active", "drag.slot", "drag.rows", "drag.indicator",
             ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
             Source(["theme", "terminal.attaches"], prefixes: ["theme."]) { ThemeAutomation.state(controller) },
+            // After the `theme.` source, so asking for it computes only it.
+            Source(["theme.colors"]) { ThemeAutomation.colors() },
             Source(["workspace.names"], prefixes: ["menu."]) { MenuAutomation.state(app: app, controller: controller) },
             Source([
                 "hud.flashes", "hud.last", "prompt.asks", "prompt.last", "tab.statuses", "tab.overflow",

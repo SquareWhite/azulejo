@@ -671,7 +671,7 @@ final class PaletteListView: NSView {
                 let range = NSRange(start...start, in: item.title)
                 text.addAttributes([
                     .font: Design.Font.paletteMatch,
-                    .foregroundColor: item.enabled ? Design.Color.accent : titleColor,
+                    .foregroundColor: item.enabled ? Design.Color.accentText : titleColor,
                 ], range: range)
             }
         }

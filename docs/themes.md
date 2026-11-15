@@ -12,8 +12,8 @@ Azulejo's chrome, its terminals and its previews follow one theme. Four ship bui
 | macOS Light | `macos-light` | light | Apple's system colours, light | GitHub light |
 
 - **Atom One Dark** is the mockup's look (docs/design/mockup-v1.png) and what Azulejo looked like before themes; nothing in it changed.
-- **Atom One Light** uses the official Atom One Light palette (one-light-ui and one-light-syntax): `#fafafa` bodies, `#eaeaeb` cards and strips, `#383a42` text, `#526fff` accent.
-- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and browser strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
+- **Atom One Light** uses the official Atom One Light palette (one-light-ui and one-light-syntax): `#fafafa` bodies, `#eaeaeb` cards and strips, `#383a42` text. Its status, git, accent and terminal colours are the palette's hues made darker, so they read as well on its light surfaces as Atom One Dark's do on its dark ones ("Contrast" below).
+- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and browser strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and browser strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
 
 Screenshots: `design/theme-atom-one-dark.png` (local capture), `design/theme-atom-one-light.png` (local capture), `design/theme-macos-dark.png` (local capture), `design/theme-macos-light.png` (local capture).
 
@@ -139,70 +139,88 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 
 | Token | For | atom-one-dark | atom-one-light | macos-dark | macos-light |
 | --- | --- | --- | --- | --- | --- |
-| `window` | window background, gutters between tiles, toolbar row | `#1b1d23` | `#e1e1e3` | underPageBackgroundColor | `#ececec` |
+| `window` | window background, gutters between tiles, toolbar row | `#1b1d23` | `#e1e1e3` | `#2a2a2a` | `#ececec` |
 | `sidebar` | sidebar card, tab bar, tile header strip | `#21252b` | `#eaeaeb` | windowBackgroundColor | `#f5f5f5` |
 | `tile` | tile body: terminal backdrop, browser, preview, files | `#282c34` | `#fafafa` | textBackgroundColor | textBackgroundColor |
 | `tileAlt` | secondary tile bodies | `#252930` | `#f5f5f6` | textBackgroundColor | textBackgroundColor |
 | `sunken` | browser chrome, code blocks, inset strips | `#202329` | `#ededee` | underPageBackgroundColor | `#f5f5f5` |
 | `control` | segmented tracks, search field, tab container | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
-| `selected` | selected sidebar row, selected palette row | `#35393e` | `#dbdbdc` | controlAccentColor @ 0.35 | controlAccentColor @ 0.2 |
+| `selected` | selected sidebar row, selected palette row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | controlAccentColor @ 0.21 |
 | `selectedStrong` | strong selection grey: preview borders and table rules | `#3a3f4b` | `#d0d0d2` | unemphasizedSelectedContentBackgroundColor | unemphasizedSelectedContentBackgroundColor |
 | `border` | hairlines around cards, fields and toasts | `#ffffff14` | `#0000001a` | separatorColor | separatorColor |
 | `textPrimary` | names, titles, tile header titles | `#d7dae0` | `#383a42` | labelColor | labelColor |
 | `textSecondary` | tab labels, details, tile header icons | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
-| `textMuted` | group labels, branches, subtitles, hidden files | `#7f848e` | `#74767f` | labelColor @ 0.45 | labelColor @ 0.45 |
+| `textMuted` | group labels, branches, subtitles, hidden files | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.5 |
 | `textOnAccent` | text on HUDs, badges and coloured fills | `#ffffff` | `#ffffff` | alternateSelectedControlTextColor | alternateSelectedControlTextColor |
-| `accent` | progress bars, matched characters, links | `#61afef` | `#526fff` | controlAccentColor | controlAccentColor |
+| `accent` | progress bars, highlights, drop targets, drag slots | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
+| `accentText` | the accent as text: links, matched characters in ⌘K | `#61afef` | `#3a52dc` | linkColor | `#0058c4` |
+| `hintBadge` | visible-item hint labels and action keys, joined to the item's highlight | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
+| `hintBadgeText` | letters on hint labels (black or white instead when they'd read under 4.5:1, as on some accent colours) | `#282c34` | `#ffffff` | `#1e1e1e` | alternateSelectedControlTextColor |
 | `dimFill` | what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it | `#1b1d23` | `#e1e1e3` | `#000000` | `#ececec` |
-| `statusWorking` | working agents (azulejo.ring) | `#61afef` | `#4078f2` | systemBlue | systemBlue |
-| `statusBlocked` | agents waiting for input | `#e5c07b` | `#c18401` | systemYellow | systemOrange |
-| `statusDone` | agents that finished | `#98c379` | `#50a14f` | systemGreen | systemGreen |
-| `statusIdle` | idle agents | `#7f848e` | `#74767f` | labelColor @ 0.45 | labelColor @ 0.45 |
-| `statusOff` | machines that are off | `#5c6370` | `#a0a1a7` | tertiaryLabelColor | tertiaryLabelColor |
-| `statusConnected` | connected machines | `#98c379` | `#50a14f` | systemGreen | systemGreen |
-| `statusConnecting` | machines connecting | `#e5c07b` | `#c18401` | systemYellow | systemOrange |
-| `statusReconnecting` | machines reconnecting | `#d19a66` | `#986801` | systemOrange | systemOrange |
-| `statusError` | machines or agents in error | `#e06c75` | `#e45649` | systemRed | systemRed |
-| `error` | config errors, failed loads | `#e06c75` | `#e45649` | systemRed | systemRed |
-| `warning` | config warnings | `#e5c07b` | `#c18401` | systemYellow | systemOrange |
-| `gitModified` | git: modified | `#d19a66` | `#986801` | systemOrange | systemOrange |
-| `gitAdded` | git: added | `#98c379` | `#50a14f` | systemGreen | systemGreen |
-| `gitDeleted` | git: deleted | `#e06c75` | `#e45649` | systemRed | systemRed |
-| `gitRenamed` | git: renamed | `#61afef` | `#4078f2` | systemBlue | systemBlue |
+| `statusWorking` | working agents (azulejo.ring) | `#61afef` | `#2558cc` | linkColor | `#0058c4` |
+| `statusBlocked` | agents waiting for input | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
+| `statusDone` | agents that finished | `#98c379` | `#186219` | systemGreen | `#007419` |
+| `statusIdle` | idle agents | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.45 |
+| `statusOff` | machines that are off | `#5c6370` | `#a0a1a7` | tertiaryLabelColor | labelColor @ 0.32 |
+| `statusConnected` | connected machines | `#98c379` | `#186219` | systemGreen | `#007419` |
+| `statusConnecting` | machines connecting | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
+| `statusReconnecting` | machines reconnecting | `#d19a66` | `#9a4b00` | systemOrange | `#a64400` |
+| `statusError` | machines or agents in error | `#e06c75` | `#c93d33` | systemRed | `#d70015` |
+| `error` | config errors, failed loads | `#e06c75` | `#c93d33` | systemRed | `#d70015` |
+| `warning` | config warnings | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
+| `gitModified` | git: modified | `#d19a66` | `#9a4b00` | systemOrange | `#a64400` |
+| `gitAdded` | git: added | `#98c379` | `#186219` | systemGreen | `#007419` |
+| `gitDeleted` | git: deleted | `#e06c75` | `#c93d33` | systemRed | `#d70015` |
+| `gitRenamed` | git: renamed | `#61afef` | `#2558cc` | linkColor | `#0058c4` |
 | `gitConflicted` | git: conflicted | `#c678dd` | `#a626a4` | systemPurple | systemPurple |
 | `hud` | status HUD in the window corner | `#000000bf` | `#000000bf` | `#000000bf` | `#000000bf` |
-| `badge` | agent badge pill on tiles | `#0000008c` | `#0000008c` | `#0000008c` | `#0000008c` |
+| `badge` | agent badge pill on tiles | `#0000008c` | `#000000a6` | `#0000008c` | `#000000a6` |
 | `overlay` | terminal state overlays (reconnecting, ended) | `#1b1d23eb` | `#fafafaeb` | `#1e1e1eeb` | `#ffffffeb` |
-| `overlayText` | text on terminal state overlays | `#bfbfbf` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
+| `overlayText` | text on terminal state overlays | `#bfbfbf` | `#53565f` | labelColor @ 0.65 | labelColor @ 0.68 |
 | `overlayTitle` | titles on terminal state overlays (Session ended, reconnecting) | `#ffffff` | `#383a42` | labelColor | labelColor |
 | `takeover` | read-only / taken-over banner on terminals | `#8c610df2` | `#8c610df2` | `#8c610df2` | `#8c610df2` |
 | `shadow` | drop shadows (⌘K) | `#000000` | `#000000` | shadowColor | shadowColor |
 | `ghostFill` | tile outlines during the outline animation style | `#8080801a` | `#8080801a` | `#8080801a` | `#8080801a` |
-| `header` | tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329) | `#21252b` | `#eaeaeb` | windowBackgroundColor | `#f5f5f5` |
+| `header` | tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329) | `#21252b` | `#eaeaeb` | `#242424` | `#f5f5f5` |
 | `headerHairline` | line under a tile's header strip | `#181a1f` | `#dbdbdc` | separatorColor | separatorColor |
-| `browserChrome` | browser tile toolbar (back, forward, address, reload) | `#202329` | `#ededee` | windowBackgroundColor | `#f5f5f5` |
+| `browserChrome` | browser tile toolbar (back, forward, address, reload) | `#202329` | `#ededee` | `#242424` | `#f5f5f5` |
 | `browserField` | browser address pill | `#252930` | `#fafafa` | secondarySystemFill | textBackgroundColor |
-| `previewToggleTrack` | Preview | Source track | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
-| `previewToggleSelected` | Preview | Source selected segment | `#3a3f4b` | `#ffffff` | controlColor | controlColor |
+| `previewToggleTrack` | Preview \| Source track | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
+| `previewToggleSelected` | Preview \| Source selected segment | `#3a3f4b` | `#ffffff` | controlColor | controlColor |
 | `kindTerminal` | placeholder tile bodies before a tile kind's view exists | `#29303d` | `#29303d` | `#29303d` | `#29303d` |
 | `kindBrowser` | placeholder body, browser | `#21527a` | `#21527a` | `#21527a` | `#21527a` |
 | `kindPreview` | placeholder body, preview | `#5c4078` | `#5c4078` | `#5c4078` | `#5c4078` |
 | `kindFiles` | placeholder body, files | `#336145` | `#336145` | `#336145` | `#336145` |
-| `tabStrip` | the tab strip's pill container in the toolbar | `#24262c` | `#e8e8e9` | tertiarySystemFill | tertiarySystemFill |
-| `tabStripBorder` | hairline around the tab strip | `#2f3036` | `#d4d4d6` | separatorColor | separatorColor |
-| `tabSelected` | the selected tab's fill | `#3a3f4b` | `#ffffff` | tertiaryLabelColor | controlColor |
+| `tabStrip` | the tab strip's pill container in the toolbar | `#24262c` | `#dfdfe1` | tertiarySystemFill | tertiarySystemFill |
+| `tabStripBorder` | hairline around the tab strip | `#2f3036` | `#cbcbce` | separatorColor | separatorColor |
+| `tabSelected` | the selected tab's fill | `#3a3f4b` | `#ffffff` | unemphasizedSelectedContentBackgroundColor | controlColor |
 | `tabText` | unselected tab names | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
 | `tabTextSelected` | the selected tab's name | `#d7dae0` | `#383a42` | labelColor | labelColor |
 | `tabAdd` | the tab strip's + | `#6c717a` | `#74767f` | secondaryLabelColor | secondaryLabelColor |
 | `searchField` | toolbar search field | `#27292e` | `#fafafa` | secondarySystemFill | textBackgroundColor |
-| `searchBorder` | toolbar search field hairline | `#33353a` | `#d4d4d6` | separatorColor | separatorColor |
-| `searchBorderActive` | search field hairline while quick open is open | `#61afef80` | `#526fff80` | controlAccentColor @ 0.5 | controlAccentColor @ 0.5 |
-| `searchText` | search placeholder and magnifier | `#7f848e` | `#74767f` | labelColor @ 0.45 | labelColor @ 0.45 |
+| `searchBorder` | toolbar search field hairline | `#33353a` | `#c9c9cc` | separatorColor | labelColor @ 0.13 |
+| `searchBorderActive` | search field hairline while quick open is open | `#61afef80` | `#4760efb3` | controlAccentColor @ 0.7 | controlAccentColor @ 0.7 |
+| `searchText` | search placeholder and magnifier | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.45 |
 | `searchBadge` | the search field's key badge (⌘K) | `#34363a` | `#eaeaeb` | secondarySystemFill | secondarySystemFill |
-| `searchBadgeText` | the search field's key badge text | `#abb2bf` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
-| `titlebarIcon` | sidebar toggle next to the traffic lights | `#7f848e` | `#74767f` | secondaryLabelColor | secondaryLabelColor |
+| `searchBadgeText` | the search field's key badge text | `#abb2bf` | `#5c5f69` | labelColor @ 0.62 | labelColor @ 0.62 |
+| `titlebarIcon` | sidebar toggle next to the traffic lights | `#7f848e` | `#6b6d76` | secondaryLabelColor | secondaryLabelColor |
 | `noticeFill` | preview notices (a truncated file): fill | `#2e2a1a` | `#fff8c5` | systemYellow @ 0.14 | systemYellow @ 0.14 |
-| `noticeBorder` | preview notices: border | `#9e6a03` | `#d4a72c` | systemYellow @ 0.6 | systemOrange @ 0.7 |
+| `noticeBorder` | preview notices: border | `#9e6a03` | `#c29607` | systemYellow @ 0.6 | `#c46a00` |
+
+## Contrast
+
+Atom One Dark is the reference: its contrast levels, and the way its colours relate (text over muted text, a status icon on its strip, the hint label on the terminal, a focused tile over a dimmed one), are what the other themes keep. `shared/design/contrast.json` lists every pairing the shell draws, by surface: a foreground over a stack of backgrounds, composited as drawn (translucent fills, the dimmed-tile fill, the selection), with a kind.
+
+| Kind | For | WCAG minimum |
+| --- | --- | --- |
+| text | body text: names, titles, terminal text, labels | 4.5:1 |
+| secondary | secondary and muted text, coloured text (ANSI colours, status and file-status colours as text) | 3:1 |
+| ui | icons, status marks, cursors, focus and hint outlines | 3:1 |
+| faint | fills and hairlines: selected rows, borders, the selection, the dim | none |
+
+Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the same pair (counted as ratio − 1, so 1:1 is none), up to 7:1 for text, 4.5:1 for secondary text and 3.5:1 for UI parts: a light theme's blocked icon on its header has to stand out about as much as Atom One Dark's does. Dimmed-tile pairs, offline rows and other deliberately faded parts only need their minimum. And relationships must not flip: primary text out-contrasts muted text on the same backdrop, a selected tab's name its neighbours', a focused tile's text a dimmed one's, a selected row a hovered one.
+
+`scripts/theme-contrast` checks it: over tokens.json's values in `just lint` (system colours at their defaults, the accent blue), and over the colours the running app resolves (your accent and macOS's live system colours, with ⌘K's vibrant backdrop and a vibrant sidebar sampled from the window) in `apps/macos/automation/e2e/contrast.sh`. `--table` prints every pair with its ratio and Atom One Dark's. Known exceptions sit in `accept` with the reason; the check lists them without failing. User themes aren't checked.
 
 ## Where it lives
 
@@ -214,6 +232,8 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 
 - `cargo test -p azulejo-config --test themes`: the built-ins (all four define every token; atom-one-dark keeps the mockup's values), user theme parsing, inheritance and validation, `[appearance]`, the terminal colour precedence, and WCAG AA contrast for every built-in (body text 4.5:1 and muted or secondary text 3:1 against each background they're drawn on, terminal text 4.5:1; `-- --nocapture` prints the table).
 - `python3 scripts/test_design_tokens.py` (in `just lint`): the generator's validation.
+- `scripts/theme-contrast` (in `just lint`): every built-in against `shared/design/contrast.json` ("Contrast").
+- `apps/macos/automation/e2e/contrast.sh`: the same check on the colours the app resolves, in the mockup's scene plus a workspace with an ANSI test card (all 16 colours, bold, dim, a selection, the hint overlay) and a repository with every file status, in every built-in; writes per-surface contact sheets (every theme side by side) to `.dev/e2e.out/contrast/sheets/`.
 - `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, the preview, ⌘K and the find bar in each capture. `--docs` writes the captures to `docs/design/theme-<id>.png`.
 - `AZJ_DEV_NAME=icn2 apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs`: `app_icon`'s three values and the default, live, with the app's own idea of the system appearance (`DockIcon.swift`).
 - `AZJ_ANIM_THEME=atom-one-light apps/macos/automation/anim.sh --slow`: layout motion in another theme (`outside.py` measures stray pixels against the window colour, so light themes count the same way).

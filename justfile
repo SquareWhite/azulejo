@@ -17,6 +17,7 @@ lint:
     scripts/design-tokens --check
     cargo run -q -p azulejo-config --bin azj-keys-doc -- --check docs/keybindings.md
     python3 scripts/test_design_tokens.py
+    scripts/theme-contrast
     scripts/check-theme-colours
     scripts/icon/build.sh --check
 

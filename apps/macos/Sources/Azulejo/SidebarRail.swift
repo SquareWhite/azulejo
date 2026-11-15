@@ -467,7 +467,7 @@ final class RailWorkspaceRow: NSView, ThemeAware, ContextMenuProviding, Workspac
     /// The selected fill, or the hover one.
     func applyTheme() {
         layer?.backgroundColor = (selected ? Design.Color.selected
-            : hovering ? Design.Color.selected.withAlphaComponent(Design.Alpha.rowHover) : nil)?.cgColor
+            : hovering ? Theme.faded(Design.Color.selected, Design.Alpha.rowHover) : nil)?.cgColor
     }
 
     /// Automation: what a click does.

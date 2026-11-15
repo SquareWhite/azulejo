@@ -158,6 +158,10 @@ extension MenuTarget: NSMenuItemValidation {
 /// `theme.terminal.updates` (config swaps so far), `theme.sidebar` (the
 /// card's material or `flat`), `theme.tracked` (views that follow it),
 /// `terminal.attaches` (terminal surfaces started: attaches and reattaches).
+/// `theme.colors` (worked out only when asked): every colour token as the
+/// app resolves it now, the terminal palette, the focus dim and the system
+/// colours shared/design/contrast.json names, as one line of JSON for
+/// scripts/theme-contrast (e2e/contrast.sh).
 @MainActor
 enum ThemeAutomation {
     static func run(_ arg: String, app: AppController?) -> String? {
@@ -205,6 +209,44 @@ enum ThemeAutomation {
         s["theme.sidebar"] = controller?.sidebarMaterial ?? "flat"
         if let controller { s["theme.regions"] = regions(controller) }
         return s
+    }
+
+    /// `theme.colors`: the resolved theme, for the contrast check.
+    static func colors() -> [String: String] {
+        let spec = Theme.current
+        let appearance = spec.appearance.nsAppearance
+        func hex(_ color: NSColor) -> String {
+            var c = color
+            appearance.performAsCurrentDrawingAppearance { c = color.usingColorSpace(.sRGB) ?? color }
+            let v = [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent]
+                .map { min(255, max(0, Int(($0 * 255).rounded()))) }
+            return String(format: "#%02x%02x%02x%02x", v[0], v[1], v[2], v[3])
+        }
+        func hex(_ v: UInt32?) -> Any { v.map { String(format: "#%08x", $0) } ?? NSNull() }
+        var colors: [String: String] = [:]
+        for name in spec.colors.keys { colors[name] = hex(Theme.resolve(name, in: appearance)) }
+        let term = Theme.terminal ?? spec.terminal
+        let terminal: [String: Any] = [
+            "background": hex(term.background), "foreground": hex(term.foreground),
+            "cursor": hex(term.cursor), "cursorText": hex(term.cursorText),
+            "selectionBackground": hex(term.selectionBackground),
+            "selectionForeground": hex(term.selectionForeground),
+            "palette": term.palette.map { hex($0) },
+        ]
+        let system: [String: String] = [
+            "selectedContentBackgroundColor": hex(.selectedContentBackgroundColor),
+            "unemphasizedSelectedContentBackgroundColor": hex(.unemphasizedSelectedContentBackgroundColor),
+            "labelColor": hex(.labelColor),
+        ]
+        let json: [String: Any] = [
+            "theme": spec.id, "appearance": spec.appearance.rawValue, "colors": colors,
+            "terminal": terminal, "terminals": Theme.terminal == nil ? "ghostty" : "theme", "system": system,
+            "dim": ["fill": hex(Motion.dimFill), "strength": Double(Motion.dimStrength)],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8)
+        else { return [:] }
+        return ["theme.colors": text]
     }
 
     /// Where the ⌘K menu and a visible find bar are, in points from the

@@ -774,7 +774,10 @@ final class BrowserBanner: NSView, ThemeAware {
 
     func applyTheme() {
         label.textColor = style == .error ? Design.Color.textOnAccent : Design.Color.textPrimary
-        layer?.backgroundColor = (style == .error ? Design.Color.error : Design.Color.control)
+        // control is a see-through fill in the macOS themes: made solid on
+        // the tile first, or the alpha below would turn it near white.
+        layer?.backgroundColor = (style == .error ? Design.Color.error
+            : Theme.solid(Design.Color.control, over: Design.Color.tile))
             .withAlphaComponent(Design.Alpha.browserBanner).cgColor
         layer?.borderWidth = style == .error ? 0 : Design.Border.hairline
         layer?.borderColor = Design.Color.border.cgColor

@@ -710,6 +710,10 @@ extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
         return cell
     }
 
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        FilesRowView()
+    }
+
     func outlineViewItemWillExpand(_ notification: Notification) {
         // While filtering, folders open to show matches; that isn't the
         // user's choice and loads nothing new.
@@ -908,6 +912,24 @@ private struct WeakFiles {
 }
 
 // MARK: - Views
+
+/// A row that draws the theme's selection (`selected`), as the sidebar and
+/// ⌘K do. The system's accent selection kept the names' own colours
+/// (textPrimary, the git colours) on the accent: 2:1 in the light themes.
+private final class FilesRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        Design.Color.selected.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 0), xRadius: Design.Radius.row,
+                     yRadius: Design.Radius.row).fill()
+    }
+
+    /// Never emphasized: the cells keep their colours on the theme's fill.
+    override var isEmphasized: Bool {
+        get { false }
+        set {}
+    }
+}
 
 /// The tree: vim-ish keys, a context menu and Quick Look.
 @MainActor

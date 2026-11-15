@@ -1,0 +1,69 @@
+# contrast.sh's part, run after mockup.azs has built the mockup's scene
+# (AZJ_MOCKUP_TAIL). @FX@ is mockup.sh's fixture folder, @CTR@ contrast.sh's
+# (the colours workspace's layout, its ANSI script and a git repo with every
+# status). contrast.sh repeats the block between the THEME markers once per
+# theme, with @THEME@ filled in.
+
+log === contrast: the colours workspace
+anim enabled false
+delivery direct
+action new_workspace
+core {"method":"layout.apply","params":{"path":"@CTR@/colours.toml","mode":"replace_tab"}}
+core {"method":"workspace.rename","params":{"name":"colours"}}
+core {"method":"workspace.set_repo","params":{"path":"@CTR@/repo"}}
+until tiles 3 8000
+wait 2500
+sidebar select 1
+action switch_tab 1
+wait 1200
+
+#THEME
+log === contrast: @THEME@
+theme set @THEME@
+until theme @THEME@ 8000
+wait 1500
+remember theme.colors
+sidebar select 1
+action switch_tab 1
+sidebar mode agents
+wait 1200
+capture @THEME@-scene 0
+wait 1500
+palette open
+palette type theme
+wait 500
+remember theme.regions
+capture @THEME@-palette 0
+wait 1500
+palette close
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture @THEME@-rail 0
+wait 1500
+action toggle_sidebar
+until sidebar visible 3000
+sidebar select 8
+until workspace.active colours 3000
+wait 1500
+capture @THEME@-colours 0
+wait 1500
+mouse drag 0,2 40,3
+wait 300
+capture @THEME@-selection 0
+wait 1500
+key cmd+s
+wait 600
+capture @THEME@-hints 0
+wait 1500
+key escape
+wait 300
+sidebar mode files
+wait 800
+sidebar focus
+wait 1500
+capture @THEME@-files 0
+wait 1500
+sidebar mode agents
+wait 500
+#END

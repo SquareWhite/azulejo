@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Contrast check for every theme (docs/themes.md, "Contrast").
+
+    scripts/theme-contrast                  # the built-ins, from tokens.json (just lint)
+    scripts/theme-contrast --table          # …and print every pair
+    scripts/theme-contrast --live FILE…     # colours the running app resolved
+                                            # (apps/macos/automation/e2e/contrast.sh)
+
+Reads the pairs from shared/design/contrast.json: each is a foreground over a
+stack of backgrounds, composited as the shell draws them, with a kind (text,
+secondary, ui, faint). A pair fails when its WCAG contrast ratio is under its
+kind's minimum, when it keeps less than `relative` of the reference theme's
+contrast for the same pair (as ratio - 1, capped per kind), or when an `order`
+relationship flips (muted text out-contrasting primary text, say).
+
+A live file is JSON from the app: {"theme": id, "appearance": "light"|"dark",
+"colors": {token: "#rrggbbaa"}, "terminal": {...}, "system": {name: hex},
+"samples": {name: hex}, "dim": {"fill": hex, "strength": 0.25}}. The reference
+for live files is the live atom-one-dark when one is given, else tokens.json's.
+
+Standard library only. Exit status 1 on any failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TOKENS = ROOT / "shared" / "design" / "tokens.json"
+SPEC = ROOT / "shared" / "design" / "contrast.json"
+
+Rgba = tuple[float, float, float, float]
+
+
+def parse(text: str) -> Rgba:
+    h = text.strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) not in (6, 8):
+        raise ValueError(f"bad colour {text!r}")
+    a = int(h[6:8], 16) / 255 if len(h) == 8 else 1.0
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), a)
+
+
+def hexs(c: Rgba) -> str:
+    return "#%02x%02x%02x" % tuple(round(v) for v in c[:3])
+
+
+def over(top: Rgba, under: Rgba) -> Rgba:
+    """`top` drawn on `under` (treated as opaque)."""
+    a = top[3]
+    return tuple(t * a + u * (1 - a) for t, u in zip(top[:3], under[:3])) + (1.0,)
+
+
+def luminance(c: Rgba) -> float:
+    def ch(v: float) -> float:
+        v = v / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * ch(c[0]) + 0.7152 * ch(c[1]) + 0.0722 * ch(c[2])
+
+
+def contrast(a: Rgba, b: Rgba) -> float:
+    la, lb = luminance(a), luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+class Palette:
+    """One theme's colours as the checks read them."""
+
+    def __init__(self, theme: str, appearance: str, colors: dict[str, str], terminal: dict,
+                 system: dict[str, str], dim_fill: str, dim_strength: float):
+        self.theme, self.appearance = theme, appearance
+        self.colors = {k: parse(v) for k, v in colors.items()}
+        self.terminal = terminal
+        self.system = {k: parse(v) for k, v in system.items()}
+        self.dim_fill, self.dim_strength = parse(dim_fill), dim_strength
+
+    def layer(self, spec: str) -> Rgba | None:
+        """A layer name (see contrast.json `_layers`), or None when unset."""
+        for choice in spec.split("|"):
+            name, factor, replace = choice, None, None
+            if "@" in name:
+                name, replace = name.split("@")
+            elif "*" in name:
+                name, factor = name.split("*")
+            colour = self.base(name)
+            if colour is None:
+                continue
+            if replace is not None:
+                colour = colour[:3] + (float(replace),)
+            if factor is not None:
+                colour = colour[:3] + (colour[3] * float(factor),)
+            return colour
+        return None
+
+    def base(self, name: str) -> Rgba | None:
+        if name.startswith("term."):
+            key = name[5:]
+            value = self.terminal["palette"][int(key)] if key.isdigit() else self.terminal.get(key)
+            return parse(value) if value else None
+        if name.startswith("sys.") or name.startswith("sample."):
+            key = name[4:] if name.startswith("sys.") else name
+            return self.system.get(key)
+        if name not in self.colors:
+            raise KeyError(f"{self.theme}: no colour {name!r}")
+        return self.colors[name]
+
+    def dim(self, c: Rgba) -> Rgba:
+        return over(self.dim_fill[:3] + (self.dim_strength,), c)
+
+    def pair(self, p: dict) -> tuple[Rgba, Rgba] | None:
+        """(fg, bg), opaque, as drawn; None when a layer is unset."""
+        under = self.colors["window"]
+        for name in reversed(p["bg"]):
+            c = self.layer(name)
+            if c is None:
+                return None
+            under = over(c, under)
+        fg = self.layer(p["fg"])
+        if fg is None:
+            return None
+        bg = under
+        fg = over(fg, bg)
+        if p.get("readable") and contrast(fg, bg) < 4.5:
+            # Theme.readable: black or white, whichever reads better.
+            black, white = (0.0, 0.0, 0.0, 1.0), (255.0, 255.0, 255.0, 1.0)
+            fg = black if contrast(black, bg) >= contrast(white, bg) else white
+        dim = p.get("dim")
+        if dim is True:
+            fg, bg = self.dim(fg), self.dim(bg)
+        elif dim == "bg":
+            bg = self.dim(bg)
+        return fg, bg
+
+
+def builtin_palettes(tokens: dict, spec: dict) -> dict[str, Palette]:
+    out = {}
+    unfocused = tokens["alpha"]["unfocusedDim"]
+    for theme, t in tokens["themes"].items():
+        if theme.startswith("_"):
+            continue
+        appearance = t["appearance"]
+        colors = {k: (v if isinstance(v, str) else v["hex"]) for k, v in t["color"].items()}
+        system = {k: v[appearance] for k, v in spec["system"].items() if not k.startswith("_")}
+        if t.get("sidebarMaterial"):
+            # A vibrant card shows what's behind the window, not the token:
+            # text on it sits on a typical sample (the e2e measures the real one).
+            colors["sidebar"] = system["sample.sidebar"]
+        out[theme] = Palette(theme, appearance, colors, t["terminal"], system, colors["dimFill"], unfocused)
+    return out
+
+
+def live_palette(path: Path, tokens: dict, spec: dict) -> Palette:
+    d = json.loads(path.read_text())
+    appearance = d["appearance"]
+    system = {k: v[appearance] for k, v in spec["system"].items() if not k.startswith("_")}
+    system.update(d.get("system", {}))
+    system.update(d.get("samples", {}))
+    colors = dict(d["colors"])
+    dim = d.get("dim", {})
+    return Palette(d["theme"], appearance, colors, d["terminal"], system,
+                   dim.get("fill", colors["dimFill"]), float(dim.get("strength", tokens["alpha"]["unfocusedDim"])))
+
+
+def kind_in(p: dict, appearance: str) -> str:
+    return p.get(appearance, p["kind"])
+
+
+def accepted(spec: dict, theme: str, pid: str) -> str | None:
+    for a in spec.get("accept", []):
+        if a["pair"] == pid and a["theme"] in ("*", theme):
+            return a["why"]
+    return None
+
+
+def evaluate(palettes: dict[str, Palette], reference: Palette, spec: dict, table: bool,
+             known: list[str] | None = None) -> list[str]:
+    kinds, cap, rel = spec["kinds"], spec["cap"], spec["relative"]
+    pairs = [p for p in spec["pairs"]]
+    known = known if known is not None else []
+    ref_ratio: dict[str, float] = {}
+    for p in pairs:
+        got = reference.pair(p)
+        if got:
+            ref_ratio[p["id"]] = contrast(*got)
+    failures: list[str] = []
+    rows: list[str] = []
+    for theme, pal in palettes.items():
+        ratios: dict[str, float] = {}
+        for p in pairs:
+            kind = kind_in(p, pal.appearance)
+            if kind == "skip":
+                continue
+            got = pal.pair(p)
+            if got is None:
+                continue
+            fg, bg = got
+            r = contrast(fg, bg)
+            ratios[p["id"]] = r
+            problems = []
+            if r < kinds[kind] - 1e-9:
+                problems.append(f"under {kinds[kind]:g}:1 for {kind}")
+            ref = ref_ratio.get(p["id"])
+            ref_kind = kind_in(p, reference.appearance)
+            if ref is not None and pal is not reference and ref_kind == kind and p.get("relative", True):
+                need = min(1 + rel * (ref - 1), cap[kind])
+                if r < need - 1e-9:
+                    problems.append(f"under {need:.2f}:1, {int(rel * 100)}% of {spec['reference']}'s {ref:.2f}:1")
+            why = accepted(spec, theme, p["id"]) if problems else None
+            mark = "KNOWN" if why else "FAIL" if problems else "ok"
+            line = (f"{mark:5} {theme:15} {p['id']:30} {r:5.2f}  ref {ref if ref else 0:5.2f}  "
+                    f"{kind:9} {hexs(fg)} on {hexs(bg)}  {p['surface']}: {p['what']}")
+            rows.append(line)
+            if problems:
+                text = (f"{theme}: {p['id']} ({p['surface']}: {p['what']}) {hexs(fg)} on {hexs(bg)} "
+                        f"is {r:.2f}:1, " + "; ".join(problems))
+                (known if why else failures).append(text + (f" [accepted: {why}]" if why else ""))
+        for o in spec["order"]:
+            a, b = ratios.get(o["stronger"]), ratios.get(o["weaker"])
+            if a is None or b is None:
+                continue
+            if a <= b + 1e-9:
+                failures.append(f"{theme}: {o['what']}: {o['stronger']} {a:.2f}:1 isn't above {o['weaker']} {b:.2f}:1")
+    if table:
+        print("\n".join(rows))
+    return failures
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--live", nargs="+", type=Path, help="colour files from the running app")
+    ap.add_argument("--table", action="store_true", help="print every pair")
+    ap.add_argument("--only", help="check only this theme")
+    ap.add_argument("--tokens", type=Path, default=TOKENS, help="another tokens.json (another branch's, say)")
+    args = ap.parse_args()
+    tokens = json.loads(args.tokens.read_text())
+    spec = json.loads(SPEC.read_text())
+    builtins = builtin_palettes(tokens, spec)
+    if args.live:
+        palettes = {}
+        for path in args.live:
+            pal = live_palette(path, tokens, spec)
+            palettes[pal.theme] = pal
+        reference = palettes.get(spec["reference"], builtins[spec["reference"]])
+    else:
+        palettes = builtins
+        reference = builtins[spec["reference"]]
+    if args.only:
+        palettes = {k: v for k, v in palettes.items() if k == args.only}
+    known: list[str] = []
+    failures = evaluate(palettes, reference, spec, args.table, known)
+    pairs = len(spec["pairs"])
+    source = "live" if args.live else "tokens.json"
+    if known:
+        print(f"theme-contrast ({source}): {len(known)} accepted exception(s) (contrast.json `accept`)")
+        for k in known:
+            print("  KNOWN " + k)
+    if failures:
+        print(f"theme-contrast ({source}): {len(failures)} failure(s) over {len(palettes)} theme(s), {pairs} pairs")
+        for f in failures:
+            print("  " + f)
+        return 1
+    print(f"theme-contrast ({source}): {len(palettes)} theme(s), {pairs} pairs, all pass")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
