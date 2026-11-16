@@ -3,7 +3,9 @@
 # double/triple-clicks select and ⌘C copies (to a private pasteboard); with a
 # mouse-aware program in the foreground (mouse-app.py), plain clicks reach it
 # and shift-drags select; ⌘-hover highlights links and ⌘-click opens them
-# (recorded, never opened) in both.
+# (recorded, never opened) in both. A stand-in for omp, on `[terminal]
+# select_on_drag`, gets clicks while plain drags select; another program
+# still gets its drags, and the setting follows a config reload.
 #
 #   AZJ_DEV_NAME=e2e-mouse apps/macos/automation/mouse.sh
 set -euo pipefail
@@ -32,8 +34,12 @@ printf '%s\n' 'alpha beta gamma' 'see https://example.invalid/docs/page?x=1 for 
 printf 'go \033]8;;https://example.invalid/osc8\033\\click here\033]8;;\033\\ now\n' >> "$fixtures/screen.txt"
 printf 'go \033]8;;ftp://example.invalid/file\033\\ftp link\033]8;;\033\\ now\n' >> "$fixtures/screen.txt"
 cp "$here/mouse-app.py" "$fixtures/"
+# omp's stand-in, under its name (on `[terminal] select_on_drag`) and another.
+mkdir -p "$fixtures/bin"
+cc -O -o "$fixtures/bin/omp" "$here/mouse-standin.c"
+cp "$fixtures/bin/omp" "$fixtures/bin/mouse-any"
 sed -e "s|@DIR@|$fixtures|g" "$here/mouse.azs.in" > "$fixtures/mouse.azs"
-(sleep 180; "$root/apps/macos/dev.sh" --stop) &
+(sleep 240;"$root/apps/macos/dev.sh" --stop) &
 watchdog=$!
 "$root/apps/macos/dev.sh" --automation "$fixtures/mouse.azs" --out "$out"
 result="$(cat "$out/result")"

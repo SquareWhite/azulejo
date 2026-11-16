@@ -724,6 +724,13 @@ final class TerminalSurfaceView: NSView {
     //   herdr and on to the program, as before, and shift-drag selects
     //   (Ghostty's convention under mouse capture). The wheel, right and
     //   middle buttons always go to herdr (its history scrolls).
+    // - A program on `[terminal] select_on_drag` (`selectsOnDrag`; omp by
+    //   default) takes the mouse but loses nothing to a local drag. Its plain
+    //   press waits: once the pointer moves a cell's width or height away,
+    //   the gesture turns local and the press reaches libghostty where it
+    //   happened, so the selection starts there. A release before that sends
+    //   the press and the release to the program together, as a click. The
+    //   program never sees the drag (its motion reports included).
     // - While ⌘ is held, pointer positions and modifier changes reach
     //   libghostty with shift added: its own rule for "shift overrides the
     //   capture", so ⌘-hover underlines a link (pointing-hand cursor) and a
@@ -732,22 +739,56 @@ final class TerminalSurfaceView: NSView {
 
     /// Whether a shell has the pane's foreground (the tile's model says).
     var shellInForeground: () -> Bool = { true }
+    /// Whether the program in the foreground is on `[terminal]
+    /// select_on_drag` (the tile's model says).
+    var selectsOnDrag: () -> Bool = { false }
     /// Whether this surface's mouse reporting is switched off (a local
     /// gesture is under way).
     private(set) var reportingOff = false
+    /// A plain press over a `select_on_drag` program, held back until the
+    /// gesture shows itself as a drag (local) or a click (the program's).
+    private var heldPress: NSEvent?
 
     override func mouseDown(with event: NSEvent) {
         onClickFocus?()
         window?.makeFirstResponder(self)
+        heldPress = nil
         if !event.modifierFlags.intersection([.shift, .command]).isEmpty || shellInForeground() {
             setReporting(off: true)
+        } else if selectsOnDrag() {
+            heldPress = event
+            return
         }
         mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT)
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let press = heldPress {
+            // A click: the program gets it whole.
+            heldPress = nil
+            mouseButton(press, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT)
+        }
         mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT)
         setReporting(off: false)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if let press = heldPress {
+            guard dragStarted(from: press, to: event) else { return }
+            heldPress = nil
+            setReporting(off: true)
+            mouseButton(press, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT)
+        }
+        mousePos(event)
+    }
+
+    /// The pointer has moved a cell's width or height (4 pt before the grid
+    /// is known) from where it was pressed: a drag, not a wobbly click.
+    private func dragStarted(from press: NSEvent, to event: NSEvent) -> Bool {
+        let a = convert(press.locationInWindow, from: nil)
+        let b = convert(event.locationInWindow, from: nil)
+        let cell = cellSize ?? CGSize(width: 4, height: 4)
+        return abs(b.x - a.x) >= cell.width || abs(b.y - a.y) >= cell.height
     }
 
     override func rightMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT) }
@@ -755,7 +796,6 @@ final class TerminalSurfaceView: NSView {
     override func otherMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE) }
     override func otherMouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_MIDDLE) }
     override func mouseMoved(with event: NSEvent) { mousePos(event) }
-    override func mouseDragged(with event: NSEvent) { mousePos(event) }
     override func rightMouseDragged(with event: NSEvent) { mousePos(event) }
 
     /// libghostty's `toggle_mouse_reporting`, tracked so it's only ever

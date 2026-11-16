@@ -456,6 +456,52 @@ fn a_terminal_closes_when_its_shell_exits_unless_kept() {
     );
 }
 
+#[test]
+fn select_on_drag_lists_programs_and_defaults_to_omp() {
+    assert_eq!(Config::defaults(MAC).terminal.select_on_drag, ["omp"]);
+    assert_eq!(user("", LINUX).terminal.select_on_drag, ["omp"]);
+
+    let config = user(
+        "[terminal]\nselect_on_drag = [\"omp\", \"htop\", \"omp\"]\n",
+        MAC,
+    );
+    assert_eq!(
+        config.terminal.select_on_drag,
+        ["omp", "htop"],
+        "repeats drop out"
+    );
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+
+    let config = user("[terminal]\nselect_on_drag = []\n", MAC);
+    assert!(
+        config.terminal.select_on_drag.is_empty(),
+        "an empty list turns it off"
+    );
+    assert!(config.diagnostics.is_empty());
+
+    for bad in [
+        "select_on_drag = \"omp\"",
+        "select_on_drag = [\"omp\", 3]",
+        "select_on_drag = [\"\"]",
+        "select_on_drag = [\"/usr/local/bin/omp\"]",
+        "select_on_drag = [\"omp --flag\"]",
+    ] {
+        let config = user(&format!("[terminal]\n{bad}\n"), MAC);
+        assert_eq!(
+            config.terminal.select_on_drag,
+            ["omp"],
+            "{bad}: a bad value keeps the default"
+        );
+        assert!(
+            errors(&config)
+                .iter()
+                .any(|e| e.contains("terminal.select_on_drag")),
+            "{bad}: {:?}",
+            config.diagnostics
+        );
+    }
+}
+
 // ----- context -----
 
 #[test]

@@ -168,6 +168,12 @@ final class Core {
         return take(azj_core_animation(handle)) ?? [:]
     }
 
+    /// `[terminal]` settings (`azj_core_terminal`); follows config reloads.
+    func terminal() -> [String: Any] {
+        if freed { return [:] }
+        return take(azj_core_terminal(handle)) ?? [:]
+    }
+
     /// `[hints]` settings (`azj_core_hints`); follows config reloads.
     func hints() -> [String: Any] {
         if freed { return [:] }

@@ -21,7 +21,9 @@ import AppKit
 /// `terminal.refused` (the last link refused), `terminal.mouse` (`local`
 /// while a selection gesture has libghostty's mouse reporting off, else
 /// `reported`), `terminal.mouse.owner` (`shell`: plain drags select;
-/// `program`: plain clicks go to the program in the pane).
+/// `program`: plain clicks go to the program in the pane; `select`: a
+/// program on `[terminal] select_on_drag`, plain drags select and clicks go
+/// to it).
 @MainActor
 enum MouseAutomation {
     private static var target = "-"
@@ -100,7 +102,9 @@ enum MouseAutomation {
         } ?? "-"
         s["terminal.cursor"] = surface?.cursorName ?? "-"
         s["terminal.mouse"] = surface.map { $0.reportingOff ? "local" : "reported" } ?? "-"
-        s["terminal.mouse.owner"] = surface.map { $0.shellInForeground() ? "shell" : "program" } ?? "-"
+        s["terminal.mouse.owner"] = surface.map {
+            $0.shellInForeground() ? "shell" : $0.selectsOnDrag() ? "select" : "program"
+        } ?? "-"
         s["terminal.link"] = surface?.hoveredLink ?? "-"
         s["terminal.opened"] = TerminalLinks.lastOpened ?? "-"
         s["terminal.refused"] = TerminalLinks.lastRefused ?? "-"

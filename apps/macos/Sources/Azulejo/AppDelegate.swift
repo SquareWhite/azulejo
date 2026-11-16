@@ -53,6 +53,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         Motion.load(core.animation())
         TerminalHints.apply(core.hints())
+        TileModel.applyTerminalSettings(core.terminal())
         Motion.log = { [weak self] in self?.log($0) }
         Perf.installRunLoopObservers()
         core.onEvent = { [weak self] json in
@@ -74,6 +75,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             if json.contains("\"config.reloaded\""), let core = self?.core {
                 Motion.load(core.animation())
                 TerminalHints.apply(core.hints())
+                TileModel.applyTerminalSettings(core.terminal())
                 // A saved theme, a theme file, or Ghostty's colours.
                 self?.loadTheme()
             }

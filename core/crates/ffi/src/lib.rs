@@ -576,6 +576,23 @@ pub unsafe extern "C" fn azj_core_animation(core: *const AzjCore) -> *mut c_char
     }))
 }
 
+/// The `[terminal]` settings the shell acts on, as JSON:
+/// `{"select_on_drag":["omp"]}`, the programs whose panes select text on a
+/// plain drag. Follows config reloads. Free with `azj_string_free`; NULL on
+/// a bad handle.
+///
+/// # Safety
+/// `core` must come from `azj_core_new*` and not be freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_core_terminal(core: *const AzjCore) -> *mut c_char {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
+        return std::ptr::null_mut();
+    };
+    out(json!({
+        "select_on_drag": app.config().terminal.select_on_drag,
+    }))
+}
+
 /// The themes and the `[appearance]` choice, as JSON (docs/themes.md):
 /// `{"theme":"atom-one-dark"|"auto","theme_light":…,"theme_dark":…,
 /// "terminal_colors":"theme"|"ghostty","terminal_colors_set":false,
@@ -1002,6 +1019,9 @@ mod tests {
             assert_eq!(animation["reduce_motion"], "system");
             assert_eq!(animation["unfocused_split_opacity"], Value::Null);
             assert_eq!(animation["unfocused_split_fill"], Value::Null);
+
+            let terminal = take(azj_core_terminal(core));
+            assert_eq!(terminal["select_on_drag"], json!(["omp"]));
 
             let theme = take(azj_core_theme(core));
             assert_eq!(theme["theme"], "atom-one-dark");
