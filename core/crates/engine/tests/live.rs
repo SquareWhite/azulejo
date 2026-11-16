@@ -275,7 +275,7 @@ fn terminals_get_panes_survive_restart_and_follow_herdr() {
     );
     assert_eq!(herdr.panes().len(), 2, "no extra panes on restore");
 
-    // 3. A pane closed elsewhere takes its tile with it (F15).
+    // 3. A pane closed elsewhere takes its tile with it.
     let events = core.subscribe();
     herdr.kill(&refs[0].pane_id);
     wait_for_event(&events, |e| {
@@ -339,7 +339,7 @@ fn closing_a_tile_without_kill_detaches() {
 }
 
 /// ⌥⌘W (`workspace.close`) closes the herdr workspace too, with its tabs
-/// and panes (ADR 0014); the other workspace is untouched. Renames go
+/// and panes; the other workspace is untouched. Renames go
 /// both ways. A relaunch neither brings the closed workspace back nor
 /// changes herdr.
 #[test]
@@ -798,7 +798,7 @@ fn agent_status_and_changes_made_in_herdr_reach_the_core_within_a_second() {
         .unwrap();
     assert!(a.attention);
 
-    // A pane split off in herdr becomes a tile beside its sibling (F15).
+    // A pane split off in herdr becomes a tile beside its sibling.
     let t0 = Instant::now();
     let out = h.cli(&["pane", "split", &pane, "--direction", "right", "--no-focus"]);
     let new_pane = serde_json::from_str::<serde_json::Value>(&out)
@@ -904,7 +904,7 @@ fn machine_state(e: &Event, id: &str, state: azulejo_protocol::MachineState) -> 
     matches!(e, Event::MachineStatus { machine } if machine.id == id && machine.state == state)
 }
 
-/// herdr's saved machines (ADR 0011), simulated: a second throwaway session
+/// herdr's saved machines, simulated: a second throwaway session
 /// reached only through the SSH path (an `ssh` stand-in that runs the remote
 /// command here) and herdr's `remote-api-bridge`.
 #[test]

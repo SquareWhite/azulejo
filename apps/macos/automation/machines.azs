@@ -1,4 +1,4 @@
-# herdr machines in the sidebar (PLAN 2.13, ADR 0011). Run by
+# herdr machines in the sidebar. Run by
 # automation/machines.sh, which sets up the "remote" machine `standin` (a
 # throwaway herdr session reached through an ssh stand-in) and a disabled
 # one, `parked`. Written for AZJ_DEV_NAME=mm; machines.sh renders it for

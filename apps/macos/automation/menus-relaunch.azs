@@ -1,6 +1,6 @@
 # Second half of the menus walkthrough (menus.sh): after a relaunch, the
 # workspaces closed with Close Workspace and alt+cmd+w stay closed (herdr
-# closed them too, ADR 0014), and only the fresh one is there.
+# closed them too), and only the fresh one is there.
 log relaunch
 wait 2500
 expect workspaces 1

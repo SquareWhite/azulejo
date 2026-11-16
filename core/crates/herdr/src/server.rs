@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::types::ServerInfo;
 
 /// Which herdr session to talk to. Azulejo uses herdr's default session by
-/// default, shared with the user's own herdr TUI (ADR 0008).
+/// default, shared with the user's own herdr TUI.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Session(Option<String>);
 

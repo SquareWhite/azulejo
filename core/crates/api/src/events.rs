@@ -1,4 +1,4 @@
-//! Event streams (F22): one hub per server fans the core's events out to
+//! Event streams: one hub per server fans the core's events out to
 //! every `events.subscribe` on every connection.
 //!
 //! The core never waits for a subscriber. Each subscription has a bounded

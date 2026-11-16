@@ -1,6 +1,6 @@
 import AppKit
 
-/// The toolbar's "Jump to workspace or tile" field (D.8). It isn't a text
+/// The toolbar's "Jump to workspace or tile" field. It isn't a text
 /// field: clicking it opens quick open (⌘K) as a dropdown over it, and the
 /// typing happens in quick open's own field. The key badge shows whatever
 /// chord `quick_open` is bound to, so config overrides show up.
@@ -99,7 +99,7 @@ final class ToolbarSearchView: NSView, ThemeAware {
     override func accessibilityPerformPress() -> Bool { onActivate?(); return true }
 }
 
-/// The sidebar toggle by the traffic lights (D.2): in the sidebar card's top
+/// The sidebar toggle by the traffic lights: in the sidebar card's top
 /// right while the sidebar shows, after the traffic lights while it's hidden.
 @MainActor
 final class SidebarToggleButton: NSButton {

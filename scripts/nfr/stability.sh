@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 1.13: stability and security NFRs on the dev instance `nfr`.
+# Stability and security checks on the dev instance `nfr`.
 #
 # Stability: with two terminals running (one a ticker), kill the WebContent
 # process behind a browser tile and the QuickLook process behind a preview

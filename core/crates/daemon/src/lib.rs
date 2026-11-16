@@ -3,13 +3,13 @@
 //! `azulejod` runs it headless for development and end-to-end tests.
 //!
 //! By default Azulejo connects to herdr's default session, the one the user's
-//! own herdr TUI and phone use (ADR 0008), and adopts what already runs
+//! own herdr TUI and phone use, and adopts what already runs
 //! there. If that server isn't running, Azulejo starts it with a clean
-//! environment (ADR 0006); a server the user started keeps whatever
+//! environment; a server the user started keeps whatever
 //! environment it was started with. `[herdr] session = "NAME"` picks a named
 //! session instead.
 //!
-//! herdr's saved machines come along too (ADR 0011, [`machines`]): each gets
+//! herdr's saved machines come along too ([`machines`]): each gets
 //! its own link in the core, and terminal tiles on them attach over SSH.
 
 mod machines;
@@ -107,8 +107,8 @@ pub struct HerdrInfo {
 }
 
 impl HerdrInfo {
-    /// What a terminal tile runs to view `terminal` (ADR 0001), with the clean
-    /// environment herdr's children get (ADR 0006).
+    /// What a terminal tile runs to view `terminal`, with the clean
+    /// environment herdr's children get.
     pub fn attach(&self, terminal: &str, takeover: bool) -> AttachCommand {
         self.herdr
             .attach(&self.session, &TerminalId(terminal.to_owned()), takeover)
@@ -116,7 +116,7 @@ impl HerdrInfo {
 }
 
 /// Where a terminal tile's pane runs: Local, or one of herdr's saved
-/// machines (ADR 0011).
+/// machines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalTarget {
     Local(HerdrInfo),
@@ -232,7 +232,7 @@ impl App {
             HerdrChoice::FromConfig => herdr_session(&config.herdr),
         };
         // herdr's saved machines: on with herdr's default session, off with a
-        // named one unless the config says so (ADR 0011).
+        // named one unless the config says so.
         let machines_on = session.as_ref().is_some_and(|s| {
             config.herdr.enabled && config.herdr.machines.unwrap_or(s.name().is_none())
         });
@@ -750,7 +750,7 @@ mod tests {
             r.diagnostics.iter().any(|d| d.message.contains("restart")),
             "{r:?}"
         );
-        // `mirror_layout` does apply live (ADR 0012): no restart warning.
+        // `mirror_layout` does apply live: no restart warning.
         std::fs::write(
             &path,
             "[herdr]\nsession = \"elsewhere\"\nmirror_layout = false\n",
@@ -906,7 +906,7 @@ mod tests {
         assert_eq!(
             herdr_session(&HerdrConfig::default()),
             Some(HerdrSession::default_session()),
-            "the user's own herdr session by default (ADR 0008)"
+            "the user's own herdr session by default"
         );
         let named = HerdrConfig {
             enabled: true,

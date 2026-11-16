@@ -1,4 +1,4 @@
-//! File browser tiles (F10): params, listings and events.
+//! File browser tiles: params, listings and events.
 //!
 //! A files tile lists one folder at a time. Shells ask for a folder's entries
 //! with `files.expand` when the user opens it, which also starts watching it;
@@ -81,7 +81,7 @@ pub struct FilesOpen {
 /// `files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,
 /// with its id as `tile`, and its events carry that id.
 ///
-/// With `machine`, the panel shows that herdr machine's files (ADR 0015):
+/// With `machine`, the panel shows that herdr machine's files:
 /// the core lists folders over the machine's SSH connection, off its
 /// thread. A folder it hasn't listed yet comes back empty with `loading`,
 /// and `files.changed` names the folder once its listing is in (or failed,

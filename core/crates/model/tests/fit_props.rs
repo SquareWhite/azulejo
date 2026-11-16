@@ -1,4 +1,4 @@
-//! ADR 0012: reading a dynamic layout back from an arrangement made in herdr.
+//! Reading a dynamic layout back from an arrangement made in herdr.
 
 use std::collections::BTreeMap;
 

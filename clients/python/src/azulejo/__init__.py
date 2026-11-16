@@ -1,4 +1,4 @@
-"""Python client for Azulejo's socket API (F23).
+"""Python client for Azulejo's socket API.
 
     from azulejo import Client
 

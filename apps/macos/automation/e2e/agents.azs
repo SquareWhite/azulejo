@@ -53,7 +53,7 @@ key alt+w
 until tiles 4 3000
 until agents blocked!,working,blocked!,none 2000
 expect dock none
-# --- looking doesn't answer a blocked agent (F11) ---
+# --- looking doesn't answer a blocked agent ---
 # The window counts as in front from here (automation runs it behind).
 seen-visible on
 expect focus 4
@@ -70,7 +70,7 @@ expect sidebar.statuses blocked
 # Answered (back to work): the mark goes with the state change.
 sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent codex --state working
 until agents blocked!,working,working,none 2000
-# --- a finished agent's done mark clears once it's read (F11) ---
+# --- a finished agent's done mark clears once it's read ---
 # Quiet the other agents (herdr keeps them as unknown) so the workspace
 # shows the finish.
 sh {herdr} --session {session} pane release-agent {pane:1} --source e2e --agent claude

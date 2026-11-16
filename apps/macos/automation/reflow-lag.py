@@ -10,7 +10,7 @@ winch-log.py. Both use the same clock (mach absolute time).
 Each SIGWINCH a pane saw is matched to the app's latest resize of that pane
 to that grid. The text for it shows at SIGWINCH + draw-ms (the program's
 redraw through herdr to libghostty: herdr draws about 19 ms after a resize,
-plus up to a frame to present; see docs/measurements.md). Lag = that time -
+plus up to a frame to present). Lag = that time -
 when the tile's frame had that size: positive trails, negative leads.
 """
 import json

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # herdr-grid.sh HERDR SESSION [LABEL]: a herdr workspace whose tab is a 2×2
 # grid of panes, split the way the TUI does it (right, then down in each
-# column). The running dev app adopts it as a manual tab (ADR 0008, 0010 §5),
-# as it adopts the maintainer's own workspaces. Automation calls it with `sh`:
+# column). The running dev app adopts it as a manual tab, as it adopts the
+# maintainer's own workspaces. Automation calls it with `sh`:
 #
 #     sh "$(dirname "$AZULEJO_AUTOMATION")/herdr-grid.sh" {herdr} {session}
 #

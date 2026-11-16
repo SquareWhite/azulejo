@@ -11,7 +11,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// The collapsed sidebar's rail (`[sidebar] collapsed = "rail"`).
     private let rail = SidebarRailView()
     /// The sidebar's rounded card: the traffic lights sit in its top band
-    /// and the sidebar's rows below them (D.2).
+    /// and the sidebar's rows below them.
     private let sidebarCard = SidebarCardView()
     /// Automation: the sidebar card's vibrancy material, if the theme has one.
     var sidebarMaterial: String? { sidebarCard.materialName }
@@ -75,7 +75,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         super.init()
         window.isReleasedWhenClosed = false
         window.title = "Azulejo"
-        // D.2: no visible title bar; the toolbar row is ours and the traffic
+        // No visible title bar; the toolbar row is ours and the traffic
         // lights sit in the sidebar card (`TrafficLights`).
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -240,7 +240,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarMarkers: [String] { sidebar.markers }
     /// Automation: the sidebar's machine group headers.
     var sidebarMachines: [String] { sidebar.machineHeaders }
-    /// Automation: each sidebar row's branch (F26).
+    /// Automation: each sidebar row's branch.
     var sidebarBranches: [String] { sidebar.branches }
     /// Automation: the sidebar itself (Agents | Files, rows, footer).
     var sidebarView: SidebarView { sidebar }
@@ -346,7 +346,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 }
 
-/// The window's chrome (D.2), from the mockup: the sidebar card down the
+/// The window's chrome, from the mockup: the sidebar card down the
 /// left with the traffic lights in its top band, a toolbar row along the top
 /// holding the tab strip, the layout picker and the search field, and the
 /// tiles below. Manual
@@ -624,7 +624,7 @@ final class ChromeLayoutView: NSView {
             attention.relayout(frames: container.visibleTileFrames())
         }
         if let palette, palette.isOpen {
-            // D.8: a dropdown from the search field: right edges aligned, its
+            // Quick open drops down from the search field: right edges aligned, its
             // own field over the toolbar field.
             let anchor = search?.frame ?? NSRect(x: rest.maxX, y: rest.maxY, width: 0, height: 0)
             let width = min(max(anchor.width, 560), max(0, bounds.width - 2 * inset))
@@ -657,7 +657,7 @@ final class ChromeLayoutView: NSView {
     }
 }
 
-/// The sidebar's rounded card (D.2); D.3 styles the rows inside it. Its top
+/// The sidebar's rounded card; `SidebarView` draws the rows inside it. Its top
 /// band holds the traffic lights and moves the window like a title bar.
 /// Themes with a sidebar material (the macOS ones) show it through a
 /// vibrancy view instead of the flat `sidebar` colour.
@@ -731,7 +731,7 @@ final class SidebarCardView: NSView, ThemeAware {
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
 
-/// Puts the traffic lights in the sidebar card's top band (D.2). AppKit lays
+/// Puts the traffic lights in the sidebar card's top band. AppKit lays
 /// the title bar out again on resizes, key changes and full screen, so the
 /// chrome calls this after each of those (and on every chrome layout).
 @MainActor
@@ -827,7 +827,7 @@ final class HUDView: NSView, ThemeAware {
 }
 
 extension WindowController {
-    /// Automation keys for the window chrome (D.2/D.4/D.8):
+    /// Automation keys for the window chrome, tab strip and search field:
     /// `chrome.lights` (close button centre from the top left, "29,26"),
     /// `chrome.hit.<part>` (the view class a click there reaches: `tab1`,
     /// `add`, `search`, `picker` (its Monocle segment), `toggle`, `toolbar` (an empty spot in the row),

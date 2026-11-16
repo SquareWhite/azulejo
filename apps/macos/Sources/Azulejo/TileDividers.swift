@@ -98,7 +98,7 @@ struct DividerDrag {
 /// tiles follow at once: no motion, terminals reflowing by whole cells as
 /// in a window drag (`liveResizeWillStart`/`liveResizeTick`, no lead), then
 /// one exact resize on mouse-up. A double-click evens the split out. The
-/// herdr mirror waits for the tab to be quiet (ADR 0012), so it pushes once
+/// herdr mirror waits for the tab to be quiet, so it pushes once
 /// after the drag.
 extension TileContainerView {
     /// How far the pointer area reaches past the gutter into a card's empty

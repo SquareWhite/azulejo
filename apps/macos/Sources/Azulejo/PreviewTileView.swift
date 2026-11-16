@@ -2,7 +2,7 @@ import AppKit
 import Quartz
 import WebKit
 
-/// A preview tile (F9): markdown, code and text rendered by the core
+/// A preview tile: markdown, code and text rendered by the core
 /// (`core/crates/preview`) into a WKWebView; images, video, audio and PDF shown
 /// natively with QuickLook.
 ///
@@ -43,7 +43,7 @@ final class PreviewTileView: NSView, TileView, ThemeAware {
 
     /// What's on screen: the file and how it's shown.
     private var shownPath: String?
-    /// The content on screen is the file's source (F29).
+    /// The content on screen is the file's source.
     private var shownSource = false
     private var shownMode: Mode = .none
     /// The newest revision applied (or being applied); older events are dropped.
@@ -86,7 +86,7 @@ final class PreviewTileView: NSView, TileView, ThemeAware {
         // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
 
-        // The controls live in the tile's header strip (TileFrame, F28/F29).
+        // The controls live in the tile's header strip (TileFrame).
         header.onOpen = { [weak self] in self?.openInDefaultApp() }
         header.onReveal = { [weak self] in self?.revealInFinder() }
         header.onMode = { [weak self] source in self?.setSource(source) }
@@ -426,7 +426,7 @@ final class PreviewTileView: NSView, TileView, ThemeAware {
 
     // MARK: Header actions
 
-    /// Preview | Source (F29): the core re-renders and saves the choice.
+    /// Preview | Source: the core re-renders and saves the choice.
     private func setSource(_ source: Bool) {
         guard source != model.showsSource || source != shownSource else { return }
         let mode = source ? "source" : "rendered"
@@ -502,10 +502,10 @@ private final class PreviewNavigation: NSObject, WKNavigationDelegate {
 }
 
 /// The preview's controls in its tile header (TileFrame): the syntax,
-/// Preview | Source (F29), and two actions. The file's name and folder are
+/// Preview | Source, and two actions. The file's name and folder are
 /// the header's own title and subtitle.
 @MainActor
-/// The preview tile's part of the header strip (D.7): the Preview | Source
+/// The preview tile's part of the header strip: the Preview | Source
 /// toggle on the right, like the mockup. Open and Reveal show while the
 /// pointer is over the header; the syntax and kind go in the toggle's tooltip.
 private final class PreviewHeader: NSView, HeaderHoverAware {
@@ -605,7 +605,7 @@ struct PreviewContent: Decodable {
     var html: String?
     var language: String?
     var truncated: Bool?
-    /// `source` when the file shows as highlighted source (F29).
+    /// `source` when the file shows as highlighted source.
     var mode: String?
     var revision: UInt64
 

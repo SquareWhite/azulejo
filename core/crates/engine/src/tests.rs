@@ -1021,7 +1021,7 @@ fn mark_unread_lights_an_agent_tile_until_seen() {
     assert!(!agent.unread && !agent.attention);
 }
 
-// ----- dynamic layouts (ADR 0010) -----
+// ----- dynamic layouts -----
 
 /// An engine whose first tab is a dynamic Tile tab, as the app starts.
 fn tile_engine() -> Engine {

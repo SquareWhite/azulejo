@@ -11,7 +11,7 @@
 # No default chord is a bare ctrl+<letter>, so shells and TUIs keep every
 # control key.
 #
-# Shape (the F25 config file uses the same shape under [keys]):
+# Shape (the config file uses the same shape under [keys]):
 #   action = "chord"                one chord
 #   action = ["chord", "chord"]     several chords
 #   action = "mod+1..8"             indexed binding; the action gets the index
@@ -53,7 +53,7 @@ resize_tile_up    = "ctrl+alt+shift+k"
 resize_tile_right = "ctrl+alt+shift+l"
 resize_mode = "ctrl+alt+r"            # sticky hjkl until esc (herdr prefix+r)
 zoom_tile   = "alt+shift+m"           # not cmd+m (Minimise), not alt+m (Hammerspoon)
-close_pane  = "cmd+w"                 # kills the herdr pane, no confirmation (F14, the user's call)
+close_pane  = "cmd+w"                 # kills the herdr pane, no confirmation (the user's call)
 close_tile  = "alt+w"                 # detaches: the herdr pane keeps running
 # cycle_tile_next / cycle_tile_previous (herdr prefix+tab) are unbound, as in
 # Bismuth: alt+] / alt+[ switch layouts now. Quick open and prefix mode keep them.
@@ -64,14 +64,14 @@ split_down  = "ctrl+cmd+shift+t"
 split_right = "ctrl+cmd+v"
 
 # Master-stack rules (herdr: tall.py promote / equalize, Bismuth's rotate). In
-# a dynamic Tile tab (the default for new tabs, ADR 0010) promote moves the
+# a dynamic Tile tab (the default for new tabs) promote moves the
 # tile to the front of the order and equalize resets the stack sizes.
 promote_tile    = "alt+enter"         # to master
 rotate_layout   = "alt+o"             # Bismuth Meta+R: master left -> top -> right -> bottom
 equalize_layout = "alt+shift+e"       # even out the stack
 # flip_layout (master left <-> top, tall.py's rotate) is palette-only.
 
-# Dynamic layouts (ADR 0010): Bismuth's Meta chords on the alt layer.
+# Dynamic layouts: Bismuth's Meta chords on the alt layer.
 cycle_layout_next      = ["alt+bracketright", "alt+backslash"]       # one right in the picker: manual -> tile -> three_column -> monocle, wrapping
 cycle_layout_previous  = ["alt+bracketleft", "alt+shift+backslash"]  # alt+\ / alt+| are Bismuth's own
 toggle_layout_tile     = "alt+t"                 # bash/zsh lose alt+t (transpose words) in tiles
@@ -120,7 +120,7 @@ minimize        = "cmd+m"
 [keys.macos.terminal]
 toggle_sidebar    = "cmd+a"           # herdr binding; terminal-only so cmd+a stays select-all elsewhere
 send_herdr_prefix = "ctrl+b"          # typed twice so herdr's attach client never sees ctrl+b q (detach)
-select_visible_item = "cmd+s"         # smart select: kind-letter labels (l link, p path, c command, t text…); then c copy, o open, r run, arrows/⇧/⌥↑↓ (apps/macos/README.md)
+select_visible_item = "cmd+s"         # smart select: kind-letter labels (l link, p path, c command, t text…); then c copy, o open, r run, arrows/⇧/⌥↑↓ (apps/macos/docs/smart-select.md)
 # take_over: Take over / Take back on a read-only terminal; unbound (the button)
 # Text a chord types into the pane, like kitty's send_text. kitty's cmd+l
 # clears the last command's output locally; under herdr the screen is herdr's,

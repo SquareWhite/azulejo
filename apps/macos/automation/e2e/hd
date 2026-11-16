@@ -11,7 +11,7 @@ case "$session" in azj-dev-e2e*) ;; *) echo "hd: only azj-dev-e2e* sessions" >&2
 herdr="${AZJ_HERDR_BIN:-herdr}"
 config=()
 if [[ -n "${AZJ_HERDR_CONFIG:-}" ]]; then config=("HERDR_CONFIG_PATH=$AZJ_HERDR_CONFIG"); fi
-# The server itself starts with a clean environment (ADR 0006), so panes
+# The server itself starts with a clean environment, so panes
 # don't inherit ours.
 if [[ "$*" == server ]]; then
   exec env -i HOME="$HOME" PATH="$PATH" USER="$USER" SHELL=/bin/zsh LANG=en_US.UTF-8 ${config[@]+"${config[@]}"} \

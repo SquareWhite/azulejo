@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sidebar (D.3) check, in-process, on its own dev instance
+# Sidebar check, in-process, on its own dev instance
 # (AZJ_DEV_NAME=side by default): machine group, workspace rows with status
 # icons and branches, footer counts, row clicks, and the Files view (tree,
 # keys, open beside the focused tile, Esc, following the focused workspace).

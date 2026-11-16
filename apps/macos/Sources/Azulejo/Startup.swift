@@ -1,7 +1,7 @@
 import AppKit
 import Darwin
 
-/// Cold-start timing (PLAN 1.13). Marks are wall-clock seconds; the process
+/// Cold-start timing. Marks are wall-clock seconds; the process
 /// start comes from the kernel, so dyld and Swift runtime start-up count too.
 /// With `AZULEJO_TIMING_OUT=<file>` set, one JSON line per launch is appended
 /// there once the first window has drawn; otherwise nothing is recorded

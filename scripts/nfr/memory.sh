@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 1.13: memory, one window with 4 attached terminal tiles (idle shells),
+# Memory, one window with 4 attached terminal tiles (idle shells),
 # browser tiles excluded (target < 150 MB). Reports the app's phys_footprint
 # (what Activity Monitor calls Memory), plus separately: the attach children,
 # azj-observe helpers, the herdr server, and with a browser + preview tile

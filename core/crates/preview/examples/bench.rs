@@ -1,4 +1,4 @@
-//! Render timings for docs/measurements.md:
+//! Render timings:
 //! `cargo run --release -p azulejo-preview --example bench`.
 
 use std::time::Instant;

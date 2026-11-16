@@ -207,7 +207,7 @@ fn structural(mut session: Value) -> Value {
 }
 
 /// Waits until every terminal tile is bound and the session holds still:
-/// with the layout mirrored into herdr (ADR 0012) panes can still be moving
+/// with the layout mirrored into herdr, panes can still be moving
 /// between herdr tabs, and tiles rebinding, for a moment after that.
 fn wait_bound(world: &World, expected: usize) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);

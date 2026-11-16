@@ -1,4 +1,4 @@
-//! Workspace branches (F26) against real temp repositories.
+//! Workspace branches against real temp repositories.
 
 use std::path::Path;
 use std::process::Command as Proc;

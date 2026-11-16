@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Layout motion (PLAN 2.1) on a dev instance, in-process: no OS input, the
+# Layout motion on a dev instance, in-process: no OS input, the
 # window stays in the background.
 #
 #   apps/macos/automation/anim.sh            # 50+ animations at the configured speed:
@@ -84,7 +84,7 @@ if [[ "$mode" == "--slow" ]]; then
   step 06k-manual-rotate-bottom alt+o
   step 06l-manual-rotate-left alt+o
   emit "expect kind manual" "key alt+shift+t" "wait 2500" "expect kind tile"
-  step 06b-masters alt+equal                   # dynamic layouts (ADR 0010)
+  step 06b-masters alt+equal                   # dynamic layouts
   step 06b2-masters-back alt+minus
   step 06c-monocle-in alt+z                    # tile -> monocle: focused grows, others tuck away
   emit "expect kind monocle"
@@ -139,7 +139,7 @@ else
       n=$((n + 1))
     done
   done
-  # Dynamic layouts (ADR 0010): round the cycle through every kind and
+  # Dynamic layouts: round the cycle through every kind and
   # back, masters and the master area up and down, Monocle in, a focus
   # switch in it (no PTY resize) and out, manual and back, a move along
   # the order, rotate part, promote.

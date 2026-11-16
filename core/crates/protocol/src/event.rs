@@ -47,7 +47,7 @@ pub enum Event {
         workspace: WorkspaceInfo,
     },
     /// A workspace's repository or branch changed, or it left a repository
-    /// (`git` absent): the sidebar shows the branch (F26). Also visible as
+    /// (`git` absent): the sidebar shows the branch. Also visible as
     /// `git` on `workspace.updated`.
     #[serde(rename = "workspace.git")]
     WorkspaceGit {
@@ -92,7 +92,7 @@ pub enum Event {
     TileClosed { tab: TabId, tile: Tile, kill: bool },
     /// A terminal tile's agent started or stopped needing a look: it became
     /// blocked or finished, went back to work, the user read its result
-    /// (`tile.seen`) or marked it unread (`tile.mark_unread`) (F11). Also
+    /// (`tile.seen`) or marked it unread (`tile.mark_unread`). Also
     /// visible as `tile.agent.attention` on `tile.updated`.
     #[serde(rename = "tile.attention_changed")]
     TileAttentionChanged {
@@ -139,7 +139,7 @@ pub enum Event {
         message: Option<String>,
     },
 
-    /// A herdr machine appeared, changed state or label (ADR 0011). Not
+    /// A herdr machine appeared, changed state or label. Not
     /// saved.
     #[serde(rename = "machine.status")]
     MachineStatus {
@@ -151,7 +151,7 @@ pub enum Event {
     #[serde(rename = "machine.removed")]
     MachineRemoved { machine: String },
 
-    /// The agent in a terminal tile changed state, as herdr reports it (F16).
+    /// The agent in a terminal tile changed state, as herdr reports it.
     /// Not saved.
     #[serde(rename = "agent.state_changed")]
     AgentStateChanged(AgentStateChange),
@@ -228,7 +228,7 @@ pub struct PreviewContent {
     /// Only the start of a very large file was rendered.
     #[serde(default)]
     pub truncated: bool,
-    /// Rendered, or the file's source highlighted as code (F29).
+    /// Rendered, or the file's source highlighted as code.
     #[serde(default, skip_serializing_if = "PreviewMode::is_rendered")]
     pub mode: PreviewMode,
     /// Counts renders of this tile in this run, so a shell can drop stale
@@ -241,7 +241,7 @@ pub struct PreviewContent {
 /// Shells draw from `rects`: every tile's rectangle in the unit square, its
 /// stacking order and whether it's shown (Monocle hides all but the focused
 /// tile without resizing them). `tree` is the tab's split tree: the source of
-/// truth for manual tabs, derived for dynamic ones (ADR 0010).
+/// truth for manual tabs, derived for dynamic ones.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayoutState {
     pub window: WindowId,
@@ -290,17 +290,17 @@ pub struct WorkspaceInfo {
     pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub herdr_workspace: Option<String>,
-    /// Terminal tiles whose agent is blocked, for the sidebar (F16).
+    /// Terminal tiles whose agent is blocked, for the sidebar.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub blocked: u32,
-    /// Terminal tiles whose agent needs a look (F11).
+    /// Terminal tiles whose agent needs a look.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub attention: u32,
     /// The folder whose branch it shows, when the user set one
     /// (`workspace.set_repo`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
-    /// Its repository and branch (F26).
+    /// Its repository and branch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<GitInfo>,
 }

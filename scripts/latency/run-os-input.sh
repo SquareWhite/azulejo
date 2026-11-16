@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 0.4, OS-input variant: includes the real HID → WindowServer → app path and
+# Latency bench, OS-input variant: includes the real HID → WindowServer → app path and
 # compares against standalone Ghostty.app (config a).
 #
 #   scripts/latency/run-os-input.sh [samples]      default 200

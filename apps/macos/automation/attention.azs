@@ -1,4 +1,4 @@
-# Agent state and attention (F11, F16): status icons in tile headers, sidebar
+# Agent state and attention: status icons in tile headers, sidebar
 # and tab-bar markers, the Dock badge, and what reading does and doesn't clear. Agent states are simulated with
 # `herdr pane report-agent` on the dev instance's own herdr session.
 #   apps/macos/automation/chrome.sh

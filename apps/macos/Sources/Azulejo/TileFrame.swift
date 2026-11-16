@@ -1,6 +1,6 @@
 import AppKit
 
-/// A tile view that puts controls in its header strip (F28): the preview
+/// A tile view that puts controls in its header strip: the preview
 /// tile's Preview | Source toggle, the files tile's filter button.
 @MainActor
 protocol TileHeaderAccessory {
@@ -14,7 +14,7 @@ protocol HeaderHoverAware {
     func headerHover(_ inside: Bool)
 }
 
-/// A tile view whose own toolbar is its top strip (the browser's chrome, D.6):
+/// A tile view whose own toolbar is its top strip (the browser's chrome):
 /// the frame hides its header strip for it.
 @MainActor
 protocol TileOwnsChrome {}
@@ -29,13 +29,13 @@ protocol RidesClipTop {
     var clipTopStrips: [NSView] { get }
 }
 
-/// Every tile in the container: a card (D.5) with a header strip (kind icon,
+/// Every tile in the container: a card with a header strip (kind icon,
 /// bold title, muted subtitle — what the core's `tile.header` says) above the
 /// tile's own view.
 ///
 /// The container only ever sets this view's frame; it sizes the content below
 /// the header in one go, so a terminal's PTY still resizes once per layout
-/// change (ADR 0004). Everything a tile view does is forwarded.
+/// change. Everything a tile view does is forwarded.
 @MainActor
 class TileFrame: NSView, TileView, ThemeAware {
     static let headerHeight = Design.Space.headerHeight
@@ -64,7 +64,7 @@ class TileFrame: NSView, TileView, ThemeAware {
     /// Margin round a terminal's text (`Design.Space.tileContentPad`); other
     /// kinds fill the card edge to edge.
     private let pad: CGFloat
-    /// Rounds the card's corners without masking the content (D.5): the
+    /// Rounds the card's corners without masking the content: the
     /// window colour drawn over the four corners. Rounded masking of a layer
     /// tree that holds a Metal surface or a web view costs an offscreen pass.
     let corners = CornerCapLayer()
@@ -640,7 +640,7 @@ final class TileHeaderView: NSView, ThemeAware {
     /// The agent's status icon, or its badge (the attention overlay makes
     /// and fills either), at the strip's right end; the title keeps clear of
     /// it. None without an agent: the title gets the whole strip. A subview, so it
-    /// rides with the strip when the strip follows a crop clip mid-motion (F6).
+    /// rides with the strip when the strip follows a crop clip mid-motion.
     var badge: NSView? {
         didSet {
             if oldValue !== badge, oldValue?.superview === self { oldValue?.removeFromSuperview() }

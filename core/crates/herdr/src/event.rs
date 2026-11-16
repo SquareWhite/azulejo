@@ -29,7 +29,7 @@ pub enum Subscription {
     PaneExited,
     PaneFocused,
     PaneMoved,
-    /// A tab's split tree, zoom or focus changed (ADR 0012).
+    /// A tab's split tree, zoom or focus changed.
     LayoutUpdated,
     /// Agent status for one pane (herdr requires a pane ID).
     AgentStatus(PaneId),
@@ -38,7 +38,7 @@ pub enum Subscription {
 }
 
 impl Subscription {
-    /// Everything Azulejo needs to mirror herdr's structure (F15). Agent
+    /// Everything Azulejo needs to mirror herdr's structure. Agent
     /// status also arrives through `PaneUpdated`; subscribe per pane with
     /// [`Subscription::AgentStatus`] for dedicated transitions.
     pub fn lifecycle() -> Vec<Subscription> {

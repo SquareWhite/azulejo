@@ -1,4 +1,4 @@
-//! Dynamic layouts (ADR 0010): an ordered list of tiles and a rule that turns
+//! Dynamic layouts: an ordered list of tiles and a rule that turns
 //! it into rectangles, ported from Bismuth. A tab is either `manual` (its split
 //! tree is the source of truth) or one of the dynamic kinds, whose `order`,
 //! `weights` and `params` are; the tree is then derived after every change.
@@ -651,7 +651,7 @@ pub const FIT_TOLERANCE: f64 = 0.005;
 /// tiles' order, and for Tile and Three Column the ratio and weights, that
 /// reproduce them within [`FIT_TOLERANCE`]. Masters, orientation and kind
 /// stay. `None` when the layout's rule can't produce them: the caller
-/// freezes the tab instead (ADR 0012).
+/// freezes the tab instead.
 ///
 /// Monocle reads its order off the Tile arrangement it freezes to and keeps
 /// its parameters: it has no sizes of its own.

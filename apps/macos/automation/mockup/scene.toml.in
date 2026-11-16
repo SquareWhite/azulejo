@@ -1,4 +1,4 @@
-# The mockup's "agents" workspace (docs/design/mockup-v1.png), for
+# The mockup's "agents" workspace, for
 # automation/mockup.sh. @FX@ is the fixture folder, @REPO@ this checkout,
 # @PORT@ the fixture web server.
 

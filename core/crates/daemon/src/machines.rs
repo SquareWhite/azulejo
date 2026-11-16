@@ -1,4 +1,4 @@
-//! herdr's saved machines (ADR 0011). herdr owns the list; this keeps the
+//! herdr's saved machines. herdr owns the list; this keeps the
 //! core's links in step with it: read `herdr machine list --json` at start,
 //! on config reloads and every minute, then connect added machines,
 //! disconnect removed ones and show disabled ones as off. The config only

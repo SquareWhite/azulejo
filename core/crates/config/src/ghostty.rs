@@ -1,5 +1,5 @@
 //! The small part of the user's Ghostty config Azulejo reads itself: fonts
-//! and colours for the Linux VTE tile (step 3.2), and how unfocused splits
+//! and colours for the Linux VTE tile, and how unfocused splits
 //! dim, which both shells use for unfocused tiles. Read-only. On macOS
 //! libghostty reads the full config for the terminals themselves.
 //!

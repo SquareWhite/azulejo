@@ -1,4 +1,4 @@
-//! ADR 0012: targets, split spots and absorbing herdr changes.
+//! Layout mirroring: targets, split spots and absorbing herdr changes.
 
 use azulejo_model::{LayoutKind, Tile};
 
@@ -489,7 +489,7 @@ fn monocle_with_one_terminal_and_a_browser_has_nothing_to_zoom() {
     s.check_invariants().unwrap();
 }
 
-// ---- only Azulejo changes herdr's structure (ADR 0012, amendment) ---------
+// ---- only Azulejo changes herdr's structure -------------------------------
 
 /// The tab's terminals as herdr would lay them out.
 fn as_herdr(s: &Session, tab: TabId) -> herdr::LayoutNode {

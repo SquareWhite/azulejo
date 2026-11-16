@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Top tabs: drag to reorder (Nov 5 feedback), on dev instance e2e-tabdrag
 # with AZJ_DEBUG_MIRROR=1. tabdrag.azs drives the drags with mouse events
-# made in the app; this checks that a reorder made herdr do nothing (ADR
-# 0012: tab order isn't part of any mirror target; it's Azulejo's own, as
-# workspace order is, ADR 0013), and takes the mid-drag capture of our own window.
+# made in the app; this checks that a reorder made herdr do nothing
+# (tab order isn't part of any mirror target; it's Azulejo's own, as
+# workspace order is), and takes the mid-drag capture of our own window.
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-tabdrag}" E2E_SUITE=tabdrag AZJ_DEBUG_MIRROR=1
 source "$(dirname "$0")/lib.sh"

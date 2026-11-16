@@ -1,4 +1,4 @@
-# Shared helpers for the end-to-end pass (docs/testing/e2e-plan.md). Source it.
+# Shared helpers for the end-to-end pass. Source it.
 #
 # Every suite runs on its own dev instance (AZJ_DEV_NAME=e2e-…, herdr session
 # azj-dev-e2e-…). Nothing here touches herdr's default session, the user's
@@ -83,7 +83,7 @@ run_azs() {
 
 wait_ping() { for _ in $(seq 200); do azj core ping >/dev/null 2>&1 && return 0; sleep 0.05; done; return 1; }
 
-# Fixtures (plan section 1), in a temp folder removed on exit.
+# Fixtures, in a temp folder removed on exit.
 make_fixtures() {
   fx="$(mktemp -d "${TMPDIR:-/tmp}/azj-e2e.XXXXXX")"
   local r

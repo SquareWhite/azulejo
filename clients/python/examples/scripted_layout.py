@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scripted layouts: one command opens a project's layout (PRD use case).
+"""Scripted layouts: one command opens a project's layout.
 
 A new tab in the tall layout: an editor terminal as master, then a test
 watcher, a dev server and a browser on the dev server down the stack.

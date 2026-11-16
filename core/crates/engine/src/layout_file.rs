@@ -1,4 +1,4 @@
-//! Project layout files (F6): `.azulejo.toml` describes tabs, splits and
+//! Project layout files: `.azulejo.toml` describes tabs, splits and
 //! tiles, and `layout.apply` opens them; `layout.export` writes a tab or
 //! workspace back out. See `docs/layout-files.md` for the format.
 //!
@@ -140,7 +140,7 @@ impl TabSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Arrangement {
-    /// Dynamic master-stack (ADR 0010): masters on one side, the stack on the
+    /// Dynamic master-stack: masters on one side, the stack on the
     /// other.
     Tile,
     /// The same as `tile` with one master; kept for older files.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 0.4 latency bench, in-process mode (safe while you're using the Mac).
+# Latency bench, in-process mode (safe while you're using the Mac).
 #
 #   scripts/latency/run.sh [samples] [rounds]     default 250 samples, 2 rounds
 #

@@ -3,7 +3,7 @@ import CoreMedia
 import GhosttyKit
 import ScreenCaptureKit
 
-/// Keystroke → glyph bench on the real app's terminal tile (PLAN 1.13): the
+/// Keystroke → glyph bench on the real app's terminal tile: the
 /// 0.4 harness method (`scripts/latency/harness/Sources/Bench.swift`) run
 /// against a `TerminalSurfaceView` attached through herdr. Off unless
 /// `AZULEJO_LATENCY_BENCH=<samples>` is set; then it waits

@@ -60,9 +60,9 @@ struct WorkspaceModel: Decodable, Equatable {
     var cwd: String?
     var tabs: [TabModel]
     var activeTab: String?
-    /// The herdr machine its terminals run on; nil for Local (ADR 0011).
+    /// The herdr machine its terminals run on; nil for Local.
     var machine: String?
-    /// The repository and branch the sidebar shows (F26).
+    /// The repository and branch the sidebar shows.
     var git: GitModel?
     /// The folder set with `workspace.set_repo`, if any.
     var repo: String?
@@ -86,7 +86,7 @@ struct TabModel: Decodable, Equatable {
     var name: String?
     /// The split tree: the source of truth in a manual tab, derived from the
     /// layout rule in a dynamic one, where it reproduces the core's rects
-    /// exactly (ADR 0010).
+    /// exactly.
     var root: LayoutNode
     var tiles: [TileModel]
     var focused: String
@@ -116,7 +116,7 @@ struct TabModel: Decodable, Equatable {
     }
 }
 
-/// How a tab arranges its tiles (ADR 0010).
+/// How a tab arranges its tiles.
 enum LayoutKind: String, Decodable {
     case manual, tile, monocle
     case threeColumn = "three_column"
@@ -211,7 +211,7 @@ struct HerdrRefModel: Decodable, Equatable {
     var paneId: String
     var terminalId: String
     var tabId: String
-    /// The herdr machine the pane runs on; nil for Local (ADR 0011).
+    /// The herdr machine the pane runs on; nil for Local.
     var machine: String?
 
     enum CodingKeys: String, CodingKey {
@@ -222,7 +222,7 @@ struct HerdrRefModel: Decodable, Equatable {
     }
 }
 
-/// A herdr machine and the core's link to it (`machines.list`, ADR 0011).
+/// A herdr machine and the core's link to it (`machines.list`).
 struct MachineModel: Decodable, Equatable {
     static let local = "local"
 
@@ -257,11 +257,11 @@ struct TileModel: Decodable, Equatable {
     var path: String?
     // files
     var root: String?
-    /// Terminal tiles: the agent herdr reports in the pane (F11, F16).
+    /// Terminal tiles: the agent herdr reports in the pane.
     var agent: AgentModel?
-    /// What the header strip shows, worked out by the core (F28).
+    /// What the header strip shows, worked out by the core.
     var header: TileHeaderModel?
-    /// Preview tiles: `rendered` (default) or `source` (F29).
+    /// Preview tiles: `rendered` (default) or `source`.
     var previewMode: String?
 
     enum CodingKeys: String, CodingKey {
@@ -277,7 +277,7 @@ struct TileModel: Decodable, Equatable {
     var needsAttention: Bool { agent?.attention == true }
 
     /// What runs in this terminal's pane besides an idle shell, for the
-    /// "still running" confirmation (ADR 0014): the foreground command the
+    /// "still running" confirmation: the foreground command the
     /// core polls from herdr (`pane.process_info`), else a working or
     /// blocked agent. nil for an idle shell, an ended pane, a pane not made
     /// yet, a tile that isn't a terminal, or a pane not polled yet.
@@ -295,7 +295,7 @@ struct TileModel: Decodable, Equatable {
 struct PaneMetaModel: Decodable, Equatable {
     /// Its working directory now (the tile's `cwd` is where it started).
     var cwd: String?
-    /// The foreground command when it isn't the shell (F28).
+    /// The foreground command when it isn't the shell.
     var command: String?
     /// The shell's name, set once the core has polled the pane's
     /// foreground process (else `$SHELL`'s, as the core falls back to).
@@ -308,7 +308,7 @@ struct TileHeaderModel: Decodable, Equatable {
     var subtitle: String?
 }
 
-/// A workspace's repository and branch (`azulejo_model::GitInfo`, F26).
+/// A workspace's repository and branch (`azulejo_model::GitInfo`).
 struct GitModel: Decodable, Equatable {
     var repo: String
     var branch: String?

@@ -381,7 +381,7 @@ fn ssh_standin(tag: &str) -> std::path::PathBuf {
 #[ignore = "needs herdr; run with `just test-herdr`"]
 async fn a_remote_machine_through_herdrs_bridge() {
     // A "remote" machine: a throwaway local session reached only through
-    // the SSH bridge path (ssh stand-in → remote-api-bridge), ADR 0011.
+    // the SSH bridge path (ssh stand-in → remote-api-bridge).
     let tmp = TempSession::new().await;
     tmp.herdr
         .ensure_server(&tmp.session(), quick())
@@ -484,7 +484,7 @@ async fn last_tick(client: &Client, pane: &azulejo_herdr::PaneId) -> u64 {
         .unwrap_or(0)
 }
 
-/// ADR 0012: one herdr tab per tile becomes one tab with Azulejo's splits,
+/// Migration: one herdr tab per tile becomes one tab with Azulejo's splits,
 /// pane by pane. Nothing is killed: the terminals keep their IDs, a ticker
 /// keeps counting and an attached client stays attached. Then a rebuild to
 /// another shape, and zoom.
@@ -648,7 +648,7 @@ async fn mirror_merges_tabs_and_rebuilds_without_killing_anything() {
     let _ = attached.kill().await;
 }
 
-/// Workspace rename and close (ADR 0014): herdr takes the label and says so
+/// Workspace rename and close: herdr takes the label and says so
 /// with `workspace_renamed`; closing takes its tabs and panes and says
 /// `workspace_closed`; both are `*_not_found` once it's gone.
 #[tokio::test]

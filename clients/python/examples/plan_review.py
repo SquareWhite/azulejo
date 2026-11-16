@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan review (PRD use case): an agent writes `plan.md`, opens it in a
+"""Plan review: an agent writes `plan.md`, opens it in a
 preview tile, and the human follows along as it changes. Uses the asyncio
 client and an event stream to confirm each revision reached the tile.
 

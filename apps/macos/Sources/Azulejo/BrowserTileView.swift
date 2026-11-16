@@ -2,7 +2,7 @@ import AppKit
 import CryptoKit
 import WebKit
 
-/// A browser tile (F8): a WKWebView under a small toolbar (back, forward,
+/// A browser tile: a WKWebView under a small toolbar (back, forward,
 /// reload, address bar, menu), with a thin progress line and a banner for
 /// crashes, failed loads and downloads.
 ///
@@ -28,7 +28,7 @@ final class BrowserTileView: NSView, TileView, KeyScope, ThemeAware {
 
     private weak var app: AppController?
     private let webView: WKWebView
-    /// The tile's top strip (D.6): back and forward, the address pill, reload.
+    /// The tile's top strip: back and forward, the address pill, reload.
     /// It stands in for the tile header (TileOwnsChrome); right-click for
     /// the inspector, copy URL and the rest.
     private let toolbar = BrowserChrome()

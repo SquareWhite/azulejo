@@ -1,5 +1,5 @@
 #!/bin/sh
-# PLAN.md step 0.2: probe herdr's attach, events and layout behaviour.
+# Probe herdr's attach, events and layout behaviour.
 # Runs in an isolated named session (default "azj-probe") and deletes it afterwards.
 # It never touches your main herdr session. Findings: docs/herdr-notes.md.
 #

@@ -23,7 +23,7 @@ pub enum Action {
     /// Sticky resize: hjkl resize until escape. Shell-local.
     ResizeMode,
     ZoomTile,
-    /// Closes the tile and detaches its herdr pane (F14).
+    /// Closes the tile and detaches its herdr pane.
     CloseTile,
     /// Closes the tile and kills its herdr pane.
     KillTile,
@@ -46,7 +46,7 @@ pub enum Action {
     /// split tree in a manual tab. Monocle and Three Column: nothing.
     RotateLayout,
     EqualizeLayout,
-    // Dynamic layouts (ADR 0010)
+    // Dynamic layouts
     CycleLayoutNext,
     CycleLayoutPrevious,
     /// Switches to the kind, or back to the previous one if already on it.
@@ -386,8 +386,8 @@ pub fn control_key(text: &str) -> Option<String> {
     })
 }
 
-/// Methods the protocol doesn't have yet but the keymap already binds. Each is
-/// planned for M1 or later; [`Action::target`] names them so the shell can
+/// Methods the protocol doesn't have yet but the keymap already binds.
+/// [`Action::target`] names them so the shell can
 /// grey the action out until the core supports it.
 pub const PLANNED_METHODS: &[&str] = &["tile.rename", "terminal.edit_scrollback"];
 

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# PLAN 1.13: keystroke → glyph in the real app's terminal tile, with the 0.4
-# method (LatencyBench.swift: in-process ghostty_surface_key, window-only
-# ScreenCaptureKit capture, no OS input, window never raised). Compare with
-# the 0.4 spike numbers in docs/measurements.md (config c: same surface via
-# herdr attach; config b: direct, the baseline).
+# Keystroke → glyph in the real app's terminal tile, measured as
+# scripts/latency does it (LatencyBench.swift: in-process ghostty_surface_key,
+# window-only ScreenCaptureKit capture, no OS input, window never raised).
+# Compare with scripts/latency/run.sh (config c: same surface via herdr
+# attach; config b: direct, the baseline).
 #
 #   scripts/nfr/latency.sh [samples] [rounds]     default 250 × 3, debug build
 #   NFR_APP=target/release-mac/Azulejo.app scripts/nfr/latency.sh
 #
-# Each round also runs the 0.4 spike harness (config c: the same libghostty
+# Each round also runs the latency harness (config c: the same libghostty
 # surface code, attached to the same herdr pane) right after the app, so the
 # two are compared under the same WindowServer conditions. Absolute numbers
 # from a background window depend heavily on what covers it.
 #
 # The app binary is exec'd from this shell (not through `open`), so screen
-# capture permission is the terminal's, as in 0.4.
+# capture permission is the terminal's, as with scripts/latency.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 samples="${1:-250}"
@@ -38,7 +38,7 @@ sleep 1
 stop
 sleep 0.5
 
-# Same Ghostty settings as the 0.4 configs: no cursor blink (it would show up
+# Same Ghostty settings as scripts/latency's configs: no cursor blink (it would show up
 # in the glyph box once the surface has focus). XDG_CONFIG_HOME only feeds
 # Ghostty here; herdr is linked through so the attach client finds its socket.
 xdg="$out/xdg"
@@ -57,7 +57,7 @@ for r in $(seq "$rounds"); do
   grep -E "latency \[" "$log" || true
   [[ -s "$csv" ]] || fail "round $r wrote no CSV (see $log)"
   sleep 0.5
-  # The spike surface on the same pane, same Ghostty settings.
+  # The harness surface on the same pane, same Ghostty settings.
   harness="$root/scripts/latency/build/LatHarness.app/Contents/MacOS/LatHarness"
   [[ -x $harness ]] || "$root/scripts/latency/harness/build.sh" >/dev/null
   "${clean_env[@]}" XDG_CONFIG_HOME="$xdg" "$harness" \

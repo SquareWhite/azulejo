@@ -17,7 +17,7 @@ struct TerminalHintItem: Equatable {
 }
 
 /// ⌘S smart select's detection and selection logic lives in the Rust core
-/// (core/crates/hints, docs/adr/0016): this is the glue. `Pane` sends one
+/// (core/crates/hints): this is the glue. `Pane` sends one
 /// pane's screen once per ⌘S and keeps the core's handle for the selection
 /// keys.
 enum TerminalHints {

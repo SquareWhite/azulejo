@@ -2,7 +2,7 @@ import AppKit
 @preconcurrency import Quartz
 import UniformTypeIdentifiers
 
-/// A file browser tile (F10): the core lists one folder at a time
+/// A file browser tile: the core lists one folder at a time
 /// (`files.expand`, gitignore-aware, folders first in natural order) and
 /// watches the folders that are open, so a 50k-file repository opens as fast
 /// as a small one. Changes arrive as `files.changed` (list those folders
@@ -41,7 +41,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     /// no card of its own, and Esc hands the keyboard back to the tiles.
     private(set) var isPanel = false
     var onEscape: (() -> Void)?
-    /// The herdr machine whose files this panel shows (ADR 0015); nil for
+    /// The herdr machine whose files this panel shows; nil for
     /// Local. Remote paths aren't on this Mac: Finder, the default app and
     /// Quick Look don't apply, files open as a copy in the preview tile.
     private(set) var machine: String?
@@ -865,7 +865,7 @@ private struct Listing: Sendable {
     let entries: [Entry]
     /// Which request it answers (`FilesTileView.list`).
     let request: Int
-    /// Remote folders (ADR 0015): not listed yet, or why they can't be.
+    /// Remote folders: not listed yet, or why they can't be.
     let loading: Bool
     let error: String?
 
@@ -963,7 +963,7 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
         }
         if !node.dir { add("Open in Preview") { owner.open(node, target: "preview") } }
         add("Open Terminal Here") { owner.open(node, target: "terminal") }
-        // A remote path isn't on this Mac (ADR 0015).
+        // A remote path isn't on this Mac.
         if !owner.isRemote {
             add("Open in Default App") { owner.openInDefaultApp(node) }
             add("Reveal in Finder") { owner.revealInFinder(node) }

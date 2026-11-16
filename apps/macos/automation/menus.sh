@@ -5,7 +5,7 @@
 # opens), split, zoom, kill (cancelled), Close Tile (detaches), Close
 # Workspace, cmd+w (close_pane) closing browser and preview tiles, and
 # alt+cmd+w closing the workspace. Then it checks herdr: Close Workspace
-# closes that herdr workspace with its panes and nothing else (ADR 0014),
+# closes that herdr workspace with its panes and nothing else,
 # and after a relaunch herdr holds only the fresh workspace that replaced
 # the app's last one. Captures menus-workspace.png and
 # menus-tile.png (the menu drawn open in an in-app render).
@@ -41,8 +41,8 @@ watchdog=$!
 "$root/apps/macos/dev.sh" --automation "$here/menus-relaunch.azs" --out "$out/relaunch"
 [[ "$(cat "$out/relaunch/result")" == ok ]] || { echo "menus relaunch: $(cat "$out/relaunch/result")"; exit 1; }
 
-# herdr after Close Workspace: exactly that workspace and its panes are gone
-# (ADR 0014). After alt+cmd+w closed the rest and a relaunch: none of them
+# herdr after Close Workspace: exactly that workspace and its panes are gone.
+# After alt+cmd+w closed the rest and a relaunch: none of them
 # is left, only the fresh workspace that took the last one's place.
 python3 - "$out" <<'PY'
 import json, sys

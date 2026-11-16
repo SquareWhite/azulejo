@@ -28,7 +28,7 @@ add_ghostty_resources() {
 
 # The app icon (Info.plist's CFBundleIconFile) and its dark look, which the
 # app swaps into the Dock in dark mode (DockIcon.swift). `just icon`
-# regenerates both from scripts/icon/draw.swift; docs/design/icon/README.md.
+# regenerates both from scripts/icon/draw.swift.
 add_icon() {
   mkdir -p "$1/Contents/Resources"
   cp Resources/AppIcon.icns "$1/Contents/Resources/AppIcon.icns"

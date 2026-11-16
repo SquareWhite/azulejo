@@ -1,4 +1,4 @@
-//! Adopting what already runs in herdr (ADR 0008).
+//! Adopting what already runs in herdr.
 //!
 //! Azulejo connects to the user's own herdr session, so on connect (and after
 //! herdr says events were lost) it mirrors every herdr tab it doesn't know yet:
@@ -9,7 +9,7 @@
 //! pane counts as known when a tile is bound to it or a tile showing it was
 //! closed here (`Session::detached_herdr`). Panes split off later inside a
 //! tab shown here (the herdr TUI, a phone, an agent) join that tab beside
-//! their herdr sibling (F15, ADR 0009).
+//! their herdr sibling.
 //!
 //! Panes come in survey by survey, and a burst of splits can reach a survey
 //! half made: placing each pane beside its sibling then guesses, since the
@@ -17,10 +17,9 @@
 //! adopted or added panes to ends up with herdr's own tree from that survey
 //! (`layout.export`, read after the snapshot), whatever the guesses were
 //! ([`crate::mirror::follow`]). The tab's arrangement came from herdr, so
-//! Azulejo follows herdr's, never the other way round (ADR 0012,
-//! amendment).
+//! Azulejo follows herdr's, never the other way round.
 //!
-//! Each herdr machine is surveyed and adopted on its own (ADR 0011): a
+//! Each herdr machine is surveyed and adopted on its own: a
 //! survey only matches, prunes and creates things on its own machine.
 
 use std::collections::HashMap;
@@ -161,7 +160,7 @@ pub fn adopt(
 
 /// herdr workspaces on `machine` that no Azulejo workspace shows, after
 /// adoption: every tab in them holds a pane closed here. Workspaces closed
-/// in Azulejo before closing reached herdr (ADR 0014) end up like this, and
+/// in Azulejo before closing reached herdr end up like this, and
 /// so do ones whose close failed. They're left running and reported, never
 /// closed: the processes in them are the user's.
 pub fn unshown(
@@ -313,7 +312,7 @@ pub fn build_tab(
         .unwrap_or(tiles[0].id);
     let zoomed = layout.is_some_and(|l| l.zoomed).then_some(focused);
 
-    // Adopted tabs stay manual: they mirror herdr's own geometry (ADR 0010).
+    // Adopted tabs stay manual: they mirror herdr's own geometry.
     let mut out = Tab::manual(
         TabId::new(),
         tab.label.clone().filter(|l| !l.trim().is_empty()),
@@ -345,7 +344,7 @@ fn pane_tile(machine: &Machine, p: &herdr::PaneInfo) -> Tile {
     }
 }
 
-/// Panes split off elsewhere inside herdr tabs already shown here (F15).
+/// Panes split off elsewhere inside herdr tabs already shown here.
 /// Each lands next to the tile of its sibling in herdr's split tree, on the
 /// same side and with the same ratio; without a usable sibling it goes to the
 /// end of the tab's stack (`layout.split_auto`). Focus doesn't move.

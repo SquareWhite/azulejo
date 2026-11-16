@@ -7,7 +7,7 @@ use std::ffi::{OsStr, OsString};
 
 /// Exact names passed through. `TERMINFO` and `TERMINFO_DIRS` are left out on
 /// purpose: they point at the launching terminal's database (e.g. kitty's),
-/// which herdr and its panes have no business reading (ADR 0006).
+/// which herdr and its panes have no business reading.
 const ALLOW: &[&str] = &[
     "HOME",
     "USER",

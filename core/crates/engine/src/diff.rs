@@ -179,7 +179,7 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
                 window: *window,
                 workspace: info.clone(),
             });
-            // The branch the sidebar shows (F26).
+            // The branch the sidebar shows.
             if old.git != info.git {
                 events.push(Event::WorkspaceGit {
                     workspace: *id,
@@ -208,7 +208,7 @@ pub fn diff(before: &Session, after: &Session, kill: bool) -> Vec<Event> {
             });
         }
     }
-    // Agent state, after the tiles that carry it (F11, F16). New tiles only
+    // Agent state, after the tiles that carry it. New tiles only
     // report an agent that is there already, e.g. an adopted blocked one.
     for (id, tab, tile) in &a.tiles {
         match b_tiles.get(id) {

@@ -1,4 +1,4 @@
-//! The command palette's entries (F5): every keymap action, plus the
+//! The command palette's entries: every keymap action, plus the
 //! user-facing protocol methods no key is bound to, each with its current
 //! chords. `commands.list` serves this; shells show it.
 

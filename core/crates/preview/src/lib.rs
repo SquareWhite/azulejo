@@ -1,4 +1,4 @@
-//! Preview tiles (F9): what a file is, how it looks as HTML, and when it
+//! Preview tiles: what a file is, how it looks as HTML, and when it
 //! changes.
 //!
 //! - [`classify`] sorts a file into markdown, code, plain text, a native kind
@@ -119,8 +119,8 @@ pub fn render(path: &Path) -> Rendered {
     render_as(path, false)
 }
 
-/// Like [`render`], but text files show as their source highlighted as code
-/// (F29): markdown as markdown text, not as a document. Other kinds render
+/// Like [`render`], but text files show as their source highlighted as code:
+/// markdown as markdown text, not as a document. Other kinds render
 /// as usual.
 pub fn render_source(path: &Path) -> Rendered {
     render_as(path, true)

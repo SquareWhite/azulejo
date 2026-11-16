@@ -1,4 +1,4 @@
-//! What a terminal tile runs, and how to read its end (ADRs 0001, 0003, 0006).
+//! What a terminal tile runs, and how to read its end.
 //!
 //! The shell's terminal surface (libghostty on macOS) runs one child process:
 //! `herdr terminal attach <terminal-id>` to drive the pane, or a read-only
@@ -8,7 +8,7 @@
 //! status and stderr to files the shell names; when the child is gone the
 //! shell reads them back through `azj_core_attach_exit`.
 //!
-//! A tile on one of herdr's saved machines (its `HerdrRef.machine`, ADR 0011)
+//! A tile on one of herdr's saved machines (its `HerdrRef.machine`)
 //! runs the same thing through `ssh -tt`; ssh exits 255 when it can't reach
 //! the machine, which reads as "herdr unreachable": the tile waits for the
 //! machine to come back.
@@ -180,7 +180,7 @@ fn diagnose(target: Option<&TerminalTarget>, request: &ExitRequest) -> AttachExi
     let terminal = TerminalId(request.terminal_id.clone());
     if request.status == Some(1) {
         // herdr's own refusals exit 1; with the terminal still there, another
-        // client has it (ADR 0003).
+        // client has it.
         return runtime.block_on(client.diagnose_attach_exit(
             Some(1),
             request.stderr.as_deref(),
@@ -254,7 +254,7 @@ fn terminal_command(
         line.push(name);
     }
     // Terminfo from the launching environment (e.g. kitty's) never reaches
-    // the attach client; only the bundle's own does (ADR 0006).
+    // the attach client; only the bundle's own does.
     if let Some(dir) = terminfo {
         line.push(format!("TERMINFO={}", path_str(dir)?));
     }
@@ -273,7 +273,7 @@ fn terminal_command(
 }
 
 /// `$1` stderr file, `$2` status file, then the herdr argv. Never closes the
-/// PTY's input (a stray EOF reaches the pane's shell; ADR 0006).
+/// PTY's input (a stray EOF reaches the pane's shell).
 const ATTACH_SCRIPT: &str =
     r#"err=$1; st=$2; shift 2; rm -f "$st"; "$@" 2>>"$err"; printf '%s' "$?" >"$st""#;
 

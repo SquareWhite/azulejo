@@ -23,8 +23,7 @@ final class TerminalRuntime {
     private(set) var config: ghostty_config_t?
 
     /// The terminals' background as configured (the theme's palette, or the
-    /// user's Ghostty colours), so a tile's margin round the text matches it
-    /// (D.5).
+    /// user's Ghostty colours), so a tile's margin round the text matches it.
     private(set) var background: NSColor?
     /// The theme palette loaded over the user's Ghostty config (nil: none).
     private(set) var palette: TerminalSpec?

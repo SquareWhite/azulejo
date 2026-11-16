@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 1.12: session restore and wake, measured on the dev instance `restore`
+# Session restore and wake, measured on the dev instance `restore`
 # (herdr session azj-dev-restore). No OS input, no window activation: the app
 # runs with --bg, wake is a distributed notification to the app's debug hook.
 #
@@ -180,7 +180,7 @@ record "herdr restart (server start → all reattached and holding)" "$(ms_since
 n="$(tail -n +"$((m + 1))" "$log" | grep -oE 'terminal [A-Z0-9]{4}: attached' | sort -u | wc -l | tr -d ' ')"
 [[ "$n" == "$target" ]] || fail "only $n/$target terminals reattached after herdr came back"
 grep -E "herdr (connected|disconnected)" "$log" | tail -3 | sed 's/^/   log: /'
-echo "   (herdr restores layout but not processes: panes respawn with new terminals, ADR 0008)"
+echo "   (herdr restores layout but not processes: panes respawn with new terminals)"
 
 say "launch with herdr stopped"
 "$dev_sh" --stop

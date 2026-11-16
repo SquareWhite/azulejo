@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ADR 0012 in the app: splits made in the dev app show up as pane splits in
+# Layout mirroring in the app: splits made in the dev app show up as pane splits in
 # its herdr tab, and herdr's changes come back. Runs on its own dev instance
 # (AZJ_DEV_NAME=mir, herdr session azj-dev-mir), --bg, no OS input.
 #

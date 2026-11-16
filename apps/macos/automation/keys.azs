@@ -1,4 +1,4 @@
-# Every F2 and tall-layout action from the keyboard, plus tabs, workspaces,
+# Every tiling and tall-layout action from the keyboard, plus tabs, workspaces,
 # sidebar and resize mode. Runs in-process on the dev profile (no OS input):
 #   just mac-automation
 # Fresh dev state: one window, one workspace, one tab, one terminal tile.
@@ -6,7 +6,7 @@
 log start
 expect windows 1
 expect tiles 1
-# New tabs start dynamic (ADR 0010; layouts.azs covers that). This walkthrough
+# New tabs start dynamic (layouts.azs covers that). This walkthrough
 # checks the hand-made split tree, so switch the tab to manual first.
 expect kind tile
 core {"method": "layout.set", "params": {"kind": "manual"}}
@@ -25,8 +25,7 @@ shot 01-tall-four
 
 key alt+enter                 # promote the focused stack tile to master
 expect focus 1
-# rotate: a manual tab turns its whole tree a quarter turn clockwise (ADR 0010,
-# "Manual rotate"), and four turns give the same tree back
+# rotate: a manual tab turns its whole tree a quarter turn clockwise, and four turns give the same tree back
 remember tree
 expect rect.focused 0,0,500x1000
 key alt+o                     # the master goes to the top…
@@ -76,7 +75,7 @@ shot 03-equalized
 key alt+h
 expect focus 1
 key alt+shift+l               # swap master with its right neighbour (focus follows the tile):
-expect focus 2                # the stack tiles tie, so the most recently focused wins (ADR 0010)
+expect focus 2                # the stack tiles tie, so the most recently focused wins
 key alt+shift+h               # and back
 expect focus 1
 action move_tile_right        # no default chord: menu/palette path

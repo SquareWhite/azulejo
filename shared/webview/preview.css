@@ -1,4 +1,4 @@
-/* Preview tile styling, shared by both shells' webviews (F9).
+/* Preview tile styling, shared by both shells' webviews.
    Syntax colours come from the core (`syn-*` classes), light and dark. */
 
 :root {
@@ -16,8 +16,8 @@
   --azj-heading: var(--azj-fg);
   --azj-code: var(--azj-fg);
   --azj-code-bg: var(--azj-subtle);
-  /* Type scale from the mockup's preview tile (docs/design/README.md,
-     Typography): body = tokens.json font.body (13), heading semibold 18,
+  /* Type scale from the mockup's preview tile: body = tokens.json
+     font.body (13), heading semibold 18,
      code blocks 11; radius = tokens.json radius.field (6). */
   --azj-size-body: 13px;
   --azj-size-h1: 18px;

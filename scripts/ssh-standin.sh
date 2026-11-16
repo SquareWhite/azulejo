@@ -1,5 +1,5 @@
 #!/bin/sh
-# A stand-in for `ssh` in tests (ADR 0011): takes the arguments Azulejo
+# A stand-in for `ssh` in tests: takes the arguments Azulejo
 # passes to ssh, ignores the options and the target, and runs the remote
 # script on this machine. Lets tests drive the remote-machine code paths
 # (herdr's remote-api-bridge, `ssh -tt … terminal attach`) against local,

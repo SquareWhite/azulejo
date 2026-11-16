@@ -36,7 +36,7 @@
 //! [herdr]
 //! session = "default"    # herdr session for terminal tiles: "default" (herdr's own) or a name
 //! enabled = true         # false: terminal tiles stay unbound (no herdr)
-//! mirror_layout = true   # tabs' splits, zoom and Monocle mirrored into herdr, both ways (ADR 0012)
+//! mirror_layout = true   # tabs' splits, zoom and Monocle mirrored into herdr, both ways
 //!
 //! [terminal]
 //! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
@@ -54,7 +54,7 @@
 //! collapsed = "rail"     # what toggle_sidebar collapses it to: "rail" (workspace numbers and
 //!                        # agent states down a narrow column) or "hidden"
 //!
-//! [layout]               # dynamic layouts (ADR 0010)
+//! [layout]               # dynamic layouts
 //! default = "tile"       # new tabs: "tile", "monocle", "three_column" or "manual"
 //! insert = "end"         # new tiles in dynamic tabs: "end", "master" or "after_focused"
 //! cycle = ["manual", "tile", "three_column", "monocle"]
@@ -100,7 +100,7 @@ use keymap::{Layer, LayerInfo, LayerParser};
 /// The bundled default keymap (`shared/config/keymap.default.toml`).
 pub const DEFAULT_KEYMAP: &str = include_str!("../../../../shared/config/keymap.default.toml");
 
-/// Layout animation settings (F4).
+/// Layout animation settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Animation {
     pub enabled: bool,
@@ -207,14 +207,14 @@ named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
 named!(WorkspaceSwitch { Slide = "slide", Fade = "fade", None = "none" });
 named!(ReduceMotion { System = "system", Ignore = "ignore" });
 
-/// Which herdr session terminal tiles live in (ADR 0008).
+/// Which herdr session terminal tiles live in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HerdrConfig {
     pub enabled: bool,
     /// The session name. `None`, the default, means herdr's default session:
     /// the one the user's own `herdr` TUI and phone use.
     pub session: Option<String>,
-    /// Connect herdr's saved machines too (ADR 0011). `None` means the
+    /// Connect herdr's saved machines too. `None` means the
     /// default: on with herdr's default session, off with a named one, so an
     /// isolated setup (tests, dev profiles) never reaches real machines.
     pub machines: Option<bool>,
@@ -226,7 +226,7 @@ pub struct HerdrConfig {
     /// Tests and dev profiles: run this instead of `ssh`.
     pub ssh: Option<PathBuf>,
     /// Mirror each tab's layout into herdr, both ways: one herdr tab per
-    /// Azulejo tab, its splits, zoom and Monocle (ADR 0012). Off: one herdr
+    /// Azulejo tab, its splits, zoom and Monocle. Off: one herdr
     /// tab per terminal tile, herdr's tree left alone. Applies live.
     pub mirror_layout: bool,
 }
@@ -277,7 +277,7 @@ impl Default for HerdrConfig {
 /// Terminal tile settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TerminalConfig {
-    /// What happens when the process in a tile's pane exits (ADR 0009).
+    /// What happens when the process in a tile's pane exits.
     pub on_exit: OnExit,
 }
 
@@ -341,7 +341,7 @@ impl Default for SidebarConfig {
 
 /// The `[layout]` defaults: what new tabs start as. Unlike the model's own
 /// default (manual, so a bare session behaves as before), new tabs default to
-/// dynamic Tile here (ADR 0010).
+/// dynamic Tile here.
 pub fn default_layout() -> LayoutPrefs {
     LayoutPrefs {
         default: LayoutKind::Tile,
