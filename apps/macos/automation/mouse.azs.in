@@ -144,3 +144,70 @@ sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat scre
 wait 600
 mouse drag 0,0 10,0
 expect terminal.selection.text alpha beta
+
+# The stand-ins (mouse-standin.c) turn on omp's mouse modes (1000, 1003 any
+# motion, 1006 SGR) and log the reports they get: `omp` is on the default
+# `[terminal] select_on_drag`, `mouse-any` isn't.
+log === omp (select_on_drag): a plain drag selects and never reaches it
+sh {herdr} --session {session} pane run {pane} "export PATH=@DIR@/bin:/usr/bin:/bin; omp omp.log"
+until terminal.mouse.owner select 8000
+wait 300
+mouse drag 4,0 14,0
+expect terminal.selection.text alpha beta
+expect terminal.mouse reported
+clip clear
+key cmd+c
+expect clipboard alpha beta
+wait 300
+# No press, motion or release from the drag.
+sh test -f @DIR@/omp.log && test ! -s @DIR@/omp.log
+
+log === omp: a click goes to it, and so does one that wobbles inside a cell
+mouse click 4,1
+wait 300
+sh grep -q '^0;5;2M$' @DIR@/omp.log
+sh grep -q '^0;5;2m$' @DIR@/omp.log
+expect terminal.selection.text -
+mouse drag 8,1 8,1
+wait 300
+sh grep -q '^0;9;2M$' @DIR@/omp.log
+sh grep -q '^0;9;2m$' @DIR@/omp.log
+expect terminal.selection.text -
+sh ! grep -q '^32;' @DIR@/omp.log
+
+log === omp: shift-drag still selects
+mouse drag 4,0 9,0 shift
+expect terminal.selection.text alpha
+wait 600
+
+log === A program not on the list still gets plain drags
+key q
+until terminal.mouse.owner shell 8000
+sh {herdr} --session {session} pane run {pane} "mouse-any any.log"
+until terminal.mouse.owner program 8000
+wait 300
+mouse drag 4,0 9,0
+expect terminal.selection.text -
+wait 300
+sh grep -q '^0;5;1M$' @DIR@/any.log
+sh grep -q '^32;' @DIR@/any.log
+sh grep -q '^0;10;1m$' @DIR@/any.log
+
+log === select_on_drag follows a config reload
+key q
+until terminal.mouse.owner shell 8000
+sh cp {config} @DIR@/config.orig
+sh printf '\n[terminal]\nselect_on_drag = []\n' >> {config}
+sh {herdr} --session {session} pane run {pane} "omp omp-off.log"
+until terminal.mouse.owner program 8000
+wait 300
+mouse drag 4,0 9,0
+expect terminal.selection.text -
+wait 300
+sh grep -q '^32;' @DIR@/omp-off.log
+sh cp @DIR@/config.orig {config}
+until terminal.mouse.owner select 5000
+mouse drag 4,0 14,0
+expect terminal.selection.text alpha beta
+key q
+until terminal.mouse.owner shell 8000

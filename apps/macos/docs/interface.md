@@ -114,6 +114,15 @@ foreground process, which the core polls from herdr:
 
 - **A shell**, or nothing polled yet: selection works as in Ghostty (drag,
   double- and triple-click, shift-click, option-drag); ⌘C copies.
+- **A program on `[terminal] select_on_drag`** (`["omp"]` by default): a
+  plain drag selects, as in a shell, and the program never sees it. Clicks
+  (double-clicks too) and the wheel still reach the program, so its own
+  click and scroll handling keeps working. The press waits until the
+  pointer moves a cell's width or height (a drag) or the button comes up
+  (a click: the program gets the press and release together). Shift + drag
+  and shift + click select, as below. Names match the foreground program as
+  the tile header shows it; an empty list turns this off. Saving the config
+  applies it.
 - **Anything else** (an agent's TUI, vim, less): clicks and drags go to the
   program. Shift + drag or click selects locally, as in Ghostty under mouse
   capture.
@@ -124,4 +133,6 @@ and files are refused, since terminal output picks the target.
 
 `mouse.sh` checks this with in-app mouse events in a shell and over a
 mouse-aware fixture (`mouse-app.py`), reading the private pasteboard and
-recording links instead of opening them.
+recording links instead of opening them. A small native stand-in
+(`mouse-standin.c`, run as `omp` and under another name) turns on omp's
+mouse modes and logs what reaches it.

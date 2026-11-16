@@ -472,6 +472,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         view.onTitle = { [weak self] title in self?.titleChanged(title) }
         view.onClickFocus = { [weak self] in self?.clickFocus() }
         view.shellInForeground = { [weak self] in self?.model.shellInForeground ?? true }
+        view.selectsOnDrag = { [weak self] in self?.model.selectsOnDrag ?? false }
         addSubview(view, positioned: .below, relativeTo: overlay)
         surface = view
         surfaceTerminal = herdr.terminalId
@@ -1368,10 +1369,34 @@ extension TileModel {
     /// or is a shell itself (`bash` run from `zsh`, a login `-zsh`). Not
     /// polled yet counts as a shell.
     var shellInForeground: Bool {
-        guard let command = pane?.command, let first = command.split(separator: " ").first else { return true }
+        guard let name = foregroundProgram else { return true }
+        return Self.shells.contains(name)
+    }
+
+    /// `[terminal] select_on_drag` (`azj_core_terminal`): programs that take
+    /// the mouse but whose panes still select on a plain drag. Read at
+    /// launch and on `config.reloaded`.
+    nonisolated(unsafe) static var selectOnDrag: Set<String> = ["omp"]
+
+    static func applyTerminalSettings(_ settings: [String: Any]) {
+        selectOnDrag = Set(settings["select_on_drag"] as? [String] ?? ["omp"])
+    }
+
+    /// The program in this pane's foreground is on `[terminal]
+    /// select_on_drag`: a plain drag selects, a click still reaches it.
+    var selectsOnDrag: Bool {
+        guard let name = foregroundProgram else { return false }
+        return Self.selectOnDrag.contains(name)
+    }
+
+    /// The polled foreground command's program name, without its folder or
+    /// a login shell's dash; nil when nothing other than the shell runs or
+    /// nothing was polled yet.
+    private var foregroundProgram: String? {
+        guard let command = pane?.command, let first = command.split(separator: " ").first else { return nil }
         var name = first.split(separator: "/").last.map(String.init) ?? String(first)
         if name.hasPrefix("-") { name.removeFirst() }
-        return Self.shells.contains(name)
+        return name
     }
 
     /// An idle shell, where ⌘S Run may type a command (TerminalRun): the

@@ -138,6 +138,15 @@ badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
   split), drag tabs in the top bar or workspaces in the sidebar to reorder
   them, and drop files, images or text onto a terminal to paste their paths or
   contents.
+- Text selection: a plain drag selects at a shell prompt. Programs that take
+  the mouse (vim, most agent TUIs) get plain drags; hold shift to select.
+  Programs on `[terminal] select_on_drag` (`["omp"]` by default) select on a
+  plain drag but still get clicks and the wheel. Add yours:
+
+  ```toml
+  [terminal]
+  select_on_drag = ["omp", "htop"]
+  ```
 - Browser and preview tiles also come from `azj`:
 
   ```sh

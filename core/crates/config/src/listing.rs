@@ -354,7 +354,12 @@ pub fn keys_template(platform: Platform) -> String {
          # the system). Finder always shows the light one.\n\
          # app_icon = \"light\"\n\
          # The number of unread agent tiles on the Dock icon.\n\
-         # dock_badge = true\n",
+         # dock_badge = true\n\
+         \n\
+         # Programs that take the mouse but whose panes still select text on a\n\
+         # plain drag, as a shell's do. A click and the wheel still reach them.\n\
+         # [terminal]\n\
+         # select_on_drag = [\"omp\"]\n",
     );
     out
 }
@@ -548,6 +553,9 @@ mod tests {
             let live = Config::from_toml(&appearance, None, platform);
             assert!(live.diagnostics.is_empty(), "{:#?}", live.diagnostics);
             assert_eq!(live.appearance, Config::defaults(platform).appearance);
+            // So does the `[terminal]` block after it.
+            assert!(text.contains("\n# [terminal]\n# select_on_drag = [\"omp\"]\n"));
+            assert_eq!(live.terminal, Config::defaults(platform).terminal);
             let defaults = Config::defaults(platform);
             for ctx in std::iter::once(None).chain(KeyContext::ALL.into_iter().map(Some)) {
                 let a: std::collections::HashSet<_> = uncommented.keymap.bindings(ctx).collect();

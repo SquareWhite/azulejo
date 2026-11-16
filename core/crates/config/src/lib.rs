@@ -40,6 +40,8 @@
 //!
 //! [terminal]
 //! on_exit = "close"      # the shell exits (ctrl+d, `exit`): "close" the tile, or "keep" it to respawn
+//! select_on_drag = ["omp"]  # programs (by foreground process name) whose panes select text on a
+//!                        # plain drag, as a shell's do; clicks and the wheel still reach them
 //!
 //! [appearance]           # themes (docs/themes.md)
 //! theme = "atom-one-dark"   # a theme id, or "auto" to follow the system
@@ -275,10 +277,23 @@ impl Default for HerdrConfig {
 }
 
 /// Terminal tile settings.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalConfig {
     /// What happens when the process in a tile's pane exits.
     pub on_exit: OnExit,
+    /// Programs, by foreground process name, that turn on mouse reporting
+    /// but whose panes still select text on a plain drag, as a shell's do.
+    /// A click without movement and the wheel still go to the program.
+    pub select_on_drag: Vec<String>,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        TerminalConfig {
+            on_exit: OnExit::default(),
+            select_on_drag: vec!["omp".to_owned()],
+        }
+    }
 }
 
 /// The `[hints]` settings: visible-terminal hints (⌘S).
@@ -688,9 +703,42 @@ fn parse_terminal(
                 value.span(),
                 "`terminal.on_exit` must be \"close\" or \"keep\"",
             ),
+            ("select_on_drag", DeValue::Array(items)) => {
+                let mut names: Vec<String> = Vec::new();
+                let mut ok = true;
+                for item in items.iter() {
+                    match item.get_ref() {
+                        DeValue::String(name) if valid_program(name) => {
+                            if !names.iter().any(|n| n == name.as_ref()) {
+                                names.push(name.as_ref().to_owned());
+                            }
+                        }
+                        _ => {
+                            ok = false;
+                            sink.error(
+                                item.span(),
+                                "`terminal.select_on_drag` lists program names, such as \"omp\"",
+                            );
+                        }
+                    }
+                }
+                if ok {
+                    out.select_on_drag = names;
+                }
+            }
+            ("select_on_drag", _) => sink.error(
+                value.span(),
+                "`terminal.select_on_drag` must be a list of program names",
+            ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `terminal.{other}`")),
         }
     }
+}
+
+/// A program's name as a pane's foreground process shows it: no folder,
+/// no spaces.
+fn valid_program(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', ' ', '\t'])
 }
 
 fn parse_hints(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut HintsConfig) {
