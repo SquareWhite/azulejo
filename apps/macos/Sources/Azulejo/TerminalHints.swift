@@ -9,7 +9,10 @@ struct TerminalHintSpan: Equatable {
 }
 
 struct TerminalHintItem: Equatable {
-    enum Kind: String { case url, path, branch, command, ip, domain, uuid, hash, text }
+    /// The core's kinds. `hash` takes in UUIDs and other hex IDs; `text` is
+    /// a paragraph (never labelled, what ⌥↑ grows a line to); `line` is a
+    /// non-blank line, shown once its letter is typed.
+    enum Kind: String { case url, path, branch, command, ip, domain, hash, text, line }
     let kind: Kind
     let value: String
     let spans: [TerminalHintSpan]
@@ -33,7 +36,7 @@ enum TerminalHints {
         runTarget = settings["run_target"] as? String ?? "reuse"
     }
 
-    /// One pane's items (paragraphs included, in reading order), each row's
+    /// One pane's items (paragraphs and lines included, in reading order), each row's
     /// text extent and runs of non-blank characters, and the core's handle.
     final class Pane {
         private let handle: OpaquePointer
@@ -144,7 +147,8 @@ enum TerminalHints {
         }
 
         /// Labels for every kept item of these panes, in order; "" for an
-        /// item repeated in its pane (all but the newest copy).
+        /// item repeated in its pane (all but the newest copy; lines are
+        /// never repeats) and for a paragraph.
         static func labels(_ panes: [Pane]) -> [String] {
             let handles: [OpaquePointer?] = panes.map(\.handle)
             guard let reply = handles.withUnsafeBufferPointer({ azj_hints_labels($0.baseAddress, UInt($0.count)) })
@@ -178,14 +182,17 @@ enum TerminalHints {
 
     /// Homerow-style callouts for one pane's labelled items
     /// (`azj_hints_place_callouts`): `text` is every run of non-blank cells,
-    /// `bounds` where pills may go. Empty if the core refuses.
-    static func placeCallouts(_ items: [TerminalSelection.CalloutItem], text: [CGRect], bounds: CGRect, tail: CGFloat,
-                              spacing: CGFloat, inset: CGFloat, drift: CGFloat) -> [TerminalSelection.Callout] {
+    /// `prose` the unlabelled paragraphs' rects (kept off before other
+    /// items' text), `bounds` where pills may go. Empty if the core refuses.
+    static func placeCallouts(_ items: [TerminalSelection.CalloutItem], text: [CGRect], prose: [CGRect] = [],
+                              bounds: CGRect, tail: CGFloat, spacing: CGFloat, inset: CGFloat,
+                              drift: CGFloat) -> [TerminalSelection.Callout] {
         func rect(_ r: CGRect) -> [CGFloat] { [r.minX, r.minY, r.width, r.height] }
         let request: [String: Any] = [
             "items": items.map { ["anchor": rect($0.anchor), "rects": $0.rects.map(rect), "prose": $0.prose,
                                   "size": [$0.size.width, $0.size.height]] },
-            "text": text.map(rect), "bounds": rect(bounds), "tail": tail, "spacing": spacing, "inset": inset, "drift": drift,
+            "text": text.map(rect), "prose": prose.map(rect), "bounds": rect(bounds), "tail": tail,
+            "spacing": spacing, "inset": inset, "drift": drift,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: request),
               let reply = azj_hints_place_callouts(String(decoding: data, as: UTF8.self)) else { return [] }

@@ -1,5 +1,5 @@
 //! ⌘S "smart select" detection: the items a person might want from a
-//! terminal screen (URLs, paths, commands, IPs, domains, UUIDs, hashes,
+//! terminal screen (URLs, paths, commands, IPs, domains, hashes and IDs,
 //! branches), found in the visible rows.
 //!
 //! Pure text logic, shared by every shell: rows in, items out. Positions
@@ -37,7 +37,7 @@ use crate::refine::{Command, Span, refine};
 use files::Files;
 use lines::{Line, RowColors, join_lines, runnable, single_lines, soft_lines};
 
-/// What an item is. Its name is also the first letter of its ⌘S label.
+/// What an item is. Its letter starts its ⌘S label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -47,13 +47,29 @@ pub enum Kind {
     Command,
     Ip,
     Domain,
-    Uuid,
+    /// A hash or an ID: a git hash, a UUID, another hex ID.
     Hash,
-    /// A paragraph of prose ([`crate::select::paragraphs`]).
+    /// A paragraph of prose ([`crate::select::paragraphs`]): what ⌥↑
+    /// grows a line to. Never labelled.
     Text,
+    /// A non-blank line, soft wraps joined ([`crate::select::line_items`]).
+    /// Labelled, but shown only once its letter is typed.
+    Line,
 }
 
 impl Kind {
+    pub const ALL: [Kind; 9] = [
+        Kind::Url,
+        Kind::Path,
+        Kind::Branch,
+        Kind::Command,
+        Kind::Ip,
+        Kind::Domain,
+        Kind::Hash,
+        Kind::Text,
+        Kind::Line,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Kind::Url => "url",
@@ -62,41 +78,30 @@ impl Kind {
             Kind::Command => "command",
             Kind::Ip => "ip",
             Kind::Domain => "domain",
-            Kind::Uuid => "uuid",
             Kind::Hash => "hash",
             Kind::Text => "text",
+            Kind::Line => "line",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Kind> {
-        [
-            Kind::Url,
-            Kind::Path,
-            Kind::Branch,
-            Kind::Command,
-            Kind::Ip,
-            Kind::Domain,
-            Kind::Uuid,
-            Kind::Hash,
-            Kind::Text,
-        ]
-        .into_iter()
-        .find(|k| k.name() == name)
+        Kind::ALL.into_iter().find(|k| k.name() == name)
     }
 
-    /// The first letter of every label of this kind.
-    pub fn letter(self) -> char {
-        match self {
-            Kind::Url => 'l',
+    /// The first letter of every label of this kind; none for a
+    /// paragraph, which has no label.
+    pub fn letter(self) -> Option<char> {
+        Some(match self {
+            Kind::Url => 'u',
             Kind::Path => 'p',
             Kind::Ip => 'i',
             Kind::Hash => 'h',
             Kind::Branch => 'b',
-            Kind::Uuid => 'u',
             Kind::Domain => 'd',
             Kind::Command => 'c',
-            Kind::Text => 't',
-        }
+            Kind::Line => 'l',
+            Kind::Text => return None,
+        })
     }
 
     /// Which wins when atoms of equal length overlap.
@@ -106,9 +111,8 @@ impl Kind {
             Kind::Url => 1,
             Kind::Path => 2,
             Kind::Ip => 3,
-            Kind::Uuid => 4,
-            Kind::Hash => 5,
-            Kind::Domain => 6,
+            Kind::Hash => 4,
+            Kind::Domain => 5,
             _ => 9,
         }
     }

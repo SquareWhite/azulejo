@@ -51,11 +51,12 @@ fn rows_of(items: &[Item]) -> Vec<Vec<usize>> {
 fn kind_labels() {
     use Kind::*;
     let kinds = [
-        Url, Path, Path, Command, Text, Url, Ip, Hash, Branch, Uuid, Domain,
+        Url, Path, Path, Command, Text, Url, Ip, Hash, Branch, Line, Domain,
     ];
     assert_eq!(
         labels(&kinds),
-        ["la", "pa", "ps", "c", "t", "ls", "i", "h", "b", "u", "d"]
+        ["ua", "pa", "ps", "c", "", "us", "i", "h", "b", "l", "d"],
+        "u for URLs, l for lines, no label for a paragraph"
     );
     let mut many_kinds = vec![Path; 30];
     many_kinds.push(Url);
@@ -67,10 +68,11 @@ fn kind_labels() {
         "past 26 of a kind, labels grow a letter"
     );
     assert_eq!(many.iter().collect::<HashSet<_>>().len(), 31);
-    assert_eq!(many[30], "l");
+    assert_eq!(many[30], "u");
     for set in [labels(&kinds), many] {
         assert!(
             !set.iter()
+                .filter(|a| !a.is_empty())
                 .any(|a| set.iter().any(|b| a != b && b.starts_with(a.as_str()))),
             "no label is a prefix of another"
         );
@@ -185,7 +187,7 @@ fn grow_shrink_and_arrows() {
     let vendor = all.iter().position(|i| i.value == "./vendor/*").unwrap();
     let mut chain = Vec::new();
     let mut current = extent(&all[vendor]);
-    while let Some(unit) = grow(&current, &all, SHEET) {
+    while let Some(unit) = grow(&current, &all, SHEET, &[]) {
         chain.push(unit);
         current = unit.range;
     }
@@ -202,7 +204,7 @@ fn grow_shrink_and_arrows() {
     let ip = all.iter().position(|i| i.value == "192.0.2.47").unwrap();
     let mut levels = Vec::new();
     current = extent(&all[ip]);
-    while let Some(unit) = grow(&current, &all, SHEET) {
+    while let Some(unit) = grow(&current, &all, SHEET, &[]) {
         levels.push(unit.level);
         current = unit.range;
     }
@@ -250,7 +252,7 @@ fn grow_shrink_and_arrows() {
         None,
         "nothing before the first item"
     );
-    let row_lines = lines(SHEET);
+    let row_lines = lines(SHEET, &[]);
     assert_eq!(
         neighbour(&row_lines, &row_lines[0], Direction::Down).map(|i| row_lines[i].start.row),
         Some(2)
@@ -264,7 +266,10 @@ fn grow_shrink_and_arrows() {
         items.clone(),
         Some(95),
     );
-    assert_eq!(pane.items.len(), items.len() + paras.len());
+    assert_eq!(
+        pane.items.len(),
+        items.len() + paras.len() + lines(SHEET, &[]).len()
+    );
     let first = pane.targets(Level::Item)[0];
     assert_eq!(
         pane.neighbour(&first, Direction::Right)
@@ -669,7 +674,7 @@ fn callouts_on_cells() {
         })
         .collect();
     let text: Vec<Rect> = column.iter().flat_map(|i| i.rects.clone()).collect();
-    let stacked = place_items(&column, &text, metrics(PANE));
+    let stacked = place_items(&column, &text, &[], metrics(PANE));
     assert!(
         stacked
             .iter()
@@ -750,7 +755,13 @@ fn callouts_on_dense_screens() {
             detected,
             Some(columns),
         );
-        let found = &pane.items;
+        // As the overlay places them: the labelled items before a letter is
+        // typed (no paragraphs, no lines), keeping off paragraphs' text.
+        let found: Vec<&Item> = pane
+            .items
+            .iter()
+            .filter(|i| i.kind != Kind::Text && i.kind != Kind::Line)
+            .collect();
         let kinds: Vec<Kind> = found.iter().map(|i| i.kind).collect();
         let labels = labels(&kinds);
         // 8×17 cells, one per UTF-16 unit (these screens are ASCII but for ● and ⎿).
@@ -778,7 +789,7 @@ fn callouts_on_dense_screens() {
                 callout::Item {
                     anchor: Rect::new(rects[0].x, rects[0].y, width, height),
                     rects,
-                    prose: item.kind == Kind::Text,
+                    prose: false,
                     size: [
                         (label.len() as f64 * 6.5 + 2.0 * (pill * 0.32).round()).max(pill),
                         pill,
@@ -798,9 +809,16 @@ fn callouts_on_dense_screens() {
             columns as f64 * width + 16.0,
             rows.len() as f64 * height + 12.0,
         );
+        let prose: Vec<Rect> = pane
+            .items
+            .iter()
+            .filter(|i| i.kind == Kind::Text)
+            .flat_map(|i| i.spans.iter().map(|s| rect(s.row, s.start, s.length)))
+            .collect();
         let callouts = place_items(
             &items,
             &text,
+            &prose,
             Metrics {
                 bounds,
                 tail,
@@ -824,7 +842,6 @@ fn callouts_on_dense_screens() {
                 })
             })
             .collect();
-        // (A paragraph and the path it starts with share a first cell.)
         let overlaps = callouts.iter().enumerate().any(|(i, c)| {
             let frame = c.frame.inset(0.5, 0.5).unwrap();
             callouts[i + 1..].iter().any(|o| o.frame.intersects(&frame))
@@ -848,6 +865,374 @@ fn callouts_on_dense_screens() {
         assert!(
             covers.is_empty(),
             "{name}: no callout covers another item's text: {covers:?}"
+        );
+    }
+}
+
+fn pane_of(rows: &[&str], joins: Vec<usize>, columns: usize) -> Pane {
+    let detected = detect(
+        &Input {
+            rows,
+            joins: &joins,
+            columns: Some(columns),
+            ..Input::default()
+        },
+        &NoFiles,
+    );
+    Pane::new(
+        rows.iter().map(|s| s.to_string()).collect(),
+        joins,
+        detected,
+        Some(columns),
+    )
+}
+
+fn line_values(pane: &Pane) -> Vec<&str> {
+    pane.items
+        .iter()
+        .filter(|i| i.kind == Kind::Line)
+        .map(|i| i.value.as_str())
+        .collect()
+}
+
+#[test]
+fn lines_are_items() {
+    // Row 3 soft-wraps into row 4 (the terminal's wrap flag): one line.
+    let rows = [
+        "   indented text   ",
+        "",
+        "  ",
+        "a long sentence that wra",
+        "ps onto the next row  ",
+        "",
+        "last",
+    ];
+    let line_items = select::line_items(&rows, &[3]);
+    assert_eq!(
+        line_items
+            .iter()
+            .map(|i| i.value.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "indented text",
+            "a long sentence that wraps onto the next row",
+            "last"
+        ],
+        "blank rows skipped, blanks trimmed, a wrapped line joined without a newline"
+    );
+    assert!(
+        line_items
+            .iter()
+            .all(|i| i.kind == Kind::Line && i.open.is_none())
+    );
+    let spans = |i: usize| {
+        line_items[i]
+            .spans
+            .iter()
+            .map(|s| (s.row, s.start, s.length))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        spans(0),
+        [(0, 3, 13)],
+        "without the indent and trailing blanks"
+    );
+    assert_eq!(
+        spans(1),
+        [(3, 0, 24), (4, 0, 20)],
+        "one item over both rows"
+    );
+    assert_eq!(
+        lines(&rows, &[]).len(),
+        4,
+        "without the wrap flag, each row is a line"
+    );
+
+    // In a pane: lines sit with the other items, a line before the items on it.
+    let pane = pane_of(
+        &["see https://example.invalid/a for more", "", "$ ls"],
+        vec![],
+        80,
+    );
+    let kinds: Vec<Kind> = pane.items.iter().map(|i| i.kind).collect();
+    assert_eq!(
+        kinds,
+        [Kind::Text, Kind::Line, Kind::Url, Kind::Line, Kind::Command],
+        "reading order: a container before what's inside it (the prose row is a paragraph too)"
+    );
+    assert_eq!(
+        line_values(&pane),
+        ["see https://example.invalid/a for more", "$ ls"]
+    );
+}
+
+#[test]
+fn kind_letters() {
+    assert_eq!(Kind::Url.letter(), Some('u'), "u is for URLs");
+    assert_eq!(Kind::Line.letter(), Some('l'), "l is for lines");
+    assert_eq!(Kind::Hash.letter(), Some('h'));
+    assert_eq!(
+        Kind::Text.letter(),
+        None,
+        "paragraphs aren't a kind to pick"
+    );
+    assert_eq!(Kind::from_name("uuid"), None, "no UUID kind of its own");
+    assert!(
+        !Kind::ALL.iter().any(|k| k.letter() == Some('t')),
+        "no t kind"
+    );
+    let letters: Vec<char> = Kind::ALL.iter().filter_map(|k| k.letter()).collect();
+    assert_eq!(
+        letters.iter().collect::<HashSet<_>>().len(),
+        letters.len(),
+        "one kind per letter"
+    );
+
+    // Through detection: a URL takes u, a UUID and a git hash share h.
+    let rows = [
+        "Docs: https://example.invalid/hints",
+        "Session 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864 at commit 7c3e9a1",
+        "",
+        "The build finished and every test passed, which is nice to see.",
+    ];
+    let pane = pane_of(&rows, vec![], 80);
+    let keys: Vec<(usize, Kind, &str)> = pane
+        .items
+        .iter()
+        .map(|i| (0, i.kind, i.value.as_str()))
+        .collect();
+    let labels = select::pane_labels(&keys);
+    let label_of = |value: &str| {
+        let i = pane
+            .items
+            .iter()
+            .position(|i| i.value == value && i.kind != Kind::Line)
+            .unwrap();
+        (pane.items[i].kind, labels[i].clone())
+    };
+    assert_eq!(
+        label_of("https://example.invalid/hints"),
+        (Kind::Url, "u".to_owned())
+    );
+    assert_eq!(
+        label_of("3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864"),
+        (Kind::Hash, "ha".to_owned()),
+        "a UUID is a hash or ID"
+    );
+    assert_eq!(label_of("7c3e9a1"), (Kind::Hash, "hs".to_owned()));
+    let paragraph = pane
+        .items
+        .iter()
+        .position(|i| i.kind == Kind::Text)
+        .unwrap();
+    assert_eq!(labels[paragraph], "", "a paragraph gets no label");
+    assert!(
+        labels.iter().all(|l| !l.starts_with('t')),
+        "no label starts with t"
+    );
+}
+
+#[test]
+fn lines_show_once_l_is_typed() {
+    let rows = [
+        "$ git status --short",
+        " M src/main.rs",
+        "$ git status --short",
+        "",
+        "Done.",
+    ];
+    let pane = pane_of(&rows, vec![], 80);
+    let keys: Vec<(usize, Kind, &str)> = pane
+        .items
+        .iter()
+        .map(|i| (0, i.kind, i.value.as_str()))
+        .collect();
+    let labels = select::pane_labels(&keys);
+    let showing = |typed: &str| -> Vec<usize> {
+        (0..pane.items.len())
+            .filter(|&i| select::shown(pane.items[i].kind, &labels[i], typed))
+            .collect()
+    };
+    let lines: Vec<usize> = (0..pane.items.len())
+        .filter(|&i| pane.items[i].kind == Kind::Line)
+        .collect();
+    assert_eq!(lines.len(), 4);
+    let initial = showing("");
+    assert!(
+        !initial.is_empty() && initial.iter().all(|&i| pane.items[i].kind != Kind::Line),
+        "no line shows before a letter is typed"
+    );
+    assert_eq!(showing("l"), lines, "after l, every line and nothing else");
+    assert!(
+        lines
+            .iter()
+            .all(|&i| labels[i].len() == 2 && labels[i].starts_with('l')),
+        "line labels share a length: {labels:?}"
+    );
+    assert_eq!(
+        showing(&labels[lines[2]]),
+        [lines[2]],
+        "a line's full label picks it alone"
+    );
+    // Two lines that read the same keep a label each (commands don't).
+    assert_ne!(labels[lines[0]], labels[lines[2]]);
+    assert!(!labels[lines[0]].is_empty());
+    let commands: Vec<&String> = (0..pane.items.len())
+        .filter(|&i| pane.items[i].kind == Kind::Command)
+        .map(|i| &labels[i])
+        .collect();
+    assert_eq!(commands, ["", "c"]);
+
+    // Arrows from a line walk the lines, the repeated one included.
+    let unit = |i: usize| {
+        pane.targets(Level::Line)
+            .into_iter()
+            .find(|u| u.entry == Some(i))
+    };
+    let first = unit(lines[0]).unwrap();
+    assert_eq!(first.level, Level::Line);
+    let down = pane.neighbour(&first, Direction::Down).unwrap();
+    assert_eq!(down.entry, Some(lines[1]), "↓: the next line");
+    let down = pane.neighbour(&down, Direction::Down).unwrap();
+    assert_eq!(down.entry, Some(lines[2]), "↓ reaches the repeated line");
+    let down = pane.neighbour(&down, Direction::Down).unwrap();
+    assert_eq!(down.entry, Some(lines[3]), "↓ skips the blank row");
+    let up = pane.neighbour(&down, Direction::Up).unwrap();
+    assert_eq!(up.entry, Some(lines[2]), "↑: the previous line");
+    // ⇧ + arrow: a range of lines copies as a terminal selection would.
+    let range = first.range.union(&up.range);
+    assert_eq!(
+        pane.text(&range),
+        "$ git status --short\n M src/main.rs\n$ git status --short"
+    );
+}
+
+#[test]
+fn a_line_grows_to_its_paragraph() {
+    let rows = [
+        "The build finished on the second try, after the cache was cleared",
+        "and every test passed, which took a little under four minutes.",
+        "Next up is https://example.invalid/release for the notes.",
+        "",
+        "$ ls",
+    ];
+    let pane = pane_of(&rows, vec![], 70);
+    let second = pane
+        .items
+        .iter()
+        .position(|i| i.kind == Kind::Line && i.spans[0].row == 1)
+        .unwrap();
+    let line = extent(&pane.items[second]);
+    let mut chain = Vec::new();
+    let mut current = line;
+    while let Some(unit) = pane.grow(&current) {
+        chain.push(unit.level);
+        current = unit.range;
+    }
+    assert_eq!(
+        chain,
+        [Level::Text, Level::Screen],
+        "line → paragraph → (its block, the same rows) → screen"
+    );
+    let paragraph = pane.grow(&line).unwrap();
+    assert_eq!((paragraph.range.start.row, paragraph.range.end.row), (0, 2));
+
+    // From the URL: its line first, the line item itself.
+    let url = pane.items.iter().position(|i| i.kind == Kind::Url).unwrap();
+    let grown = pane.grow(&extent(&pane.items[url])).unwrap();
+    assert_eq!(grown.level, Level::Line);
+    assert_eq!(pane.items[grown.entry.unwrap()].kind, Kind::Line);
+    // ⌥↓ from that line, with nothing to go back to: the URL inside.
+    let shrunk = pane.shrink(&grown.range, Level::Line).unwrap();
+    assert_eq!(shrunk.entry, Some(url));
+    // From the paragraph: the URL, the first item inside it.
+    assert_eq!(
+        pane.shrink(&paragraph.range, Level::Text)
+            .and_then(|u| u.entry),
+        Some(url)
+    );
+
+    // A soft-wrapped line grows from an item on its first row to both rows.
+    let wrapped = [
+        "see https://example.invalid/a and then the rest of this long li",
+        "ne goes on here",
+    ];
+    let pane = pane_of(&wrapped, vec![0], 64);
+    let url = pane.items.iter().position(|i| i.kind == Kind::Url).unwrap();
+    let grown = pane.grow(&extent(&pane.items[url])).unwrap();
+    assert_eq!(grown.level, Level::Line);
+    assert_eq!((grown.range.start.row, grown.range.end.row), (0, 1));
+    assert_eq!(
+        pane.items[grown.entry.unwrap()].value,
+        "see https://example.invalid/a and then the rest of this long line goes on here"
+    );
+}
+
+#[test]
+fn line_callouts_on_their_own() {
+    // The overlay places line callouts in a pass of their own (they show
+    // only after l, when the rest have faded): on a dense screen, one per
+    // line, none over another.
+    for &(name, columns, rows) in PLACEMENT {
+        let pane = pane_of(rows, vec![], columns);
+        let found: Vec<&Item> = pane.items.iter().filter(|i| i.kind == Kind::Line).collect();
+        let (width, height) = (8.0, 17.0);
+        let rect = |row: usize, start: usize, length: usize| {
+            Rect::new(
+                start as f64 * width,
+                row as f64 * height,
+                length as f64 * width,
+                height,
+            )
+        };
+        let items: Vec<callout::Item> = found
+            .iter()
+            .map(|item| {
+                let rects: Vec<Rect> = item
+                    .spans
+                    .iter()
+                    .map(|s| rect(s.row, s.start, s.length))
+                    .collect();
+                callout::Item {
+                    anchor: Rect::new(rects[0].x, rects[0].y, width, height),
+                    rects,
+                    prose: false,
+                    size: [26.0, 13.0],
+                }
+            })
+            .collect();
+        let text: Vec<Rect> = rows
+            .iter()
+            .enumerate()
+            .flat_map(|(row, line)| text_runs(line).into_iter().map(move |(s, l)| (row, s, l)))
+            .map(|(row, s, l)| rect(row, s, l))
+            .collect();
+        let bounds = Rect::new(
+            -8.0,
+            -4.0,
+            columns as f64 * width + 16.0,
+            rows.len() as f64 * height + 12.0,
+        );
+        let callouts = place_items(
+            &items,
+            &text,
+            &[],
+            Metrics {
+                bounds,
+                tail: 4.0,
+                spacing: 2.0,
+                inset: 7.0,
+                drift: width / 2.0,
+            },
+        );
+        assert_eq!(callouts.len(), found.len());
+        let overlaps = callouts.iter().enumerate().any(|(i, c)| {
+            let frame = c.frame.inset(0.5, 0.5).unwrap();
+            callouts[i + 1..].iter().any(|o| o.frame.intersects(&frame))
+        });
+        assert!(
+            !callouts.iter().any(|c| c.clash) && !overlaps,
+            "{name}: line callouts clear each other"
         );
     }
 }

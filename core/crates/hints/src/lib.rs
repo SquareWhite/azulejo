@@ -2,9 +2,9 @@
 //! a selection moves over it.
 //!
 //! - [`detect`]: the items on screen (URLs, paths, commands, IPs, domains,
-//!   UUIDs, hashes, branches), from the visible rows, their soft wraps and
+//!   hashes and IDs, branches), from the visible rows, their soft wraps and
 //!   colours. Paths check the filesystem through [`detect::Filesystem`].
-//! - [`select`]: kind-letter labels, text paragraphs, grow and shrink,
+//! - [`select`]: kind-letter labels, lines, text paragraphs, grow and shrink,
 //!   arrow neighbours, range text and the Run line.
 //! - [`run`]: where Run sends a command (an idle shell, else a new pane).
 //! - [`callout`]: where labels go (geometry only).

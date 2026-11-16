@@ -1,6 +1,6 @@
 //! ⌘S smart select, everything after recognition: type-prefixed labels,
-//! text paragraphs, the containers ⌥↑ grows through, arrow-key neighbours,
-//! the text a range copies and the line Run types.
+//! lines, text paragraphs, the containers ⌥↑ grows through, arrow-key
+//! neighbours, the text a range copies and the line Run types.
 //!
 //! Positions are rows and UTF-16 offsets in them, as in [`crate::detect`].
 
@@ -47,9 +47,10 @@ impl TextRange {
     }
 }
 
-/// How far a selection reaches: an item (a recognised item or a text
-/// paragraph), the rows it sits on, its block of non-blank rows or the
-/// pane's whole visible text. Arrow keys move at the selection's level.
+/// How far a selection reaches: a recognised item, a text paragraph, its
+/// line (the rows it sits on, with the rows they soft-wrap into), its block
+/// of non-blank rows or the pane's whole visible text. Arrow keys move at
+/// the selection's level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Level {
@@ -74,8 +75,8 @@ impl Level {
     }
 }
 
-/// One step of a selection: a range, its level and, for an item or a
-/// paragraph, its index in the pane's items.
+/// One step of a selection: a range, its level and, for an item, a
+/// paragraph or a line, its index in the pane's items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unit {
     pub range: TextRange,
@@ -98,7 +99,8 @@ const ALPHABET: &[u8] = b"asdfghjklqwertyuiopzxcvbnm";
 /// One label per item, in the given order: the kind's letter alone when
 /// it's the only item of that kind, else the letter and a home-row suffix
 /// (`pa`, `ps`, …), one letter longer past 26 of a kind. Labels of one kind
-/// share a length, so none is a prefix of another.
+/// share a length, so none is a prefix of another. A kind without a letter
+/// (a paragraph) gets an empty label.
 pub fn labels(kinds: &[Kind]) -> Vec<String> {
     let mut counts: HashMap<Kind, usize> = HashMap::new();
     for &kind in kinds {
@@ -108,9 +110,12 @@ pub fn labels(kinds: &[Kind]) -> Vec<String> {
     kinds
         .iter()
         .map(|&kind| {
+            let Some(letter) = kind.letter() else {
+                return String::new();
+            };
             let count = counts[&kind];
             let index = seen.entry(kind).or_default();
-            let mut label = kind.letter().to_string();
+            let mut label = letter.to_string();
             if count > 1 {
                 label.push_str(&suffix(*index, count));
             }
@@ -149,17 +154,30 @@ pub fn older_repeats<K: std::hash::Hash + Eq>(keys: &[K]) -> HashSet<usize> {
 }
 
 /// Labels for every item across panes (`(pane, kind, value)` in reading
-/// order): repeats in a pane get none (an empty label), the rest share one
-/// labelling.
+/// order): repeats in a pane get none (an empty label), nor do paragraphs;
+/// the rest share one labelling. Lines aren't repeats: two lines that read
+/// the same are still two places, and each gets its own label.
 pub fn pane_labels(items: &[(usize, Kind, &str)]) -> Vec<String> {
     let repeats = older_repeats(items);
-    let labelled: Vec<usize> = (0..items.len()).filter(|i| !repeats.contains(i)).collect();
+    let labelled: Vec<usize> = (0..items.len())
+        .filter(|&i| {
+            let kind = items[i].1;
+            kind.letter().is_some() && (kind == Kind::Line || !repeats.contains(&i))
+        })
+        .collect();
     let kinds: Vec<Kind> = labelled.iter().map(|&i| items[i].1).collect();
     let mut result = vec![String::new(); items.len()];
     for (index, label) in labelled.into_iter().zip(labels(&kinds)) {
         result[index] = label;
     }
     result
+}
+
+/// Whether an item's label shows while choosing, with `typed` typed so
+/// far: it has a label that starts with `typed`. Lines wait for a first
+/// letter (theirs, `l`): boxing every row up front would bury the rest.
+pub fn shown(kind: Kind, label: &str, typed: &str) -> bool {
+    !label.is_empty() && label.starts_with(typed) && (kind != Kind::Line || !typed.is_empty())
 }
 
 // MARK: Paragraphs
@@ -309,6 +327,63 @@ fn list_item(row: &str) -> bool {
     matches(&LIST_MARKER, trim(row))
 }
 
+// MARK: Lines
+
+/// A line's rows: `row` and the rows it soft-wraps into (`joins`), as
+/// `(top, bottom)`.
+fn wrapped_rows(row: usize, rows: usize, joins: &HashSet<usize>) -> (usize, usize) {
+    let (mut top, mut bottom) = (row, row);
+    while top > 0 && joins.contains(&(top - 1)) {
+        top -= 1;
+    }
+    while bottom + 1 < rows && joins.contains(&bottom) {
+        bottom += 1;
+    }
+    (top, bottom)
+}
+
+/// Every non-blank line, in reading order: a row and the rows it
+/// soft-wraps into (`joins`: rows whose last cell wraps into the next) make
+/// one line.
+/// Each spans its text without the indent and trailing blanks (a wrapped
+/// row's continuation from its first cell) and copies as a terminal
+/// selection of that range would: wrapped rows joined without a newline.
+pub fn line_items<S: AsRef<str>>(rows: &[S], joins: &[usize]) -> Vec<Item> {
+    let joined: HashSet<usize> = joins.iter().copied().collect();
+    let mut result = Vec::new();
+    let mut row = 0;
+    while row < rows.len() {
+        let (top, bottom) = wrapped_rows(row, rows.len(), &joined);
+        row = bottom + 1;
+        let Some(range) = span(rows, top, bottom) else {
+            continue;
+        };
+        let spans: Vec<Span> = (range.start.row..=range.end.row)
+            .filter_map(|r| {
+                let (start, end) = row_extent(rows, r)?;
+                let start = if r == range.start.row { start } else { 0 };
+                let end = if r == range.end.row {
+                    range.end.offset
+                } else {
+                    end
+                };
+                (end > start).then_some(Span {
+                    row: r,
+                    start,
+                    length: end - start,
+                })
+            })
+            .collect();
+        result.push(Item {
+            kind: Kind::Line,
+            value: text(&range, rows, joins),
+            spans,
+            open: None,
+        });
+    }
+    result
+}
+
 // MARK: Ranges
 
 /// The range an item covers, from its first span's start to its last's end.
@@ -395,9 +470,13 @@ fn span<S: AsRef<str>>(rows: &[S], top: usize, bottom: usize) -> Option<TextRang
     })
 }
 
-/// The rows `range` touches, from the first one's indent to the last one's end.
-pub fn line<S: AsRef<str>>(range: &TextRange, rows: &[S]) -> Option<TextRange> {
-    span(rows, range.start.row, range.end.row)
+/// The rows `range` touches and the rows they soft-wrap with (`joins`),
+/// from the first one's indent to the last one's end.
+pub fn line<S: AsRef<str>>(range: &TextRange, rows: &[S], joins: &[usize]) -> Option<TextRange> {
+    let joined: HashSet<usize> = joins.iter().copied().collect();
+    let (top, _) = wrapped_rows(range.start.row, rows.len(), &joined);
+    let (_, bottom) = wrapped_rows(range.end.row, rows.len(), &joined);
+    span(rows, top, bottom)
 }
 
 /// The run of non-blank rows around `range`.
@@ -421,9 +500,9 @@ pub fn screen<S: AsRef<str>>(rows: &[S]) -> Option<TextRange> {
     span(rows, top, bottom)
 }
 
-/// Each non-blank row (line-level arrow targets).
-pub fn lines<S: AsRef<str>>(rows: &[S]) -> Vec<TextRange> {
-    (0..rows.len()).filter_map(|r| span(rows, r, r)).collect()
+/// Each non-blank line, soft wraps joined ([`line_items`]' ranges).
+pub fn lines<S: AsRef<str>>(rows: &[S], joins: &[usize]) -> Vec<TextRange> {
+    line_items(rows, joins).iter().map(extent).collect()
 }
 
 /// Each run of non-blank rows (block-level arrow targets).
@@ -475,15 +554,28 @@ fn size(range: &TextRange) -> i64 {
         - range.start.offset as i64
 }
 
+/// The level a selection of `item` sits at.
+pub fn level_of(item: &Item) -> Level {
+    match item.kind {
+        Kind::Text => Level::Text,
+        Kind::Line => Level::Line,
+        _ => Level::Item,
+    }
+}
+
 /// ⌥↑: the next thing out that holds `range`, in this order: the smallest
-/// recognised item around it (a path → its command), the rows it sits on,
-/// the smallest paragraph around it, its block, the screen.
-pub fn grow<S: AsRef<str>>(range: &TextRange, items: &[Item], rows: &[S]) -> Option<Unit> {
-    let smallest = |text: bool, level: Level| -> Option<Unit> {
+/// recognised item around it (a path → its command), its line (the rows it
+/// sits on, soft wraps joined; the line item when there is one), the
+/// smallest paragraph around it, its block, the screen.
+pub fn grow<S: AsRef<str>>(
+    range: &TextRange,
+    items: &[Item],
+    rows: &[S],
+    joins: &[usize],
+) -> Option<Unit> {
+    let smallest = |level: Level| -> Option<Unit> {
         (0..items.len())
-            .filter(|&i| {
-                (items[i].kind == Kind::Text) == text && extent(&items[i]).strictly_contains(range)
-            })
+            .filter(|&i| level_of(&items[i]) == level && extent(&items[i]).strictly_contains(range))
             .min_by_key(|&i| size(&extent(&items[i])))
             .map(|i| Unit {
                 range: extent(&items[i]),
@@ -492,15 +584,16 @@ pub fn grow<S: AsRef<str>>(range: &TextRange, items: &[Item], rows: &[S]) -> Opt
             })
     };
     let steps: [&dyn Fn() -> Option<Unit>; 5] = [
-        &|| smallest(false, Level::Item),
+        &|| smallest(Level::Item),
         &|| {
-            line(range, rows).map(|r| Unit {
+            line(range, rows, joins).map(|r| Unit {
                 range: r,
                 level: Level::Line,
-                entry: None,
+                entry: (0..items.len())
+                    .find(|&i| items[i].kind == Kind::Line && extent(&items[i]) == r),
             })
         },
-        &|| smallest(true, Level::Text),
+        &|| smallest(Level::Text),
         &|| {
             block(range, rows).map(|r| Unit {
                 range: r,
@@ -523,36 +616,33 @@ pub fn grow<S: AsRef<str>>(range: &TextRange, items: &[Item], rows: &[S]) -> Opt
 }
 
 /// ⌥↓ with nothing to go back to: the first item inside `range`
-/// (recognised items before paragraphs), in reading order. From a line,
-/// block or screen that is exactly one item, that item.
+/// (recognised items, then paragraphs, then lines), in reading order. From
+/// a line, block or screen that is exactly one item, that item; from a
+/// block or screen that is exactly one line, that line.
 pub fn shrink(range: &TextRange, items: &[Item], from: Level) -> Option<Unit> {
-    let exact = from != Level::Item && from != Level::Text;
-    let inside: Vec<usize> = (0..items.len())
-        .filter(|&i| {
-            let e = extent(&items[i]);
-            if exact {
-                range.contains(&e)
-            } else {
-                range.strictly_contains(&e)
-            }
-        })
-        .collect();
-    let first = |text: Option<bool>| {
-        inside
-            .iter()
-            .copied()
-            .filter(|&i| text.is_none_or(|t| (items[i].kind == Kind::Text) == t))
+    let inside = |i: usize| {
+        let e = extent(&items[i]);
+        let exact = match items[i].kind {
+            Kind::Line => from == Level::Block || from == Level::Screen,
+            _ => from != Level::Item && from != Level::Text,
+        };
+        if exact {
+            range.contains(&e)
+        } else {
+            range.strictly_contains(&e)
+        }
+    };
+    let first = |level: Level| {
+        (0..items.len())
+            .filter(|&i| level_of(&items[i]) == level && inside(i))
             .min_by_key(|&i| extent(&items[i]).start)
     };
-    let pick = first(Some(false)).or_else(|| first(None))?;
-    let level = if items[pick].kind == Kind::Text {
-        Level::Text
-    } else {
-        Level::Item
-    };
+    let pick = first(Level::Item)
+        .or_else(|| first(Level::Text))
+        .or_else(|| first(Level::Line))?;
     Some(Unit {
         range: extent(&items[pick]),
-        level,
+        level: level_of(&items[pick]),
         entry: Some(pick),
     })
 }
@@ -701,13 +791,15 @@ pub fn run_line(value: &str) -> String {
 pub struct Pane {
     pub rows: Vec<String>,
     pub joins: Vec<usize>,
-    /// Detected items and paragraphs, in reading order (a paragraph
-    /// before the items inside it).
+    /// Detected items, paragraphs and lines, in reading order (a line or a
+    /// paragraph before the items inside it).
     pub items: Vec<Item>,
 }
 
 impl Pane {
-    /// The items in reading order, a paragraph before the items inside it.
+    /// The detected items, the paragraphs ([`paragraphs`]) and the lines
+    /// ([`line_items`]) in reading order, a container before the items
+    /// inside it.
     pub fn new(
         rows: Vec<String>,
         joins: Vec<usize>,
@@ -715,7 +807,13 @@ impl Pane {
         columns: Option<usize>,
     ) -> Pane {
         let found = paragraphs(&rows, &detected, &joins, columns);
-        let mut all: Vec<(usize, Item)> = detected.into_iter().chain(found).enumerate().collect();
+        let lines = line_items(&rows, &joins);
+        let mut all: Vec<(usize, Item)> = detected
+            .into_iter()
+            .chain(found)
+            .chain(lines)
+            .enumerate()
+            .collect();
         all.sort_by(|(i, a), (j, b)| {
             let (x, y) = (extent(a), extent(b));
             x.start.cmp(&y.start).then(y.end.cmp(&x.end)).then(i.cmp(j))
@@ -738,32 +836,20 @@ impl Pane {
     }
 
     fn unit(&self, index: usize) -> Unit {
-        let level = if self.items[index].kind == Kind::Text {
-            Level::Text
-        } else {
-            Level::Item
-        };
         Unit {
             range: extent(&self.items[index]),
-            level,
+            level: level_of(&self.items[index]),
             entry: Some(index),
         }
     }
 
-    /// Where arrow keys go at `level`.
+    /// Where arrow keys go at `level`: the recognised items, paragraphs or
+    /// lines; the blocks.
     pub fn targets(&self, level: Level) -> Vec<Unit> {
         match level {
-            Level::Item | Level::Text => (0..self.items.len())
-                .filter(|&i| (self.items[i].kind == Kind::Text) == (level == Level::Text))
+            Level::Item | Level::Text | Level::Line => (0..self.items.len())
+                .filter(|&i| level_of(&self.items[i]) == level)
                 .map(|i| self.unit(i))
-                .collect(),
-            Level::Line => lines(&self.rows)
-                .into_iter()
-                .map(|r| Unit {
-                    range: r,
-                    level,
-                    entry: None,
-                })
                 .collect(),
             Level::Block => blocks(&self.rows)
                 .into_iter()
@@ -825,7 +911,7 @@ impl Pane {
     }
 
     pub fn grow(&self, range: &TextRange) -> Option<Unit> {
-        grow(range, &self.items, &self.rows)
+        grow(range, &self.items, &self.rows, &self.joins)
     }
 
     pub fn shrink(&self, range: &TextRange, from: Level) -> Option<Unit> {

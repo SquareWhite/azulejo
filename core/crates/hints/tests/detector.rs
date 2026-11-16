@@ -497,7 +497,7 @@ fn agent_sheet() {
         ("ip", "192.0.2.47"),
         ("ip", "198.51.100.12"),
         ("ip", "198.51.100.12:8443"),
-        ("uuid", "3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864"),
+        ("hash", "3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864"),
         ("hash", "7c3e9a1f4b2d8e05a6f1c9b3d7e2a4f80b5c6d19"),
         ("hash", "7c3e9a1"),
         ("path", "feature/terminal-hints-v2"),

@@ -3,7 +3,7 @@
 //! and draws what comes back.
 //!
 //! One `azj_hints_detect` per pane per ⌘S returns its items (paragraphs
-//! included, in reading order) as JSON and a pane handle. Selection keys
+//! and lines included, in reading order) as JSON and a pane handle. Selection keys
 //! then ask the handle (`azj_hints_pane_*`) with small C structs, without
 //! sending the screen again. Positions are rows and UTF-16 offsets in them,
 //! as the shell's strings count.
@@ -34,7 +34,7 @@ pub struct AzjHintRange {
 }
 
 /// A selection step: a range, its level (0 item, 1 text paragraph, 2 line,
-/// 3 block, 4 screen) and, for an item or paragraph, its index in the
+/// 3 block, 4 screen) and, for an item, paragraph or line, its index in the
 /// pane's kept items (-1 for none).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,8 +111,8 @@ struct DetectRequest {
 /// commands; `local`: paths may open on this machine.) Returns
 /// `{"ok":true,"items":[{"kind":"path","value":"src/a.rs","spans":[[row,start,length]],
 /// "open":"file:///…"}],"extents":[[start,end]|null],"runs":[[start,length,…]]}`:
-/// items (paragraphs as `text`) in reading order, a paragraph before the
-/// items inside it; each row's text extent without its indent (null when
+/// items (paragraphs as `text`, every non-blank line as `line`) in reading
+/// order, a line or paragraph before the items inside it; each row's text extent without its indent (null when
 /// blank) and its runs of non-blank characters, flattened. All offsets are
 /// UTF-16 units. Or `{"ok":false,"error":{…}}` on a bad request.
 ///
@@ -432,7 +432,8 @@ pub unsafe extern "C" fn azj_hints_pane_free(pane: *mut AzjHintsPane) {
 /// Labels for every kept item of these panes, in order (pane by pane):
 /// the kind's letter, plus home-row letters when a kind has more than one
 /// item; an item repeated in a pane (same kind and value) gets one label,
-/// on its last copy, the others "". Returns `{"ok":true,"labels":["pa","",…]}`.
+/// on its last copy, the others "" (lines excepted: each line gets one);
+/// paragraphs get "". Returns `{"ok":true,"labels":["pa","",…]}`.
 /// Free with `azj_string_free`.
 ///
 /// # Safety
@@ -511,6 +512,8 @@ struct CalloutRequest {
     items: Vec<callout::Item>,
     #[serde(default)]
     text: Vec<Rect>,
+    #[serde(default)]
+    prose: Vec<Rect>,
     bounds: Rect,
     tail: f64,
     spacing: f64,
@@ -523,11 +526,13 @@ struct CalloutRequest {
 /// Places one pane's labels (Homerow-style callouts). `request_json`:
 ///
 /// `{"items":[{"anchor":[x,y,w,h],"rects":[[x,y,w,h]],"prose":false,"size":[w,h]}],
-///   "text":[[x,y,w,h]],"bounds":[x,y,w,h],"tail":4,"spacing":2,"inset":7,"drift":4}`
+///   "text":[[x,y,w,h]],"prose":[[x,y,w,h]],"bounds":[x,y,w,h],"tail":4,"spacing":2,
+///   "inset":7,"drift":4}`
 ///
 /// in the overlay's points, y down: each item's first cell, its text's
 /// rects, whether it's a paragraph and its pill's size; every run of
-/// non-blank cells; where pills may go; the tail's length, the gap kept,
+/// non-blank cells; the unlabelled paragraphs' rects, kept off before other
+/// items' text; where pills may go; the tail's length, the gap kept,
 /// how far a tail's foot keeps from the pill's ends and may stray from the
 /// cell's middle. Returns `{"ok":true,"callouts":[{"frame":[…],"tip":[x,y],
 /// "base":[x,y],"side":"below","nudged":false,"relaxed":0,"clash":false}]}`,
@@ -551,7 +556,7 @@ pub unsafe extern "C" fn azj_hints_place_callouts(request_json: *const c_char) -
         inset: request.inset,
         drift: request.drift,
     };
-    let callouts = callout::place_items(&request.items, &request.text, metrics);
+    let callouts = callout::place_items(&request.items, &request.text, &request.prose, metrics);
     out(json!({"ok": true, "callouts": callouts}))
 }
 
@@ -625,10 +630,14 @@ mod tests {
         assert_eq!(
             described,
             [
+                "line $ cargo test [[0,0,12]]",
                 "command cargo test [[0,2,10]]",
+                "line test result: ok. 3 passed [[1,0,25]]",
+                "line $ ls src/ [[3,0,9]]",
                 "command ls src/ [[3,2,7]]",
                 "path src/ [[3,5,4]]"
-            ]
+            ],
+            "every non-blank line is an item too, before the items on it"
         );
         assert_eq!(reply["extents"][2], Value::Null);
         assert_eq!(reply["extents"][0], json!([0, 12]));
@@ -645,20 +654,31 @@ mod tests {
         assert!(unsafe { azj_hints_pane_grow(pane, path, &mut unit) });
         assert_eq!(
             (unit.level, unit.entry, unit.range),
-            (0, 1, range((3, 2), (3, 9))),
+            (0, 4, range((3, 2), (3, 9))),
             "a path grows to its command"
         );
         assert!(unsafe { azj_hints_pane_grow(pane, unit.range, &mut unit) });
-        assert_eq!((unit.level, unit.entry), (2, -1), "then its row");
+        assert_eq!((unit.level, unit.entry), (2, 3), "then its line");
         assert!(unsafe { azj_hints_pane_shrink(pane, range((3, 2), (3, 9)), 0, &mut unit) });
-        assert_eq!(unit.entry, 2, "shrinks to the path inside");
+        assert_eq!(unit.entry, 5, "shrinks to the path inside");
         let from = AzjHintUnit {
             range: range((0, 2), (0, 12)),
             level: 0,
-            entry: 0,
+            entry: 1,
         };
         assert!(unsafe { azj_hints_pane_neighbour(pane, from, 3, &mut unit) });
-        assert_eq!(unit.entry, 1, "↓ to the next row's command");
+        assert_eq!(unit.entry, 4, "↓ to the next row's command");
+        let line = AzjHintUnit {
+            range: range((0, 0), (0, 12)),
+            level: 2,
+            entry: 0,
+        };
+        assert!(unsafe { azj_hints_pane_neighbour(pane, line, 3, &mut unit) });
+        assert_eq!(
+            (unit.level, unit.entry),
+            (2, 2),
+            "a line's ↓: the next line"
+        );
         assert!(
             !unsafe { azj_hints_pane_neighbour(pane, from, 2, &mut unit) },
             "nothing above"
@@ -666,20 +686,20 @@ mod tests {
         assert_eq!(
             unsafe { azj_hints_pane_targets(pane, 2) },
             3,
-            "three non-blank rows"
+            "three non-blank lines"
         );
 
         // Choosing: the focus ring among the shown items (the commands).
-        let shown = [0u32, 1];
+        let shown = [1u32, 4];
         let mut index = u32::MAX;
         assert!(unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, -1, 4, 0, 2, &mut index) });
-        assert_eq!(index, 1, "↑ from the cursor: the closest command above");
-        assert!(unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 1, -1, 0, 2, &mut index) });
-        assert_eq!(index, 0, "↑ again, past the rows between");
-        assert!(!unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 0, -1, 0, 2, &mut index) });
-        assert!(!unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 0, -1, 0, 9, &mut index) });
-        assert!(unsafe { azj_hints_pane_nearest(pane, [0u32].as_ptr(), 1, 2, &mut index) });
-        assert_eq!(index, 0, "the path filtered out: the nearest command left");
+        assert_eq!(index, 4, "↑ from the cursor: the closest command above");
+        assert!(unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 4, -1, 0, 2, &mut index) });
+        assert_eq!(index, 1, "↑ again, past the rows between");
+        assert!(!unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 1, -1, 0, 2, &mut index) });
+        assert!(!unsafe { azj_hints_pane_focus(pane, shown.as_ptr(), 2, 1, -1, 0, 9, &mut index) });
+        assert!(unsafe { azj_hints_pane_nearest(pane, [1u32].as_ptr(), 1, 5, &mut index) });
+        assert_eq!(index, 1, "the path filtered out: the nearest command left");
         assert!(!unsafe { azj_hints_pane_nearest(pane, std::ptr::null(), 0, 2, &mut index) });
         let text = unsafe { azj_hints_pane_text(pane, range((0, 2), (1, 4))) };
         assert_eq!(
@@ -690,13 +710,13 @@ mod tests {
 
         // Labels across panes, after the shell drops an item it can't place.
         let (_, other) = call(r#"{"rows":["$ git status","$ git status"]}"#);
-        unsafe { azj_hints_pane_keep(pane, [0u32, 2].as_ptr(), 2) };
+        unsafe { azj_hints_pane_keep(pane, [0u32, 1, 5].as_ptr(), 3) };
         let panes = [pane as *const AzjHintsPane, other as *const AzjHintsPane];
         let labels = take(unsafe { azj_hints_labels(panes.as_ptr(), 2) });
         assert_eq!(
             labels["labels"],
-            json!(["ca", "p", "", "cs"]),
-            "one label per repeated value in a pane"
+            json!(["la", "ca", "p", "ls", "", "ld", "cs"]),
+            "one label per repeated value in a pane, but one per line"
         );
         unsafe {
             azj_hints_pane_free(pane);

@@ -678,7 +678,7 @@ user@devbox:~$ curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-
   "id": "3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b",
 }
 @@ cmd curl -sS -X POST https://api.example.invalid/v2/jobs -H 'Content-Type: application/json' -d '{"name":"nightly-reports","schedule":"0 3 * * *"}' | jq .
-@@ item uuid 3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b
+@@ item hash 3f2b8c1e-7d4a-4f1b-9c2e-5a6d7e8f9a0b
 
 @@ fixture shell-pipe-ps2 | multiline | cols 80
 $ cat access.log |
@@ -741,7 +741,7 @@ git: 'stauts' is not a git command. See 'git --help'.
 zsh: command not found: foo
 #5 [2/4] RUN apt-get update && apt-get install -y curl
 @@ cmd apt-get update && apt-get install -y curl
-@@ item uuid 6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b
+@@ item hash 6b1e2f3a-0c4d-4e5f-8a9b-1c2d3e4f5a6b
 @@ item url https://auth.example.invalid/token
 
 @@ fixture compiler-errors | negatives | cols 100

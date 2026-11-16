@@ -22,7 +22,9 @@ expect hints.state choosing
 expect hints.popup hidden
 expect hints.panes 1
 expect hints.count 6
-expect hints.labels l,pa,ba,bs,c,ps
+expect hints.labels u,pa,ba,bs,c,ps
+expect hints.lines 6
+expect hints.visible 6
 expect hints.callout.clash 0
 expect hints.callout.hides 0
 expect hints.callout.flagged 0
@@ -31,8 +33,8 @@ expect hints.callout.covers 0
 hints callout below https://example.invalid/first
 hints callout left ./src/example.swift:12:3
 hints callout inline feature/hints
-expect hints.legend link,path,command,branch,move,cancel
-expect hints.legend.keys l,p,c,b,↑↓←→,esc
+expect hints.legend url,path,command,line,branch,move,cancel
+expect hints.legend.keys u,p,c,l,b,↑↓←→,esc
 expect hints.legend.position header
 expect hints.legend.tile focused
 expect hints.legend.fits yes
@@ -57,10 +59,10 @@ expect hints.fade 0
 key backspace
 anim enabled default
 anim reduce-motion default
-key l
+key u
 expect hints.state selected
 expect hints.kind url
-expect hints.label l
+expect hints.label u
 expect hints.selected https://example.invalid/first
 expect hints.actions copy,open
 expect hints.legend copy,open,move,hold to extend,grow,cancel
@@ -85,7 +87,7 @@ expect responder terminal
 
 log === Selected: arrows move, shift extends, shift + label extends to that item
 key cmd+s
-key l
+key u
 key down
 expect hints.kind path
 expect hints.selected ./src/example.swift:12:3
@@ -163,7 +165,7 @@ expect hints.state choosing
 expect hints.labels ca,pa,cs,ps,cd
 expect hints.cursor 5:0
 expect hints.focus -
-expect hints.legend path,command,move,cancel
+expect hints.legend path,command,line,move,cancel
 key enter
 expect hints.state choosing
 expect hints.focus -
@@ -444,6 +446,85 @@ shot hints-wrapped-popup
 key c
 expect clipboard @WRAPPED@
 
+log === Lines: hidden at first, l labels every non-blank line, arrows walk them
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat lines.txt"
+wait 400
+key cmd+s
+expect hints.lines 5
+expect hints.lines.values alpha line with indent|beta https://example.invalid/beta|beta https://example.invalid/beta|@LONG_LINE@|gamma
+expect hints.count 2
+expect hints.unlabelled 1
+expect hints.visible 1
+expect hints.callouts 1
+expect hints.legend url,line,move,cancel
+key l
+expect hints.prefix l
+expect hints.visible 5
+expect hints.callouts 5
+expect hints.lines.labels la,ls,ld,lf,lg
+expect hints.legend line,move,back,cancel
+expect hints.callout.typed l:5
+expect hints.callout.clash 0
+expect hints.callout.hides 0
+expect hints.callout.flagged 0
+shot hints-lines
+log --- the arrows walk the lines, the repeated one and the wrapped one included
+key up
+expect hints.focus gamma
+expect hints.focus.kind line
+key up
+expect hints.focus @LONG_LINE@
+expect hints.focus.label lf
+key up
+expect hints.focus.label ld
+key up
+expect hints.focus.label ls
+key up
+expect hints.focus alpha line with indent
+key down
+key down
+key down
+expect hints.focus @LONG_LINE@
+key enter
+expect hints.state selected
+expect hints.kind line
+expect hints.level line
+expect hints.selected @LONG_LINE@
+expect hints.actions copy
+expect hints.legend copy,move,hold to extend,grow,cancel
+log --- a line is copy-only: o and r do nothing
+key o
+expect hints.state selected
+key r
+expect hints.state selected
+expect tiles 1
+log --- arrows move between lines; shift extends to a range of lines
+key up
+expect hints.kind line
+expect hints.selected beta https://example.invalid/beta
+key shift+down
+expect hints.kind range
+expect hints.selected beta https://example.invalid/beta↵@LONG_LINE@
+key c
+expect hints.state closed
+clip has beta https://example.invalid/beta
+clip has @LONG_LINE@
+log --- a full label selects its line; c copies it trimmed
+key cmd+s
+key l
+key a
+expect hints.kind line
+expect hints.selected alpha line with indent
+key c
+expect clipboard alpha line with indent
+key cmd+s
+key l
+key backspace
+expect hints.prefix -
+expect hints.visible 1
+key escape
+expect hints.state closed
+
 log === Agent-wrapped commands get one hint across rows; new item kinds
 sh {herdr} --session {session} pane run {pane} "sh sheet.sh"
 wait 600
@@ -455,16 +536,28 @@ expect hints.callout.flagged 0
 hints callout below 192.0.2.47
 hints callout centred 192.0.2.47
 hints callout above .
+expect hints.legend.keys u,p,c,l,i,d,h,↑↓←→,esc
+log --- paragraphs have no label of their own: a line grows to one
 key t
-expect hints.legend text,move,back,cancel
-key a
+expect hints.prefix -
+hints select 192.0.2.47
+key alt+up
+expect hints.kind line
+expect hints.level line
+key alt+up
 expect hints.kind text
+expect hints.level text
+expect hints.actions copy
+key alt+down
+expect hints.kind line
+key alt+down
+expect hints.kind ip
+key escape
+key cmd+s
+hints select Right, first up, the big one you'd paste into the prompt:
+expect hints.kind line
 expect hints.selected Right, first up, the big one you'd paste into the prompt:
 expect hints.actions copy
-key down
-expect hints.kind text
-key alt+down
-expect hints.kind url
 key escape
 key cmd+s
 hints select find . -type f -name "*.swift" -not -path "./vendor/*" -not -path "./.dev/*" -exec grep -l "TerminalHint" {} + | xargs -I{} sh -c 'echo "== {}"; wc -l "{}"' | sort -t: -k2 -n | tee /tmp/hints-report.txt
@@ -494,7 +587,8 @@ expect hints.kind domain
 key escape
 key cmd+s
 hints select 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
-expect hints.kind uuid
+expect hints.kind hash
+hints label ha 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
 key escape
 key cmd+s
 hints select 7c3e9a1
@@ -590,22 +684,28 @@ expect hints.callout.clash 0
 expect hints.callout.hides 0
 expect hints.callout.slant 0
 shot hints-light-choosing
-key t
-expect hints.callout.typed t:5
-shot hints-light-filtered
+key l
+expect hints.callout.clash 0
+expect hints.callout.flagged 0
+shot hints-light-lines
 key up
-expect hints.focus.kind text
-expect hints.legend text,move,select,back,cancel
+expect hints.focus.kind line
+expect hints.legend line,move,select,back,cancel
 shot hints-light-focus
-key d
-expect hints.kind text
-key alt+down
-expect hints.kind ip
-key shift+right
-key shift+right
+key enter
+expect hints.kind line
+key shift+up
+key shift+up
 expect hints.kind range
 expect hints.legend copy,move,hold to extend,grow/shrink,cancel
 shot hints-light-range
+key escape
+key cmd+s
+hints select 192.0.2.47
+key alt+up
+key alt+up
+expect hints.kind text
+shot hints-light-paragraph
 key escape
 theme set atom-one-dark
 wait 600

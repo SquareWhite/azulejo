@@ -6,8 +6,10 @@ import IOSurface
 /// payloads never retarget.
 ///
 /// Two modes. Choosing: every item has a label whose first letter is its
-/// kind (`TerminalSelection.labels`); typing filters the labels, Backspace
-/// takes a letter back, a complete label selects its item. Arrow keys move
+/// kind (the core's labels); typing filters the labels, Backspace takes a
+/// letter back, a complete label selects its item. Every non-blank line is
+/// an item too, but its label shows only once `l` is typed
+/// (`TerminalSelection.shown`). Arrow keys move
 /// a focus ring across the items still shown (starting at the terminal
 /// cursor), Return selects the focused one and ⇧ + arrow starts a range
 /// from it. Selected: c / o /
@@ -524,8 +526,18 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     }
 
     private func unit(_ index: Int) -> TerminalSelection.Unit {
-        TerminalSelection.Unit(range: TerminalSelection.extent(entries[index].item),
-                               level: entries[index].item.kind == .text ? .text : .item, entry: index)
+        let level: TerminalSelection.Level = switch entries[index].item.kind {
+        case .text: .text
+        case .line: .line
+        default: .item
+        }
+        return TerminalSelection.Unit(range: TerminalSelection.extent(entries[index].item), level: level, entry: index)
+    }
+
+    /// With a selection, the labels ⇧ reaches: lines from a line, the other
+    /// items from anything else.
+    private func reachable(_ index: Int, from selection: Selection) -> Bool {
+        (entries[index].item.kind == .line) == (selection.anchor.level == .line)
     }
 
     private func act(_ chord: String) {
@@ -533,7 +545,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         if let typed = Self.letter(chord), typed.shift {
             // ⇧ + a label: extend to that item (same pane only).
             let next = extendPrefix + typed.letter
-            let pane = paneEntries(current.pane)
+            let pane = paneEntries(current.pane).filter { reachable($0, from: current) }
             guard pane.contains(where: { entries[$0].label.hasPrefix(next) }) else { return }
             extendPrefix = next
             if let index = pane.first(where: { entries[$0].label == next }) {
@@ -661,17 +673,20 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
 
     // MARK: Layout
 
-    /// Entries whose labels show while choosing (or, selected, the labels
-    /// ⇧ can still reach: the pane's items outside the selection).
+    /// Entries whose labels show while choosing (lines only once a letter
+    /// is typed), or, selected, the labels ⇧ can still reach: the pane's
+    /// items outside the selection (lines from a line, the rest otherwise).
     private var visibleEntries: Set<Int> {
         if let selection {
             let range = selection.range
             return Set(paneEntries(selection.pane).filter {
                 !entries[$0].label.isEmpty && !range.contains(TerminalSelection.extent(entries[$0].item))
-                    && entries[$0].label.hasPrefix(extendPrefix)
+                    && entries[$0].label.hasPrefix(extendPrefix) && reachable($0, from: selection)
             })
         }
-        return Set(entries.indices.filter { !entries[$0].label.isEmpty && entries[$0].label.hasPrefix(prefix) })
+        return Set(entries.indices.filter {
+            TerminalSelection.shown(entries[$0].item.kind, label: entries[$0].label, typed: prefix)
+        })
     }
 
     /// Labels a keystroke filtered out fade quickly instead of vanishing.
@@ -706,24 +721,38 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     /// (`TerminalSelection.placeCallouts`): a callout below, above or
     /// before each item's first cell, on blank space when there is any,
     /// with a short, nearly vertical tail; it may use the pane's padding.
+    /// Two passes per pane: the items labelled from the start, keeping off
+    /// paragraphs' text before other items'; then the lines on their own,
+    /// since they show only after `l`, when the rest have faded.
     private func placeCallouts() {
         for capture in captures {
             // Unlabelled repeats get no callout: their text is text to
-            // keep off like any other.
-            let indices = entries.indices.filter { entries[$0].tileID == capture.tile.id && !entries[$0].label.isEmpty }
-            guard let cell = indices.first.map({ entries[$0].cell }) else { continue }
-            let metrics = Self.calloutMetrics(cell)
-            let items = indices.map { index in
-                let width = (entries[index].label.uppercased() as NSString).size(withAttributes: [.font: metrics.font]).width
-                return TerminalSelection.CalloutItem(
-                    anchor: entries[index].anchor, rects: entries[index].rects, prose: entries[index].item.kind == .text,
-                    size: CGSize(width: max(metrics.height, ceil(width) + 2 * metrics.padding), height: metrics.height))
+            // keep off like any other. Paragraphs have no label either.
+            let pane = entries.indices.filter { entries[$0].tileID == capture.tile.id }
+            let prose = pane.filter { entries[$0].item.kind == .text }.flatMap { entries[$0].rects }
+            let labelled = pane.filter { !entries[$0].label.isEmpty }
+            for lines in [false, true] {
+                let indices = labelled.filter { (entries[$0].item.kind == .line) == lines }
+                guard let cell = indices.first.map({ entries[$0].cell }) else { continue }
+                let metrics = Self.calloutMetrics(cell)
+                let items = indices.map { index in
+                    let width = (entries[index].label.uppercased() as NSString)
+                        .size(withAttributes: [.font: metrics.font]).width
+                    return TerminalSelection.CalloutItem(
+                        anchor: entries[index].anchor, rects: entries[index].rects, prose: false,
+                        size: CGSize(width: max(metrics.height, ceil(width) + 2 * metrics.padding), height: metrics.height))
+                }
+                let placed = TerminalHints.placeCallouts(items, text: capture.text, prose: lines ? [] : prose,
+                                                         bounds: capture.margin, tail: metrics.tail, spacing: 2,
+                                                         inset: metrics.radius + metrics.half, drift: cell.width / 2)
+                for (index, callout) in zip(indices, placed) { entries[index].callout = callout }
             }
-            let placed = TerminalHints.placeCallouts(items, text: capture.text, bounds: capture.margin,
-                                                     tail: metrics.tail, spacing: 2,
-                                                     inset: metrics.radius + metrics.half, drift: cell.width / 2)
-            for (index, callout) in zip(indices, placed) { entries[index].callout = callout }
         }
+    }
+
+    /// Two entries can show at once: both lines, or neither.
+    private func together(_ a: Int, _ b: Int) -> Bool {
+        (entries[a].item.kind == .line) == (entries[b].item.kind == .line)
     }
 
     private func refresh() {
@@ -745,9 +774,13 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     private var legendItems: [HintLegend.Item] {
         guard let selection else {
             let visible = visibleEntries
+            // Lines aren't drawn until `l` is typed, but `l` is listed from
+            // the start.
+            let lines = prefix.isEmpty && entries.contains { $0.item.kind == .line && !$0.label.isEmpty }
             var items: [HintLegend.Item] = TerminalSelection.kindOrder.compactMap { kind, name in
-                visible.contains { entries[$0].item.kind == kind }
-                    ? .init(key: String(TerminalSelection.letter(kind)), text: name, kind: true) : nil
+                guard let letter = TerminalSelection.letter(kind),
+                      visible.contains(where: { entries[$0].item.kind == kind }) || (kind == .line && lines) else { return nil }
+                return .init(key: String(letter), text: name, kind: true)
             }
             // Arrows move a focus ring over what's shown; Return picks it.
             if !visible.isEmpty { items.append(.init(key: "↑↓←→", text: "move")) }
@@ -1015,20 +1048,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         let focus = focus.flatMap { visible.contains($0) ? $0 : nil }
         let order = visible.sorted().filter { $0 != focus } + (focus.map { [$0] } ?? [])
         let shown = order.map { entries[$0] }
-        for entry in shown {
-            if entry.item.kind == .text {
-                // A paragraph: a dashed outline round its rows, under the
-                // items inside it.
-                let box = entry.rects.dropFirst().reduce(entry.rects[0]) { $0.union($1) }
-                let path = NSBezierPath(rect: box.insetBy(dx: -1, dy: 0))
-                path.setLineDash([3, 2], count: 2, phase: 0)
-                path.lineWidth = 1
-                Design.Color.accent.setStroke()
-                path.stroke()
-                continue
-            }
-            drawBoxes(entry)
-        }
+        for entry in shown { drawBoxes(entry) }
         if let focus { drawFocusRing(entries[focus]) }
         // Callouts last: they float over every highlight and the text.
         for (index, entry) in zip(order, shown) {
@@ -1037,13 +1057,11 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     }
 
     /// The focus ring the arrow keys move while choosing: a thicker
-    /// outline (`hintFocus`) just outside the item's rects (a paragraph: its
-    /// rows' box), distinct from the selected item's filled highlight.
+    /// outline (`hintFocus`) just outside the item's rects, distinct from
+    /// the selected item's filled highlight.
     private func drawFocusRing(_ entry: Entry) {
-        let rects = entry.item.kind == .text
-            ? [entry.rects.dropFirst().reduce(entry.rects[0]) { $0.union($1) }] : entry.rects
         Design.Color.hintFocus.setStroke()
-        for rect in rects {
+        for rect in entry.rects {
             let path = NSBezierPath(roundedRect: rect.insetBy(dx: -2, dy: -1.5), xRadius: 2, yRadius: 2)
             path.lineWidth = 2
             path.stroke()
@@ -1186,14 +1204,23 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         let kind = selection.map { s in
             entry?.item.kind.rawValue ?? (s.anchor == s.focus ? s.focus.level.name : "range")
         } ?? "-"
+        // The items labelled up front: not the paragraphs (never labelled)
+        // nor the lines (shown after `l`).
+        let items = entries.filter { $0.item.kind != .text && $0.item.kind != .line }
+        let lines = entries.filter { $0.item.kind == .line }
         return [
             "hints.state": isOpen ? (selection == nil ? "choosing" : "selected") : "closed",
-            "hints.count": String(entries.count),
+            "hints.count": String(items.count),
             "hints.visible": String(isOpen ? visibleEntries.count : 0),
-            "hints.types": entries.map { $0.item.kind.rawValue }.joined(separator: ","),
-            "hints.labels": entries.isEmpty ? "-" : entries.map { $0.label.isEmpty ? "-" : $0.label }.joined(separator: ","),
+            "hints.types": items.map { $0.item.kind.rawValue }.joined(separator: ","),
+            "hints.labels": items.isEmpty ? "-" : items.map { $0.label.isEmpty ? "-" : $0.label }.joined(separator: ","),
             // Repeats left without a label (all but the newest copy).
-            "hints.unlabelled": String(entries.filter(\.label.isEmpty).count),
+            "hints.unlabelled": String(items.filter(\.label.isEmpty).count),
+            // Every non-blank line, labelled but drawn only after `l`.
+            "hints.lines": String(lines.count),
+            "hints.lines.labels": lines.isEmpty ? "-" : lines.map { $0.label.isEmpty ? "-" : $0.label }
+                .joined(separator: ","),
+            "hints.lines.values": lines.isEmpty ? "-" : lines.map(\.item.value).joined(separator: "|"),
             // Callouts on screen: while choosing, the matching ones; selected,
             // none until ⇧ is held (or a ⇧ letter typed).
             "hints.callouts": String(!isOpen ? 0 : selection == nil || !extendPrefix.isEmpty || reachShown
@@ -1228,18 +1255,22 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             "hints.popup.fits": popupVisible ? (popupFits ? "yes" : "no") : "-",
             "hints.popup.position": popupPosition,
             // Callouts overlapping each other, or covering another item's
-            // first cell; and ones the placement couldn't clear.
+            // first cell; and ones the placement couldn't clear. Only
+            // callouts that show together count: lines' among lines, the
+            // rest among the rest.
             "hints.callout.clash": String(entries.indices.reduce(0) { total, i in
-                total + entries[(i + 1)...].filter {
-                    $0.tileID == entries[i].tileID
-                        && $0.callout.frame.insetBy(dx: 0.5, dy: 0.5).intersects(entries[i].callout.frame)
+                total + entries.indices[(i + 1)...].filter {
+                    entries[$0].tileID == entries[i].tileID && together($0, i) && !entries[$0].label.isEmpty
+                        && !entries[i].label.isEmpty
+                        && entries[$0].callout.frame.insetBy(dx: 0.5, dy: 0.5).intersects(entries[i].callout.frame)
                 }.count
             }),
             // (Unlabelled repeats' first cells are plain text to placement.)
-            "hints.callout.hides": String(entries.filter { entry in
-                !entry.label.isEmpty && entries.contains { other in
-                    other.tileID == entry.tileID && other.anchor != entry.anchor
-                        && other.callout.frame.insetBy(dx: 0.5, dy: 0.5).intersects(entry.anchor)
+            "hints.callout.hides": String(entries.indices.filter { i in
+                !entries[i].label.isEmpty && entries.indices.contains { other in
+                    entries[other].tileID == entries[i].tileID && together(other, i) && !entries[other].label.isEmpty
+                        && entries[other].anchor != entries[i].anchor
+                        && entries[other].callout.frame.insetBy(dx: 0.5, dy: 0.5).intersects(entries[i].anchor)
                 }
             }.count),
             "hints.callout.flagged": String(entries.filter { !$0.label.isEmpty && $0.callout.clash }.count),
@@ -1267,6 +1298,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             let point = CGPoint(x: entry.anchor.midX, y: entry.anchor.midY)
             if entries.indices.contains(where: { other in
                 other != index && entries[other].tileID == entry.tileID && entries[other].item.kind != .text
+                    && together(other, index)
                     && !entries[other].rects.contains { $0.contains(point) }
                     && entries[other].rects.contains { $0.intersects(frame) }
             }) { covers += 1 }
@@ -1279,9 +1311,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     }
 
     /// The first labelled item with that value (repeats keep theirs on the
-    /// newest copy).
+    /// newest copy); a line only when no other item has that value.
     private func labelledEntry(_ value: String) -> Entry? {
-        entries.first { $0.item.value == value && !$0.label.isEmpty }
+        let matches = entries.filter { $0.item.value == value && !$0.label.isEmpty }
+        return matches.first { $0.item.kind != .line } ?? matches.first
     }
 
     /// `hints select <value>`: types the label of the first item with that value.
