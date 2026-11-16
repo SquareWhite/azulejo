@@ -1,6 +1,11 @@
-# Y, the prompt key, as Icon Composer layers
+# App icon layers for Icon Composer
 
-The source for a layered `AppIcon.icon`, for the day Xcode is installed. `just icon` writes the SVGs from `scripts/icon/draw.swift` (`--composer`), so they always match the shipping `.icns`. Don't edit them by hand.
+The app icon (the prompt key on a tile pattern) as separate layers, the source
+for a layered `AppIcon.icon`. The shipping app uses the flat
+`apps/macos/Resources/AppIcon.icns` and `AppIconDark.icns`, which need no
+Xcode. `just icon` writes these SVGs from `scripts/icon/draw.swift`
+(`--composer`) along with the `.icns` files, so they always match. Don't edit
+them by hand.
 
 | File | Layer |
 | --- | --- |
@@ -31,4 +36,22 @@ In Icon Composer (it ships with Xcode 26):
 
 The `.icns` also bakes in macOS 26's bright glass edge (`Bevel` in `draw.swift`); Icon Composer draws that itself, so leave it out too.
 
-Then compile it into the bundle with `actool` (docs/design/icon/README.md, "What Xcode would add"). Once `Assets.car` ships, macOS draws the dark, clear and tinted looks itself in Finder, Launchpad, Spotlight and the Dock, and `DockIcon.swift`'s run-time swap can go.
+## Compiling it into the bundle
+
+`actool`, which ships with Xcode but not the Command Line Tools, compiles the
+`.icon` document into `Contents/Resources/Assets.car` under the name in
+`CFBundleIconName` (already `AppIcon`). The build scripts don't do this yet.
+To add it, have `apps/macos/bundle.sh` and `scripts/release/build-mac.sh` run
+something like this when `xcrun --find actool` succeeds (check the flags
+against your Xcode):
+
+```sh
+xcrun actool apps/macos/AppIcon.icon --compile <bundle>/Contents/Resources \
+  --app-icon AppIcon --platform macosx --minimum-deployment-target 14.0 \
+  --output-partial-info-plist <tmp>/partial.plist
+```
+
+Keep `AppIcon.icns` as the fallback for macOS 14 and 15 and for builds without
+Xcode. Once `Assets.car` ships, macOS draws the dark, clear and tinted looks
+itself in Finder, Launchpad, Spotlight and the Dock, and `DockIcon.swift`'s
+run-time swap is needed only where there's no `Assets.car`.
