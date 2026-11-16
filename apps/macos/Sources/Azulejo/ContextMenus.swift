@@ -125,7 +125,7 @@ enum ContextMenus {
         }
         menu.addItem(.separator())
         let close = action("Close Workspace", "close_workspace", target, chords, controller)
-        close.toolTip = "Detaches: herdr keeps its tabs and panes running"
+        close.toolTip = "Closes the herdr workspace too: its processes end. Asks first if any still run"
         menu.addItem(close)
         return menu
     }
