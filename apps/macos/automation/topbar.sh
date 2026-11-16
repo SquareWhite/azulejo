@@ -3,7 +3,7 @@
 # layout picker, ⌘K field) in all four built-in themes, with the sidebar
 # full, as a rail and hidden (topbar-shots.azs), on its own dev instance
 # (AZJ_DEV_NAME=topbar). Window captures of our own window only; the top
-# 72 pt of each lands in docs/testing/topbar/<label>/ for before/after
+# 72 pt of each lands in .dev/topbar.out/topbar-<label>/ for before/after
 # comparisons. Full screen isn't captured: it would take over the screen.
 #   apps/macos/automation/topbar.sh LABEL [--keep]
 set -euo pipefail
@@ -13,7 +13,7 @@ label="${1:?usage: topbar.sh LABEL [--keep]}"
 KEEP="${2:-}"
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-topbar}"
 out="$root/.dev/$AZJ_DEV_NAME.out/topbar"
-dest="$root/docs/testing/topbar/$label"
+dest="$out-$label"
 cleanup() {
   kill "${watcher:-}" "${watchdog:-}" 2>/dev/null || true
   rm -rf "$out/.capture"

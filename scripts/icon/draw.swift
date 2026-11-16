@@ -4,8 +4,7 @@
 // light, dark and clear, the chosen one's variants, the .iconsets that
 // scripts/icon/build.sh packs into AppIcon.icns and AppIconDark.icns, a
 // contact sheet and side-by-sides of the candidates and the marks. Pure
-// CoreGraphics, so it's reproducible on any Mac with the Command Line Tools
-// (docs/design/icon/README.md).
+// CoreGraphics, so it's reproducible on any Mac with the Command Line Tools.
 //
 //   swift scripts/icon/draw.swift --iconset DIR   # the 10 PNGs iconutil wants
 //   swift scripts/icon/draw.swift --iconset-dark DIR  # the same, dark look
@@ -77,10 +76,10 @@ struct Palette {
 
 /// The bright edge every macOS 26 icon has: light catching the glass's
 /// rounded edge, all the way round. Measured off Zed, Obsidian, Terminal,
-/// Notes and TextEdit as IconServices draws them (docs/design/icon/README.md,
-/// "Dock check"): at the very edge it's white at about 55 % on a dark icon
-/// (brightest at the top, weakest at the foot) and fully white on a light
-/// one, fading linearly to nothing 18 px in (on the 824 px body).
+/// Notes and TextEdit as IconServices draws them: at the very edge it's
+/// white at about 55 % on a dark icon (brightest at the top, weakest at the
+/// foot) and fully white on a light one, fading linearly to nothing 18 px in
+/// (on the 824 px body).
 struct Bevel {
   var top: CGFloat  // white's alpha at the edge, top, sides and foot
   var side: CGFloat
@@ -329,8 +328,7 @@ enum Candidate: String, CaseIterable {
 
 /// What ships: one of the candidates A–H, or a mark (I–X6) in one of the
 /// styles, e.g. `.mark(.woven, .glaze)`, or `.key`. the maintainer picked X,
-/// pinwheel, white on cobalt (Nov 4, 2026), then drew Y himself (Nov 5);
-/// docs/design/icon/README.md.
+/// pinwheel, white on cobalt (Nov 4, 2026), then drew Y himself (Nov 5).
 let chosen: Icon = .key
 
 enum Icon: Equatable {

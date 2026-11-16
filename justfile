@@ -26,7 +26,7 @@ lint:
 design-tokens:
     scripts/design-tokens
 
-# Regenerate the app icon (apps/macos/Resources/AppIcon.icns) and docs/design/icon from scripts/icon/draw.swift
+# Regenerate the app icon (apps/macos/Resources/AppIcon.icns, AppIconDark.icns) and its Icon Composer layers from scripts/icon/draw.swift
 icon:
     scripts/icon/build.sh
 
@@ -84,13 +84,13 @@ azj-dev *args:
 dev-reset:
     apps/macos/dev.sh --reset
 
-# Keyboard walkthrough of every F2 and tall action on the dev profile, in-process (no OS input)
+# Keyboard walkthrough of every tiling and tall action on the dev profile, in-process (no OS input)
 # (resets the dev profile first so it starts from one tile)
 mac-automation: mac
     apps/macos/dev.sh --reset
     out=.dev/out/keys; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/keys"; fi; apps/macos/dev.sh --automation apps/macos/automation/keys.azs --out "$out"
 
-# Keyboard walkthrough of the dynamic layouts (ADR 0010) on the dev profile, in-process
+# Keyboard walkthrough of the dynamic layouts on the dev profile, in-process
 mac-layouts: mac
     apps/macos/dev.sh --reset
     out=.dev/out/layouts; if [ -n "${AZJ_DEV_NAME:-}" ]; then out=".dev/$AZJ_DEV_NAME/out/layouts"; fi; apps/macos/dev.sh --automation apps/macos/automation/layouts.azs --out "$out"
@@ -110,7 +110,7 @@ mac-focus: mac
 mac-rebind: mac
     apps/macos/automation/rebind.sh
 
-# The designer mockup's scene with fixture data, captured for docs/design (D.9)
+# The designer mockup's scene with fixture data, captured under .dev/
 mac-mockup: mac
     apps/macos/automation/mockup.sh
 
