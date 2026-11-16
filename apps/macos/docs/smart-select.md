@@ -1,10 +1,11 @@
 # Smart select (⌘S)
 
 In a terminal, **⌘S** (`select_visible_item`) labels the selectable items in
-every visible terminal pane of the window: URLs, paths, commands, text
-paragraphs, IP addresses, domains, hashes, UUIDs and branches. Type a label,
-or move with the arrows, to select one; then copy, open or run it. Panes
-hidden by zoom or Monocle are left out.
+every visible terminal pane of the window: URLs, paths, commands, IP
+addresses, domains, hashes and IDs, and branches. Every non-blank line is
+an item too, labelled once you type `l`. Type a label, or move with the
+arrows, to select one; then copy, open or run it. Panes hidden by zoom or
+Monocle are left out.
 
 Rebind or disable it under `[keys.macos.terminal]`. Other tile kinds keep ⌘S
 for themselves.
@@ -12,7 +13,7 @@ for themselves.
 ## Where the code lives
 
 Everything that reads the screen is in the Rust core, `core/crates/hints`, so
-every shell gets the same items: detection in `src/detect`; labels,
+every shell gets the same items: detection in `src/detect`; labels, lines,
 paragraphs, grow/shrink, arrows and range text in `src/select.rs`; callout
 placement in `src/callout.rs`; Run's target in `src/run.rs`; the row
 classifier in `src/model.rs` and `src/refine.rs`.
@@ -30,21 +31,35 @@ Path checks go through the crate's `Filesystem` trait (a fake in tests).
 
 ## Labels
 
-A label's first letter is the item's kind: `l` link, `p` path, `c` command,
-`t` text paragraph, `i` IP address, `d` domain, `h` hash, `u` UUID, `b`
-branch. When only one item of a kind is visible, the letter alone selects it;
-otherwise home-row letters follow (`pa`, `ps`…). Labels of one kind share a
-length, so none is a prefix of another.
+A label's first letter is the item's kind: `u` URL, `p` path, `c` command,
+`i` IP address, `d` domain, `h` hash or ID (git hashes, UUIDs, other hex
+IDs), `b` branch and `l` line. When only one item of a kind is visible, the
+letter alone selects it; otherwise home-row letters follow (`pa`, `ps`…).
+Labels of one kind share a length, so none is a prefix of another.
+
+**Lines.** Every non-blank line in each labelled pane is an item: one row,
+or one line the terminal soft-wrapped over several rows, without its indent
+and trailing blanks. Boxing every row up front would bury everything else,
+so lines get no box or callout at first; `l` still shows in the legend.
+Typing `l` fades the other kinds and labels every line; the next letters
+filter as for any kind, and the arrows walk the lines. A selected line
+copies its text (a range of lines copies as a terminal selection would),
+and ⌥↑ grows it to its paragraph, block and screen. Lines are copy-only.
+
+Paragraphs have no letter of their own: grow a line (⌥↑) to reach one.
 
 When a pane shows the same item several times (a prompt's `~/proj` on every
 prompt line), only the newest copy gets a label. The others light up while it
-is selected, and the arrows still reach them.
+is selected, and the arrows still reach them. Lines are the exception: two
+lines that read the same are two places, and each gets its own label.
 
 Labels are yellow callouts with a short tail pointing at the item's first
 cell. `callout::place` puts each one below, above or before its item,
-preferring blank space, then plain output, and never over another callout or
-another item's first cell. With nowhere free it counts as a clash
-(`hints.callout.flagged`).
+preferring blank space, then plain output, then paragraphs, and never over
+another callout or another item's first cell. With nowhere free it counts as
+a clash (`hints.callout.flagged`). Lines' callouts are placed in a pass of
+their own, since they only show once the rest have faded; on a row that
+starts at the pane's edge one may sit over the line's first letters.
 
 ## Choosing
 
@@ -52,7 +67,7 @@ another item's first cell. With nowhere free it counts as a clash
   callouts grey the letters typed so far. Backspace takes a letter back, Esc
   or a click outside leaves, and a complete label selects.
 - **Arrows** move a focus ring across the items still shown, so ⌘S, `c`, then
-  ↑ walks the commands only. The first arrow starts from the terminal cursor;
+  ↑ walks the commands only, and ⌘S, `l`, then ↑ ↓ walk the lines. The first arrow starts from the terminal cursor;
   after that ↑ ↓ go to the nearest item above or below, and ← → to the
   previous or next in reading order, crossing panes at the ends. Return
   selects the focused item; ⇧ + arrow selects it and extends.
@@ -67,9 +82,9 @@ Scrolling, resizing, tab or focus changes cancel the mode.
 | `c` (or ⌘C) | Copy |
 | `o` | Open (URLs and existing local paths) |
 | `r` | Run (commands; see below) |
-| ← → ↑ ↓ | Move to the next item, at the selection's current level |
-| ⇧ + arrow, ⇧ + a label | Extend the selection |
-| ⌥↑ | Grow: the item around it (a path → its command), its rows, paragraph, block, the whole screen |
+| ← → ↑ ↓ | Move to the next item, at the selection's current level (a line: the previous or next line) |
+| ⇧ + arrow, ⇧ + a label | Extend the selection (from a line, ⇧ + a line's label) |
+| ⌥↑ | Grow: the item around it (a path → its command), its line, paragraph, block, the whole screen |
 | ⌥↓ | Shrink back the way ⌥↑ came |
 | Backspace | Back to choosing |
 | Esc | Leave |
@@ -120,11 +135,14 @@ machine's shell as it is.
   inside a command.
 - **Domains** need a known top-level domain from a built-in list that leaves
   out TLDs doubling as file extensions, so `README.md` isn't a host.
-- **Hashes** are 7–40 lowercase hex characters with at least one letter and
-  one digit.
-- **Paragraphs** are runs of rows that read as prose (three or more words,
-  mostly plain words, no column gaps). Command rows and their output never
-  are.
+- **Hashes and IDs** are 7–40 lowercase hex characters with at least one
+  letter and one digit, or UUIDs.
+- **Lines** are the non-blank rows, a soft-wrapped row joined to the rows it
+  wraps into. The overlay takes a row as wrapped when its last cell holds
+  text and the next row starts with text (the `joins` it sends the core).
+- **Paragraphs**, what a line grows to, are runs of rows that read as prose
+  (three or more words, mostly plain words, no column gaps). Command rows and
+  their output never are.
 - When items overlap, the longest wins (a URL over its host); a command keeps
   its own label beside the items inside it.
 
@@ -164,4 +182,6 @@ ones the detector missed on code rows. `just hints-model` regenerates
 - `apps/macos/automation/hints.sh` runs `cargo test -p azulejo-hints`, then
   drives the GUI on a dev instance in a dark and a light theme. Copy uses a
   private pasteboard, Open records its target without launching anything,
-  and Run executes a fixture command in idle fish, zsh and bash shells.
+  and Run executes a fixture command in idle fish, zsh and bash shells. Its
+  lines scenario checks that ⌘S draws no line, that `l` labels each one (a
+  wrapped one once, a repeated one twice) and that the arrows walk them.

@@ -52,6 +52,13 @@ import pathlib, sys
 source, output, fixture, fish_login = sys.argv[1:]
 wrapped = 'https://example.invalid/' + 'path/' * 30 + 'end'
 pathlib.Path(fixture, 'wrapped.txt').write_text(wrapped + '\n')
+# Lines for `l`: an indent and trailing blanks to trim, a blank row to skip,
+# a repeated line (its URL gets one label, each line its own) and one long
+# enough to soft-wrap, which stays one line.
+long_line = 'wrap:' + 'abcdefghij' * 30
+pathlib.Path(fixture, 'lines.txt').write_text('\n'.join([
+    '  alpha line with indent   ', '', 'beta https://example.invalid/beta', 'beta https://example.invalid/beta',
+    long_line, 'gamma', '']))
 # A coding agent's multi-line tool call: Run must not type it line by line
 # into the login shell (fish has no heredocs).
 pathlib.Path(fixture, 'shell-probe.txt').write_text('$ printf %s "$FISH_VERSION" > shell.txt\n')
@@ -130,7 +137,8 @@ awk -v w=$((cols - 1)) '{
 }' sheet-src.txt
 """)
 pathlib.Path(output).write_text(pathlib.Path(source).read_text().replace('@FISH@', fish_login or '-').replace('@DIR@', fixture)
-                              .replace('@WRAPPED@', wrapped).replace('@INLINE_WRAPPED@', inline_wrapped))
+                              .replace('@WRAPPED@', wrapped).replace('@INLINE_WRAPPED@', inline_wrapped)
+                              .replace('@LONG_LINE@', long_line))
 PY
 (sleep 480; "$root/apps/macos/dev.sh" --stop) &
 watchdog=$!

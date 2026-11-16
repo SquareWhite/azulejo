@@ -21,17 +21,17 @@ struct TerminalTextRange: Hashable {
 /// paragraphs, grow and shrink, arrows, range text, callout placement)
 /// lives in the Rust core; `TerminalHints` calls it.
 enum TerminalSelection {
-    /// How far a selection reaches: an item (a recognised item or a text
-    /// paragraph), the rows it sits on, its block of non-blank rows or the
-    /// pane's whole visible text. Arrow keys move at the selection's level.
-    /// Raw values are the core's.
+    /// How far a selection reaches: a recognised item, a text paragraph, its
+    /// line (soft wraps joined), its block of non-blank rows or the pane's
+    /// whole visible text. Arrow keys move at the selection's level. Raw
+    /// values are the core's.
     enum Level: UInt8 {
         case item, text, line, block, screen
         var name: String { "\(self)" }
     }
 
-    /// One step of a selection: a range, its level and, for an item or a
-    /// paragraph, its index in the pane's items.
+    /// One step of a selection: a range, its level and, for an item, a
+    /// paragraph or a line, its index in the pane's items.
     struct Unit: Equatable {
         var range: TerminalTextRange
         var level: Level
@@ -41,26 +41,35 @@ enum TerminalSelection {
     /// Raw values are the core's.
     enum Direction: UInt8 { case left, right, up, down }
 
-    /// The first letter of every label says what the item is.
-    static func letter(_ kind: TerminalHintItem.Kind) -> Character {
+    /// The first letter of every label says what the item is (the core's
+    /// `Kind::letter`, which makes the labels). A paragraph has none: it
+    /// has no label.
+    static func letter(_ kind: TerminalHintItem.Kind) -> Character? {
         switch kind {
-        case .url: "l"
+        case .url: "u"
         case .path: "p"
         case .ip: "i"
         case .hash: "h"
         case .branch: "b"
-        case .uuid: "u"
         case .domain: "d"
         case .command: "c"
-        case .text: "t"
+        case .line: "l"
+        case .text: nil
         }
     }
 
     /// Legend order and words for the kind letters.
     static let kindOrder: [(TerminalHintItem.Kind, String)] = [
-        (.url, "link"), (.path, "path"), (.command, "command"), (.text, "text"), (.ip, "ip"),
-        (.domain, "domain"), (.hash, "hash"), (.uuid, "uuid"), (.branch, "branch"),
+        (.url, "url"), (.path, "path"), (.command, "command"), (.line, "line"), (.ip, "ip"),
+        (.domain, "domain"), (.hash, "hash/id"), (.branch, "branch"),
     ]
+
+    /// Whether an item's label shows while choosing with `typed` typed so
+    /// far (the core's `select::shown`): it has a label starting with
+    /// `typed`, and a line waits for a first letter (its own, `l`).
+    static func shown(_ kind: TerminalHintItem.Kind, label: String, typed: String) -> Bool {
+        !label.isEmpty && label.hasPrefix(typed) && (kind != .line || !typed.isEmpty)
+    }
 
     static func extent(_ item: TerminalHintItem) -> TerminalTextRange {
         let first = item.spans.first!, last = item.spans.last!

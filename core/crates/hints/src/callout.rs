@@ -433,9 +433,9 @@ pub struct Item {
 }
 
 /// The overlay's placement: pills keep off blank space first, then plain
-/// text (`text`: every run of non-blank cells), then paragraphs, then other
-/// items' text.
-pub fn place_items(items: &[Item], text: &[Rect], m: Metrics) -> Vec<Callout> {
+/// text (`text`: every run of non-blank cells), then paragraphs (`prose`,
+/// unlabelled, and the items marked prose), then other items' text.
+pub fn place_items(items: &[Item], text: &[Rect], prose: &[Rect], m: Metrics) -> Vec<Callout> {
     let requests: Vec<Request> = items
         .iter()
         .map(|item| {
@@ -459,10 +459,15 @@ pub fn place_items(items: &[Item], text: &[Rect], m: Metrics) -> Vec<Callout> {
         })
         .collect();
     let anchors: Vec<Rect> = items.iter().map(|i| i.anchor).collect();
-    let prose: Vec<Rect> = items
+    let prose: Vec<Rect> = prose
         .iter()
-        .filter(|i| i.prose)
-        .flat_map(|i| i.rects.iter().copied())
+        .copied()
+        .chain(
+            items
+                .iter()
+                .filter(|i| i.prose)
+                .flat_map(|i| i.rects.iter().copied()),
+        )
         .collect();
     let others: Vec<Rect> = items
         .iter()

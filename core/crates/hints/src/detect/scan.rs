@@ -1,6 +1,6 @@
 //! Items on logical lines: commands (decided while joining rows, inline in
 //! backticks or a colour run, or named in a sentence) and the atoms around
-//! them (URLs, paths, IPs, domains, UUIDs, hashes, branches).
+//! them (URLs, paths, IPs, domains, hashes and IDs, branches).
 
 use std::collections::HashSet;
 use std::net::Ipv6Addr;
@@ -324,7 +324,7 @@ pub fn scan(
             found.push((Kind::Domain, c.get(0).unwrap().range(), None, None));
         }
         for m in UUID.find_iter(text).flatten() {
-            found.push((Kind::Uuid, m.range(), None, None));
+            found.push((Kind::Hash, m.range(), None, None));
         }
         for m in HASH.find_iter(text).flatten() {
             // Plain words and plain numbers aren't hashes.
