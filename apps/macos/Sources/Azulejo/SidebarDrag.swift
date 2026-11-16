@@ -3,7 +3,7 @@ import AppKit
 /// Dragging a workspace row to reorder the window's workspaces, in the full
 /// sidebar and in the rail. The order is the core's (`workspace.move`): the
 /// sidebar, ⌘1…⌘8 and ⌘9 follow it, it's saved with the session, and the
-/// API lists workspaces in it (ADR 0013).
+/// API lists workspaces in it.
 ///
 /// A press that moves `dragThreshold` points lifts the row: a copy of it,
 /// raised a little with a shadow, follows the pointer while the row's own

@@ -41,7 +41,7 @@ pub struct HerdrRef {
     pub terminal_id: String,
     pub tab_id: String,
     /// The herdr machine the pane runs on: `None` for Local, else herdr's
-    /// saved-machine ID (ADR 0011). herdr IDs are only unique per server.
+    /// saved-machine ID. herdr IDs are only unique per server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
 }
@@ -137,7 +137,7 @@ pub(crate) fn is_false(b: &bool) -> bool {
     !*b
 }
 
-/// What herdr says the agent in a terminal tile is doing (F16).
+/// What herdr says the agent in a terminal tile is doing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
@@ -158,8 +158,8 @@ impl AgentStatus {
     }
 }
 
-/// The agent running in a terminal tile, from herdr's agent status (F11,
-/// F16). Absent when herdr knows of no agent there.
+/// The agent running in a terminal tile, from herdr's agent status.
+/// Absent when herdr knows of no agent there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentInfo {
     /// The agent herdr detected or was told about, e.g. `claude`.
@@ -182,7 +182,7 @@ pub struct AgentInfo {
     pub unread: bool,
 }
 
-/// What herdr reports about a terminal tile's pane (F28): enough to say what
+/// What herdr reports about a terminal tile's pane: enough to say what
 /// runs there and where.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PaneMeta {
@@ -201,7 +201,7 @@ pub struct PaneMeta {
     pub command: Option<String>,
 }
 
-/// What a tile's header strip shows (F28), worked out by the core so every
+/// What a tile's header strip shows, worked out by the core so every
 /// shell says the same: e.g. `zsh` — `just dogfood`, `claude` —
 /// `~/src/azulejo`, `README.md` — `~/code/shop`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -211,7 +211,7 @@ pub struct TileHeader {
     pub subtitle: Option<String>,
 }
 
-/// How a preview tile shows its file (F29).
+/// How a preview tile shows its file.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PreviewMode {
@@ -242,7 +242,7 @@ pub struct Tile {
     /// Terminal tiles only: title, cwd and command herdr reports for the pane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pane: Option<PaneMeta>,
-    /// Preview tiles only: rendered or source (F29). Saved per tile.
+    /// Preview tiles only: rendered or source. Saved per tile.
     #[serde(default, skip_serializing_if = "PreviewMode::is_rendered")]
     pub preview_mode: PreviewMode,
     /// What the header strip shows; the core keeps it current.
@@ -263,7 +263,7 @@ impl Tile {
         }
     }
 
-    /// The header this tile should show (F28). `home` abbreviates paths to
+    /// The header this tile should show. `home` abbreviates paths to
     /// `~`.
     ///
     /// - Terminal: the agent herdr detected, else the shell; then the command
@@ -335,7 +335,7 @@ impl Tile {
         }
     }
 
-    /// Whether the tile's agent needs a look (F11).
+    /// Whether the tile's agent needs a look.
     pub fn needs_attention(&self) -> bool {
         self.agent.as_ref().is_some_and(|a| a.attention)
     }

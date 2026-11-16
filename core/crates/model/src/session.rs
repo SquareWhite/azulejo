@@ -58,7 +58,7 @@ pub struct Tab {
     /// A zoomed tile fills the tab until unzoomed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoomed: Option<TileId>,
-    /// How the tiles are arranged (ADR 0010). Old state files have none and
+    /// How the tiles are arranged. Old state files have none and
     /// load as manual. For dynamic kinds `root` is derived from it.
     #[serde(default, skip_serializing_if = "TabLayout::is_plain_manual")]
     pub layout: TabLayout,
@@ -238,16 +238,16 @@ pub struct Workspace {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub herdr_workspace: Option<String>,
     /// The herdr machine its terminals run on: `None` for Local, else
-    /// herdr's saved-machine ID (ADR 0011).
+    /// herdr's saved-machine ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
     /// The folder whose git branch the sidebar shows, when the user set one
     /// (`workspace.set_repo`). Without it the core follows the focused
-    /// terminal's working directory (F26).
+    /// terminal's working directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     /// The repository the workspace is in and its branch, as the core last
-    /// read it; absent outside a repository (F26).
+    /// read it; absent outside a repository.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<GitInfo>,
     pub tabs: Vec<Tab>,
@@ -256,7 +256,7 @@ pub struct Workspace {
     pub active_tab: Option<TabId>,
 }
 
-/// A workspace's repository and branch (F26).
+/// A workspace's repository and branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GitInfo {
     /// The work tree's top folder.
@@ -781,7 +781,7 @@ impl Session {
         Ok(())
     }
 
-    /// Sets or clears the folder whose branch `id` shows (F26).
+    /// Sets or clears the folder whose branch `id` shows.
     pub fn set_workspace_repo(
         &mut self,
         id: WorkspaceId,
@@ -791,7 +791,7 @@ impl Session {
         Ok(())
     }
 
-    /// Records what the core last read about `id`'s repository (F26).
+    /// Records what the core last read about `id`'s repository.
     pub fn set_workspace_git(
         &mut self,
         id: WorkspaceId,
@@ -929,7 +929,7 @@ impl Session {
 
     /// Adds `tile` beside `target` on the `direction` side without moving
     /// focus or zoom: for tiles that appear on their own, like a pane split
-    /// off in herdr (F15). `ratio` is the new split's first child's share.
+    /// off in herdr. `ratio` is the new split's first child's share.
     pub fn insert_tile_beside(
         &mut self,
         target: TileId,
@@ -1361,7 +1361,7 @@ impl Session {
         }
     }
 
-    // ----- dynamic layouts (ADR 0010) -----
+    // ----- dynamic layouts -----
 
     /// Switches a tab's layout kind. Manual → dynamic takes the tree's tall
     /// reading as the order (and, for a canonical tall tree going to Tile,
@@ -1408,8 +1408,8 @@ impl Session {
         Ok(true)
     }
 
-    /// Takes an arrangement made elsewhere (the herdr TUI, a phone; ADR
-    /// 0012): `root` must hold exactly the tab's tiles. A manual tab takes
+    /// Takes an arrangement made elsewhere (the herdr TUI, a phone):
+    /// `root` must hold exactly the tab's tiles. A manual tab takes
     /// the tree. A Tile or Three Column tab absorbs it when its rule can
     /// produce it (a reorder, a ratio, stack sizes), and otherwise freezes to
     /// manual with it, remembering its kind for toggling back. Monocle takes
@@ -1455,7 +1455,7 @@ impl Session {
     }
 
     /// Zooms `zoomed` (focusing it) or unzooms a tab, without activating it:
-    /// for zoom changed elsewhere (ADR 0012). Returns whether it changed.
+    /// for zoom changed elsewhere. Returns whether it changed.
     pub fn set_tab_zoom(&mut self, tab: TabId, zoomed: Option<TileId>) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);
@@ -1473,7 +1473,7 @@ impl Session {
     }
 
     /// Focuses `tile` within its tab without activating the tab: for a
-    /// Monocle tab whose top tile changed elsewhere (ADR 0012).
+    /// Monocle tab whose top tile changed elsewhere.
     pub fn set_tab_focus(&mut self, tab: TabId, tile: TileId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);

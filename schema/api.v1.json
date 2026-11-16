@@ -1,7 +1,7 @@
 {
   "$defs": {
     "AgentInfo": {
-      "description": "The agent running in a terminal tile, from herdr's agent status (F11,\nF16). Absent when herdr knows of no agent there.",
+      "description": "The agent running in a terminal tile, from herdr's agent status.\nAbsent when herdr knows of no agent there.",
       "properties": {
         "attention": {
           "description": "The agent became blocked or finished and needs a look. A finish\nstays lit until the user reads it (`tile.seen`); blocked stays lit\nuntil the agent's state changes. herdr's `done` status can outlive a\nread, so this, not `status`, is the \"unseen\" flag.",
@@ -92,7 +92,7 @@
       "type": "object"
     },
     "AgentStatus": {
-      "description": "What herdr says the agent in a terminal tile is doing (F16).",
+      "description": "What herdr says the agent in a terminal tile is doing.",
       "oneOf": [
         {
           "enum": [
@@ -350,7 +350,7 @@
           "type": "object"
         },
         {
-          "description": "Closes a workspace and its tabs, and its herdr workspace with every\ntab and pane in it: their processes end (ADR 0014). Closing a\nwindow's last workspace closes the window.",
+          "description": "Closes a workspace and its tabs, and its herdr workspace with every\ntab and pane in it: their processes end. Closing a\nwindow's last workspace closes the window.",
           "properties": {
             "method": {
               "const": "workspace.close",
@@ -383,7 +383,7 @@
           "type": "object"
         },
         {
-          "description": "Renames a workspace, and its herdr workspace too (ADR 0014).",
+          "description": "Renames a workspace, and its herdr workspace too.",
           "properties": {
             "method": {
               "const": "workspace.rename",
@@ -400,7 +400,7 @@
           "type": "object"
         },
         {
-          "description": "Sets the folder whose git branch the sidebar shows; without `path` the\ncore follows the focused terminal's working directory again (F26).",
+          "description": "Sets the folder whose git branch the sidebar shows; without `path` the\ncore follows the focused terminal's working directory again.",
           "properties": {
             "method": {
               "const": "workspace.set_repo",
@@ -584,7 +584,7 @@
           "type": "object"
         },
         {
-          "description": "Closes a tile. A terminal's herdr pane is detached, not killed, unless\n`kill` is set (F14).",
+          "description": "Closes a tile. A terminal's herdr pane is detached, not killed, unless\n`kill` is set.",
           "properties": {
             "method": {
               "const": "tile.close",
@@ -601,7 +601,7 @@
           "type": "object"
         },
         {
-          "description": "Focuses a tile. Focus alone doesn't count as reading its agent's\nresult: that's `tile.seen` (F11).",
+          "description": "Focuses a tile. Focus alone doesn't count as reading its agent's\nresult: that's `tile.seen`.",
           "properties": {
             "method": {
               "const": "tile.focus",
@@ -737,7 +737,7 @@
           "type": "object"
         },
         {
-          "description": "Shows a preview tile's file rendered or as highlighted source (F29);\nwithout `mode` it toggles. Saved per tile.",
+          "description": "Shows a preview tile's file rendered or as highlighted source;\nwithout `mode` it toggles. Saved per tile.",
           "properties": {
             "method": {
               "const": "preview.set_mode",
@@ -1275,7 +1275,7 @@
           "type": "object"
         },
         {
-          "description": "Reads a terminal's screen or history; replies `text`. History lives in\nherdr, not in the tile (ADR 0005).",
+          "description": "Reads a terminal's screen or history; replies `text`. History lives in\nherdr, not in the tile.",
           "properties": {
             "method": {
               "const": "terminal.read",
@@ -1890,7 +1890,7 @@
           "type": "object"
         },
         {
-          "description": "A workspace's repository or branch changed, or it left a repository\n(`git` absent): the sidebar shows the branch (F26). Also visible as\n`git` on `workspace.updated`.",
+          "description": "A workspace's repository or branch changed, or it left a repository\n(`git` absent): the sidebar shows the branch. Also visible as\n`git` on `workspace.updated`.",
           "properties": {
             "data": {
               "properties": {
@@ -2163,7 +2163,7 @@
           "type": "object"
         },
         {
-          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, went back to work, the user read its result\n(`tile.seen`) or marked it unread (`tile.mark_unread`) (F11). Also\nvisible as `tile.agent.attention` on `tile.updated`.",
+          "description": "A terminal tile's agent started or stopped needing a look: it became\nblocked or finished, went back to work, the user read its result\n(`tile.seen`) or marked it unread (`tile.mark_unread`). Also\nvisible as `tile.agent.attention` on `tile.updated`.",
           "properties": {
             "data": {
               "properties": {
@@ -2329,7 +2329,7 @@
           "type": "object"
         },
         {
-          "description": "A herdr machine appeared, changed state or label (ADR 0011). Not\nsaved.",
+          "description": "A herdr machine appeared, changed state or label. Not\nsaved.",
           "properties": {
             "data": {
               "properties": {
@@ -2379,7 +2379,7 @@
           "type": "object"
         },
         {
-          "description": "The agent in a terminal tile changed state, as herdr reports it (F16).\nNot saved.",
+          "description": "The agent in a terminal tile changed state, as herdr reports it.\nNot saved.",
           "properties": {
             "data": {
               "$ref": "#/$defs/AgentStateChange"
@@ -2706,7 +2706,7 @@
       ]
     },
     "FilesPanel": {
-      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.\n\nWith `machine`, the panel shows that herdr machine's files (ADR 0015):\nthe core lists folders over the machine's SSH connection, off its\nthread. A folder it hasn't listed yet comes back empty with `loading`,\nand `files.changed` names the folder once its listing is in (or failed,\nwith `error`). Open folders are listed again every few seconds; nothing\nis watched. `files.open` shows a copy of a remote file in the preview\ntile and opens terminals on the machine.",
+      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.\n\nWith `machine`, the panel shows that herdr machine's files:\nthe core lists folders over the machine's SSH connection, off its\nthread. A folder it hasn't listed yet comes back empty with `loading`,\nand `files.changed` names the folder once its listing is in (or failed,\nwith `error`). Open folders are listed again every few seconds; nothing\nis watched. `files.open` shows a copy of a remote file in the preview\ntile and opens terminals on the machine.",
       "properties": {
         "machine": {
           "description": "A herdr machine's ID (`machines.list`) whose files to show; Local\nwhen absent or `local`.",
@@ -2913,7 +2913,7 @@
       "type": "object"
     },
     "GitInfo": {
-      "description": "A workspace's repository and branch (F26).",
+      "description": "A workspace's repository and branch.",
       "properties": {
         "branch": {
           "description": "The checked-out branch, or the short commit when `detached`. Absent in\na repository with no commits yet only if git can't name the branch.",
@@ -2944,7 +2944,7 @@
       "description": "The herdr pane a terminal tile views. Both IDs are kept: herdr changes a\npane's ID when it moves to another workspace, while the terminal ID is what\n`herdr terminal attach` takes. The tab ID matters because closing a herdr\ntab reports only the tab, and herdr keeps pane and tab IDs (but not the\nprocess) across a server restart.",
       "properties": {
         "machine": {
-          "description": "The herdr machine the pane runs on: `None` for Local, else herdr's\nsaved-machine ID (ADR 0011). herdr IDs are only unique per server.",
+          "description": "The herdr machine the pane runs on: `None` for Local, else herdr's\nsaved-machine ID. herdr IDs are only unique per server.",
           "type": [
             "string",
             "null"
@@ -3452,7 +3452,7 @@
       "type": "object"
     },
     "LayoutState": {
-      "description": "A tab's layout, as `layout.changed` and `layout.get` report it.\n\nShells draw from `rects`: every tile's rectangle in the unit square, its\nstacking order and whether it's shown (Monocle hides all but the focused\ntile without resizing them). `tree` is the tab's split tree: the source of\ntruth for manual tabs, derived for dynamic ones (ADR 0010).",
+      "description": "A tab's layout, as `layout.changed` and `layout.get` report it.\n\nShells draw from `rects`: every tile's rectangle in the unit square, its\nstacking order and whether it's shown (Monocle hides all but the focused\ntile without resizing them). `tree` is the tab's split tree: the source of\ntruth for manual tabs, derived for dynamic ones.",
       "properties": {
         "focused": {
           "$ref": "#/$defs/TileId"
@@ -3757,7 +3757,7 @@
       "type": "string"
     },
     "PaneMeta": {
-      "description": "What herdr reports about a terminal tile's pane (F28): enough to say what\nruns there and where.",
+      "description": "What herdr reports about a terminal tile's pane: enough to say what\nruns there and where.",
       "properties": {
         "command": {
           "description": "The command running in the foreground when it isn't the shell, e.g.\n`just dogfood`.",
@@ -3839,7 +3839,7 @@
         },
         "mode": {
           "$ref": "#/$defs/PreviewMode",
-          "description": "Rendered, or the file's source highlighted as code (F29)."
+          "description": "Rendered, or the file's source highlighted as code."
         },
         "path": {
           "type": "string"
@@ -3897,7 +3897,7 @@
       ]
     },
     "PreviewMode": {
-      "description": "How a preview tile shows its file (F29).",
+      "description": "How a preview tile shows its file.",
       "oneOf": [
         {
           "const": "rendered",
@@ -4517,7 +4517,7 @@
         },
         "layout": {
           "$ref": "#/$defs/TabLayout",
-          "description": "How the tiles are arranged (ADR 0010). Old state files have none and\nload as manual. For dynamic kinds `root` is derived from it."
+          "description": "How the tiles are arranged. Old state files have none and\nload as manual. For dynamic kinds `root` is derived from it."
         },
         "name": {
           "type": [
@@ -5160,7 +5160,7 @@
         },
         "preview_mode": {
           "$ref": "#/$defs/PreviewMode",
-          "description": "Preview tiles only: rendered or source (F29). Saved per tile."
+          "description": "Preview tiles only: rendered or source. Saved per tile."
         },
         "title": {
           "type": [
@@ -5323,7 +5323,7 @@
       ]
     },
     "TileHeader": {
-      "description": "What a tile's header strip shows (F28), worked out by the core so every\nshell says the same: e.g. `zsh` — `just dogfood`, `claude` —\n`~/src/azulejo`, `README.md` — `~/code/shop`.",
+      "description": "What a tile's header strip shows, worked out by the core so every\nshell says the same: e.g. `zsh` — `just dogfood`, `claude` —\n`~/src/azulejo`, `README.md` — `~/code/shop`.",
       "properties": {
         "subtitle": {
           "type": [
@@ -5514,7 +5514,7 @@
         },
         "preview_mode": {
           "$ref": "#/$defs/PreviewMode",
-          "description": "Preview tiles only: rendered or source (F29). Saved per tile."
+          "description": "Preview tiles only: rendered or source. Saved per tile."
         },
         "tab": {
           "$ref": "#/$defs/TabId"
@@ -5803,7 +5803,7 @@
               "type": "null"
             }
           ],
-          "description": "The repository the workspace is in and its branch, as the core last\nread it; absent outside a repository (F26)."
+          "description": "The repository the workspace is in and its branch, as the core last\nread it; absent outside a repository."
         },
         "herdr_workspace": {
           "description": "The herdr workspace backing this one, once the adapter has created it.",
@@ -5816,7 +5816,7 @@
           "$ref": "#/$defs/WorkspaceId"
         },
         "machine": {
-          "description": "The herdr machine its terminals run on: `None` for Local, else\nherdr's saved-machine ID (ADR 0011).",
+          "description": "The herdr machine its terminals run on: `None` for Local, else\nherdr's saved-machine ID.",
           "type": [
             "string",
             "null"
@@ -5826,7 +5826,7 @@
           "type": "string"
         },
         "repo": {
-          "description": "The folder whose git branch the sidebar shows, when the user set one\n(`workspace.set_repo`). Without it the core follows the focused\nterminal's working directory (F26).",
+          "description": "The folder whose git branch the sidebar shows, when the user set one\n(`workspace.set_repo`). Without it the core follows the focused\nterminal's working directory.",
           "type": [
             "string",
             "null"
@@ -5870,7 +5870,7 @@
           ]
         },
         "machine": {
-          "description": "The herdr machine its terminals run on: `\"local\"` (the default), or a\nmachine's ID or label from `machines.list` (ADR 0011).",
+          "description": "The herdr machine its terminals run on: `\"local\"` (the default), or a\nmachine's ID or label from `machines.list`.",
           "type": [
             "string",
             "null"
@@ -5904,13 +5904,13 @@
       "description": "A workspace without its tabs.",
       "properties": {
         "attention": {
-          "description": "Terminal tiles whose agent needs a look (F11).",
+          "description": "Terminal tiles whose agent needs a look.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
         "blocked": {
-          "description": "Terminal tiles whose agent is blocked, for the sidebar (F16).",
+          "description": "Terminal tiles whose agent is blocked, for the sidebar.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -5930,7 +5930,7 @@
               "type": "null"
             }
           ],
-          "description": "Its repository and branch (F26)."
+          "description": "Its repository and branch."
         },
         "herdr_workspace": {
           "type": [
@@ -6050,13 +6050,13 @@
           "type": "boolean"
         },
         "attention": {
-          "description": "Terminal tiles whose agent needs a look (F11).",
+          "description": "Terminal tiles whose agent needs a look.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
         "blocked": {
-          "description": "Terminal tiles whose agent is blocked, for the sidebar (F16).",
+          "description": "Terminal tiles whose agent is blocked, for the sidebar.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -6080,7 +6080,7 @@
               "type": "null"
             }
           ],
-          "description": "Its repository and branch (F26)."
+          "description": "Its repository and branch."
         },
         "herdr_workspace": {
           "type": [

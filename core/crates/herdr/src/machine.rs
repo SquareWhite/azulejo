@@ -1,4 +1,4 @@
-//! herdr's saved machines (ADR 0011): the list comes from herdr's catalogue,
+//! herdr's saved machines: the list comes from herdr's catalogue,
 //! connections go through herdr's own `remote-api-bridge` over SSH, and
 //! terminal tiles attach with `ssh -tt … herdr terminal attach`.
 
@@ -258,8 +258,8 @@ impl RemoteMachine {
     }
 
     /// `ssh -T … <target> -- <script>`: runs a shell command on the machine
-    /// over its shared SSH connection (ADR 0015: the files panel lists
-    /// remote folders this way). `script` reaches the remote user's login
+    /// over its shared SSH connection (the files panel lists remote
+    /// folders this way). `script` reaches the remote user's login
     /// shell as is, so it must quote its own arguments.
     pub fn exec(&self, script: String) -> AttachCommand {
         AttachCommand {

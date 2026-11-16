@@ -22,7 +22,7 @@ key ctrl+cmd+shift+t
 expect key.last action:split_down
 until tiles 6 3000
 wait 1500
-# --- close detaches: the herdr pane stays (F14) ---
+# --- close detaches: the herdr pane stays ---
 sh test "$({herdr} --session {session} pane list | /opt/homebrew/bin/jq '.result.panes | length')" = 6
 key alt+w
 expect key.last action:close_tile
@@ -266,7 +266,7 @@ expect key.last action:last_workspace
 expect workspace 1
 key cmd+2
 expect workspace 2
-# --- cmd+w closes the pane: the tile goes and herdr's pane is killed, no dialog (F14) ---
+# --- cmd+w closes the pane: the tile goes and herdr's pane is killed, no dialog ---
 expect tiles 1
 key ctrl+cmd+t
 until tiles 2 3000

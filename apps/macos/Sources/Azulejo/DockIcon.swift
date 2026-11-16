@@ -7,7 +7,7 @@ import AppKit
 /// Spotlight and the Dock before launch always show it, whatever the
 /// setting. An appearance-aware icon needs an `Assets.car` compiled by
 /// Xcode's `actool`, and macOS ignores a dark variant nested in an `.icns`
-/// for an app (docs/design/icon/README.md). So for the dark icon the app
+/// for an app. So for the dark icon the app
 /// hands the Dock `AppIconDark.icns`, and for the light one it hands back the
 /// bundle's own icon. "auto" follows the system's light or dark appearance
 /// (`Theme.systemAppearance`), not the theme's: the Dock is the system's.

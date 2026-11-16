@@ -314,7 +314,7 @@ final class FindField: NSTextField {
 // MARK: - Terminal: herdr's history
 
 /// Finds text in a terminal tile's history for its find bar. History lives
-/// in herdr (ADR 0005), so the search is the core's `terminal.search` with
+/// in herdr, so the search is the core's `terminal.search` with
 /// `locate`, and a match is shown by scrolling herdr's pane to it
 /// (`terminal.scroll`). Matches count from the newest: enter steps back in
 /// time, shift+enter forward.

@@ -1,4 +1,4 @@
-//! File browser tiles in a running core (F10): list folders off the engine's
+//! File browser tiles in a running core: list folders off the engine's
 //! thread, watch the folders each tile has open, and keep git status for
 //! decorations. Once a tile's root turns out to be in a work tree, the whole
 //! root is watched too (macOS), so an edit in a closed folder still updates
@@ -8,8 +8,8 @@
 //! isn't saved: after a relaunch a tile shows its root, and shells expand
 //! again what they remember.
 //!
-//! A files panel can show a remote herdr machine's files instead (ADR
-//! 0015). Its folders are listed over the machine's SSH connection
+//! A files panel can show a remote herdr machine's files instead.
+//! Its folders are listed over the machine's SSH connection
 //! ([`crate::remote_files`]) and kept in a cache by machine and folder: a
 //! listing answers at once from the cache, or empty with `loading`, and
 //! `files.changed` follows when the remote listing is in. Open folders are

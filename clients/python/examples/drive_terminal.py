@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""An agent drives another terminal (PRD use cases "agent supervision" and
-F20): open a terminal tile beside this one, run a command in it and read its
-output back.
+"""An agent drives another terminal: open a terminal tile beside this one,
+run a command in it and read its output back.
 
     uv run examples/drive_terminal.py "ls -la"
 """

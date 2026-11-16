@@ -22,12 +22,12 @@ pub enum Command {
     #[serde(rename = "core.ping")]
     Ping,
 
-    // ----- session (F1, F24) -----
+    // ----- session -----
     /// The whole object model; replies `session`.
     #[serde(rename = "session.get")]
     SessionGet,
 
-    // ----- windows (F18) -----
+    // ----- windows -----
     /// Opens a window with one empty workspace.
     #[serde(rename = "window.create")]
     WindowCreate(WindowCreate),
@@ -48,24 +48,24 @@ pub enum Command {
     #[serde(rename = "window.list")]
     WindowList,
 
-    // ----- workspaces (F1, F13, F18) -----
+    // ----- workspaces -----
     /// Workspaces of one window, or of all windows; replies `workspaces`.
     #[serde(rename = "workspace.list")]
     WorkspaceList(WorkspaceList),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreate),
     /// Closes a workspace and its tabs, and its herdr workspace with every
-    /// tab and pane in it: their processes end (ADR 0014). Closing a
+    /// tab and pane in it: their processes end. Closing a
     /// window's last workspace closes the window.
     #[serde(rename = "workspace.close")]
     WorkspaceClose(WorkspaceTarget),
     #[serde(rename = "workspace.focus")]
     WorkspaceFocus(WorkspaceTarget),
-    /// Renames a workspace, and its herdr workspace too (ADR 0014).
+    /// Renames a workspace, and its herdr workspace too.
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRename),
     /// Sets the folder whose git branch the sidebar shows; without `path` the
-    /// core follows the focused terminal's working directory again (F26).
+    /// core follows the focused terminal's working directory again.
     #[serde(rename = "workspace.set_repo")]
     WorkspaceSetRepo(WorkspaceSetRepo),
     /// Moves a workspace to another place in its window's list: the sidebar
@@ -77,7 +77,7 @@ pub enum Command {
     #[serde(rename = "workspace.bind")]
     WorkspaceBind(WorkspaceBind),
 
-    // ----- tabs (F1, F18) -----
+    // ----- tabs -----
     /// Tabs of one workspace, or of all workspaces; replies `tabs`.
     #[serde(rename = "tab.list")]
     TabList(TabList),
@@ -94,7 +94,7 @@ pub enum Command {
     #[serde(rename = "tab.move")]
     TabMove(TabMove),
 
-    // ----- tiles (F12, F14, F18) -----
+    // ----- tiles -----
     /// Lists tiles; replies `tiles`.
     #[serde(rename = "tile.list")]
     TileList(TileList),
@@ -102,11 +102,11 @@ pub enum Command {
     #[serde(rename = "tile.get")]
     TileGet(TileTarget),
     /// Closes a tile. A terminal's herdr pane is detached, not killed, unless
-    /// `kill` is set (F14).
+    /// `kill` is set.
     #[serde(rename = "tile.close")]
     TileClose(TileClose),
     /// Focuses a tile. Focus alone doesn't count as reading its agent's
-    /// result: that's `tile.seen` (F11).
+    /// result: that's `tile.seen`.
     #[serde(rename = "tile.focus")]
     TileFocus(TileTarget),
     /// The user has read the tile's agent's result: clears a finished
@@ -127,7 +127,7 @@ pub enum Command {
     #[serde(rename = "tile.rename")]
     TileRename(TileRename),
 
-    // ----- browser and preview tiles (F8, F9) -----
+    // ----- browser and preview tiles -----
     /// Points a browser tile at `url`; the shell loads it on `tile.updated`.
     #[serde(rename = "browser.open")]
     BrowserOpen(BrowserOpen),
@@ -147,12 +147,12 @@ pub enum Command {
     /// `preview.updated` events.
     #[serde(rename = "preview.get")]
     PreviewGet(TileTarget),
-    /// Shows a preview tile's file rendered or as highlighted source (F29);
+    /// Shows a preview tile's file rendered or as highlighted source;
     /// without `mode` it toggles. Saved per tile.
     #[serde(rename = "preview.set_mode")]
     PreviewSetMode(PreviewSetMode),
 
-    // ----- file browser tiles (F10) -----
+    // ----- file browser tiles -----
     /// Lists one folder of a files tile (its root when `dir` is absent);
     /// replies `files`. Doesn't watch it: see `files.expand`.
     #[serde(rename = "files.list")]
@@ -189,7 +189,7 @@ pub enum Command {
     #[serde(rename = "files.panel_close")]
     FilesPanelClose(crate::files::FilesPanelClose),
 
-    // ----- layout (F2) -----
+    // ----- layout -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
     #[serde(rename = "layout.get")]
     LayoutGet,
@@ -212,7 +212,7 @@ pub enum Command {
     #[serde(rename = "layout.zoom")]
     LayoutZoom(LayoutZoom),
 
-    // ----- master-stack and dynamic layouts (F3, ADR 0010) -----
+    // ----- master-stack and dynamic layouts -----
     /// Opens a tile at the end of the tab's stack, whichever tile has focus; a
     /// lone tile becomes master | stack. In a manual tab the stack is evened
     /// out afterwards; in a dynamic tab the tile goes where `[layout] insert`
@@ -267,7 +267,7 @@ pub enum Command {
     #[serde(rename = "layout.set_ratio")]
     LayoutSetRatio(LayoutSetRatio),
 
-    // ----- terminals (F12, F20) -----
+    // ----- terminals -----
     /// Records the herdr pane a terminal tile views. Sent by the herdr adapter.
     #[serde(rename = "terminal.bind")]
     TerminalBind(TerminalBind),
@@ -280,7 +280,7 @@ pub enum Command {
     #[serde(rename = "terminal.send_keys")]
     TerminalSendKeys(TerminalSendKeys),
     /// Reads a terminal's screen or history; replies `text`. History lives in
-    /// herdr, not in the tile (ADR 0005).
+    /// herdr, not in the tile.
     #[serde(rename = "terminal.read")]
     TerminalRead(TerminalRead),
     /// Scrolls a terminal's view; replies `scroll`. 0 is the live bottom.
@@ -291,7 +291,7 @@ pub enum Command {
     #[serde(rename = "terminal.search")]
     TerminalSearch(TerminalSearch),
 
-    // ----- event streams (F22) -----
+    // ----- event streams -----
     /// Streams events on this connection as `events.event` notifications;
     /// replies `subscribed`. Answered by the API server, not the engine.
     #[serde(rename = "events.subscribe")]
@@ -300,7 +300,7 @@ pub enum Command {
     #[serde(rename = "events.unsubscribe")]
     EventsUnsubscribe(crate::stream::EventsUnsubscribe),
 
-    // ----- project layout files, palette (F5, F6) -----
+    // ----- project layout files, palette -----
     /// Opens a project layout file's tabs and tiles; replies `created` with
     /// the workspace and first tab.
     #[serde(rename = "layout.apply")]
@@ -321,7 +321,7 @@ pub enum Command {
     #[serde(rename = "config.defaults")]
     ConfigDefaults,
 
-    // ----- machines (F17, ADR 0011) -----
+    // ----- machines -----
     /// Local plus herdr's saved machines and their connection state;
     /// replies `machines`.
     #[serde(rename = "machines.list")]
@@ -496,7 +496,7 @@ pub struct WorkspaceCreate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     /// The herdr machine its terminals run on: `"local"` (the default), or a
-    /// machine's ID or label from `machines.list` (ADR 0011).
+    /// machine's ID or label from `machines.list`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
 }

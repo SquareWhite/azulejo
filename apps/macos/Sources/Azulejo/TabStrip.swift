@@ -1,6 +1,6 @@
 import AppKit
 
-/// The active workspace's tabs, in the toolbar row (D.4): a rounded pill
+/// The active workspace's tabs, in the toolbar row: a rounded pill
 /// holding one button per tab (its agents' state icon and its name, the
 /// selected one filled) and a "+" that opens a new tab. Tabs share the width
 /// they're given, down to `tabFitMinWidth`, with names cut by an ellipsis.

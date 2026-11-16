@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remote files panel (ADR 0015, rfiles.azs.in), dev instance e2e-rfile. The
+# Remote files panel (rfiles.azs.in), dev instance e2e-rfile. The
 # "remote" machine is a second throwaway herdr session reached only through
 # the ssh stand-in (scripts/ssh-standin.sh): the panel lists its files over
 # that "SSH", follows the remote shell's cd, opens folders and a preview,

@@ -117,7 +117,7 @@ final class SurfaceView: NSView {
     private func sendKey(_ event: NSEvent, action: ghostty_input_action_e) {
         guard let surface else { return }
         var key = keyEvent(event, action: action)
-        // Spike: no IME. Text comes straight from the event (Ghostty's own
+        // Harness: no IME. Text comes straight from the event (Ghostty's own
         // control-character rule: send the un-ctrl'd character).
         let text = action == GHOSTTY_ACTION_RELEASE ? nil : ghosttyCharacters(event)
         if let text, !text.isEmpty {

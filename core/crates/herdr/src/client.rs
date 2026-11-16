@@ -88,8 +88,7 @@ impl Client {
         Self::with_transport(Transport::Socket(socket.into()), opts)
     }
 
-    /// A client whose connections are bridge processes (a remote machine,
-    /// ADR 0011).
+    /// A client whose connections are bridge processes (a remote machine).
     pub fn bridged(bridge: BridgeCommand, opts: ClientOptions) -> Self {
         Self::with_transport(Transport::Bridge(bridge), opts)
     }
@@ -299,7 +298,7 @@ impl Client {
         Ok(pane.terminal_ref())
     }
 
-    /// Kill a terminal's process (explicit user choice, F14). Detaching
+    /// Kill a terminal's process (explicit user choice). Detaching
     /// needs no herdr call: the tile just ends its attach process.
     ///
     /// Closes the pane rather than the tab, so panes someone split off in the
@@ -311,7 +310,7 @@ impl Client {
             .map(drop)
     }
 
-    // ---- layout (ADR 0012) ---------------------------------------------------
+    // ---- layout --------------------------------------------------------------
 
     /// A terminal made by splitting a pane of an existing tab, with the
     /// tile's env vars. The new pane is the split's second child.
@@ -472,7 +471,7 @@ impl Client {
         Ok(stored.iter().map(|s| resolve_in(&panes, s)).collect())
     }
 
-    // ---- terminal operations (F20) -----------------------------------------
+    // ---- terminal operations -----------------------------------------------
 
     /// Type literal text into a pane (no key translation; `\n` is a newline).
     pub async fn send_text(&self, pane: &PaneId, text: &str) -> Result<()> {

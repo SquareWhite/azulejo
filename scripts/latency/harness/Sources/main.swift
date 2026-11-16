@@ -1,7 +1,7 @@
 import AppKit
 import GhosttyKit
 
-// Latency harness: a copy of spikes/macos-terminal with an in-process bench.
+// Latency harness: a bare libghostty terminal window with an in-process bench.
 //
 // Usage: LatHarness --command '<cmd>' [--env K=V ...] --bench <samples> --label <name> --csv <path>
 //

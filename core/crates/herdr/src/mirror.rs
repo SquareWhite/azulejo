@@ -1,5 +1,5 @@
 //! Making a herdr tab's split tree match a target, pane by pane, without
-//! closing anything (ADR 0012).
+//! closing anything.
 //!
 //! herdr can't apply a tree to live panes (`layout.apply` replaces them), so
 //! a push works with what herdr offers on live panes and keeps every process:
@@ -17,8 +17,8 @@
 //! the TUI a moment ago) makes the push wait, since the core is about to
 //! adopt it.
 //!
-//! **herdr's own arrangement is never rewritten unasked** (ADR 0012,
-//! amendment "Only Azulejo changes herdr's structure"). Unless the target
+//! **herdr's own arrangement is never rewritten unasked**: only Azulejo
+//! changes herdr's structure. Unless the target
 //! says [`MirrorTarget::restructure`], the push first compares the tab with
 //! the target over the panes both hold. If they sit in another shape or
 //! order, it writes nothing and fails with [`MirrorError::Diverged`]: the
@@ -188,7 +188,7 @@ impl LayoutOps for Client {
 }
 
 impl Client {
-    /// Makes a herdr tab look like `target` (ADR 0012). Never closes a pane.
+    /// Makes a herdr tab look like `target`. Never closes a pane.
     pub async fn mirror(&self, target: &MirrorTarget) -> Result<MirrorOutcome> {
         run(self, target).await
     }

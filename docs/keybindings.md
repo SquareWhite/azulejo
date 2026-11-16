@@ -62,7 +62,7 @@ Rules:
 
 ## Terminal keys
 
-Whatever the keymap doesn't bind goes to the terminal: libghostty encodes the key, herdr's attach client passes the bytes on, and the program in the pane reads them ([ADR 0001](adr/0001-terminal-bridge.md)).
+Whatever the keymap doesn't bind goes to the terminal: libghostty encodes the key, herdr's attach client passes the bytes on, and the program in the pane reads them.
 
 **The kitty keyboard protocol works end to end.** Programs that want it (Claude Code, fish 4, Neovim…) push their flags (`CSI > 1 u`). herdr's attach client passes the push on to libghostty, and replays it when a tile reattaches to a program that's already running. It answers `CSI ? u` queries itself and hands the program the `CSI u` keys untouched. Checked against herdr 0.9.1 on Nov 4, 2026.
 
@@ -277,7 +277,7 @@ Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `su
 
 ## Bismuth mapping
 
-Every default layout chord, checked end to end on Nov 4, 2026 against [Bismuth](research/bismuth.md) (source at `ef69afe`). The run went through the real key router, in-process on a dev profile: [`apps/macos/automation/bismuth.azs`](../apps/macos/automation/bismuth.azs) (`just mac-bismuth`). It used a dynamic Tile tab with four terminals, then spot checks in Three Column and Monocle. Its log traces the order, parameters, focus, weights and every rect after each key.
+Every default layout chord, checked end to end on Nov 4, 2026 against [Bismuth](https://github.com/Bismuth-Forge/bismuth) (source at `ef69afe`). The run went through the real key router, in-process on a dev profile: [`apps/macos/automation/bismuth.azs`](../apps/macos/automation/bismuth.azs) (`just mac-bismuth`). It used a dynamic Tile tab with four terminals, then spot checks in Three Column and Monocle. Its log traces the order, parameters, focus, weights and every rect after each key.
 
 Tiles are named by creation (`t1` is the first terminal). Orders list masters first. Rects are `x,y,w×h` in a 1000×1000 tab.
 
@@ -380,7 +380,7 @@ The table compares this direct-modifier layout with herdr's prefix-based default
 | edit scrollback in `$EDITOR` | `prefix+e` | same | no |
 | help | `prefix+?` | same | no |
 
-The master-stack placement rule has one master on the left and an evenly divided stack on the right, with new panes appended to the bottom. The four tall actions are P0 and ship in M1 (step 1.1b); see [Decisions](#decisions).
+The master-stack placement rule has one master on the left and an evenly divided stack on the right, with new panes appended to the bottom. The four tall actions live in the core; see [Decisions](#decisions).
 
 ### Rule of thumb
 
@@ -406,7 +406,7 @@ Where each global default came from:
 | `promote_tile` | `alt+enter` | herdr `tall.py promote`; in a dynamic tab, moves the tile to the front of the order |
 | `rotate_layout` | `alt+o` | Bismuth `Meta+R`: a clockwise quarter turn in a Tile tab (master left → top → right → bottom); a manual tab turns its whole split tree a quarter turn, whatever its shape. Monocle and Three Column have nothing to turn and stay silent |
 | `equalize_layout` | `alt+shift+e` | herdr `tall.py equalize`; in a dynamic tab, resets the stack sizes |
-| `cycle_layout_next/previous` | `alt+]` / `alt+[`, and `alt+\` / `alt+shift+\` | `alt+]` / `alt+[` (Nov 4, 2026); the second pair is Bismuth's own `Meta+\` / `Meta+\|` (ADR 0010) |
+| `cycle_layout_next/previous` | `alt+]` / `alt+[`, and `alt+\` / `alt+shift+\` | `alt+]` / `alt+[` (Nov 4, 2026); the second pair is Bismuth's own `Meta+\` / `Meta+\|` |
 | `toggle_layout_tile` | `alt+t` | Bismuth `Meta+T`; bash/zsh lose `alt+t` (transpose words) inside tiles |
 | `toggle_layout_monocle` | `alt+z` | Bismuth `Meta+M`; `alt+m` is Hammerspoon's and `alt+shift+m` is zoom |
 | `toggle_layout_manual` (freeze to a split tree, or restore it) | `alt+shift+t` | new |
@@ -414,15 +414,15 @@ Where each global default came from:
 | `grow_master_area` / `shrink_master_area` | `alt+shift+=` / `alt+shift+-` | unbound in Bismuth; resizing the master edge does the same |
 | `move_position_next/previous` | `alt+shift+]` / `alt+shift+[` | unbound in Bismuth |
 | `rotate_part` (several masters side by side ↔ stacked) | `alt+shift+o` | Bismuth `Meta+Shift+R` |
-| `close_pane` (kills the herdr pane, no confirmation, F14) | `cmd+w` | macOS convention: close the innermost thing (Nov 9, 2026, the user's call) |
-| `close_tile` (detaches the herdr pane, F14) | `alt+w` | herdr-style `alt` chord; the pane keeps running |
+| `close_pane` (kills the herdr pane, no confirmation) | `cmd+w` | macOS convention: close the innermost thing (Nov 9, 2026, the user's call) |
+| `close_tile` (detaches the herdr pane) | `alt+w` | herdr-style `alt` chord; the pane keeps running |
 | `cycle_tile_next/previous` | unbound | lost `alt+]` / `alt+[` to the layout cycle (Nov 4, 2026). Bismuth leaves focus next/previous unbound too; quick open and prefix mode (`prefix+tab`) still have them. No free `alt` chord fits: `alt+tab` is Hammerspoon's and `alt+.` is the shells' last-argument key |
 | `new_workspace` | `cmd+t` | herdr |
 | `new_tab` | `cmd+shift+t` | herdr |
 | `switch_workspace` 1–8 | `cmd+1..8` | herdr |
 | `switch_workspace_last` (the last workspace in the sidebar) | `cmd+9` | browser convention: `cmd+9` is the last tab in Chrome and Safari |
 | `last_workspace` (the previously active workspace) | `alt+0` | herdr `last.py space` |
-| `close_workspace` (closes the herdr workspace too, ADR 0014) | `alt+cmd+w` | macOS "Close All"; was `cmd+w` until Nov 9, 2026 |
+| `close_workspace` (closes the herdr workspace too) | `alt+cmd+w` | macOS "Close All"; was `cmd+w` until Nov 9, 2026 |
 | `switch_tab` 1–8 | `ctrl+1..8` | new (herdr's own suggestion for direct tab switching) |
 | `switch_tab_last` (the last tab in order) | `ctrl+9` | browser convention, as `cmd+9` |
 | `last_tab` (the previously active tab) | unbound | herdr's `alt+9`; Hammerspoon owns `alt+9`, so it's palette-only |
@@ -433,7 +433,7 @@ Where each global default came from:
 | `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
 | `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
 | `goto` (quick open, places only: opens with `@`) | unbound | was `cmd+p`; rebind it to get that back |
-| `find` (scrollback search via herdr in terminals, ADR 0005; page find in browsers and previews; the filter in files) | `cmd+f` | new |
+| `find` (scrollback search via herdr in terminals; page find in browsers and previews; the filter in files) | `cmd+f` | new |
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
@@ -441,7 +441,7 @@ The app menu keeps the macOS chords, now as actions: `quit` (`cmd+q`), `hide` (`
 
 Rename, kill with a confirmation (`kill_tile`; `cmd+w` kills without one), help and edit-scrollback are left to the palette, prefix mode and the right-click menus (workspace rows in the sidebar, tile headers). So are `toggle_layout_three_column`, `rotate_anticlockwise` (Bismuth's unbound Rotate Reverse), `flip_layout` (master left ↔ top: what `alt+o` did before it turned four ways) and "Set layout…". The old `rotate_clockwise` name still binds `rotate_layout`, with a warning.
 
-New tabs start as a dynamic Tile layout (`[layout] default`, ADR 0010), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
+New tabs start as a dynamic Tile layout (`[layout] default`), so a plain split (`ctrl+cmd+v`, `ctrl+cmd+shift+t`) adds the tile at the end of the stack instead of cutting the focused tile in two; `alt+shift+t` switches the tab to manual splitting. Tabs adopted from herdr stay manual.
 
 ### Quick open (⌘K)
 
@@ -511,9 +511,9 @@ Off by default. When on, it mirrors herdr's prefix sequences exactly (`prefix+x`
 
 ### `ctrl+b` inside terminal tiles
 
-This is independent of prefix mode. The attach client treats a typed `ctrl+b` then `q` as detach ([herdr notes §7](herdr-notes.md), [ADR 0001](adr/0001-terminal-bridge.md)). Typing `ctrl+b` (backward-char in fish) then `q` is ordinary editing, so it will happen.
+This is independent of prefix mode. The attach client treats a typed `ctrl+b` then `q` as detach ([herdr notes, question 7](herdr-notes.md#7-detach-key)). Typing `ctrl+b` (backward-char in fish) then `q` is ordinary editing, so it will happen.
 
-The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform>.terminal]`: the key router sends every user `ctrl+b` as `ctrl+b ctrl+b`, which the attach client delivers to the pane as one literal `ctrl+b`. 1.7 checked it with and without the kitty keyboard protocol. If your herdr uses another prefix, bind `send_herdr_prefix` to that chord instead; unbinding it (`send_herdr_prefix = ""`) sends `ctrl+b` once, and ADR 0003's silent reattach is the safety net.
+The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform>.terminal]`: the key router sends every user `ctrl+b` as `ctrl+b ctrl+b`, which the attach client delivers to the pane as one literal `ctrl+b`. It works with and without the kitty keyboard protocol. If your herdr uses another prefix, bind `send_herdr_prefix` to that chord instead; unbinding it (`send_herdr_prefix = ""`) sends `ctrl+b` once, and the tile's silent reattach after a detach it didn't ask for is the safety net.
 
 ## Conflicts
 
@@ -521,7 +521,7 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 
 | Chord | Convention | Decision |
 | --- | --- | --- |
-| `cmd+w` / `cmd+shift+w` / `alt+cmd+w` | close tab / close window / close all | **`close_pane` / `close_tab` / `close_workspace`** (Nov 9, 2026; from Nov 4 `cmd+w` closed the workspace, which took too much with it). `cmd+w` closes the innermost thing, as in every Mac app: the focused tile closes and its herdr pane is killed, with no confirmation (the user's call; `alt+w` closes and keeps the pane running). Closing a tab's last tile closes the tab. When `cmd+w` kills a workspace's last pane, herdr deletes that workspace and Azulejo closes it too, unless it's the window's last (that one stays, empty); `alt+w` always leaves the workspace. `close_tab` detaches: herdr keeps the tab and its panes running, and Azulejo doesn't adopt them again. `close_workspace` closes the herdr workspace too, ending its processes (ADR 0014); when a command or a working agent runs there, a sheet asks first. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
+| `cmd+w` / `cmd+shift+w` / `alt+cmd+w` | close tab / close window / close all | **`close_pane` / `close_tab` / `close_workspace`** (Nov 9, 2026; from Nov 4 `cmd+w` closed the workspace, which took too much with it). `cmd+w` closes the innermost thing, as in every Mac app: the focused tile closes and its herdr pane is killed, with no confirmation (the user's call; `alt+w` closes and keeps the pane running). Closing a tab's last tile closes the tab. When `cmd+w` kills a workspace's last pane, herdr deletes that workspace and Azulejo closes it too, unless it's the window's last (that one stays, empty); `alt+w` always leaves the workspace. `close_tab` detaches: herdr keeps the tab and its panes running, and Azulejo doesn't adopt them again. `close_workspace` closes the herdr workspace too, ending its processes; when a command or a working agent runs there, a sheet asks first. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
 | `cmd+q` | quit | `quit`. Safe: sessions live in herdr |
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | `hide` and `minimize`, as in every Mac app; `` cmd+` `` is the system's. the maintainer's config avoids `cmd+m` for this reason |
 | `cmd+a` | select all | **Decided:** `toggle_sidebar` is bound **only when a terminal tile is focused**; in browser and preview tiles and text fields (address bar, palette) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` context section |
@@ -546,6 +546,6 @@ For example, a global `alt+shift+h/j/k/l` window mover must stand aside for Azul
 
 Settled with the maintainer on Nov 3, 2026:
 
-1. **Tall layout is in the MVP.** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` are P0 and implemented in the core (step 1.1b, `layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`). F3's other mode, niri-style scrolling columns, stays P2.
+1. **Tall layout.** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` live in the core (`layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`). Niri-style scrolling columns aren't built.
 2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else.
 3. **Linux uses Super by default** for the `cmd` chords, with the `ctrl+shift` layout documented as the alternative. **Every shortcut is configurable.**

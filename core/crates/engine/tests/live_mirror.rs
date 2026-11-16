@@ -1,5 +1,5 @@
-//! ADR 0012 against a real herdr, in throwaway named sessions: Azulejo's
-//! layout mirrored into herdr and back. Ignored by default; run with
+//! Azulejo's layout mirrored into herdr and back, against a real herdr in
+//! throwaway named sessions. Ignored by default; run with
 //! `just test-herdr`. Every test asserts it runs on an `azj-test-` session:
 //! the mirror (and the migration it does) must never reach the user's own.
 
@@ -454,7 +454,7 @@ fn closing_either_way() {
     let (s, _) = wait_mirrored(&herdr, &core, "three panes");
     let (pb, pc) = (pane_of(&s, b), pane_of(&s, c));
 
-    // Closed in Azulejo (detach, F14): the pane leaves the mirrored tab for
+    // Closed in Azulejo (detach): the pane leaves the mirrored tab for
     // one of its own, still running.
     core.execute(Command::TileClose(TileClose {
         tile: Some(c),
@@ -669,7 +669,7 @@ fn remote_shape(s: &Session, machine: &str, node: &LayoutNode) -> String {
     }
 }
 
-/// ADR 0011 machines mirror the same way: over herdr's SSH bridge (a
+/// herdr's saved machines mirror the same way: over herdr's SSH bridge (a
 /// stand-in that runs it locally against a second throwaway session).
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
@@ -965,7 +965,7 @@ fn settled(herdr: &TempHerdr, core: &Core, what: &str) -> (Node, String) {
     (tab_root(&s).clone(), as_tiles(&s, &layout.root))
 }
 
-/// A tab adopted from herdr is manual (ADR 0010 §5). `alt+o` turns its
+/// A tab adopted from herdr is manual. `alt+o` turns its
 /// tree, a 2×2 grid here, four ways; herdr's own tree follows every turn
 /// and ends where it started, and so it does again after a resize made in
 /// herdr was pulled in.
@@ -1461,7 +1461,7 @@ fn burst_loop(load: bool, cli: bool) {
 
 /// A grid, three columns and a nested tree split in herdr in a burst (no
 /// pauses) are adopted in herdr's shape, and herdr keeps it: the mirror
-/// never rewrites a tree made in herdr (ADR 0012, "herdr's structure").
+/// never rewrites a tree made in herdr.
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
 fn bursts_of_splits_in_herdr_keep_herdrs_shape() {

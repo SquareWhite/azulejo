@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Workspace close and rename reach herdr (ADR 0014), on dev instance
+# Workspace close and rename reach herdr, on dev instance
 # e2e-sync: after every step, Azulejo's workspaces (`azj workspace list`) and
 # herdr's (`herdr workspace list` on the dev session) must match, IDs and
 # names. Covers close and rename made in Azulejo, rename and close made in

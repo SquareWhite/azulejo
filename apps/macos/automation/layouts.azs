@@ -1,4 +1,4 @@
-# Dynamic layouts (ADR 0010) from the keyboard: Tile, master count and
+# Dynamic layouts from the keyboard: Tile, master count and
 # ratio, rotate part, Monocle (focus restacks, no PTY resize), Three Column,
 # and freezing to manual and back. Runs in-process on the dev profile (no OS
 # input):

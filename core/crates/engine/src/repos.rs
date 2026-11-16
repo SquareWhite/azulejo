@@ -1,4 +1,4 @@
-//! The git branch each workspace shows in the sidebar (F26).
+//! The git branch each workspace shows in the sidebar.
 //!
 //! Which folder: the workspace's own `repo` when the user set one, else the
 //! working directory of its focused terminal (then any terminal in it), else
@@ -270,9 +270,9 @@ impl Repos {
 
 /// The folder whose repository `ws` shows; see the module docs.
 ///
-/// Remote workspaces (ADR 0011) have none: their paths are on another
+/// Remote workspaces have none: their paths are on another
 /// machine, and reading git there over the machine's SSH link isn't built
-/// yet (PLAN 2.14 follow-up, Deferred checks). Without this, a remote cwd
+/// yet. Without this, a remote cwd
 /// that happens to exist locally would show the wrong branch.
 pub(crate) fn repo_dir(ws: &Workspace) -> Option<PathBuf> {
     if ws.machine.is_some() {

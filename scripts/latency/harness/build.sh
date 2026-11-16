@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build LatHarness.app (copy of spikes/macos-terminal + in-process bench).
+# Build LatHarness.app (a bare libghostty terminal + in-process bench).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"

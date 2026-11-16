@@ -3,7 +3,6 @@
 #   apps/macos/Resources/AppIcon.icns       the bundle's icon (iconutil, 16–1024 px)
 #   apps/macos/Resources/AppIconDark.icns   the dark look, swapped into the Dock at run time
 #   scripts/icon/composer/*.svg             the chosen icon's layers, for Icon Composer
-#   docs/design/icon/*.png                  candidates, variants, sheet.png, prompt.png
 #   scripts/icon/AppIcon.sha256             stamp: draw.swift and the .icns files it made
 #
 #   scripts/icon/build.sh            # regenerate everything
@@ -39,10 +38,9 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 swift "$src" --iconset "$work/AppIcon.iconset" --iconset-dark "$work/AppIconDark.iconset" \
-  --composer scripts/icon/composer --docs docs/design/icon
+  --composer scripts/icon/composer
 /usr/bin/iconutil -c icns "$work/AppIcon.iconset" -o "$icns"
 /usr/bin/iconutil -c icns "$work/AppIconDark.iconset" -o "$dark"
 stamp_now > "$stamp"
 echo "==> $icns"
 echo "==> $dark"
-echo "==> docs/design/icon/sheet.png, prompt.png"

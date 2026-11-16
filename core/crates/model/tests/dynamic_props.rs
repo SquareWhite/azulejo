@@ -1,4 +1,4 @@
-//! ADR 0010's invariants for the dynamic layout rules.
+//! Invariants for the dynamic layout rules.
 
 use std::collections::BTreeMap;
 

@@ -25,7 +25,7 @@ terminal = json.loads(got.stdout)["result"]["pane"]["terminal_id"]
 
 pid, fd = pty.fork()
 if pid == 0:
-    # herdr's attach refuses a zero-sized PTY (ADR 0006).
+    # herdr's attach refuses a zero-sized PTY.
     fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
     os.environ.clear()
     os.environ.update(env)

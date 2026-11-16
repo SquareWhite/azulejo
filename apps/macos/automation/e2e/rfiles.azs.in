@@ -1,4 +1,4 @@
-# Remote files panel (ADR 0015). rfiles.sh sets up the "remote" machine
+# Remote files panel. rfiles.sh sets up the "remote" machine
 # `standin` (a throwaway herdr session reached only through
 # scripts/ssh-standin.sh) and fills @FX@ (fixtures, resolved), @SIDE@ (the
 # stand-in's folder) and @ID@ (standin's herdr machine ID).

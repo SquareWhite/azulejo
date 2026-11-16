@@ -49,8 +49,8 @@ impl Shell {
     }
 }
 
-/// Spike-grade (step 0.6): a split is a homogeneous Box, so every ratio draws as
-/// 0.5. The real `TileLayout` widget in step 3.1 honours ratios.
+/// Prototype-grade: a split is a homogeneous Box, so every ratio draws as 0.5.
+/// A real `TileLayout` widget would honour ratios.
 fn build(node: &Node, focused: &str) -> gtk4::Widget {
     match node {
         Node::Leaf { id } => {
@@ -139,7 +139,7 @@ fn main() -> glib::ExitCode {
         });
         window.add_controller(keys);
 
-        // Spike (step 0.6): seed the same splits as the macOS shell.
+        // Prototype: seed the same splits as the macOS shell.
         shell.send(Command::LayoutGet);
         for direction in [Direction::Right, Direction::Down, Direction::Right] {
             shell.send(split(direction));

@@ -1,4 +1,4 @@
-# Key and focus suite (PLAN 2.11): every scenario checks what a chord
+# Key and focus suite: every scenario checks what a chord
 # resolved to (`key.last`) and where first responder ended up (`responder`,
 # `responder.focused`), plus the focused tile. Run with focus.sh.
 # @URL@ (a page with an input), @DIR@ (fixtures), @HERE@ (this folder).
@@ -524,7 +524,7 @@ key escape
 until responder files-tree
 expect responder.focused yes
 
-# --- an open find bar gets the keyboard back when its tile does (F5), in a tab of its own: T | V(B / P) ---
+# --- an open find bar gets the keyboard back when its tile does, in a tab of its own: T | V(B / P) ---
 key cmd+shift+t
 until tab 4
 until responder terminal 10000

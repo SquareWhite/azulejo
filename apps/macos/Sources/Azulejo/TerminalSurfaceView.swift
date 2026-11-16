@@ -72,7 +72,7 @@ final class TerminalSurfaceView: NSView {
 
     /// Creates the surface and starts `command`. Call only once the view has a
     /// non-zero frame: the PTY takes the surface's size before the child runs
-    /// (herdr's attach rejects a zero-sized PTY; ADR 0006).
+    /// (herdr's attach rejects a zero-sized PTY).
     init?(runtime: TerminalRuntime, frame: NSRect, command: String, readOnly: Bool) {
         self.readOnly = readOnly
         super.init(frame: frame)
@@ -211,7 +211,7 @@ final class TerminalSurfaceView: NSView {
 
     /// Every size change reaches the PTY (and so the herdr pane) at once.
     /// During layout motion the tile sets this view's frame once, at the
-    /// start, while a snapshot covers it (ADR 0004).
+    /// start, while a snapshot covers it.
     private func updateSurfaceSize() {
         guard let surface, bounds.width > 0, bounds.height > 0 else { return }
         let px = convertToBacking(NSRect(origin: .zero, size: bounds.size)).size
@@ -723,7 +723,7 @@ final class TerminalSurfaceView: NSView {
     //   else in the foreground (an agent's TUI, vim, htop) plain clicks go to
     //   herdr and on to the program, as before, and shift-drag selects
     //   (Ghostty's convention under mouse capture). The wheel, right and
-    //   middle buttons always go to herdr (its history scrolls, ADR 0005).
+    //   middle buttons always go to herdr (its history scrolls).
     // - While ⌘ is held, pointer positions and modifier changes reach
     //   libghostty with shift added: its own rule for "shift overrides the
     //   capture", so ⌘-hover underlines a link (pointing-hand cursor) and a
@@ -772,7 +772,7 @@ final class TerminalSurfaceView: NSView {
     func configReplaced() { reportingOff = false }
 
     /// The attach client turns on mouse reporting, so wheel events go to herdr,
-    /// which scrolls its own history (ADR 0005).
+    /// which scrolls its own history.
     override func scrollWheel(with event: NSEvent) {
         guard !readOnly, let surface else { return }
         var x = event.scrollingDeltaX

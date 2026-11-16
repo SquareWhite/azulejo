@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reordering workspaces by drag (ADR 0013) on dev instance e2e-reorder:
+# Reordering workspaces by drag on dev instance e2e-reorder:
 # reorder.azs drags rows in the full sidebar and the rail (drop, Esc, a drop
 # out of reach, a click, a refresh mid-drag, ⌘ numbers), then a relaunch
 # keeps the order (reorder-relaunch.azs); `azj workspace list` numbers it,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""PLAN.md step 0.2: re-runnable herdr probe. Called by scripts/herdr-probe.sh.
+"""Re-runnable herdr probe. Called by scripts/herdr-probe.sh.
 
-Starts an isolated named herdr session, answers the nine 0.2 questions with
+Starts an isolated named herdr session, answers herdr-notes.md's questions 1–9 with
 measured evidence, prints a JSON line per check, then stops and deletes the
 session. It never talks to the default session: every call goes through
 `herdr --session <name>` with all inherited HERDR_* variables stripped.

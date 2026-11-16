@@ -83,7 +83,7 @@ final class GhosttyRuntime {
               let text = NSPasteboard.general.string(forType: .string) else {
             return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE
         }
-        // Spike: serve text/plain only.
+        // Harness: serve text/plain only.
         "text/plain".withCString { mime in
             text.withCString { data in
                 var content = ghostty_clipboard_content_s(mime: mime, data: data, len: strlen(data))

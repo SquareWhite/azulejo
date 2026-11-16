@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Key and focus suite (PLAN 2.11), in-process on its own dev instance
+# Key and focus suite, in-process on its own dev instance
 # (AZJ_DEV_NAME=focus): which action each chord resolves to and where first
 # responder ends up, across terminal, browser, preview and files tiles, the
 # ⌘K menu, layouts, tabs, workspaces, herdr changes, take-over and input

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live rebinding of every keymap context (PLAN 2.3; docs/keybindings.md), in
+# Live rebinding of every keymap context (docs/keybindings.md), in
 # process on its own dev instance (AZJ_DEV_NAME=rebind by default). One key in
 # each of palette, find_bar, resize, browser, preview and files moves to a new
 # chord through the instance's config file, and the terminal gets a send_text

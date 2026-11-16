@@ -1,4 +1,4 @@
-//! Event streams on the API socket (F22).
+//! Event streams on the API socket.
 //!
 //! `events.subscribe` keeps the connection open: after its reply, the server
 //! writes JSON-RPC notifications on the same connection, interleaved with

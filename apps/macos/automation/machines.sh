@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# herdr machines in the sidebar (PLAN 2.13, ADR 0011), in-process on their
+# herdr machines in the sidebar, in-process on their
 # own dev instance (AZJ_DEV_NAME=mm). The "remote" machine is a second,
 # throwaway local herdr session reached only through the SSH path: an ssh
 # stand-in (scripts/ssh-standin.sh) runs herdr's remote-api-bridge and

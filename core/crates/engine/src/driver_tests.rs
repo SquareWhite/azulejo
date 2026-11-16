@@ -53,7 +53,7 @@ struct FakeState {
     /// What runs in each pane, by pane ID. `None`: process info isn't
     /// supported (the poller stops).
     processes: Option<HashMap<String, herdr::ProcessInfo>>,
-    /// herdr's split tree per tab, for the layout mirror (ADR 0012).
+    /// herdr's split tree per tab, for the layout mirror.
     trees: HashMap<String, herdr::LayoutNode>,
     /// Every mirror push, in order.
     pushes: Vec<herdr::MirrorTarget>,
@@ -764,7 +764,7 @@ fn wait_for<T>(what: &str, f: impl Fn() -> Option<T>) -> T {
 }
 
 /// Closing a workspace in Azulejo closes its herdr workspace, tabs and
-/// panes (ADR 0014), even one whose herdr workspace is still being made;
+/// panes, even one whose herdr workspace is still being made;
 /// herdr's `workspace_closed` coming back changes nothing more.
 #[test]
 fn closing_a_workspace_closes_it_in_herdr() {
@@ -872,7 +872,7 @@ fn closing_a_window_closes_its_workspaces_in_herdr() {
     assert!(!closed.contains(kept.as_ref().unwrap()));
 }
 
-/// Renames go to herdr (ADR 0014); herdr's own come back. An echo of an
+/// Renames go to herdr; herdr's own come back. An echo of an
 /// older name while a newer one is on its way doesn't flash it, and a
 /// rename made in herdr isn't pushed back.
 #[test]
@@ -1184,7 +1184,7 @@ fn shutdown_flushes_and_corrupt_state_starts_fresh() {
     assert!(logged.lock().unwrap()[0].contains("unusable"));
 }
 
-// ----- terminal I/O (F20) -----
+// ----- terminal I/O -----
 
 fn focused_pane(core: &Core) -> (TileId, String) {
     let session = wait_until(core, all_bound);
@@ -1532,7 +1532,7 @@ fn herdr_socket_comes_from_the_port() {
     assert_eq!(core.herdr_socket(), None);
 }
 
-// ----- adoption (ADR 0008) -----
+// ----- adoption -----
 
 fn adopted(s: &Session) -> usize {
     terminals(s).iter().filter(|(_, h, _)| h.is_some()).count()
@@ -1582,7 +1582,7 @@ fn adopting_and_restoring_never_change_herdr() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Workspace order is Azulejo's own (ADR 0013): adoption takes herdr's
+/// Workspace order is Azulejo's own: adoption takes herdr's
 /// order once; after that a move here calls nothing in herdr, a resync
 /// doesn't put herdr's order back, and a relaunch keeps the moved order.
 #[test]
@@ -1993,7 +1993,7 @@ fn a_tiles_own_on_exit_beats_the_config() {
     assert!(exit("w9:p9", OnExit::Close).is_empty());
 }
 
-// ----- several herdr machines (ADR 0011) -----
+// ----- several herdr machines -----
 
 const REMOTE: &str = "0123456789abcdef0123456789abcdef";
 
@@ -2179,8 +2179,8 @@ fn workspaces_on_a_machine_get_their_terminals_there() {
             .iter()
             .any(|(id, _)| ws_tiles.contains(id))
     );
-    // A new tab there is a dynamic Tile tab (ADR 0010), and tiles it gains
-    // get their panes from the same remote herdr (ADR 0011).
+    // A new tab there is a dynamic Tile tab, and tiles it gains
+    // get their panes from the same remote herdr.
     let new_tab = s.workspace(ws).unwrap().tabs.last().unwrap();
     assert!(new_tab.is_dynamic(), "new tabs default to dynamic Tile");
     let new_tab = new_tab.id;
@@ -2454,7 +2454,7 @@ fn herdr_tree_of(s: &Session, ws: &str) -> Option<herdr::LayoutNode> {
     walk(s, &w.tabs.first()?.root)
 }
 
-/// ADR 0012, amendment: herdr's structure changes only for an Azulejo op.
+/// herdr's structure changes only for an Azulejo op.
 /// A 2×2 grid made in herdr is adopted as it is and never pushed into
 /// another shape; when herdr's arrangement changes behind the core's back
 /// (an event lost, a change made while Azulejo was away), the tab follows

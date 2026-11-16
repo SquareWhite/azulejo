@@ -1,4 +1,4 @@
-//! Project layout files (F6), the command catalogue for the palette (F5) and
+//! Project layout files, the command catalogue for the palette and
 //! config reloads (F25b).
 
 use schemars::JsonSchema;

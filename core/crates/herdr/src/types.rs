@@ -237,7 +237,7 @@ pub struct TabLayout {
 }
 
 /// A read-only picture of a herdr server: the snapshot plus the split tree of
-/// every tab with more than one pane. What Azulejo adopts from (ADR 0008).
+/// every tab with more than one pane. What Azulejo adopts from.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Survey {
     pub workspaces: Vec<WorkspaceInfo>,
@@ -380,7 +380,7 @@ pub struct TerminalSpec {
     pub env: Vec<(String, String)>,
 }
 
-/// How to make a terminal by splitting a pane of an existing tab (ADR 0012).
+/// How to make a terminal by splitting a pane of an existing tab.
 /// The new pane is always the split's second child.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitSpec {

@@ -1,69 +1,143 @@
-# Dogfooding Azulejo (Gate G1)
+# Running a daily build
 
-One week of real use on macOS with the frozen build `v0.1.0-dogfood.1`, before M2 starts touching the app. Log anything odd in [dogfood-log.md](dogfood-log.md).
+How to use Azulejo day to day on your own Mac, built from the latest commit,
+and how to update or roll it back.
 
 ## Install
 
-1. The first build is in `dist/` at the repo root: `dist/Azulejo-0.1.0-dogfood.1.dmg` (and a `.zip`). Or skip the `.dmg` entirely and run `just dogfood` (see [Updating](#updating)).
-2. Open the `.dmg` and drag Azulejo to Applications.
-3. The build is ad-hoc signed, not notarised, so Gatekeeper blocks the first launch. Either right-click Azulejo in Applications → **Open** → **Open**, or run once:
+You need herdr on your `PATH`, and the repo set up for macOS builds (`mise
+install`; `vendor/ghostty` checked out and built with `just ghostty`). Then,
+from the repo:
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Azulejo.app
-   ```
+```sh
+just dogfood
+```
 
-4. In Azulejo's app menu, choose **Install Command-Line Tool…** It asks first, then links `azj` into `~/.local/bin` (or `/usr/local/bin`). Open a new terminal and try `azj help`.
-5. Check the keyboard tools below.
+That builds HEAD, installs it as `/Applications/Azulejo.app` and launches it.
+A build made on this Mac carries no quarantine flag, so Gatekeeper doesn't
+ask. (A .dmg copied from elsewhere does: right-click Azulejo in Applications
+→ **Open**, or run `xattr -dr com.apple.quarantine /Applications/Azulejo.app`.)
 
-### Keyboard tools
-
-External keyboard remappers can intercept shortcuts before Azulejo receives them. If you use Hammerspoon or Karabiner, scope conflicting rules to exclude Azulejo's bundle ID, `dev.azulejo.Azulejo`.
-
-In particular, a global window-movement rule can intercept `alt+shift+hjkl`, and terminal-only remaps can break `cmd+l` in browser tiles. Adjust your own rules or override the app's shortcuts under `[keys.macos]` ([keybindings](keybindings.md)).
-
-### Terminal font and colours
-
-Azulejo's terminals read Ghostty's config, including `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty`. Explicit font and colour settings there apply to terminals. Ghostty colours take precedence over Azulejo's theme by default; set `[appearance] terminal_colors = "theme"` to let the theme colour terminals too ([themes](themes.md#terminal-colours)).
-
-### Dock icon
-
-`[appearance] app_icon` picks the Dock icon while Azulejo runs: `"light"` (default), `"dark"` or `"auto"` (follows macOS's appearance). See [themes](themes.md#app-icon).
+Then choose **Install Command-Line Tool…** in Azulejo's app menu. It asks
+first, then links `azj` into `~/.local/bin` or `/usr/local/bin`
+([details](release.md#install-command-line-tool)). Open a new terminal and
+try `azj help`. The link points into the app bundle, so `azj` updates with
+the app.
 
 ## Updating
 
-After the first install, update with one command from the repo:
-
 ```sh
 just dogfood              # build HEAD, quit Azulejo, swap it into /Applications, relaunch
-just dogfood --rollback   # back to the build before (again to go further back)
+just dogfood --check      # run just build, test and lint on that commit first
+just dogfood --dirty      # build the checkout as it is, uncommitted changes included
+just dogfood --no-launch  # install without relaunching
+```
+
+- It builds the last commit in a separate worktree
+  (`~/Library/Caches/Azulejo/dogfood-src`), so uncommitted changes in your
+  checkout, including agents' work in progress, stay out. The worktree is
+  kept between runs, so rebuilds are quick.
+- That worktree reuses your checkout's `vendor/ghostty`. If the submodule
+  isn't at the commit HEAD pins, the script stops: run `git submodule update`
+  and `just ghostty`, then try again.
+- Quitting saves the layout, and herdr keeps every terminal and agent
+  running, so an update costs a second or two of reattaching. If Azulejo
+  doesn't quit within 10 s the script stops and changes nothing;
+  `--force-kill` sends SIGKILL instead, losing layout changes since the last
+  save.
+- The new build's signature is checked before anything is swapped.
+- It relaunches only when its output is a terminal. From a script or an
+  agent, run it as `script -q /dev/null just dogfood < /dev/null`.
+
+## Rolling back
+
+```sh
+just dogfood --rollback   # the build before the installed one (again to go further back)
 just dogfood --list       # kept builds; * marks the installed one
 just dogfood --to <hash>  # reinstall a kept build by commit
 ```
 
-- It builds the last commit in a separate worktree (`~/Library/Caches/Azulejo/dogfood-src`), so uncommitted changes in your checkout, including agents' work in progress, are left out. `--dirty` builds the checkout as it is; `--check` runs `just build test lint` first.
-- Quitting saves the layout, and herdr keeps every terminal and agent running, so an update costs a second or two of reattaching. If Azulejo doesn't quit within 10 s the script stops and changes nothing (`--force-kill` overrides).
-- The last three builds, plus the one installed, stay in `~/Library/Application Support/Azulejo/dogfood-builds/`. The `.dmg` build you started with is kept there too, so `--rollback` can get back to it.
-- Each build records its commit (`AzulejoCommit` in `Info.plist`). Mention it in bug reports: `just dogfood --list` shows it.
-- `azj` links into the bundle, so it updates with the app. Builds made on this Mac carry no quarantine flag, so there's no Gatekeeper prompt after the first install.
+The last three builds, plus the installed one, stay in
+`~/Library/Application Support/Azulejo/dogfood-builds/`. An app you installed
+by hand (from a .dmg) is kept there too the first time `just dogfood`
+replaces it, so `--rollback` can get back to it.
 
-## What happens on first launch
+Each build records its commit (`AzulejoCommit` in `Info.plist`); `just
+dogfood --list` shows it. Mention it when you report a problem.
 
-Azulejo connects to your **default herdr session**, the one plain `herdr` uses ([ADR 0008](adr/0008-use-the-users-herdr-session.md)).
+## First launch
 
-- **Adoption.** Every herdr workspace shows up as an Azulejo workspace, every herdr tab as a tab with the same splits, every pane as a terminal tile. Adoption only reads herdr; it moves, closes and re-lays-out nothing.
-- **Layout mirror.** After that, one Azulejo tab is one herdr tab and each terminal tile a pane in it ([ADR 0012](adr/0012-mirror-layout-into-herdr.md)): splits, resizes and swaps you make in Azulejo show up in the herdr TUI, and the other way round. Older sessions with a herdr tab per tile get merged, processes and all. `[herdr] mirror_layout = false` brings back a tab per tile.
-- **`alt+w` detaches, `cmd+w` kills.** `alt+w` closes the tile and the pane keeps running in herdr. `cmd+w` closes the tile and kills its pane at once, with no confirmation. A closed adopted tile stays closed on relaunch. `alt+cmd+w` closes the whole workspace in herdr too ([ADR 0014](adr/0014-workspace-close-and-rename-reach-herdr.md)), and asks first when something still runs there; renames go both ways.
-- **Pane size.** While a tile shows a pane, Azulejo sets that pane's size. If the herdr TUI (or your phone) shows the same pane, it'll look cropped or padded there until you close the tile.
-- **Read-only tiles.** If another client already holds a pane, the tile shows it read-only with a **Take over** button. Azulejo never grabs it back by itself.
-- **Environment.** Panes inherit the environment of whoever started the herdr server. If you started it from inside an agent, `CLAUDE_*` variables can show up in panes; restart herdr from a plain terminal (`herdr update --handoff` keeps processes alive).
+Azulejo connects to your **default herdr session**, the one plain `herdr`
+uses.
+
+- **Adoption.** Every herdr workspace shows up as an Azulejo workspace, every
+  herdr tab as a tab with the same splits, every pane as a terminal tile.
+  Adoption only reads herdr; it moves, closes and re-lays-out nothing.
+- **Layout mirror.** After that, one Azulejo tab is one herdr tab and each
+  terminal tile a pane in it. Splits, resizes and swaps you make in Azulejo
+  show up in the herdr TUI, and the other way round. `[herdr] mirror_layout =
+  false` gives each tile a herdr tab of its own instead.
+- **Closing.** `alt+w` closes the tile and the pane keeps running in herdr.
+  `cmd+w` closes the tile and kills its pane at once, with no confirmation. A
+  closed adopted tile stays closed on relaunch. `alt+cmd+w` closes the whole
+  workspace in herdr too, and asks first when something still runs there.
+  Renames go both ways.
+- **Pane size.** While a tile shows a pane, Azulejo sets that pane's size. If
+  the herdr TUI (or your phone) shows the same pane, it looks cropped or
+  padded there until you close the tile.
+- **Read-only tiles.** If another client already holds a pane, the tile shows
+  it read-only with a **Take over** button. Azulejo never grabs it back by
+  itself.
+- **Environment.** Panes inherit the environment of whoever started the herdr
+  server. If you started it from inside an agent, `CLAUDE_*` variables can
+  show up in panes; restart the herdr server from a plain terminal.
+
+## Setting up
+
+### Keyboard tools
+
+External keyboard remappers can intercept shortcuts before Azulejo sees them.
+If you use Hammerspoon or Karabiner, scope conflicting rules to exclude
+Azulejo's bundle ID, `dev.azulejo.Azulejo`. A global window-movement rule can
+take `alt+shift+hjkl`, and terminal-only remaps can break `cmd+l` in browser
+tiles. Adjust your rules, or override Azulejo's shortcuts under
+`[keys.macos]` ([keybindings](keybindings.md)).
+
+### Terminal font and colours
+
+Azulejo's terminals read Ghostty's config, including
+`~/Library/Application Support/com.mitchellh.ghostty/config.ghostty`. Font and
+colour settings there apply to terminals. Ghostty's colours win over
+Azulejo's theme by default; set `[appearance] terminal_colors = "theme"` to
+let the theme colour terminals too ([themes](themes.md#terminal-colours)).
+
+### Dock icon and badge
+
+`[appearance] app_icon` picks the Dock icon while Azulejo runs: `"light"`
+(default), `"dark"` or `"auto"` ([themes](themes.md#app-icon)). The Dock
+badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
+([themes](themes.md#dock-badge)).
 
 ## Everyday use
 
-- Your herdr chords carry over: `alt+hjkl` focus, `alt+shift+hjkl` swap, `ctrl+alt+shift+hjkl` resize, `ctrl+cmd+t` tall split, `alt+enter` promote, `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom, `alt+w` close tile (keeps the pane running; `cmd+w` kills it), `cmd+t` / `cmd+1..8` workspaces, `cmd+shift+t` / `ctrl+1..8` tabs. Full list and overrides: [keybindings](keybindings.md).
-- `cmd+k` opens quick open: one menu for every action (with its chord) and every workspace, tab and tile (by name, cwd, URL, path or agent), fuzzy search, recent first. Start with `>` for commands only or `@` for places only. Commands that need input (rename, open URL, preview a file, open or save a layout) ask for it inline. `cmd+shift+p` and `cmd+p` are unbound now; [docs/keybindings.md](keybindings.md#quick-open-k) shows how to bring them back. In terminals `cmd+k` no longer clears (Ghostty's default): use `ctrl+l`.
-- Agent state shows in the sidebar, the tab strip, ⌘K and the Dock badge. A busy agent tile shows a small status icon at the right end of its header (working ring, yellow blocked mark, green checkmark until you've looked at it; nothing once idle); no coloured borders ([themes](themes.md#agent-state-in-tile-headers); `[appearance] tile_agent_badge = true` brings back the full badge). The Dock badge counts unread agent tiles; right-click a tile's header for Mark as Unread to come back to it later ([themes](themes.md#dock-badge); `[appearance] dock_badge = false` hides the badge).
-- `shift+enter` reaches Claude Code and fish 4 as a real shift+enter (a newline); `cmd+l` types `ctrl+l` in terminals unless an external keyboard remapper intercepts it. Both are covered in [keybindings](keybindings.md#terminal-keys).
-- The mouse: drag the gutter between tiles to resize them (double-click evens the split out), drag tabs in the top bar or workspaces in the sidebar to reorder them, and drop files, images or text onto a terminal to paste their paths or contents.
+- herdr's chords carry over: `alt+hjkl` focus, `alt+shift+hjkl` swap,
+  `ctrl+alt+shift+hjkl` resize, `ctrl+cmd+t` tall split, `alt+enter` promote,
+  `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom. `cmd+t` and
+  `cmd+1..8` for workspaces, `cmd+shift+t` and `ctrl+1..8` for tabs. Full list
+  and overrides: [keybindings](keybindings.md).
+- `cmd+k` opens quick open: every action (with its chord) and every
+  workspace, tab and tile (by name, cwd, URL, path or agent), fuzzy, recent
+  first. Start with `>` for commands only or `@` for places only. In terminals
+  `cmd+k` doesn't clear the screen as in Ghostty: use `ctrl+l`.
+- Agent state shows in the sidebar, the tab strip, ⌘K, tile headers and the
+  Dock badge ([themes](themes.md#agent-state-in-tile-headers)). Right-click a
+  tile's header and choose Mark as Unread to come back to it later.
+- `cmd+s` in a terminal labels the URLs, paths and commands on screen to copy,
+  open or run them.
+- The mouse: drag the gutter between tiles to resize (double-click evens the
+  split), drag tabs in the top bar or workspaces in the sidebar to reorder
+  them, and drop files, images or text onto a terminal to paste their paths or
+  contents.
 - Browser and preview tiles also come from `azj`:
 
   ```sh
@@ -71,7 +145,9 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
   azj tile split --down --kind preview --path plan.md
   ```
 
-- Overrides go in `~/.config/azulejo/config.toml` under `[keys]`. Saving the file applies it; problems show in a banner over the tiles (the previous config stays until the file is fixed). `reload_config` in the palette reads it again by hand.
+- Config lives in `~/.config/azulejo/config.toml`. Saving the file applies
+  it; problems show in a banner over the tiles, and the previous config stays
+  until the file is fixed. `reload_config` in ⌘K reads it again by hand.
 
 ## Where things live
 
@@ -80,39 +156,41 @@ Azulejo connects to your **default herdr session**, the one plain `herdr` uses (
 | Session state | `~/Library/Application Support/Azulejo/state.json` |
 | Config | `~/.config/azulejo/config.toml` |
 | API socket | `$TMPDIR/azulejo/azulejo.sock` |
+| Kept builds | `~/Library/Application Support/Azulejo/dogfood-builds/` |
 | Crash reports | `~/Library/Logs/DiagnosticReports/Azulejo-*.ips` |
-| Logs | Off by default. For a session with logs: `AZULEJO_VERBOSE=1 /Applications/Azulejo.app/Contents/MacOS/Azulejo 2>>~/Library/Logs/Azulejo.log &` |
+| Logs | Off by default. For a session with logs, quit Azulejo and run `AZULEJO_VERBOSE=1 /Applications/Azulejo.app/Contents/MacOS/Azulejo 2>>~/Library/Logs/Azulejo.log &` |
 
-## Reporting issues
+## Reporting a problem
 
-Add an entry to [dogfood-log.md](dogfood-log.md) (the template's at the top), or just tell the manager agent in chat. Attach a crash report or log lines if you have them. Severity 1 means lost work or a session you couldn't get back; G1 passes after a week with none open.
+Note the build's commit (`just dogfood --list`), what happened, what you
+expected, and the context (tile kinds, herdr TUI open, after sleep…). Attach
+the crash report or log lines if you have them, with private paths and names
+taken out.
 
-## Known gaps
+## Known limits
 
-- Several herdr machines (2.13) are tested against a stand-in only, not real SSH hosts, and remote workspaces show no git branch yet.
-- No IME composition in terminal tiles yet; copy/paste, mouse selection and Claude Code's full key path are untested by hand.
-- OSC 52 clipboard and terminal notifications don't pass through herdr ([ADR 0005](adr/0005-scrollback-and-passthrough.md)).
-- Ad-hoc signed only: notarisation waits for a Developer ID ([release](release.md)).
+- herdr machines are tested against an SSH stand-in only, and remote
+  workspaces show no git branch.
+- OSC 52 clipboard writes and terminal notifications don't pass through
+  herdr ([herdr notes](herdr-notes.md)).
+- A build without a Developer ID is ad-hoc signed and runs only on the Mac
+  that built it ([release](release.md)).
 
-## Checks to run when the Mac is free
+## Checks that need you
 
-These need real input or windows in front, so the agents left them for you. Each posts keystrokes or raises windows, so don't run them during a meeting.
+Automated tests never post real input or bring windows to the front, so a
+few things need a person at the Mac:
 
-```sh
-# Frame pacing with the window visible (0.5)
-cd spikes/macos-anim && ./run.sh --stress 50 --exit --front --resize-at start --reveal first --log build/visible.jsonl
-
-# Standalone Ghostty latency baseline (0.4); posts real keys for ~5 minutes
-scripts/latency/run-os-input.sh
-
-# NFRs with the window in front (1.13), on the release build;
-# compare memory with Ghostty.app showing 4 splits (the restated memory target)
-scripts/nfr/latency.sh
-scripts/nfr/memory.sh
-
-# After `herdr update`: re-run the herdr probe (and once with the TUI check)
-scripts/herdr-probe.sh
-AZJ_PROBE_TUI=1 scripts/herdr-probe.sh
-```
-
-By hand: close the lid for a minute with 6 terminal tiles open and check they reattach within 2 s; open the Web Inspector from a browser tile; copy/paste and mouse selection in a terminal; type into Claude Code (arrow keys included) inside a tile; open an adopted pane while the herdr TUI shows it and note what the TUI draws. The full list is under "Deferred checks" in [PLAN.md](../PLAN.md).
+- Real typing feel, IME input (Japanese, Chinese) and Claude Code's
+  interactive keys (shift+enter, esc esc, ctrl+r) in a terminal tile.
+- System clipboard copy and paste, mouse selection and the scroll wheel.
+- Real drags onto a terminal: files from Finder, an image from a browser, a
+  screenshot thumbnail.
+- Sleep and wake: close the lid for a minute with several terminal tiles
+  open; they should reattach within 2 s.
+- Sharing a pane with the herdr TUI.
+- The Web Inspector from a browser tile.
+- `scripts/latency/run-os-input.sh`: keystroke latency through the real input
+  path, against standalone Ghostty.app. It posts real keystrokes for several
+  minutes, so only run it when nobody needs the Mac
+  ([details](../scripts/latency/README.md)).

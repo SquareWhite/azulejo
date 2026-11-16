@@ -1,12 +1,12 @@
-//! Keeps terminal tiles and herdr in step (ADR 0002, 0012; the layout
-//! mirror itself is [`crate::mirror`]).
+//! Keeps terminal tiles and herdr in step (the layout mirror itself is
+//! [`crate::mirror`]).
 //!
 //! The engine stays pure: [`effects`] turns events into herdr work, a worker
 //! runs that work through a [`HerdrPort`] one item at a time, and the results
 //! come back as [`Internal`] commands applied on the engine's thread.
 //! [`reconcile`] does the same for events herdr sends us.
 //!
-//! Every herdr machine (Local and herdr's saved machines, ADR 0011) has its
+//! Every herdr machine (Local and herdr's saved machines) has its
 //! own worker and event stream; herdr IDs are only unique per server, so
 //! every match between a tile and herdr compares the machine first. A
 //! machine is `None` for Local, else herdr's saved-machine ID.
@@ -17,7 +17,7 @@
 //! can't be killed without herdr deleting the (otherwise empty) workspace.
 //!
 //! Closing or renaming a workspace here does the same in herdr, and herdr's
-//! renames come back ([`WorkspaceSync`], ADR 0014).
+//! renames come back ([`WorkspaceSync`]).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -52,7 +52,7 @@ pub trait HerdrPort: Send + Sync + 'static {
 
     fn kill_terminal(&self, pane_id: String) -> impl Future<Output = Result<(), String>> + Send;
 
-    /// Closes a herdr workspace with its tabs and panes (ADR 0014). One
+    /// Closes a herdr workspace with its tabs and panes. One
     /// that's gone already counts as closed.
     fn close_workspace(
         &self,
@@ -62,7 +62,7 @@ pub trait HerdrPort: Send + Sync + 'static {
         async { Err(crate::meta::UNSUPPORTED.to_owned()) }
     }
 
-    /// Sets a herdr workspace's label (ADR 0014). One that's gone counts as
+    /// Sets a herdr workspace's label. One that's gone counts as
     /// done.
     fn rename_workspace(
         &self,
@@ -93,7 +93,7 @@ pub trait HerdrPort: Send + Sync + 'static {
         }
     }
 
-    /// What herdr is running, for adoption (ADR 0008). Must only read.
+    /// What herdr is running, for adoption. Must only read.
     fn survey(&self) -> impl Future<Output = Result<herdr::Survey, String>> + Send;
 
     /// herdr's lifecycle events. Called once, inside the runtime.
@@ -108,7 +108,7 @@ pub trait HerdrPort: Send + Sync + 'static {
         mpsc::channel(1).1
     }
 
-    // ----- terminal I/O (F20) -----
+    // ----- terminal I/O -----
 
     fn send_text(
         &self,
@@ -142,7 +142,7 @@ pub trait HerdrPort: Send + Sync + 'static {
         pane_id: String,
     ) -> impl Future<Output = Result<herdr::ScrollInfo, String>> + Send;
 
-    /// What runs in a pane's foreground (F28). herdr has no event for it, so
+    /// What runs in a pane's foreground. herdr has no event for it, so
     /// the core polls. A port without it answers [`crate::meta::UNSUPPORTED`].
     fn process_info(
         &self,
@@ -157,7 +157,7 @@ pub trait HerdrPort: Send + Sync + 'static {
         None
     }
 
-    // ----- layout mirroring (ADR 0012) -----
+    // ----- layout mirroring -----
 
     /// A terminal split off a pane of an existing tab. A port without it
     /// fails, and the caller makes a tab instead.
@@ -373,22 +373,22 @@ pub enum Effect {
         env: Vec<(String, String)>,
         /// A line typed into the new pane's shell (a layout file's `command`).
         command: Option<String>,
-        /// Where to split the pane off while mirroring the layout (ADR
-        /// 0012): the pane beside the tile in its tab. `None` (or mirroring
+        /// Where to split the pane off while mirroring the layout:
+        /// the pane beside the tile in its tab. `None` (or mirroring
         /// off) gives the terminal a herdr tab of its own.
         split: Option<crate::mirror::SplitFrom>,
     },
-    /// Kill a closed tile's pane (F14: only when the user asked to).
+    /// Kill a closed tile's pane (only when the user asked to).
     KillTerminal { pane_id: String },
     /// The user closed an Azulejo workspace: its herdr workspace closes
-    /// too, tabs and panes with it (ADR 0014). `herdr_workspace` is the
+    /// too, tabs and panes with it. `herdr_workspace` is the
     /// session's binding; one the worker made since wins.
     CloseWorkspace {
         workspace: WorkspaceId,
         herdr_workspace: Option<String>,
     },
     /// The user renamed an Azulejo workspace, or a survey found herdr's
-    /// label differs: herdr takes Azulejo's name (ADR 0014).
+    /// label differs: herdr takes Azulejo's name.
     RenameWorkspace {
         workspace: WorkspaceId,
         herdr_workspace: Option<String>,
@@ -401,10 +401,10 @@ pub enum Effect {
         herdr_workspace: Option<String>,
     },
     /// A herdr tab a tile's pane was in closed. herdr reports that before
-    /// the `pane_moved` of a pane moved out of it (ADR 0012), so check: a
+    /// the `pane_moved` of a pane moved out of it, so check: a
     /// pane that's gone closes its tile, a moved one rebinds it.
     ConfirmClosed { tile: TileId, stored: HerdrRef },
-    /// Read what herdr runs, to adopt tabs nobody here knows (ADR 0008).
+    /// Read what herdr runs, to adopt tabs nobody here knows.
     Survey,
     /// Read every pane's agent status, and nothing else: herdr's agent
     /// subscription just went live, and statuses that changed before herdr
@@ -428,7 +428,7 @@ pub enum Internal {
         tile: TileId,
     },
     /// The tile's pane was closed outside Azulejo (herdr TUI, phone, CLI):
-    /// the tile goes too (F15).
+    /// the tile goes too.
     ClosedElsewhere {
         tile: TileId,
     },
@@ -440,13 +440,13 @@ pub enum Internal {
     },
     /// A herdr workspace was renamed (the TUI, a phone, the CLI, or our
     /// own push coming back): the Azulejo workspace showing it takes the
-    /// label (ADR 0014).
+    /// label.
     HerdrWorkspaceRenamed {
         machine: Machine,
         herdr: String,
         label: String,
     },
-    /// herdr reported the agent in a pane (F16).
+    /// herdr reported the agent in a pane.
     AgentStatus {
         machine: Machine,
         pane_id: String,
@@ -461,14 +461,14 @@ pub enum Internal {
     /// A survey read only for its agent statuses ([`Effect::AgentStatuses`]):
     /// adopts nothing, closes nothing. The `u64` is as for `Surveyed`.
     AgentStatuses(Machine, Box<herdr::Survey>, u64),
-    /// herdr's title and working directory for a pane (F28).
+    /// herdr's title and working directory for a pane.
     PaneInfo {
         machine: Machine,
         pane_id: String,
         title: Option<String>,
         cwd: Option<String>,
     },
-    /// What runs in a pane's foreground (F28): `command` is `None` when the
+    /// What runs in a pane's foreground: `command` is `None` when the
     /// shell is; `shell` is `None` when it isn't known.
     PaneProcess {
         machine: Machine,
@@ -478,7 +478,7 @@ pub enum Internal {
         /// The foreground process's working directory, when herdr knows it.
         cwd: Option<String>,
     },
-    /// What the core read about a workspace's repository (F26).
+    /// What the core read about a workspace's repository.
     WorkspaceGit {
         workspace: WorkspaceId,
         git: Option<azulejo_model::GitInfo>,
@@ -491,13 +491,13 @@ pub enum Internal {
     /// a newer one means the news is stale.
     Announce(Machine, u64),
     /// Someone changed a herdr tab's layout (the TUI, a phone): the tab
-    /// showing it follows (ADR 0012).
+    /// showing it follows.
     MirrorPulled {
         machine: Machine,
         layout: Box<herdr::TabLayout>,
     },
     /// A push found herdr's tab arranged otherwise, and no Azulejo op asked
-    /// to change it: the tab follows herdr's tree (ADR 0012, amendment).
+    /// to change it: the tab follows herdr's tree.
     MirrorFollow {
         machine: Machine,
         tab: azulejo_model::TabId,
@@ -527,7 +527,7 @@ impl Engine {
                 }
                 // The tile (or its whole workspace) closed while herdr made
                 // its pane: that pane is closed here too, so adoption leaves
-                // it alone (F14, ADR 0008).
+                // it alone.
                 if self.session.tile(tile).is_err() {
                     if !self.session.detached_herdr.contains(&herdr) {
                         self.session.detached_herdr.push(herdr);
@@ -611,8 +611,7 @@ impl Engine {
             }
             Internal::Surveyed(machine, survey, requested) => {
                 let before = self.session.clone();
-                // Only Local's survey may drop the first-launch placeholder
-                // (ADR 0008).
+                // Only Local's survey may drop the first-launch placeholder.
                 let placeholder = if machine.is_none() {
                     self.placeholder.take()
                 } else {
@@ -744,7 +743,7 @@ impl Engine {
     }
 
     /// Events for what changed since `before`, with headers brought up to
-    /// date first (F28).
+    /// date first.
     /// Notes the herdr panes of tiles that closed because herdr closed them,
     /// for [`Internal::Surveyed`]'s stale-survey check.
     fn remember_closed_in_herdr(&mut self, events: &[Event]) {
@@ -836,8 +835,8 @@ pub fn restore_effects(session: &Session, machine: &Machine) -> Vec<Effect> {
         .collect()
 }
 
-/// Workspace closes and renames the user asked for, to carry into herdr
-/// (ADR 0014). Read with [`workspace_sync`] before the command runs (a
+/// Workspace closes and renames the user asked for, to carry into herdr.
+/// Read with [`workspace_sync`] before the command runs (a
 /// closed workspace is gone after it), then turned into effects with
 /// [`WorkspaceSync::effects`] once it succeeded. Only explicit commands
 /// count: a workspace herdr closed, or the placeholder adoption drops, never
@@ -921,7 +920,7 @@ impl WorkspaceSync {
     }
 }
 
-/// Azulejo's names win (ADR 0014): a rename for each workspace on `machine`
+/// Azulejo's names win: a rename for each workspace on `machine`
 /// whose herdr workspace is labelled otherwise in `survey`. That's drift
 /// from before names were synced, a rename made while herdr was away, or
 /// one made in herdr while Azulejo wasn't running (herdr doesn't replay
@@ -1005,19 +1004,19 @@ fn create_effect(session: &Session, tile: &Tile) -> Option<(Machine, Effect)> {
 pub struct Reaction {
     pub internals: Vec<Internal>,
     pub effects: Vec<Effect>,
-    /// herdr has new or possibly missed tabs: survey and adopt (ADR 0008).
+    /// herdr has new or possibly missed tabs: survey and adopt.
     pub survey: bool,
 }
 
-/// Matches herdr events to tiles (ADR 0009):
+/// Matches herdr events to tiles:
 /// - `pane_exited`: the process ended (`exit`, ctrl+d, a finished command).
 ///   The tile closes, or with `on_exit = "keep"` (the tile's own, else
 ///   `default_on_exit` from config) stays ended and respawnable.
 /// - `pane_closed`, `tab_closed`, `workspace_closed`: someone closed it in
-///   herdr; the tile goes too (F15).
+///   herdr; the tile goes too.
 /// - New workspaces, tabs and panes nobody here knows ask for a survey, which
-///   adopts them (ADR 0008; split-off panes land beside their sibling).
-/// - Agent status updates the tile's agent (F16).
+///   adopts them (split-off panes land beside their sibling).
+/// - Agent status updates the tile's agent.
 ///
 /// Everything here is about `machine`'s herdr only.
 pub fn reconcile(
@@ -1048,7 +1047,7 @@ pub fn reconcile(
         }
         herdr::StreamItem::Event(event) => match event {
             E::WorkspaceCreated(_) | E::TabCreated(_) => reaction.survey = true,
-            // A pane split off elsewhere (F15); ours are bound already, or
+            // A pane split off elsewhere; ours are bound already, or
             // will be before the survey runs (the worker goes in order).
             E::PaneCreated(pane) => {
                 reaction.survey |= !bound().any(|(_, _, h)| {
@@ -1057,7 +1056,7 @@ pub fn reconcile(
                 });
                 reaction.internals.push(pane_info(machine, pane));
             }
-            // Title or cwd changed (F28); agent status comes per pane.
+            // Title or cwd changed; agent status comes per pane.
             E::PaneUpdated(pane) => {
                 if bound().any(|(_, _, h)| h.pane_id == pane.pane_id.as_str()) {
                     reaction.internals.push(pane_info(machine, pane));
@@ -1151,7 +1150,7 @@ pub fn reconcile(
     reaction
 }
 
-/// A pane's title and working directory, for its tiles' headers (F28).
+/// A pane's title and working directory, for its tiles' headers.
 fn pane_info(machine: &Machine, pane: &herdr::PaneInfo) -> Internal {
     Internal::PaneInfo {
         machine: machine.clone(),
@@ -1416,7 +1415,7 @@ pub(crate) async fn run_worker<P: HerdrPort>(
                     // A new workspace's first pane already carries this tile's env.
                     Some(terminal) => Ok(terminal),
                     None => {
-                        // Mirroring (ADR 0012): split off the pane beside it,
+                        // Mirroring: split off the pane beside it,
                         // so it's born in place. If that fails (the pane
                         // just went), a tab of its own; the next push moves
                         // it in.

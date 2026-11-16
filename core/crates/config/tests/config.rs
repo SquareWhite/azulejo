@@ -283,7 +283,7 @@ fn herdr_session_defaults_to_the_users_own() {
 
 #[test]
 fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
-    // On with herdr's default session, off with a named one (ADR 0011).
+    // On with herdr's default session, off with a named one.
     assert!(Config::defaults(MAC).herdr.machines_enabled());
     let named = user("[herdr]\nsession = \"azj-dev\"\n", MAC);
     assert!(!named.herdr.machines_enabled());
@@ -324,7 +324,7 @@ fn herdr_machines_come_from_herdr_and_config_only_presents_them() {
 
 #[test]
 fn the_layout_is_mirrored_into_herdr_unless_turned_off() {
-    // ADR 0012: on by default.
+    // On by default.
     assert!(Config::defaults(MAC).herdr.mirror_layout);
     let off = user("[herdr]\nmirror_layout = false\n", MAC);
     assert!(off.diagnostics.is_empty(), "{:?}", off.diagnostics);

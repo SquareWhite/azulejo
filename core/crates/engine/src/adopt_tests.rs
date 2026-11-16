@@ -234,7 +234,7 @@ fn closed_tiles_stay_closed_until_herdr_drops_the_pane() {
 }
 
 /// ⌥⌘W closes a workspace. Its tiles close without killing pane by pane:
-/// the whole herdr workspace closes instead (ADR 0014). Should that close
+/// the whole herdr workspace closes instead. Should that close
 /// never reach herdr, its panes count as detached: neither the next survey
 /// nor a relaunch brings the workspace back, and it's reported as not shown.
 #[test]

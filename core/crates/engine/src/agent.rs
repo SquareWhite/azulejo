@@ -1,4 +1,4 @@
-//! Agent state on terminal tiles (F11, F16), from herdr's agent status.
+//! Agent state on terminal tiles, from herdr's agent status.
 //!
 //! herdr reports a status per pane: through a per-pane subscription
 //! (`pane.agent_status_changed`) and in every survey. A tile's
@@ -12,7 +12,7 @@
 //!
 //! herdr has a "seen" notion of its own (`done` is a finish nobody has
 //! focused in herdr yet, `idle` one somebody has), but only herdr's focus
-//! commands set it, and Azulejo leaves herdr's focus alone (ADR 0012). So
+//! commands set it, and Azulejo leaves herdr's focus alone. So
 //! `done` outlives a read here, and a finish in herdr's focused pane arrives
 //! as `idle`. [`update`] treats both as finishes, and `attention` is the only
 //! "unseen" flag views should trust (herdr-notes.md, question 11).

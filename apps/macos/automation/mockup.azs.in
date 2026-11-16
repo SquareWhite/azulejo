@@ -1,4 +1,4 @@
-# The mockup's scene (PLAN D.9), built with fixture data. Run by
+# The mockup's scene, built with fixture data. Run by
 # automation/mockup.sh, which fills in @FX@ (fixtures) and @REMOTE_*@ (the
 # stand-in machines' herdr sessions). Nothing here reaches a real machine.
 

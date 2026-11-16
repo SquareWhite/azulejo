@@ -149,7 +149,7 @@ final class AttentionOverlayView: NSView, ThemeAware {
                 place(badge, tile: id, frame: frame)
                 carried[Short.id(id)] = badge.compact ? "dot" : "badge"
             } else if let status = AttentionStyle.status(for: tile) {
-                // F11: a busy agent tile carries its state in the header, so a
+                // A busy agent tile carries its state in the header, so a
                 // blocked or finished one can be found at a glance in a busy
                 // tab. The icon alone, no text; quiet agents show none.
                 withMark.insert(id)

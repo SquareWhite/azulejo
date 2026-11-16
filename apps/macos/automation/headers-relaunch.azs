@@ -1,5 +1,5 @@
 # Second half of the headers walkthrough: after a relaunch the preview tile
-# still shows its source (F29: the choice is saved per tile).
+# still shows its source (the choice is saved per tile).
 log relaunch
 expect tiles 2
 until tile.header.title plan.md 10000

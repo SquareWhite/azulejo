@@ -435,7 +435,7 @@ fn panes_in_each_others_places_are_swapped() {
 
 #[test]
 fn a_tab_per_tile_merges_into_one_tab_and_keeps_every_terminal() {
-    // The old mapping (ADR 0002): one herdr tab per terminal tile.
+    // The old mapping: one herdr tab per terminal tile.
     let sim = Sim::new(vec![
         ("w1", p("w1:p1")),
         ("w1", p("w1:p2")),
@@ -598,7 +598,7 @@ fn echo_comparison_allows_f32_rounding_but_not_a_cell() {
     assert!(!same_layout(&a, &b));
 }
 
-// ---- herdr's arrangement is never rewritten unasked (ADR 0012 amendment) ---
+// ---- herdr's arrangement is never rewritten unasked ------------------------
 
 /// A target that didn't come from an Azulejo op.
 fn follower(tab: Option<&str>, root: LayoutNode) -> MirrorTarget {
@@ -681,7 +681,7 @@ fn without_restructure_ratios_and_zoom_still_go() {
 
 #[test]
 fn without_restructure_a_merge_keeps_herdrs_arrangement_of_what_was_there() {
-    // A pane comes in from another tab (migration, ADR 0012); the two
+    // A pane comes in from another tab (migration); the two
     // already there stay side by side as herdr has them.
     let sim = Sim::new(vec![
         ("w1", right(0.5, p("w1:p1"), p("w1:p2"))),

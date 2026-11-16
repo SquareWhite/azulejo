@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Window chrome, tab strip and toolbar search field (D.2, D.4, D.8) check,
+# Window chrome, tab strip and toolbar search field check,
 # in-process, on its own dev instance (AZJ_DEV_NAME=toolbar). Window captures
-# land in .dev/<name>/out/toolbar for comparing with docs/design/mockup-v1.png.
+# land in .dev/<name>/out/toolbar.
 #   apps/macos/automation/toolbar.sh [--keep]   (--keep: leave the dev instance)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

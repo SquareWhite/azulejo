@@ -1,4 +1,4 @@
-# Workspace numbers across machine groups (wsnum.sh, ADR 0013): the full
+# Workspace numbers across machine groups (wsnum.sh): the full
 # sidebar, the rail, the core's order and ⌘1…⌘9 all count top to bottom
 # across the groups (Local, then herdr's machines by label), whatever order
 # the workspaces were made in. wsnum.sh sets up two stand-in remote machines,

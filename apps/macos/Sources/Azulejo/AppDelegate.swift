@@ -8,7 +8,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let core: Core
     let env: LaunchEnvironment
     private(set) var session: SessionModel?
-    /// herdr machines for the sidebar's groups (`machines.list`, ADR 0011).
+    /// herdr machines for the sidebar's groups (`machines.list`).
     private(set) var machines: [MachineModel] = []
     private var controllers: [String: WindowController] = [:]
     private var keys: KeyRouter!
@@ -83,7 +83,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             // tiles move, they wait for the motion to end.
             self?.scheduleRefresh(event: true)
         }
-        // Coming to the front (or leaving it) starts or stops a read (F11).
+        // Coming to the front (or leaving it) starts or stops a read.
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.scheduleRefresh() }
@@ -129,7 +129,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// After sleep, screen lock or fast user switching, attach processes may
-    /// have died or stalled: check every terminal tile (PLAN 1.12).
+    /// have died or stalled: check every terminal tile.
     private func installWakeObservers() {
         let center = NSWorkspace.shared.notificationCenter
         let names: [Notification.Name] = [
@@ -168,7 +168,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         return result
     }
 
-    /// "+" on a sidebar machine group (ADR 0011): a workspace on that machine
+    /// "+" on a sidebar machine group: a workspace on that machine
     /// with a first terminal, ready to type in.
     func newWorkspace(on machine: String, window: String) {
         guard case .success(let reply) = send([
@@ -353,14 +353,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         workspaceHints.windowResignedKey()
         controller.palette.close()
         controller.setStatus(nil)
-        // A read in progress there stops (F11).
+        // A read in progress there stops.
         scheduleRefresh()
     }
 
     /// The red button and close_window: closing the last window quits instead
     /// (the session is saved and comes back on relaunch, herdr untouched);
     /// other windows close in the core, which closes their herdr workspaces
-    /// too (ADR 0014).
+    /// too.
     /// Asks first when something still runs in its terminals (see
     /// `confirmRunning`).
     func closeWindow(_ controller: WindowController) {
@@ -376,8 +376,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Closing a workspace ends every process in its herdr workspace (ADR
-    /// 0014). When something besides an idle shell runs there (a foreground
+    /// Closing a workspace ends every process in its herdr workspace.
+    /// When something besides an idle shell runs there (a foreground
     /// command, or a working or blocked agent: `TileModel.runningProcess`),
     /// a sheet on the window asks first, as Ghostty does; an idle workspace
     /// closes at once. Automation answers with `menu answer`.
@@ -551,7 +551,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// `close_workspace` (⌥⌘W): closes the workspace, and the core closes its
-    /// herdr workspace with every tab and pane in it (ADR 0014). The app's
+    /// herdr workspace with every tab and pane in it. The app's
     /// last workspace gets a fresh one in its place first, so the window
     /// stays; another window's last workspace closes that window. Asks first
     /// when something still runs there (`confirmRunning`).

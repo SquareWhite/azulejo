@@ -1,4 +1,4 @@
-# Shared helpers for the PLAN 1.13 NFR scripts. Source it; don't run it.
+# Shared helpers for the scripts/nfr checks. Source it; don't run it.
 #
 # Everything runs on the dev instance `nfr` (.dev/nfr, herdr session
 # azj-dev-nfr): never the user's own herdr session or saved state. The app is
@@ -60,7 +60,8 @@ launch() {
 }
 
 # The same launch, but exec'ing the binary from this shell, so ScreenCaptureKit
-# permission comes from the terminal running the script (as in 0.4).
+# permission comes from the terminal running the script (as with
+# scripts/latency).
 launch_direct() {
   prepare
   local options

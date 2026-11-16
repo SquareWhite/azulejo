@@ -1,6 +1,6 @@
 # Working on Azulejo (agents)
 
-Rules for coding agents (Claude Code and its sub-agents). Several agents may work at once, each in its own worktree, while the user uses the same computer. Breaking a rule below is worse than skipping a test. The test-side version of these rules is [docs/testing/e2e-plan.md, section 0](docs/testing/e2e-plan.md#0-ground-rules-non-negotiable).
+Rules for coding agents (Claude Code and its sub-agents). Several agents may work at once, each in its own worktree, while the user uses the same computer. Breaking a rule below is worse than skipping a test. The rules hold for test suites too.
 
 ## Orchestrator and sub-agents
 
@@ -13,7 +13,7 @@ Rules for coding agents (Claude Code and its sub-agents). Several agents may wor
 - Never activate or raise a window. Launch dev apps with `--bg` (or `--automation`); foreground changes can disrupt the user's work.
 - Screenshots: in-app captures (`shot`), or `screencapture -l <id>` of our own dev windows only. Nothing else on screen.
 - Don't change system appearance, restart the Dock or clear icon caches.
-- Don't read or write the general clipboard (the focus suite uses a private pasteboard), and don't touch the keychain.
+- Don't read or write the general clipboard (the focus suite uses a private pasteboard), and don't touch the keychain or `~/Downloads`. Tests download to a temp folder.
 - Don't run `just release-mac`, `just release-notarize` or anything that submits to Apple without asking.
 
 ## Privacy: every file and output
@@ -47,7 +47,7 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 - Every `just` dev recipe honours it: `AZJ_DEV_NAME=me just mac-dev --bg`, `AZJ_DEV_NAME=me just azj-dev tile list`.
 - e2e suites need a name starting with `e2e` (`e2e/lib.sh` refuses anything else; `e2e/hd` refuses any herdr session not named `azj-dev-e2e*`).
 - macOS caps Unix socket paths at 103 bytes and `dev.sh` refuses longer ones. The socket is `<checkout>/.dev/<name>/run/azulejo.sock`, so in a `.claude/worktrees/agent-<id>/` worktree only about 12 characters are left for the name. Paths just under the cap (102 bytes) still make the app exit at launch, so keep worktree names to 8 characters or fewer.
-- Clean up when you're done: `AZJ_DEV_NAME=<name> apps/macos/dev.sh --reset` quits the app, stops and deletes its herdr session and wipes its state. Leave no dev herdr session running.
+- Clean up when you're done: `AZJ_DEV_NAME=<name> apps/macos/dev.sh --reset` quits the app, stops and deletes its herdr session and wipes its state. Leave no dev herdr session running, and delete any temp fixtures you made.
 
 ## Worktrees
 
@@ -87,13 +87,9 @@ More in [docs/dogfooding.md](docs/dogfooding.md#updating).
 
 ## Where things are
 
-- [PLAN.md](PLAN.md): milestones, status, deferred checks, standing rules
-- [docs/PRD.md](docs/PRD.md): requirements (F-numbers)
-- [docs/adr/](docs/adr/): decisions
 - [docs/herdr-notes.md](docs/herdr-notes.md): what herdr does and doesn't do
-- [docs/testing/e2e-plan.md](docs/testing/e2e-plan.md): the end-to-end plan and its reports
 - [docs/keybindings.md](docs/keybindings.md): generated from `shared/config/keymap.default.toml` (`just keys-doc`)
 - [docs/themes.md](docs/themes.md): themes, terminal colours, `[appearance]`
+- [docs/layout-files.md](docs/layout-files.md): layout files (`azj layout apply`)
 - [docs/dogfooding.md](docs/dogfooding.md): daily build and setup
-- [docs/design/icon/](docs/design/icon/README.md): the app icon (`just icon`)
 - [apps/macos/README.md](apps/macos/README.md): the macOS shell, dev profile, automation

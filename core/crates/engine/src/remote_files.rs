@@ -1,6 +1,6 @@
-//! A remote machine's files for the files panel (ADR 0015): one shell
+//! A remote machine's files for the files panel: one shell
 //! command over the machine's shared SSH connection (the same `ssh -T …
-//! <target> -- <script>` and control socket the herdr bridge uses, ADR 0011)
+//! <target> -- <script>` and control socket the herdr bridge uses)
 //! lists one or more folders, or reads one file for the preview tile.
 //!
 //! Every run happens off the engine's thread, can be cancelled (the panel

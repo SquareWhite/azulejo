@@ -9,7 +9,7 @@
 #   scripts/latency/resize-probe.sh --stop             stop and delete the session
 #
 # Prints per hop: PTY ioctl -> SIGWINCH in the pane, pane write -> bytes at
-# the client. docs/measurements.md has the Nov 4 numbers.
+# the client.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 session=e2e-resizeprobe

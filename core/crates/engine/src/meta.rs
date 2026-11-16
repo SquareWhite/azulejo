@@ -1,4 +1,4 @@
-//! What runs in terminal tiles, and the header every tile shows (F28).
+//! What runs in terminal tiles, and the header every tile shows.
 //!
 //! herdr reports a pane's title and working directory in `pane_updated`
 //! events; what runs in its foreground has no event, so the core polls
@@ -46,7 +46,7 @@ pub(crate) fn refresh_headers(session: &mut Session) -> bool {
 }
 
 /// Terminal tiles bound to `pane_id` on `machine` (pane IDs repeat across
-/// machines; ADR 0011).
+/// machines).
 fn tiles_on(session: &Session, machine: &Machine, pane_id: &str) -> Vec<TileId> {
     session
         .tiles()
@@ -341,7 +341,7 @@ mod tests {
         session.create_tab(ws, tile, None).unwrap();
 
         // After a relaunch the poller hasn't seen the shell yet.
-        // The same pane ID on another machine isn't this tile (ADR 0011).
+        // The same pane ID on another machine isn't this tile.
         assert!(!apply_process(
             &mut session,
             &Some("remote".into()),

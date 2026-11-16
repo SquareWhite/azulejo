@@ -1,4 +1,4 @@
-//! Preview tiles in a running core (F9): watch each tile's file, render it off
+//! Preview tiles in a running core: watch each tile's file, render it off
 //! the engine's thread, and publish `preview.updated`.
 //!
 //! Rendered content isn't part of the session and isn't saved; the core keeps
@@ -21,7 +21,7 @@ pub(crate) const DEBOUNCE: Duration = Duration::from_millis(50);
 /// Receives a finished render, on whichever thread produced it.
 pub(crate) type Deliver = Arc<dyn Fn(TileId, PathBuf, Rendered) + Send + Sync>;
 
-/// Renders `path` the way a tile in `mode` shows it (F29).
+/// Renders `path` the way a tile in `mode` shows it.
 pub(crate) fn render(path: &Path, mode: PreviewMode) -> Rendered {
     match mode {
         PreviewMode::Rendered => azulejo_preview::render(path),

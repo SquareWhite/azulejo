@@ -3,10 +3,10 @@ import IOSurface
 import AzulejoCore
 import GhosttyKit
 
-/// A terminal tile: a libghostty surface viewing one herdr pane (ADR 0001).
+/// A terminal tile: a libghostty surface viewing one herdr pane.
 ///
 /// The surface's child is `herdr terminal attach <terminal-id>`. When it ends,
-/// the tile reads why (ADR 0003) and moves to one of:
+/// the tile reads why and moves to one of:
 ///
 /// - **attached**: the live terminal.
 /// - **read-only**: another client owns the pane (it took over, or had it
@@ -70,7 +70,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     /// ⌘F: made on first use, then kept with its query.
     private var finder: TerminalFinder?
     private let runDir: URL
-    /// Layout motion (ADR 0004): the last frame, covering the live surface
+    /// Layout motion: the last frame, covering the live surface
     /// while the tile moves and the PTY redraws at its new size. `freeze` is
     /// a plain background; `freezeImage` the frame itself, either filling it
     /// (scale style) or at 1:1 where the container places it (crop, outline).
@@ -110,7 +110,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     /// `machine.status`.
     private static var connected: Set<String> = []
     /// When the current wait for an attach began (launch, wake, herdr back),
-    /// and why; logged with the time it took (PLAN 1.12: ≤ 2 s).
+    /// and why; logged with the time it took (target: ≤ 2 s).
     private var attachClock: (start: Date, reason: String)?
 
     /// Registers the tile kind. Called once at launch. Without libghostty the
@@ -228,7 +228,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
         // libghostty redraws a resized surface synchronously when its layer
         // is displayed (waiting on the GPU). Left to the next Core Animation
         // flush, that lands mid-motion, a separate run-loop pass; done here,
-        // it's part of the motion's set-up, under the snapshot (ADR 0004).
+        // it's part of the motion's set-up, under the snapshot.
         if draw, window != nil { Perf.measure("surface.draw") { surface.layer?.displayIfNeeded() } }
     }
 
@@ -686,7 +686,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     }
 
     /// Routes core events this kind cares about: `herdr.status` (Local) and
-    /// `machine.status` (any machine, ADR 0011).
+    /// `machine.status` (any machine).
     static func route(_ json: String) {
         if json.contains("\"machine.status\""),
            let data = json.data(using: .utf8),
@@ -743,7 +743,7 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     }
 
     private func titleChanged(_ title: String) {
-        // herdr owns the pane's title (ADR 0005); the attach client's own
+        // herdr owns the pane's title; the attach client's own
         // title isn't the program's. Kept for logs only.
         _ = title
     }

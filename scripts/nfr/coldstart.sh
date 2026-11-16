@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PLAN 1.13: cold start, process start → first window with the restored layout
+# Cold start, process start → first window with the restored layout
 # drawn (target < 500 ms). In-app marks (Startup.swift) are relative to the
 # kernel's process start time; `open` → process start (LaunchServices) is
 # reported separately.

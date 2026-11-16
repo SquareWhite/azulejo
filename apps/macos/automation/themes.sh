@@ -13,9 +13,9 @@
 # tab strip, the focused tile's header, its terminal, the preview page, the
 # ⌘K menu and the find bar each show the new theme's colour (from
 # shared/design/tokens.json) and not the previous theme's; going back to
-# atom-one-dark gives the first capture's pixels again. Writes small copies
-# of the four captures to docs/design/theme-<id>.png with --docs.
-# Output: .dev/thm.out/mockup/.
+# atom-one-dark gives the first capture's pixels again.
+# Output: .dev/thm.out/mockup/. With --docs, also 1200 × 750 copies of the
+# four captures there, as theme-<id>.png.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
@@ -167,7 +167,7 @@ for tag, theme in themes:
     seen[theme] = {k: v[0] for k, v in samples.items()}
     if docs:
         small = img.resize((1200, 750), Image.LANCZOS)
-        small.save(root / f"docs/design/theme-{theme}.png", optimize=True)
+        small.save(out / f"theme-{theme}.png", optimize=True)
 
 # No view kept the previous theme's colour.
 order = [t for _, t in themes]

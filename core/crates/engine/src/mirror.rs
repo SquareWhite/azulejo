@@ -1,4 +1,4 @@
-//! Mirroring each tab's layout into herdr, both ways (ADR 0012).
+//! Mirroring each tab's layout into herdr, both ways.
 //!
 //! - [`targets`] says what each herdr tab should look like: the tab's tree
 //!   with only the live terminal panes on one machine left in, plus zoom.
@@ -11,7 +11,7 @@
 //!   arrangement; [`follow`] does the same for a tab whose arrangement
 //!   came from herdr (adoption, a push herdr's tree refused).
 //!
-//! **Only Azulejo changes herdr's structure** (ADR 0012, amendment). A push
+//! **Only Azulejo changes herdr's structure**. A push
 //! may swap panes or rebuild a herdr tab in another shape only for an
 //! Azulejo op: every target carries the tab's latest *intent*, a number the
 //! driver bumps when a command (a user op, a command in the app) changes
@@ -214,7 +214,7 @@ fn zoom_tile(tab: &Tab, live: &dyn Fn(TileId) -> bool) -> Option<TileId> {
 /// the most panes there (ties to the first in window order); a tab that gets
 /// none makes its own.
 ///
-/// Tab order isn't part of any target: like workspace order (ADR 0013) it's
+/// Tab order isn't part of any target: like workspace order it's
 /// Azulejo's own, so reordering tabs (`tab.move`) changes no target and
 /// sends nothing (herdr 0.9.5 has a `tab.move` with an insert index; unused).
 pub fn targets(session: &Session, machine: &Machine) -> BTreeMap<TabId, herdr::MirrorTarget> {
@@ -415,7 +415,7 @@ pub fn split_for(session: &Session, tile: TileId) -> Option<SplitFrom> {
     })
 }
 
-/// Where to split a new terminal's pane off (ADR 0012): beside `tile`'s
+/// Where to split a new terminal's pane off: beside `tile`'s
 /// pane, `pane` when it has one already, else the one the worker made for
 /// it just before (tiles made in a row, like three quick splits).
 #[derive(Debug, Clone, PartialEq)]
@@ -574,7 +574,7 @@ fn rebuild(old: &Node, herdr_tree: Node, others: &[TileId]) -> Node {
 }
 
 /// Applies a tab layout read from `machine`'s herdr after someone changed it
-/// there (ADR 0012). Ratios and moved panes map onto the tab's own tree;
+/// there. Ratios and moved panes map onto the tab's own tree;
 /// another shape replaces it, with the tiles herdr doesn't have put back.
 /// Dynamic tabs absorb what their rule can make and freeze otherwise
 /// ([`Session::apply_tree`]). Zoom follows; unzooming a Monocle tab in herdr
@@ -726,7 +726,7 @@ pub fn owner(session: &Session, machine: &Machine, layout: &herdr::TabLayout) ->
 }
 
 /// Makes `tab` follow herdr's arrangement of the panes it shares with
-/// `layout`, a herdr tab on `machine` (ADR 0012, amendment): for a tab
+/// `layout`, a herdr tab on `machine`: for a tab
 /// adopted or grown from herdr's events, and for a push that found herdr
 /// arranged otherwise without an Azulejo op to justify changing it. Panes
 /// herdr's tab holds that the tab doesn't show, and tiles herdr's tab
@@ -773,7 +773,7 @@ pub(crate) enum Pulled {
     /// Nothing changed, or only what we wrote ourselves.
     Echo,
     /// Panes came or went, nothing else changed: splits and closes have
-    /// their own paths (ADR 0009); the record follows.
+    /// their own paths; the record follows.
     Membership,
     /// Someone changed the layout in herdr: the core absorbs it.
     Change,

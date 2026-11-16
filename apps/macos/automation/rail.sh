@@ -3,7 +3,7 @@
 # blocked, the second selected) in all four built-in themes (rail-shots.azs),
 # on its own dev instance (AZJ_DEV_NAME=railcap). Window captures of our own
 # window only; the left 64 pt of each, with 2x zooms of the rows, land in
-# docs/testing/rail/<label>/ for before/after comparisons.
+# .dev/railcap.out/rail-<label>/ for before/after comparisons.
 #   apps/macos/automation/rail.sh LABEL [--keep]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -12,7 +12,7 @@ label="${1:?usage: rail.sh LABEL [--keep]}"
 KEEP="${2:-}"
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-railcap}"
 out="$root/.dev/$AZJ_DEV_NAME.out/rail"
-dest="$root/docs/testing/rail/$label"
+dest="$out-$label"
 cleanup() {
   kill "${watcher:-}" "${watchdog:-}" 2>/dev/null || true
   rm -rf "$out/.capture"

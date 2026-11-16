@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Workspace numbers across machine groups (ADR 0013) on dev instance e2e-wsn:
+# Workspace numbers across machine groups on dev instance e2e-wsn:
 # workspaces made Local, on a remote, then Local again are numbered top to
 # bottom across the groups in the full sidebar, the rail, the core's order
 # and `azj workspace list`, and ⌘N goes to the row showing N: through a

@@ -1,10 +1,10 @@
 import AppKit
 import QuartzCore
 
-/// Layout motion settings (`[animation]` in the config, F4) and the helpers
+/// Layout motion settings (`[animation]` in the config) and the helpers
 /// the tile container animates with.
 ///
-/// How motion works (ADR 0004): with `reflow` (the default) every moving
+/// How motion works: with `reflow` (the default) every moving
 /// tile's frame steps along the curve once per display frame on the main
 /// thread, like a window being drag-resized, and a terminal's grid follows
 /// it, `reflowLead` ahead (`TerminalTileView`'s live resize: whole cells
@@ -374,10 +374,10 @@ protocol MotionAware: AnyObject {
     func motionCancelled()
     /// How many times the PTY has been resized (stats: one per motion).
     var surfaceResizes: Int { get }
-    /// Height of a strip above the content (a tile header, F28) that 1:1
+    /// Height of a strip above the content (a tile header) that 1:1
     /// snapshots sit below.
     var headerInset: CGFloat { get }
-    /// Margin left of the content (a terminal's padding in its card, D.5).
+    /// Margin left of the content (a terminal's padding in its card).
     var contentLeft: CGFloat { get }
 }
 
@@ -412,7 +412,7 @@ final class MotionClock {
 }
 
 /// Frame pacing and resize counts while motions run, for automation
-/// (`anim stats`) and `docs/measurements.md`.
+/// (`anim stats`).
 @MainActor
 final class MotionStats {
     static let shared = MotionStats()

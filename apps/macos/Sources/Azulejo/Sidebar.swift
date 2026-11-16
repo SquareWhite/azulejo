@@ -1,13 +1,13 @@
 import AppKit
 
-/// What's inside the sidebar card (D.3, docs/design/mockup-v1.png): an
+/// What's inside the sidebar card: an
 /// Agents | Files switch, then either the workspace list or the focused
 /// workspace's file tree, and a footer counting workspaces by agent state.
 /// The card itself, its top band with the traffic lights and the sidebar
-/// toggle belong to the window chrome (`SidebarCardView`, D.2); this view
+/// toggle belong to the window chrome (`SidebarCardView`); this view
 /// sits below that band and draws no background of its own.
 ///
-/// Agents: one group per herdr machine (ADR 0011) — its name, a connection
+/// Agents: one group per herdr machine — its name, a connection
 /// dot or "Reconnecting…", its workspaces (status icon, name, git branch on
 /// the right) and a "+" that creates a workspace there. Rows of a machine
 /// that isn't connected are dimmed.
@@ -16,7 +16,7 @@ import AppKit
 /// the focused workspace's repository (else its cwd). Return opens a file
 /// beside the focused tile; Esc hands the keyboard back to the tiles. A
 /// remote workspace shows its terminal's folder on its machine, listed over
-/// SSH (ADR 0015).
+/// SSH.
 @MainActor
 final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     enum Mode: String { case agents, files }
@@ -178,7 +178,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
                 groups[g].workspaces.append((0, ws))
             }
         }
-        // Numbers run top to bottom across the groups (ADR 0013): the core
+        // Numbers run top to bottom across the groups: the core
         // keeps the window's list grouped the same way, so they're also its
         // `workspace.list` numbers.
         var number = 0
@@ -319,7 +319,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         guard let window = window_, let ws = window.workspace else { return (nil, nil, "No workspace.") }
         let focused = ws.tab?.tile(ws.tab?.focused ?? "")
         if ws.machineID != MachineModel.local {
-            // A remote workspace: its terminal's folder there (ADR 0015).
+            // A remote workspace: its terminal's folder there.
             let machine = machines.first { $0.id == ws.machineID }
             let name = machine?.label ?? ws.machineID
             // While it reconnects the panel stays, with the last listing
@@ -470,7 +470,7 @@ extension SidebarView {
     var filesTitleText: String { filesTitle.stringValue }
     var filesNoteText: String { filesNote.isHidden ? "" : filesNote.stringValue }
 
-    /// The branch a row shows (F26): its name, `@abc1234` when detached, and
+    /// The branch a row shows: its name, `@abc1234` when detached, and
     /// a dot when tracked files changed.
     static func branch(_ git: GitModel?) -> String? {
         guard let git, let branch = git.branch, !branch.isEmpty else { return nil }

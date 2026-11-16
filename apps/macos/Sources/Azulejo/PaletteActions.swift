@@ -222,7 +222,7 @@ extension AppController {
         for (w, window) in session.windows.enumerated() {
             let where0 = multiWindow ? "window \(w + 1) · " : ""
             for ws in window.workspaces {
-                // Remote workspaces (ADR 0011) carry their machine's name, in
+                // Remote workspaces carry their machine's name, in
                 // the detail and in what the query matches.
                 let host = Self.machineLabel(ws.machineID, machines: machines)
                 let where1 = where0 + (host.map { "\($0) · " } ?? "")
@@ -241,7 +241,7 @@ extension AppController {
                             searchExtra: host ?? ""))
                     }
                     for tile in tab.tiles {
-                        // The header's subtitle (F28): what runs there, or where.
+                        // The header's subtitle: what runs there, or where.
                         let doing = tile.header?.subtitle.flatMap { $0.isEmpty ? nil : $0 }
                         items.append(PaletteItem(
                             id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),

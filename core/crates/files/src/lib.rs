@@ -1,4 +1,4 @@
-//! File browser tiles (F10), headless: list one folder at a time, watch the
+//! File browser tiles, headless: list one folder at a time, watch the
 //! folders a tile has expanded, and read git status for decorations.
 //!
 //! Nothing walks a whole tree up front. A tile lists its root, then each

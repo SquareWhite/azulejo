@@ -47,7 +47,7 @@ asyncio.run(main())
 
 ## Examples
 
-`examples/` covers the PRD's core-only use cases:
+`examples/` covers the use cases that need only the core:
 
 | Script | Use case |
 | --- | --- |

@@ -1,4 +1,4 @@
-// Live reload for preview tiles (F9), shared by both shells.
+// Live reload for preview tiles, shared by both shells.
 //
 // When a `preview.updated` event arrives for the file a tile already shows,
 // the shell calls `azulejoPreview.swap(html)` with the event's full document

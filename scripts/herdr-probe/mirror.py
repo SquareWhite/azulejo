@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ADR 0012: what herdr lets us do to a live tab's layout. herdr-notes.md, question 10.
+"""What herdr lets us do to a live tab's layout. herdr-notes.md, question 10.
 
 Starts a throwaway named session (default azj-test-probe-mirror), prints one
 JSON line per check, then stops and deletes it. Never talks to the default

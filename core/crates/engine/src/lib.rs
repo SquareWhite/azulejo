@@ -129,7 +129,7 @@ impl Engine {
         diff(&before, &self.session, false)
     }
 
-    /// Applies the `[layout]` preferences (ADR 0010) and returns the events
+    /// Applies the `[layout]` preferences and returns the events
     /// for any change. A fresh session's untouched first tab switches to the
     /// default kind, so a first launch starts the way new tabs will.
     pub fn set_layout_prefs(&mut self, prefs: LayoutPrefs) -> Vec<Event> {
@@ -178,10 +178,10 @@ impl Engine {
             }
         };
         // Focus alone doesn't count as reading an agent's result: the shell
-        // knows whether the tile is on screen and sends `tile.seen` (F11).
+        // knows whether the tile is on screen and sends `tile.seen`.
         meta::refresh_headers(&mut self.session);
         // A new workspace, or one moved past its machine's group, lands at
-        // that group's edge: numbers follow the sidebar (ADR 0013).
+        // that group's edge: numbers follow the sidebar.
         self.session.group_workspaces(&self.machine_order);
         let mut events = diff(&before, &self.session, kill);
         self.remember_detached(&events);
@@ -192,7 +192,7 @@ impl Engine {
     }
 
     /// Remembers the herdr panes of closed terminal tiles, so adoption
-    /// doesn't bring them back (ADR 0008). Killed panes go on the list too:
+    /// doesn't bring them back. Killed panes go on the list too:
     /// the kill reaches herdr after a survey may already have seen them.
     fn remember_detached(&mut self, events: &[Event]) {
         for event in events {
@@ -667,7 +667,7 @@ impl Engine {
                     "the keymap needs a running core with a config",
                 ));
             }
-            // Machines are links `Core` holds (ADR 0011).
+            // Machines are links `Core` holds.
             Command::MachinesList => {
                 return Err(Error::new(
                     ErrorCode::Unavailable,

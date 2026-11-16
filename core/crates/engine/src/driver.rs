@@ -5,7 +5,7 @@
 //! - herdr work runs on a small tokio runtime ([`crate::link`]); results come
 //!   back as internal commands, so state only ever changes on the engine's
 //!   thread. Each herdr machine (Local, and herdr's saved machines added with
-//!   [`Core::add_machine`], ADR 0011) has its own link: worker, event stream
+//!   [`Core::add_machine`]) has its own link: worker, event stream
 //!   and agent subscription, so one machine dropping never holds up another.
 //! - Every change is saved, debounced ([`crate::persist`]), and broadcast to
 //!   [`Core::subscribe`] listeners.
@@ -67,7 +67,7 @@ enum Msg {
     /// A machine's agent-status subscription went live: read every pane's
     /// agent status for what changed before herdr accepted it.
     AgentsLive(Machine),
-    /// Connect a herdr machine (ADR 0011). The port is the core's `P`.
+    /// Connect a herdr machine. The port is the core's `P`.
     AddMachine(MachineInfo, Box<dyn std::any::Any + Send>),
     /// Show a machine without connecting it (`off`, or an error before
     /// there's anything to connect).
@@ -84,7 +84,7 @@ enum Msg {
     ),
     /// File tile work finished off this thread.
     Files(file_tiles::Delivery),
-    /// Workspace repository work finished off this thread (F26).
+    /// Workspace repository work finished off this thread.
     Repos(repos::Delivery),
     Subscribe(mpsc::Sender<Event>),
     /// An event from outside the engine (a config reload) for every listener.
@@ -176,7 +176,7 @@ impl Core {
         }
     }
 
-    /// Connects a herdr saved machine (ADR 0011): its workspaces are adopted
+    /// Connects a herdr saved machine: its workspaces are adopted
     /// like Local's, and workspaces created on it put their terminals there.
     /// `port` must be the same type the core was started with. Adding a
     /// machine that's already there replaces its link.
@@ -202,8 +202,8 @@ impl Core {
         let _ = self.tx.send(Msg::RemoveMachine(id));
     }
 
-    /// Lets files panels show machine `id`'s files over its SSH connection
-    /// (ADR 0015), or stops them (`None`: removed, off).
+    /// Lets files panels show machine `id`'s files over its SSH connection,
+    /// or stops them (`None`: removed, off).
     pub fn set_machine_files(&self, id: String, machine: Option<azulejo_herdr::RemoteMachine>) {
         let _ = self.tx.send(Msg::MachineFiles(id, machine));
     }
@@ -240,14 +240,14 @@ impl Core {
     }
 
     /// The `[layout]` preferences: what new tabs start as, where new tiles go
-    /// in dynamic tabs, the layout cycle (ADR 0010). Manual tabs and the
+    /// in dynamic tabs, the layout cycle. Manual tabs and the
     /// model's defaults until this is called.
     pub fn set_layout_prefs(&self, prefs: azulejo_model::LayoutPrefs) {
         let _ = self.tx.send(Msg::SetLayoutPrefs(prefs));
     }
 
     /// Whether tabs' layouts are mirrored into herdr, both ways (`[herdr]
-    /// mirror_layout`, ADR 0012). Off until this is called.
+    /// mirror_layout`). Off until this is called.
     pub fn set_mirror_layout(&self, on: bool) {
         let _ = self.tx.send(Msg::SetMirrorLayout(on));
     }
@@ -352,7 +352,7 @@ fn run<P: HerdrPort>(
     };
     files.sync(engine.session());
 
-    // Workspaces' git branches (F26): find, watch and read off this thread.
+    // Workspaces' git branches: find, watch and read off this thread.
     let mut repos = {
         let out = self_tx.clone();
         Repos::new(
@@ -622,7 +622,7 @@ fn run<P: HerdrPort>(
                     _ => None,
                 };
                 // A command is an Azulejo op: the tabs it rearranges may
-                // change herdr's structure (ADR 0012, amendment).
+                // change herdr's structure.
                 let before = mirror::arrangements(engine.session());
                 let sync = link::workspace_sync(&command, engine.session());
                 let result = engine.execute(command);
@@ -675,7 +675,7 @@ fn run<P: HerdrPort>(
                     _ => None,
                 };
                 // Names drifted while herdr was away (or before they were
-                // synced): Azulejo's go to herdr (ADR 0014).
+                // synced): Azulejo's go to herdr.
                 let (renames, herdr_workspaces) = match &internal {
                     Internal::Surveyed(m, survey, _) => (
                         if herdr.take_names_due(m) {
@@ -742,7 +742,7 @@ fn run<P: HerdrPort>(
                 // so after every failed retry. Coming back is announced after
                 // the bound tiles are checked (`Internal::Announce`).
                 // `herdr.status` stays Local's; every machine gets
-                // `machine.status` (ADR 0011).
+                // `machine.status`.
                 if let StreamItem::Disconnected(why) = &item
                     && let Some(event) = herdr.track(&machine, &item)
                 {
@@ -801,7 +801,7 @@ fn run<P: HerdrPort>(
                     let event = herdr.add(id, info, *port, &engine);
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                     // The sidebar's machine groups may have moved: so do the
-                    // workspaces' numbers (ADR 0013).
+                    // workspaces' numbers.
                     let events = engine.set_machine_order(herdr.order());
                     publish(
                         &engine,
@@ -822,7 +822,7 @@ fn run<P: HerdrPort>(
                 let event = herdr.show(info);
                 listeners.retain(|l| l.send(event.clone()).is_ok());
                 // The sidebar's machine groups may have moved: so do the
-                // workspaces' numbers (ADR 0013).
+                // workspaces' numbers.
                 let events = engine.set_machine_order(herdr.order());
                 publish(
                     &engine,
@@ -839,7 +839,7 @@ fn run<P: HerdrPort>(
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }
                 // The sidebar's machine groups may have moved: so do the
-                // workspaces' numbers (ADR 0013).
+                // workspaces' numbers.
                 let events = engine.set_machine_order(herdr.order());
                 publish(
                     &engine,
@@ -958,7 +958,7 @@ fn not_connected<P: HerdrPort>(herdr: &Links<P>, machine: &Machine) -> Error {
     }
 }
 
-/// The herdr side of a running core: one link per machine (ADR 0011).
+/// The herdr side of a running core: one link per machine.
 struct Links<P> {
     /// Created with the first link.
     runtime: Option<tokio::runtime::Runtime>,
@@ -968,16 +968,16 @@ struct Links<P> {
     out: mpsc::Sender<Msg>,
     log: LogFn,
     api_socket: String,
-    /// `[herdr] mirror_layout` (ADR 0012), shared with every worker.
+    /// `[herdr] mirror_layout`, shared with every worker.
     mirror: Arc<AtomicBool>,
-    /// Each tab's latest Azulejo op (ADR 0012, amendment): bumped when a
+    /// Each tab's latest Azulejo op: bumped when a
     /// command rearranges the tab or a terminal is made for it, and sent
     /// with its targets. Only a push for an intent not yet carried out may
     /// change the structure of the tab's herdr tab.
     intents: std::cell::RefCell<HashMap<azulejo_model::TabId, u64>>,
     clock: std::cell::Cell<u64>,
     /// Names sent to herdr whose `workspace_renamed` hasn't come back yet,
-    /// oldest first, by workspace (ADR 0014): an echo of an older name
+    /// oldest first, by workspace: an echo of an older name
     /// mustn't undo a newer one.
     renaming: std::cell::RefCell<HashMap<azulejo_model::WorkspaceId, Vec<String>>>,
     /// herdr workspaces last reported as not shown here, per machine.
@@ -995,7 +995,7 @@ struct Link<P> {
     agents: tokio::sync::watch::Sender<Vec<String>>,
     /// Asks the process poller to look now (see [`meta::follow_processes`]).
     processes: Arc<tokio::sync::Notify>,
-    /// The next survey compares workspace names (ADR 0014): set when the
+    /// The next survey compares workspace names: set when the
     /// stream (re)connects, the only time names can have drifted. Later
     /// surveys skip it, so one racing a rename made in herdr can't put the
     /// old name back.
@@ -1008,7 +1008,7 @@ struct Link<P> {
     /// The post-connect check of bound tiles ([`link::check_bound`]).
     check: Option<tokio::task::JoinHandle<()>>,
     survey: SurveyState,
-    /// The machine's mirror task (ADR 0012), and the targets sent to it.
+    /// The machine's mirror task, and the targets sent to it.
     mirror_tx: tmpsc::UnboundedSender<MirrorMsg>,
     mirror_sent: std::cell::RefCell<BTreeMap<azulejo_model::TabId, azulejo_herdr::MirrorTarget>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
@@ -1081,7 +1081,7 @@ impl<P: HerdrPort> Links<P> {
         stale
     }
 
-    /// Logs herdr workspaces nobody here shows (ADR 0014), when the list
+    /// Logs herdr workspaces nobody here shows, when the list
     /// changed: left running, never closed. Only IDs, no names.
     fn report_unshown(
         &mut self,
@@ -1130,8 +1130,8 @@ impl<P: HerdrPort> Links<P> {
 
     /// Applies a result from herdr. A tile closed there (closed, exited, or
     /// its workspace gone) re-tiles a dynamic tab by the tab's own rule:
-    /// that arrangement is Azulejo's, so it may go to herdr (ADR 0012,
-    /// amendment). A manual tab collapses as herdr's tree did, and nothing
+    /// that arrangement is Azulejo's, so it may go to herdr. A manual
+    /// tab collapses as herdr's tree did, and nothing
     /// else from herdr authorises anything.
     fn apply_internal(&self, engine: &mut Engine, internal: Internal) -> Vec<Event> {
         if let Internal::HerdrWorkspaceRenamed {
@@ -1187,7 +1187,7 @@ impl<P: HerdrPort> Links<P> {
 
     /// Connects `machine` through `port`: a worker for effects, a forwarder
     /// for herdr's events, agent status for its bound panes, and a first
-    /// survey (adoption, then restore; ADR 0008).
+    /// survey (adoption, then restore).
     fn add(&mut self, machine: Machine, info: MachineInfo, port: P, engine: &Engine) -> Event {
         self.drop_link(&machine);
         let out = self.out.clone();
@@ -1262,7 +1262,7 @@ impl<P: HerdrPort> Links<P> {
                 },
             )));
         }
-        // What runs in each bound pane, for tile headers (F28): polled, and
+        // What runs in each bound pane, for tile headers: polled, and
         // at once when herdr reports a pane changed.
         let processes = Arc::new(tokio::sync::Notify::new());
         {
@@ -1461,8 +1461,8 @@ impl<P: HerdrPort> Links<P> {
         self.mirror(engine.session());
     }
 
-    /// Sends each machine's mirror task the tab targets that changed (ADR
-    /// 0012). Only while mirroring is on, and only for machines that are
+    /// Sends each machine's mirror task the tab targets that changed.
+    /// Only while mirroring is on, and only for machines that are
     /// connected and surveyed: pushes start once restored tiles are checked.
     fn mirror(&self, session: &azulejo_model::Session) {
         if !self.mirror.load(Ordering::Relaxed) {

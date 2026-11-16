@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reflow lag (ADR 0004, reflow lead): how far a terminal's text trails its
+# Reflow lag (reflow lead): how far a terminal's text trails its
 # tile's frame during layout motion, and when the last redraw lands against
 # the motion's end. In-process automation on a dev instance: no OS input, the
 # window stays in the background.

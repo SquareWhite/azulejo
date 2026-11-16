@@ -237,7 +237,7 @@ pub unsafe extern "C" fn azj_core_set_event_callback(
 /// Sends a JSON command; its events arrive through the callback. Returns 0 on
 /// success, -1 on a bad handle or a command that doesn't parse, and -2 when the
 /// core refuses the command (nothing changes and no events fire). Replies don't
-/// cross the C ABI yet (PLAN step 1.6).
+/// cross the C ABI yet.
 ///
 /// # Safety
 /// `core` must come from `azj_core_new*`; `command_json` must be a valid C string.

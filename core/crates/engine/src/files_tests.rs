@@ -583,7 +583,7 @@ fn expand_err(core: &Core, tile: TileId) -> azulejo_protocol::Error {
     .unwrap_err()
 }
 
-// MARK: Remote panels (ADR 0015), through the ssh stand-in
+// MARK: Remote panels, through the ssh stand-in
 
 const MACHINE: &str = "0123456789abcdef0123456789abcdef";
 

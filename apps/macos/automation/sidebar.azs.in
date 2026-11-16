@@ -1,4 +1,4 @@
-# Sidebar (D.3) check, in-process. sidebar.sh fills in @DIR@: a folder of
+# Sidebar check, in-process. sidebar.sh fills in @DIR@: a folder of
 # small git repos named after the workspaces, each on its own branch.
 # Agent states are simulated with `herdr pane report-agent` on the dev
 # instance's own herdr session (herdr can't report "done").

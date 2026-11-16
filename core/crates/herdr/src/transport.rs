@@ -1,6 +1,6 @@
 //! How a [`Client`](crate::Client) reaches a herdr server: the local Unix
 //! socket, or a bridge process whose stdin and stdout carry the same NDJSON
-//! (herdr's own `remote-api-bridge` over SSH, ADR 0011). Either way one
+//! (herdr's own `remote-api-bridge` over SSH). Either way one
 //! connection carries one request and its reply, or one event subscription.
 
 use std::ffi::OsString;

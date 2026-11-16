@@ -1,4 +1,4 @@
-//! Terminal I/O (F20). The engine only finds the herdr pane behind a tile
+//! Terminal I/O. The engine only finds the herdr pane behind a tile
 //! ([`crate::Engine::terminal_pane`]); [`run`] then talks to herdr off the
 //! engine's thread, so a slow read never blocks layout commands.
 //!

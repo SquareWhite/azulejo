@@ -1,4 +1,4 @@
-//! herdr machines (ADR 0011): Local plus herdr's saved SSH machines, each
+//! herdr machines: Local plus herdr's saved SSH machines, each
 //! with its connection state, for the sidebar's machine groups.
 
 use schemars::JsonSchema;

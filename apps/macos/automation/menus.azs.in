@@ -107,7 +107,7 @@ expect menu.copied about:blank
 menu tile invoke Split Down
 until tiles 6 3000
 
-log === Close Workspace: the workspace goes, and herdr closes it with its panes (ADR 0014)
+log === Close Workspace: the workspace goes, and herdr closes it with its panes
 sh {herdr} --session {session} workspace list >{out}/workspaces-before.json
 sh {herdr} --session {session} pane list >{out}/panes-before.json
 menu workspace 2 invoke Close Workspace

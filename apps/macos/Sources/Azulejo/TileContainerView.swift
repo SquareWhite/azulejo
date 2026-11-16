@@ -5,9 +5,9 @@ import QuartzCore
 /// tile for every tab in the window, so switching tabs or rearranging tiles
 /// never recreates a tile (a terminal keeps its surface, a browser its page).
 ///
-/// Layout changes animate (F4, `Motion`): each tile jumps to its final frame
+/// Layout changes animate (`Motion`): each tile jumps to its final frame
 /// at the start — one PTY resize per terminal, hidden under its snapshot
-/// (ADR 0004) — and Core Animation carries it there visually, from its old
+/// — and Core Animation carries it there visually, from its old
 /// frame to its new one (rotates and layout switches included; see
 /// `runMotion`). A change that arrives mid-motion starts from where every
 /// tile appears on screen, snapshots and fades included, so holding a key
@@ -302,8 +302,8 @@ final class TileContainerView: NSView, ThemeAware {
     /// The tile area's new frame as the chrome around it changes (the
     /// sidebar opening or closing). `animated`: a layout motion like any
     /// other. Every tile starts from where it shows on screen now, takes its
-    /// final frame at once (one PTY resize per terminal, under its snapshot,
-    /// ADR 0004) and moves there with the motion's style, curve and length,
+    /// final frame at once (one PTY resize per terminal, under its snapshot)
+    /// and moves there with the motion's style, curve and length,
     /// in step with the chrome's own motion. Otherwise, or with motion off,
     /// the tiles jump.
     func setChromeFrame(_ new: NSRect, animated: Bool) {
@@ -425,7 +425,7 @@ final class TileContainerView: NSView, ThemeAware {
     /// Every change of frames is a move, on the motion's curve and length:
     /// a rotate, a layout switch, masters, promote and the rest carry each
     /// tile from its old frame to its new one, position and size together.
-    /// Monocle (ADR 0010): going in, the focused tile grows to fill the tab
+    /// Monocle: going in, the focused tile grows to fill the tab
     /// over the others, which fade and shrink a little where they are;
     /// coming out, it shrinks to its slot while they grow back in. A focus
     /// switch inside Monocle dissolves the next tile in over the last one,
@@ -523,7 +523,7 @@ final class TileContainerView: NSView, ThemeAware {
                 snapshotAt[id] = at
             } else if let rest = aware.snapshotFrame {
                 // Freezing put it where the live content was (below a tile's
-                // header strip, F28); that, where the tile shows now.
+                // header strip); that, where the tile shows now.
                 let (frame, bounds) = geometry(view)
                 snapshotAt[id] = Motion.toContainer(rest, frame: frame.offsetBy(dx: shift.x, dy: shift.y),
                                                     bounds: bounds, flipped: view.isFlipped)
@@ -761,7 +761,7 @@ final class TileContainerView: NSView, ThemeAware {
         if let fadeFrom { group.animations?.append(fadeAnimation(from: fadeFrom, to: layer.opacity)) }
         Motion.configure(group, duration: duration)
         layer.add(group, forKey: Self.motionKey)
-        // The card's rounded corners follow the moving clip (D.5).
+        // The card's rounded corners follow the moving clip.
         (view as? TileFrame)?.animateCorners(from: start, to: end, duration: duration, holdAtEnd: false)
 
         guard let aware = view as? MotionAware, let rest = aware.snapshotFrame else { return }
