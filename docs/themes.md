@@ -11,11 +11,9 @@ Azulejo's chrome, its terminals and its previews follow one theme. Four ship bui
 | macOS Dark | `macos-dark` | dark | Apple's system colours (Terminal's look, `#1e1e1e`) | GitHub dark |
 | macOS Light | `macos-light` | light | Apple's system colours, light | GitHub light |
 
-- **Atom One Dark** is the mockup's look (docs/design/mockup-v1.png) and what Azulejo looked like before themes; nothing in it changed.
+- **Atom One Dark** is the designer mockup's look and what Azulejo looked like before themes; nothing in it changed.
 - **Atom One Light** uses the official Atom One Light palette (one-light-ui and one-light-syntax): `#fafafa` bodies, `#eaeaeb` cards and strips, `#383a42` text. Its status, git, accent and terminal colours are the palette's hues made darker, so they read as well on its light surfaces as Atom One Dark's do on its dark ones ("Contrast" below).
 - **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and browser strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and browser strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
-
-Screenshots: `design/theme-atom-one-dark.png` (local capture), `design/theme-atom-one-light.png` (local capture), `design/theme-macos-dark.png` (local capture), `design/theme-macos-light.png` (local capture).
 
 ## Picking a theme
 
@@ -83,7 +81,7 @@ On, every terminal with an agent shows its name and state at the right end of it
 
 ## App icon
 
-The app icon comes in a light and a dark look ([docs/design/icon](design/icon/README.md)). Pick the one the Dock shows:
+The app icon comes in a light and a dark look (drawn by `scripts/icon/draw.swift`, `just icon`). Pick the one the Dock shows:
 
 ```toml
 [appearance]
@@ -246,7 +244,7 @@ Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the sa
 
 ## Where it lives
 
-- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `syntax`, `sidebarMaterial`, `color` and `terminal`), `webview` (CSS variables). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell (M3) reads the same file through `azulejo-config`.
+- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `syntax`, `sidebarMaterial`, `color` and `terminal`), `webview` (CSS variables). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell reads the same file through `azulejo-config`.
 - `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` and `app_icon` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
 - macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config and updates the previews. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
 
@@ -256,6 +254,6 @@ Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the sa
 - `python3 scripts/test_design_tokens.py` (in `just lint`): the generator's validation.
 - `scripts/theme-contrast` (in `just lint`): every built-in against `shared/design/contrast.json` ("Contrast").
 - `apps/macos/automation/e2e/contrast.sh`: the same check on the colours the app resolves, in the mockup's scene plus a workspace with an ANSI test card (all 16 colours, bold, dim, a selection, the hint overlay) and a repository with every file status, in every built-in; writes per-surface contact sheets (every theme side by side) to `.dev/e2e.out/contrast/sheets/`.
-- `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, the preview, ⌘K and the find bar in each capture. `--docs` writes the captures to `docs/design/theme-<id>.png`.
+- `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, the preview, ⌘K and the find bar in each capture. `--docs` also writes 1200 × 750 copies of the captures as `theme-<id>.png`, next to them in `.dev/thm.out/mockup/`.
 - `AZJ_DEV_NAME=icn2 apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs`: `app_icon`'s three values and the default, live, with the app's own idea of the system appearance (`DockIcon.swift`).
 - `AZJ_ANIM_THEME=atom-one-light apps/macos/automation/anim.sh --slow`: layout motion in another theme (`outside.py` measures stray pixels against the window colour, so light themes count the same way).

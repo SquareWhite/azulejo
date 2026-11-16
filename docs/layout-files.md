@@ -10,7 +10,7 @@ azj layout apply ops.toml --mode new-tab
 
 `azj layout export > .azulejo.toml` writes the focused workspace back out, and `--path FILE` writes the file for you, with paths made relative to it. Add `--tab ID` to export a single tab.
 
-The example in [examples/azulejo.toml](examples/azulejo.toml) is the PRD's "scripted layouts" use case: an editor, a test watcher, a dev server and a browser on it.
+The example in [examples/azulejo.toml](examples/azulejo.toml) opens an editor, a test watcher, a dev server and a browser on it.
 
 ## The format
 
@@ -55,7 +55,7 @@ A file uses either top-level tab keys or `[[tab]]` sections, not both.
 
 | `layout` | Result | Options |
 | --- | --- | --- |
-| `tile` (default) | Dynamic (ADR 0010): masters on one side, the others stacked evenly on the other. New tiles join the stack. | `masters`: 0–10, default 1; `ratio`: the master area's share, 0.2–0.8, default 0.5; `orientation`: `left` (default), `top`, `right` or `bottom` |
+| `tile` (default) | Dynamic: masters on one side, the others stacked evenly on the other. New tiles join the stack. | `masters`: 0–10, default 1; `ratio`: the master area's share, 0.2–0.8, default 0.5; `orientation`: `left` (default), `top`, `right` or `bottom` |
 | `tall` | The same as `tile` with one master; kept for older files | `ratio` |
 | `monocle` | Dynamic: every tile full size, the focused one shown | none |
 | `three_column` | Dynamic: masters in the centre, the rest split between a left and a right stack | `masters`: 1–10, default 1; `ratio`: 0.2–0.75, default 0.6, the centre column's weight against each side's `1 − ratio` as in Bismuth (0.6 gives the centre 3/7 of the width; with only one stack tile the centre takes `ratio` itself) |

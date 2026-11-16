@@ -1,4 +1,4 @@
-# The PRD's "scripted layouts" use case: one command opens an editor, a test
+# Scripted layouts: one command opens an editor, a test
 # watcher, the dev server and a browser on it. Copy this to your project as
 # `.azulejo.toml` and run `azj layout apply` there.
 

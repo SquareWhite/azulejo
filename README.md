@@ -1,6 +1,6 @@
 # Azulejo
 
-A tiling terminal workspace for macOS and Linux. Terminals, browsers, previews and a file browser share one keyboard-driven layout; terminal sessions live in [herdr](https://herdr.dev). See [docs/PRD.md](docs/PRD.md) for the what and [PLAN.md](PLAN.md) for the build plan.
+A tiling terminal workspace for macOS and Linux. Terminals, browsers, previews and a file browser share one keyboard-driven layout; terminal sessions live in [herdr](https://herdr.dev).
 
 ## Setup
 
@@ -26,3 +26,15 @@ just linux          # GTK4 shell (Linux only)
 | `schema/` | Generated JSON Schema for the socket API |
 
 The Linux shell is a workspace member but not a default member, so `cargo build` works on macOS without GTK.
+
+## Docs
+
+- [apps/macos/README.md](apps/macos/README.md): the macOS shell, dev profile, automation
+- [docs/keybindings.md](docs/keybindings.md): every default key
+- [docs/themes.md](docs/themes.md): themes, terminal colours, `[appearance]`
+- [docs/layout-files.md](docs/layout-files.md): open a project's tabs and tiles with one command
+- [docs/herdr-notes.md](docs/herdr-notes.md): what herdr does and doesn't do
+- [docs/dogfooding.md](docs/dogfooding.md): daily build and setup
+- [clients/python/README.md](clients/python/README.md): the Python client
+
+Agent working rules are in [CLAUDE.md](CLAUDE.md).

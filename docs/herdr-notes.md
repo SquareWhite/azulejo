@@ -1,4 +1,4 @@
-# herdr notes (PLAN.md step 0.2)
+# herdr notes
 
 Probed on Nov 3, 2026 against **herdr 0.9.1** (protocol 22) on macOS 26, in an isolated session (`--session azj-probe`). Reproduce with:
 
@@ -42,7 +42,7 @@ Helpers in `scripts/herdr-probe/`:
 | OSC 9 / 777 / 99 notifications, BEL | ❌ | Dropped, and no event fires either (see Q5) |
 | OSC 0/2 title | ❌ in stream | Shows up as `terminal_title` in a `pane.updated` event |
 | OSC 7 cwd | ❌ | `cwd` / `foreground_cwd` on the pane come from the process, not OSC 7 |
-| Kitty graphics (APC `_G`) | ❌ on 0.9.1 with `TERM=xterm-256color` | 0.9.2+ sends images to a *local Ghostty* through temp files; retest with real Ghostty in 0.3 |
+| Kitty graphics (APC `_G`) | ❌ on 0.9.1 with `TERM=xterm-256color` | 0.9.2+ sends images to a *local Ghostty* through temp files; not retested with a real Ghostty |
 
 **Evidence.** `probe.py` checks `1_observe_passthrough` and `1_attach_host_bytes`. The attach client never queries its host terminal (no DA1, XTVERSION or kitty queries), so the fake PTY didn't hide any capability detection.
 
@@ -51,7 +51,7 @@ Helpers in `scripts/herdr-probe/`:
 - Rendering fidelity is fine for agents and TUIs.
 - Azulejo has to source **title, cwd, attention and clipboard** from herdr's API and events, not from libghostty callbacks.
 - OSC 52 being lost is the one users will notice: agents and vim can't copy to the system clipboard. Track it upstream; meanwhile `pane.selection.read` covers herdr-side selections.
-- DECCKM and focus reporting need checking with vim and Claude Code in spike 0.3. Most apps accept both arrow encodings.
+- DECCKM and focus reporting need checking with vim and Claude Code. Most apps accept both arrow encodings.
 
 ## 2. Scrollback
 
@@ -64,7 +64,7 @@ Helpers in `scripts/herdr-probe/`:
 - libghostty's own scrollback, search and "jump to prompt" won't work in terminal tiles.
 - Scrolling has to go through herdr: wheel events through attach work today; for keyboard scrolling use `pane.scroll` or controller `terminal.scroll`.
 - Find-in-scrollback has to use `pane.read --source recent` or `pane.copy_search`.
-- F20 "read scrollback" maps cleanly to `pane.read`.
+- Reading a terminal's scrollback maps cleanly to `pane.read`.
 - Scrollback survives an app restart but not a herdr *server* restart, unless `[experimental] pane_history = true`.
 
 ## 3. Two writers and take-over
@@ -85,18 +85,18 @@ Helpers in `scripts/herdr-probe/`:
 
 ## 4. Event latency
 
-**Answer.** Well under the 1 s target for F15. From the start of a `pane.split` RPC to receipt of `pane.created` takes 46–148 ms, including spawning the shell. `pane.close` → `pane.closed` takes ~80 ms. Each change also emits `layout.updated` (with rects) and `pane.updated`.
+**Answer.** Well under the 1 s target for picking up panes made elsewhere. From the start of a `pane.split` RPC to receipt of `pane.created` takes 46–148 ms, including spawning the shell. `pane.close` → `pane.closed` takes ~80 ms. Each change also emits `layout.updated` (with rects) and `pane.updated`.
 
 **Evidence.** Check `4_event_latency_ms`: `[147.7, 133.0, 99.4, 86.0, 56.0, 46.5, 117.2, 107.2, 85.6, 73.5]`.
 
 **Implication.**
 
 - No polling needed.
-- `pane.agent_status_changed` and `pane.scroll_changed` subscriptions **need a `pane_id` each**, so the adapter subscribes per terminal tile. `pane.updated` carries an `agent_status` field, but a reported status change (`pane report-agent`) doesn't fire it: only the per-pane subscription sees it (re-probed for ADR 0009). Shell exit sends only `pane_exited`; `workspace_closed` carries the whole workspace object.
+- `pane.agent_status_changed` and `pane.scroll_changed` subscriptions **need a `pane_id` each**, so the adapter subscribes per terminal tile. `pane.updated` carries an `agent_status` field, but a reported status change (`pane report-agent`) doesn't fire it: only the per-pane subscription sees it. Shell exit sends only `pane_exited`; `workspace_closed` carries the whole workspace object.
 - A subscription streams only what happens after herdr accepts it, and changing the pane set means a new subscription. A status that changes before acceptance never streams; the snapshot has it straight away (re-probed Nov 3, 2026: `report-agent` then `api snapshot` agree at once). So whenever an agent subscription goes live (first open, reconnect, resync, or replacing the old set) the core reads every pane's status from a survey, statuses only, with the stale-survey guard.
 - 0.9.2+ reports `events_lost` when a reader falls behind; the adapter must resync with `session.snapshot`.
 
-## 5. Notifications (F11)
+## 5. Notifications
 
 **Answer.** No public event carries pane notifications. OSC 9, OSC 777, OSC 99 and BEL produce no event, appear in no snapshot field, and aren't forwarded through attach. herdr's notifications are agent-state based: toasts and sounds on `blocked` and `done` (`[ui.toast]`, `[ui.sound]`). `notification.show` sends a toast out; it doesn't report one.
 
@@ -104,12 +104,12 @@ Helpers in `scripts/herdr-probe/`:
 
 **Implication.**
 
-- F11 has to be built on `pane.agent_status_changed` (`blocked` → attention, `done` → soft badge), which the PRD already wants for F16.
-- Generic "command finished" OSC 9 notifications from non-agent programs are lost. Raise an upstream request for a `pane.notification` event, or drop that part of F11.
+- Agent attention is built on `pane.agent_status_changed` (`blocked` → attention, `done` → soft badge).
+- Generic "command finished" OSC 9 notifications from non-agent programs are lost until herdr has a `pane.notification` event (upstream ask 1).
 
 ## 6. Mapping app tiles to herdr
 
-> **Superseded (Nov 4, 2026).** herdr can be steered pane by pane after all, so Azulejo now mirrors its layout: one herdr tab per Azulejo tab, see question 10 and [ADR 0012](adr/0012-mirror-layout-into-herdr.md). The `layout.apply` finding below still holds.
+> **Superseded (Nov 4, 2026).** herdr can be steered pane by pane after all, so Azulejo now mirrors its layout: one herdr tab per Azulejo tab, see question 10. The `layout.apply` finding below still holds.
 
 **Answer.** **One herdr tab per terminal tile**, inside the herdr workspace mapped 1:1 to the app workspace.
 
@@ -123,7 +123,7 @@ Helpers in `scripts/herdr-probe/`:
 **Implication.**
 
 - Never call `layout.apply` on a tab with live panes.
-- Use `pane.move` (or `tab.move` / `tab.rename`) to adopt panes created elsewhere (F15).
+- Use `pane.move` (or `tab.move` / `tab.rename`) to adopt panes created elsewhere.
 - If someone splits a herdr tab from the phone, the new pane shows up as a new tile; Azulejo doesn't need to mirror herdr's split geometry.
 
 ## 7. Detach key
@@ -170,7 +170,7 @@ The two IDs behave differently:
 
 **Implication.** A terminal tile stores both IDs. It re-resolves `pane_id` from `terminal_id` (via `pane.list`) after any `pane.moved` event and on relaunch.
 
-## 10. Mirroring Azulejo's layout into a live tab (ADR 0012)
+## 10. Mirroring Azulejo's layout into a live tab
 
 Probed Nov 4, 2026 on herdr 0.9.1 in a throwaway session. Reproduce with `python3 scripts/herdr-probe/mirror.py` (session `azj-test-probe-mirror`, deleted afterwards; one JSON line per check).
 
@@ -190,7 +190,7 @@ Probed Nov 4, 2026 on herdr 0.9.1 in a throwaway session. Reproduce with `python
 | `layout.apply` on a live tab | — | Still builds a **new tab** with fresh panes and kills the old ones, even with every `pane_id` named. Never use it |
 | Server restart | — | Tree, ratios, zoom and pane IDs come back; processes and terminal IDs are new |
 
-Details that shaped ADR 0012:
+Details that shaped the mirror:
 
 - Ratios are stored as `f32`: 1/3 reads back as 0.33333334. Comparing our own writes needs a tolerance (1e-4).
 - `tab_closed` for a tab emptied by a move arrives **before** that move's `pane_moved` on the lifecycle stream (seen in the engine's migration test; the probe's single subscriber saw them in the other order). Don't close a tile on `tab_closed` without checking its pane.
@@ -213,9 +213,9 @@ Probed Nov 5, 2026 on herdr 0.9.1 in a throwaway session. Reproduce with `python
 
 The TUI tracks viewed completions per client, so its Done badge can differ from the API's anyway (`herdr agent --help`).
 
-**Implication.** Azulejo doesn't mark panes seen in herdr. Doing it means `pane.focus`, which moves herdr's session focus: the TUI and a phone would jump to whatever Azulejo is reading, and ADR 0012 leaves herdr's focus alone on purpose. It wouldn't clear the TUI's per-client badge either. So herdr's `done` outlives a read in Azulejo, and a finish in herdr's focused pane arrives as `idle`. The core treats both as finishes and keeps its own unread flag, `tile.agent.attention`, which `tile.seen` clears. Views show the checkmark from `attention`, never from `status == done`.
+**Implication.** Azulejo doesn't mark panes seen in herdr. Doing it means `pane.focus`, which moves herdr's session focus: the TUI and a phone would jump to whatever Azulejo is reading, and the layout mirror leaves herdr's focus alone on purpose. It wouldn't clear the TUI's per-client badge either. So herdr's `done` outlives a read in Azulejo, and a finish in herdr's focused pane arrives as `idle`. The core treats both as finishes and keeps its own unread flag, `tile.agent.attention`, which `tile.seen` clears. Views show the checkmark from `attention`, never from `status == done`.
 
-## 12. Workspace rename and close (ADR 0014)
+## 12. Workspace rename and close
 
 Checked Nov 9, 2026 on herdr 0.9.5 (protocol 22) in a throwaway session (`azulejo-herdr` live test `renames_and_closes_a_workspace`).
 
@@ -255,9 +255,9 @@ So off fixes what's on screen, but stale copies remain in scrollback, and every 
 - In the herdr-only repro above, the Ink block stays one clean block. A shell gets no history back on a grow: the prompt stays mid-screen with blank rows under it, as the table says.
 - Claude Code in an Azulejo dev instance (`AZJ_HERDR_BIN`, `AZJ_HERDR_CONFIG`; [apps/macos/README.md](../apps/macos/README.md#a-custom-herdr-build)), checked by hand: the trash lines are gone. The worry above about its incremental redraw didn't show up.
 
-So the user runs a personal herdr fork with that patch as their everyday local herdr, the pull off by default, and Azulejo doesn't depend on it ([ADR 0017](adr/0017-personal-herdr-fork.md)). Stock herdr, remote machines included, still shows the stale rows.
+So the user runs a personal herdr fork with that patch as their everyday local herdr, the pull off by default, and Azulejo doesn't depend on it or bundle herdr. Stock herdr, remote machines included, still shows the stale rows.
 
-## Attach client exit reasons (bonus, needed for 1.7 and 1.12)
+## Attach client exit reasons
 
 | Situation | Exit status | Last stderr line |
 | --- | --- | --- |
@@ -271,53 +271,49 @@ The client always restores the host terminal (leaves the alt screen, turns mouse
 
 ---
 
-## Recommendations (ADR candidates)
+## How Azulejo uses this
 
-### ADR: terminal bridge
+### Terminal bridge
 
-**Decision: run `herdr terminal attach <terminal-id>` as the libghostty or VTE surface's child process (no custom bridge) for M0 and M1. Keep controller mode as the planned upgrade path.**
+A terminal tile's libghostty surface runs `herdr terminal attach <terminal-id>` as its child process; there's no custom bridge. To take a pane over, `--takeover` goes after the ID (the other order fails).
 
-- **Why attach.** It's zero code. libghostty runs it like any program: PTY resize becomes pane resize, and keys, mouse and paste work. Rendering fidelity is good, with synchronised output so there's no tearing.
-- **What it costs.** No host-side scrollback (Q2); OSC 52, notifications and DECCKM/focus are lost (Q1); a detach key that can't be turned off (Q7); exit-code-based state (exit table).
-- **Controller mode** (`herdr terminal session control --takeover`, NDJSON `terminal.input` / `resize` / `scroll` / `mouse` / `release`) has none of the detach-key or exit-parsing problems, gives explicit `terminal.closed` records, and works for observers too. It needs a small adapter: decode frames and feed them to the surface, encode keys out. On macOS that means feeding bytes into libghostty without a PTY, which the embedding API may not support. Decide in spike 0.3. On Linux, with libghostty-vt in M4, controller mode is the natural fit.
-- **Measure both** in spike 0.4 (latency). If attach is within budget, ship it first.
+- **What it gives.** Almost no code: libghostty runs it like any program, PTY resize becomes pane resize, and keys, mouse and paste work. Rendering fidelity is good, with synchronised output so there's no tearing. The herdr hop adds about 1.3 ms median keystroke → glyph.
+- **What it costs.** No host-side scrollback: scrollback, search and the title come from herdr (Q2). OSC 52, notifications and DECCKM/focus are lost (Q1). The detach key can't be turned off (Q7). Tile state comes from the attach client's exit (exit table above); an exit 0 the app didn't ask for is an accidental detach and reattaches silently.
+- **Controller mode** (`herdr terminal session control --takeover`, NDJSON `terminal.input` / `resize` / `scroll` / `mouse` / `release`) is the alternative. It has none of the detach-key or exit-parsing problems, gives explicit `terminal.closed` records, and works for observers too. It needs a small adapter: decode frames and feed them to the surface, encode keys out. On macOS that means feeding bytes into libghostty without a PTY, which the embedding API may not support.
 
-### ADR: tile ↔ herdr mapping
+### Tile ↔ herdr mapping
 
-> Became ADR 0002, superseded by [ADR 0012](adr/0012-mirror-layout-into-herdr.md) after question 10: one herdr tab per Azulejo tab, splits mirrored both ways.
+App workspace ↔ herdr workspace (1:1), and one herdr tab per Azulejo tab, its splits, zoom and Monocle mirrored both ways (question 10). An earlier mapping, one herdr tab per terminal tile, is gone.
 
-**Decision: app workspace ↔ herdr workspace (1:1); each terminal tile ↔ its own herdr tab with one pane, labelled with the tile title and created with `--env` tile IDs.**
-
-- Never use `layout.apply` on live tabs (it kills panes).
-- Adopt externally created panes as new tiles (F15).
+- Never use `layout.apply` on live tabs (it kills panes). Migration moves panes.
+- Panes made elsewhere are adopted as tiles.
 - Moving a pane between tabs or workspaces keeps its process; re-resolve the pane ID from the terminal ID after `pane.moved`.
 - Subscribe per pane for `agent_status_changed`.
 
-### ADR: take-over behaviour
+### Take-over
 
-**Decision: the newest *direct-attach* client wins; losers fall back to read-only.**
+The newest *direct-attach* client wins; losers fall back to read-only.
 
 - **On first attach**, try without `--takeover`. If it says "already has an attached client", show the tile read-only through `terminal session observe` at the tile's size, with a **Take over** action that re-attaches with `--takeover`.
 - **When the app loses a tile** (exit 1 "taken over"), switch that tile to observe mode with **Take back**. Don't auto-retake, or two Azulejo windows or machines will ping-pong.
 - **Phones using the TUI client** don't fight for the lock. The Mac tile keeps input and size while attached. Note that this makes the phone render Mac-sized panes.
-- **Make the switch explicit in the UI**, so the user can hand a pane to the phone: "Release to phone" detaches the tile and lets the TUI's size take over.
 - **Watch for** a dedicated phone app that uses direct attach (herdr-phone wasn't available to test). It would hit this same take-over flow.
 
 ### Upstream asks (herdr)
 
-1. A `pane.notification` event for OSC 9/777/99 and BEL (F11).
+1. A `pane.notification` event for OSC 9/777/99 and BEL.
 2. OSC 52 passthrough or a clipboard event for attach and controller clients.
 3. `terminal attach --no-detach-key` (or a configurable detach key per attach).
 4. Forward DECCKM and focus reporting (1004), or re-encode keys server-side.
 5. `layout.apply` that reuses live `pane_id`s instead of replacing the tab.
 6. Clearer exit messages than "server shut down" for take-over and pane-ended cases (or a JSON exit reason).
-7. Wake the attach client's size poll on SIGWINCH. `resize_poll_loop` (`src/client/terminal_geometry.rs`, 0.9.1 and still on master) sleeps a fixed 100 ms between looks at the terminal size; the signal handler only sets a flag. A PTY resize reaches the pane 4–103 ms later (uniform, median 57–66 ms), and the pane sees at most one size per 100 ms however often the host resizes. That's most of the reflow motion lag (ADR 0004, reflow-lead amendment). No config knob; a signal-driven wake (or a ~10 ms poll while signalled) would cut it to a few ms. Also: the frame carrying the pane's first output after a resize reaches the client about 19 ms later (17–21 ms), against ~1.5 ms for the same output without a resize.
-8. Make pulling scrollback back into view on a pane resize optional (newer libghostty-vt's `GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK`; 0.9.5's vendored copy has no such switch), or stop pulling rows that a bottom-anchored redraw has already replaced. Today a pane that shrinks below an Ink-style program's live area and grows back shows the old copies of that area above the new one (question 13). **Status (Nov 13, 2026):** patched locally in a personal fork, as a `[terminal] resize_pull_scrollback` config key ([ADR 0017](adr/0017-personal-herdr-fork.md)). The upstream proposal, the same key with upstream's default kept on, goes in as a GitHub Discussion, since herdr doesn't take unsolicited PRs. Not posted yet.
+7. Wake the attach client's size poll on SIGWINCH. `resize_poll_loop` (`src/client/terminal_geometry.rs`, 0.9.1 and still on master) sleeps a fixed 100 ms between looks at the terminal size; the signal handler only sets a flag. A PTY resize reaches the pane 4–103 ms later (uniform, median 57–66 ms), and the pane sees at most one size per 100 ms however often the host resizes. That's most of the reflow motion lag. No config knob; a signal-driven wake (or a ~10 ms poll while signalled) would cut it to a few ms. Also: the frame carrying the pane's first output after a resize reaches the client about 19 ms later (17–21 ms), against ~1.5 ms for the same output without a resize.
+8. Make pulling scrollback back into view on a pane resize optional (newer libghostty-vt's `GHOSTTY_TERMINAL_OPT_RESIZE_PULL_SCROLLBACK`; 0.9.5's vendored copy has no such switch), or stop pulling rows that a bottom-anchored redraw has already replaced. Today a pane that shrinks below an Ink-style program's live area and grows back shows the old copies of that area above the new one (question 13). **Status (Nov 13, 2026):** patched locally in a personal fork, as a `[terminal] resize_pull_scrollback` config key. The upstream proposal, the same key with upstream's default kept on, goes in as a GitHub Discussion, since herdr doesn't take unsolicited PRs. Not posted yet.
 
 ### Not determined
 
 - What the TUI (phone) draws while a direct-attach client forces a smaller pane size. Run `AZJ_PROBE_TUI=1` and look, ideally on 0.9.5.
-- Kitty graphics through attach when the host is a real Ghostty (0.9.2+ path). Retest in spike 0.3.
+- Kitty graphics through attach when the host is a real Ghostty (0.9.2+ path). Not retested yet.
 - Whether `[keys] prefix` / `detach` change the direct-attach detach key (not tested, to keep your config untouched).
 - Whether `terminal_id` survives `pane.move` across workspaces.
 - How herdr-phone connects (direct attach, TUI over SSH, or the private client-shell surface protocol behind `client_shell.surface.set`, which isn't documented for third parties).
