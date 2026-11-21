@@ -86,9 +86,10 @@ wait 500
 clip has azjfocus7
 
 log === S10 cmd+a is the sidebar in a terminal (context chord); first responder stays
+sidebar mode agents
 expect sidebar visible
 key cmd+a
-expect key.last action:toggle_sidebar
+expect key.last action:toggle_agents_sidebar
 expect sidebar rail
 expect responder terminal
 key cmd+a
@@ -394,21 +395,21 @@ sh sed -i '' '$d' '{config}'
 until banner.shown no 5000
 expect responder terminal
 
-# --- find (⌘F) in each tile kind, in a tab of its own: T | V(B / H(P | F)) ---
+# --- find (⇧⌘F) in each tile kind, in a tab of its own: T | V(B / H(P | F)) ---
 key cmd+shift+t
 until tab 3
 until responder terminal 10000
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 
-log === S39 cmd+f in a terminal opens its find bar with the keyboard in it
+log === S39 cmd+shift+f in a terminal opens its find bar with the keyboard in it
 # The shell prints the markers; the command line itself doesn't hold them.
 type echo azj''needle; echo azj''twin; echo azj''twin
 key enter
 type seq 1 150
 key enter
 sh @HERE@/pane-has.sh {herdr} {session} {pane} 150
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder terminal-find
 expect responder.focused yes
@@ -467,19 +468,19 @@ type echo azjafter
 key enter
 sh @HERE@/pane-has.sh {herdr} {session} {pane} azjafter
 
-log === S44 cmd+f again reopens the bar with the last query, searched afresh
-key cmd+f
+log === S44 cmd+shift+f again reopens the bar with the last query, searched afresh
+key cmd+shift+f
 expect responder terminal-find
 expect tile.find.query azjtwin
 until tile.find.status 1 of 2 5000
 key escape
 expect responder terminal
 
-log === S45 cmd+f in a browser: WebKit's find, same bar; escape gives the page back
+log === S45 cmd+shift+f in a browser: WebKit's find, same bar; escape gives the page back
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
 until tile.title focus page 10000
 until responder browser-page
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder browser-find
 expect responder.focused yes
@@ -497,11 +498,11 @@ expect responder browser-page
 expect tile.find closed
 expect responder.focused yes
 
-log === S46 cmd+f in a preview finds in the rendered page
+log === S46 cmd+shift+f in a preview finds in the rendered page
 core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
 until responder preview-page 10000
 until tile.mode load 10000
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder preview-find
 type focus
@@ -511,11 +512,11 @@ expect responder preview-page
 expect tile.find closed
 expect responder.focused yes
 
-log === S47 cmd+f in a files tile opens its filter
+log === S47 cmd+shift+f in a files tile opens its filter
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
 until responder files-tree 10000
 until tile.rows 4
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder files-filter
 type gam
@@ -535,7 +536,7 @@ log === S48 cmd+k then escape over a terminal's open find bar: the keyboard goes
 type echo azj''needle
 key enter
 sh @HERE@/pane-has.sh {herdr} {session} {pane} azjneedle
-key cmd+f
+key cmd+shift+f
 expect responder terminal-find
 type azjneedle
 until tile.find.status 1 of 1 5000
@@ -574,7 +575,7 @@ log === S50 a browser's bar gets the keyboard back after cmd+k and a tab switch
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
 until tile.title focus page 10000
 until responder browser-page
-key cmd+f
+key cmd+shift+f
 expect responder browser-find
 type azulejo
 until tile.find.status 1 of 3 5000
@@ -600,7 +601,7 @@ log === S51 a preview's bar does the same; moving to another tile and back bring
 core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
 until responder preview-page 10000
 until tile.mode load 10000
-key cmd+f
+key cmd+shift+f
 expect responder preview-find
 type focus
 until tile.find.status 1 of 1 5000

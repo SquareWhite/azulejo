@@ -105,7 +105,9 @@ close_tab       = "cmd+shift+w"
 quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/tiles (">" commands, "@" jump)
 # command_palette (opens quick open with ">") and goto (with "@") are unbound
 # by default; bind them here to get cmd+shift+p / cmd+p back.
-find            = "cmd+f"             # scrollback search via herdr in terminals, page find in browsers and previews, the files filter
+find            = "cmd+shift+f"       # scrollback search via herdr in terminals, page find in browsers and previews, the files filter
+toggle_files_sidebar = "cmd+f"        # the sidebar's Files view (the tree takes the keyboard); again to collapse
+# toggle_sidebar (open or collapse the sidebar as it was) is the toolbar button's; unbound
 new_window      = "cmd+n"
 open_config     = "cmd+,"
 # The app menu's own chords; the menu bar shows whatever is bound here.
@@ -118,7 +120,7 @@ minimize        = "cmd+m"
 # fields keep AppKit's editing keys (cmd+a/c/v/x/z) through the Edit menu.
 
 [keys.macos.terminal]
-toggle_sidebar    = "cmd+a"           # herdr binding; terminal-only so cmd+a stays select-all elsewhere
+toggle_agents_sidebar = "cmd+a"       # herdr binding; terminals and the files list only, so cmd+a stays select-all in fields
 send_herdr_prefix = "ctrl+b"          # typed twice so herdr's attach client never sees ctrl+b q (detach)
 select_visible_item = "cmd+s"         # smart select: kind-letter labels (u URL, p path, c command, h hash/ID, l line…); then c copy, o open, r run, arrows/⇧/⌥↑↓ (apps/macos/docs/smart-select.md)
 # take_over: Take over / Take back on a read-only terminal; unbound (the button)
@@ -156,6 +158,7 @@ files_quick_look    = "space"
 files_filter        = "/"
 files_toggle_hidden = "."
 files_leave         = "escape"        # sidebar Files view: back to the tiles
+toggle_agents_sidebar = "cmd+a"       # from the Files view to Agents, as in terminals
 
 [keys.macos.palette]
 # Quick open (cmd+k). Typing goes to its field; ">" and "@" at the start of
@@ -242,13 +245,14 @@ previous_tab    = "ctrl+shift+tab"
 close_tab       = "super+shift+w"
 
 quick_open      = "super+k"
-find            = "super+f"
+find            = "super+shift+f"
+toggle_files_sidebar = "super+f"
 new_window      = "super+n"
 open_config     = "super+comma"
 quit            = "ctrl+shift+q"      # GTK terminals' chord; hide/minimize are the WM's
 
 [keys.linux.terminal]
-toggle_sidebar    = "super+a"         # terminal-only, like macOS
+toggle_agents_sidebar = "super+a"     # terminals and the files list only, like macOS
 send_herdr_prefix = "ctrl+b"
 
 [keys.linux.browser]
@@ -279,6 +283,7 @@ files_quick_look    = "space"
 files_filter        = "/"
 files_toggle_hidden = "."
 files_leave         = "escape"
+toggle_agents_sidebar = "super+a"
 
 [keys.linux.palette]
 palette_close     = "escape"
@@ -334,7 +339,8 @@ new_workspace    = "prefix+shift+n"
 rename_workspace = "prefix+shift+w"
 close_workspace  = "prefix+shift+d"
 goto             = ["prefix+w", "prefix+g"]   # quick open with "@"
-toggle_sidebar   = "prefix+b"
+toggle_agents_sidebar = "prefix+b"    # herdr's sidebar toggle
+toggle_files_sidebar  = "prefix+f"
 edit_scrollback  = "prefix+e"
 find             = "prefix+["         # herdr copy mode -> Azulejo scrollback search
 command_palette  = "prefix+?"         # herdr help -> quick open with ">" lists every binding

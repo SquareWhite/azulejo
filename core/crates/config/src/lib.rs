@@ -15,7 +15,7 @@
 //! split_right = "super+d"
 //!
 //! [keys.terminal]        # only while a terminal tile has focus
-//! toggle_sidebar = "cmd+a"
+//! toggle_agents_sidebar = "cmd+a"
 //!
 //! [prefix]
 //! enabled = true

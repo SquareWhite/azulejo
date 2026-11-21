@@ -18,6 +18,8 @@ window-size 1100 640
 until tiles 1 8000
 until machines Local=connected,bravo=connected 20000
 until terminal.phase attached 10000
+# ⌘A collapses the sidebar from its Agents view (from Files it switches).
+sidebar mode agents
 core {"method":"workspace.rename","params":{"name":"l1"}}
 core {"method":"workspace.set_repo","params":{"path":"@FX@/l1"}}
 action new_workspace
@@ -201,7 +203,7 @@ action toggle_sidebar
 until sidebar visible 3000
 wait 400
 
-# ---- Opened with ⌘ held: ⌘A (toggle_sidebar in a terminal) through the
+# ---- Opened with ⌘ held: ⌘A (toggle_agents_sidebar in a terminal) through the
 # key router, ⌘ kept down. The chord would keep the badges away; the
 # sidebar opening starts the wait again, and it lasts as long as the
 # sidebar's motion so they don't fade in on rows still coming in.

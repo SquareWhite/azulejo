@@ -13,6 +13,8 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// The sidebar's rounded card: the traffic lights sit in its top band
     /// and the sidebar's rows below them.
     private let sidebarCard = SidebarCardView()
+    /// The full card's inner edge, which drags the sidebar's width.
+    private let sidebarEdgeView = SidebarEdgeView()
     /// Automation: the sidebar card's vibrancy material, if the theme has one.
     var sidebarMaterial: String? { sidebarCard.materialName }
     private let tabBar = TabStripView()
@@ -53,6 +55,9 @@ final class WindowController: NSObject, NSWindowDelegate {
                 sidebar.onReturnFocus?()
             }
             let settling = content.setSidebar(sidebarState, animated: model != nil && window.isVisible)
+            // Opened by `toggle_files_sidebar`: the tree takes the keyboard.
+            if sidebarState == .full, focusFilesOnOpen { sidebar.setMode(.files, focus: true) }
+            focusFilesOnOpen = false
             // Opened with ⌘ still held alone (⌘A and ⌘ kept down): the
             // badges, once the rows are in.
             if sidebarState == .full, model != nil {
@@ -63,6 +68,24 @@ final class WindowController: NSObject, NSWindowDelegate {
 
     /// The full sidebar is open (`toggle_sidebar` collapses it, else opens it).
     var sidebarVisible: Bool { sidebarState == .full }
+    /// `toggle_files_sidebar` asked the core to open the sidebar: the Files
+    /// tree takes the keyboard once it's in.
+    private var focusFilesOnOpen = false
+
+    /// `toggle_agents_sidebar` / `toggle_files_sidebar`. Collapsed or hidden,
+    /// the sidebar opens on `mode`; open on the other view, it switches (the
+    /// Files tree takes the keyboard); open on `mode`, it collapses. Returns
+    /// the visibility to ask the core for, nil when the sidebar stays open.
+    func toggleSidebar(to mode: SidebarView.Mode) -> Bool? {
+        if sidebarState == .full {
+            if sidebar.mode == mode { return false }
+            sidebar.setMode(mode, focus: true)
+            return nil
+        }
+        sidebar.setMode(mode)
+        focusFilesOnOpen = mode == .files
+        return true
+    }
 
     init(windowID: String, app: AppController) {
         self.windowID = windowID
@@ -90,6 +113,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.sidebar = sidebar
         content.rail = rail
         content.sidebarToggle = sidebarToggle
+        content.sidebarEdge = sidebarEdgeView
         content.tabBar = tabBar
         content.search = search
         content.picker = layoutPicker
@@ -104,8 +128,12 @@ final class WindowController: NSObject, NSWindowDelegate {
         sidebarCard.addSubview(sidebar)
         sidebarCard.addSubview(rail)
         rail.isHidden = true
-        [sidebarCard, sidebarToggle, tabBar, layoutPicker, search, tiles, attention, banner, hud, palette]
-            .forEach(content.addSubview)
+        [sidebarCard, sidebarEdgeView, sidebarToggle, tabBar, layoutPicker, search, tiles, attention, banner, hud,
+         palette].forEach(content.addSubview)
+        sidebarEdgeView.onBegin = { [weak content] in content?.beginSidebarResize() }
+        sidebarEdgeView.onDrag = { [weak content] dx in content?.dragSidebarResize(by: dx) }
+        sidebarEdgeView.onEnd = { [weak content] in content?.endSidebarResize() }
+        sidebarEdgeView.onReset = { SidebarWidth.save(nil) }
         content.wantsLayer = true
         window.contentView = content
         window.delegate = self
@@ -246,6 +274,13 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarView: SidebarView { sidebar }
     /// Automation: the collapsed sidebar's rail.
     var railView: SidebarRailView { rail }
+    /// Automation: the full sidebar card's inner edge, the card's width as
+    /// laid out, and the last edge drag's numbers.
+    var sidebarEdge: SidebarEdgeView { sidebarEdgeView }
+    var sidebarCardWidth: CGFloat { content.sidebarWidth }
+    /// Automation: from the card's right edge to the tile area's left one.
+    var sidebarTilesGap: CGFloat { tiles.frame.minX - sidebarCard.frame.maxX }
+    var lastSidebarResize: (steps: Int, events: Int) { content.lastSidebarResize }
     var tabMarkers: [String] { tabBar.markers }
     /// Automation: the tab strip (its tabs' right-click menus).
     var tabStrip: TabStripView { tabBar }
@@ -362,6 +397,7 @@ final class ChromeLayoutView: NSView {
     weak var sidebar: NSView?
     weak var rail: NSView?
     weak var sidebarToggle: NSView?
+    weak var sidebarEdge: NSView?
     weak var tabBar: TabStripView?
     weak var search: ToolbarSearchView?
     weak var picker: LayoutPickerView?
@@ -370,6 +406,29 @@ final class ChromeLayoutView: NSView {
     weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
     weak var palette: PaletteView?
+    /// A drag of the sidebar's edge under way (`SidebarResize.swift`).
+    var sidebarResize: SidebarResizeDrag?
+    /// Automation: the last edge drag's width changes and pointer events.
+    var lastSidebarResize = (steps: 0, events: 0)
+    private var widthObserver: Any?
+
+    /// The full sidebar card's width: the one being dragged to, else the
+    /// saved one, as much of either as the window leaves room for.
+    var sidebarWidth: CGFloat {
+        SidebarWidth.fitted(sidebarResize?.width ?? sidebarResize?.startWidth ?? SidebarWidth.saved,
+                            windowWidth: bounds.width)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard widthObserver == nil else { return }
+        // Another window's edge (or a reset) changed the width.
+        widthObserver = NotificationCenter.default.addObserver(
+            forName: SidebarWidth.changed, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.needsLayout = true }
+        }
+    }
 
     // The content covers the whole window (full-size content view) and paints
     // the window colour itself: with a transparent title bar, AppKit doesn't
@@ -537,7 +596,7 @@ final class ChromeLayoutView: NSView {
         let fullScreen = window?.styleMask.contains(.fullScreen) == true
         var tilesLeft = inset
         var toolbarLeft: CGFloat
-        let full = NSRect(x: inset, y: inset, width: SidebarView.width, height: max(0, bounds.height - 2 * inset))
+        let full = NSRect(x: inset, y: inset, width: sidebarWidth, height: max(0, bounds.height - 2 * inset))
         // The rail: under the toolbar row, level with the tiles' top.
         let railHeight = max(0, bounds.height - Design.Space.toolbarHeight - inset)
         var card = full
@@ -553,6 +612,14 @@ final class ChromeLayoutView: NSView {
         // so it clips them, without a relayout, while it changes shape.
         sidebar?.frame = NSRect(x: 0, y: 0, width: full.width, height: max(0, full.height - Design.Space.titlebarZone))
         rail?.frame = NSRect(x: 0, y: 0, width: SidebarRailView.width, height: railHeight)
+        // The full card's inner edge: the gutter right of it and a sliver of
+        // the card, below the toolbar row.
+        if let sidebarEdge {
+            sidebarEdge.isHidden = sidebarState != .full
+            let edge = Design.Space.sidebarEdgeInset
+            sidebarEdge.frame = NSRect(x: card.maxX - edge, y: inset, width: edge + inset - 1,
+                                       height: max(0, bounds.height - Design.Space.toolbarHeight - inset))
+        }
         if sidebarState == .full {
             sidebarToggle?.frame = NSRect(
                 x: card.maxX - Design.Space.titlebarToggleInset - 11, y: rowMidY - 11, width: 22, height: 22)

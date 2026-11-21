@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # N1–N6 (e2e 11-04): the features the Nov 3 fixes added and where they meet.
-#   - fixes.azs.in, in-process: ⌘F under motion, a herdr restart, ⌘K and a tab
+#   - fixes.azs.in, in-process: ⇧⌘F under motion, a herdr restart, ⌘K and a tab
 #     switch; Source and Quick Look previews; a failed browser page; the find
 #     bar at the minimum size; `azj preview open` from a terminal (twice, and a
 #     missing file); HUD wording; agent state in headers; the config banner row; tab

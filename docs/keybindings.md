@@ -24,7 +24,7 @@ promote_tile = ["alt+enter", "cmd+enter"]
 switch_tab = "ctrl+alt+1..8"   # digit ranges, for switch_workspace and switch_tab
 
 [keys.macos.browser]            # only while a browser tile has focus
-toggle_sidebar = "cmd+b"
+toggle_agents_sidebar = "cmd+b"
 browser_back = "alt+left"       # replaces cmd+[ there
 
 [keys.macos.palette]            # only while quick open is open
@@ -191,10 +191,13 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `quick_open` | global | `cmd+k` | `super+k` | Quick open |
 | `command_palette` | global | unbound | unbound | Commands… |
 | `goto` | global | unbound | unbound | Go to… |
-| `find` | global | `cmd+f` | `super+f` | Find in terminal… |
+| `find` | global | `cmd+shift+f` | `super+shift+f` | Find in terminal… |
 | `open_config` | global | `cmd+comma` | `super+comma` | Open config file |
 | `reload_config` | global | unbound | unbound | Reload config |
-| `toggle_sidebar` | terminal | `cmd+a` | `super+a` | Toggle sidebar |
+| `toggle_sidebar` | global | unbound | unbound | Toggle sidebar |
+| `toggle_agents_sidebar` | terminal | `cmd+a` | `super+a` | Toggle agents sidebar |
+| `toggle_agents_sidebar` | files | `cmd+a` | `super+a` | Toggle agents sidebar |
+| `toggle_files_sidebar` | global | `cmd+f` | `super+f` | Toggle files sidebar |
 | `set_theme` | global | unbound | unbound | Set theme… |
 | `edit_scrollback` | global | unbound | unbound | Edit scrollback |
 | `quit` | global | `cmd+q` | `ctrl+shift+q` | Quit Azulejo |
@@ -269,7 +272,8 @@ Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `su
 | `command_palette` | `shift+slash` | Commands… |
 | `goto` | `w`, `g` | Go to… |
 | `find` | `bracketleft` | Find in terminal… |
-| `toggle_sidebar` | `b` | Toggle sidebar |
+| `toggle_agents_sidebar` | `b` | Toggle agents sidebar |
+| `toggle_files_sidebar` | `f` | Toggle files sidebar |
 | `edit_scrollback` | `e` | Edit scrollback |
 | `switch_tab` | `1..9` | Switch to tab N |
 
@@ -371,7 +375,7 @@ The table compares this direct-modifier layout with herdr's prefix-based default
 | last tab (`last.py tab`) | `alt+9` | n/a (script) | **yes** |
 | next / previous tab | `ctrl+tab` / `ctrl+shift+tab` | `prefix+n` / `prefix+p` | **yes** |
 | close tab | `cmd+w` | `prefix+shift+x` | **yes** |
-| toggle sidebar | `cmd+a` | `prefix+b` | **yes** |
+| toggle sidebar | `cmd+a` (Agents view) | `prefix+b` | **yes** |
 | copy mode (scrollback) | `prefix+[` | `prefix+[` | yes (spelling only) |
 | workspace picker / goto | `prefix+w` / `prefix+g` | same | no |
 | rename tab / workspace / pane | `prefix+shift+t/w/p` | same | no |
@@ -428,12 +432,14 @@ Where each global default came from:
 | `last_tab` (the previously active tab) | unbound | herdr's `alt+9`; Hammerspoon owns `alt+9`, so it's palette-only |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` | herdr |
 | `close_tab` | `cmd+shift+w` | was `cmd+w` (herdr); moved so it mirrors `cmd+shift+t` |
-| `toggle_sidebar` | `cmd+a`, **terminal tiles only** | herdr (see conflicts) |
+| `toggle_agents_sidebar` (the sidebar's Agents view: opens it, switches to it from Files, or collapses the sidebar when it already shows) | `cmd+a`, **terminal tiles and the files list only** | herdr (see conflicts) |
+| `toggle_files_sidebar` (the same for the Files view, whose tree takes the keyboard) | `cmd+f` | new (Nov 17, 2026; `cmd+f` was `find` until then) |
+| `toggle_sidebar` (opens or collapses the sidebar, whatever it shows: the toolbar button) | unbound | was `cmd+a` until Nov 17, 2026 |
 | `send_text` (types `ctrl+l`) | `cmd+l`, **terminal tiles only** | kitty's `cmd+l` clears the last command; under herdr only the shell can clear ([Terminal keys](#terminal-keys)) |
 | `quick_open` (one menu: commands, workspaces, tabs and tiles) | `cmd+k` | new (Raycast / Linear / mockup convention); covers `prefix+w`, `prefix+g` and herdr's help |
 | `command_palette` (quick open, commands only: opens with `>`) | unbound | was `cmd+shift+p`; rebind it to get that back |
 | `goto` (quick open, places only: opens with `@`) | unbound | was `cmd+p`; rebind it to get that back |
-| `find` (scrollback search via herdr in terminals; page find in browsers and previews; the filter in files) | `cmd+f` | new |
+| `find` (scrollback search via herdr in terminals; page find in browsers and previews; the filter in files and the sidebar's Files view) | `cmd+shift+f` | was `cmd+f` until Nov 17, 2026 (VS Code's search chord) |
 | `new_window` | `cmd+n` | macOS convention |
 | `open_config` | `cmd+,` | macOS convention |
 
@@ -473,8 +479,8 @@ goto            = "cmd+p"
 | `switch_tab` 1–8, `switch_tab_last` | `ctrl+1..8`, `ctrl+9` (`last_tab` unbound) |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` |
 | `close_pane` / `close_tab` / `close_workspace` | `super+w` / `super+shift+w` / `alt+super+w` (`close_tile`: `alt+w`) |
-| `toggle_sidebar` | `super+a`, terminal tiles only |
-| `quick_open` / `find` | `super+k` / `super+f` (`command_palette` and `goto` unbound, as on macOS) |
+| `toggle_agents_sidebar` / `toggle_files_sidebar` | `super+a` (terminal tiles and the files list only) / `super+f` |
+| `quick_open` / `find` | `super+k` / `super+shift+f` (`command_palette` and `goto` unbound, as on macOS) |
 | `new_window` / `open_config` | `super+n` / `super+comma` |
 
 **Caveat: the window manager sees Super first.** On Wayland and X11 the compositor's own bindings win, so a clash means Azulejo never gets the key. Known clashes with stock defaults:
@@ -496,8 +502,8 @@ The Linux terminal convention (kitty, GNOME Terminal, Ptyxis). It avoids every W
 | `new_workspace` / `new_tab` | `ctrl+shift+t` / `ctrl+alt+shift+t` | |
 | `switch_workspace` 1–8, `switch_workspace_last`, `last_workspace` | `alt+1..8`, `alt+9`, `alt+0` | `ctrl+shift+digit` yields `!@#` on many layouts, and `alt+N` is the Linux terminal convention |
 | `close_pane` / `close_tab` | `ctrl+shift+w` / `ctrl+alt+shift+w` | `ctrl+shift+w` closes the window (our pane) in kitty and GNOME Terminal; `close_workspace` stays in the palette and prefix mode |
-| `toggle_sidebar` | `ctrl+shift+b` | `ctrl+shift+a` is select-all in GTK terminals |
-| `quick_open` / `find` | `ctrl+shift+p` / `ctrl+shift+f` | VS Code's palette chord; `ctrl+p` is shell history and `ctrl+shift+k` is scroll-up in kitty |
+| `toggle_agents_sidebar` / `toggle_files_sidebar` | `ctrl+shift+b` / `ctrl+shift+e` | `ctrl+shift+a` is select-all in GTK terminals; `ctrl+shift+e` is VS Code's Explorer |
+| `quick_open` / `find` | `ctrl+shift+p` / `ctrl+shift+f` | VS Code's palette and search chords; `ctrl+p` is shell history and `ctrl+shift+k` is scroll-up in kitty |
 | `new_window` / `open_config` | `ctrl+shift+n` / `ctrl+comma` | |
 
 Match keys by physical key (hardware keycode), not by the shifted keyval. Otherwise `ctrl+shift+minus` arrives as `underscore` on GTK, and `alt+shift+h` arrives as `H`.
@@ -506,7 +512,7 @@ Match keys by physical key (hardware keycode), not by the shifted keyval. Otherw
 
 Off by default. When on, it mirrors herdr's prefix sequences exactly (`prefix+x`, `prefix+v`, `prefix+minus`, `prefix+1..9`, `prefix+shift+w`, …), so anything without a direct chord is still a two-key sequence away.
 
-- **Prefix: `cmd+b` on macOS, `super+b` on Linux** (`ctrl+shift+b` in the `ctrl+shift` layout, which then moves the sidebar toggle to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
+- **Prefix: `cmd+b` on macOS, `super+b` on Linux** (`ctrl+shift+b` in the `ctrl+shift` layout, which then moves the Agents sidebar to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
 - `ctrl+b` as the Azulejo prefix would make the key router swallow the shell's `ctrl+b`. Passing it through instead hands it to the attach client, where `ctrl+b q` detaches. Either way it's worse.
 
 ### `ctrl+b` inside terminal tiles
@@ -524,7 +530,8 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 | `cmd+w` / `cmd+shift+w` / `alt+cmd+w` | close tab / close window / close all | **`close_pane` / `close_tab` / `close_workspace`** (Nov 9, 2026; from Nov 4 `cmd+w` closed the workspace, which took too much with it). `cmd+w` closes the innermost thing, as in every Mac app: the focused tile closes and its herdr pane is killed, with no confirmation (the user's call; `alt+w` closes and keeps the pane running). Closing a tab's last tile closes the tab. When `cmd+w` kills a workspace's last pane, herdr deletes that workspace and Azulejo closes it too, unless it's the window's last (that one stays, empty); `alt+w` always leaves the workspace. `close_tab` detaches: herdr keeps the tab and its panes running, and Azulejo doesn't adopt them again. `close_workspace` closes the herdr workspace too, ending its processes; when a command or a working agent runs there, a sheet asks first. Closing the window's last workspace leaves a fresh one in its place. `cmd+w` closes browser and preview tiles too: the key router sees it before the web view. Close Window has no default chord (the red button, or bind `close_window`) |
 | `cmd+q` | quit | `quit`. Safe: sessions live in herdr |
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | `hide` and `minimize`, as in every Mac app; `` cmd+` `` is the system's. the maintainer's config avoids `cmd+m` for this reason |
-| `cmd+a` | select all | **Decided:** `toggle_sidebar` is bound **only when a terminal tile is focused**; in browser and preview tiles and text fields (address bar, palette) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` context section |
+| `cmd+a` | select all | **Decided:** `toggle_agents_sidebar` is bound **only when a terminal tile or the files list has the keyboard**; in browser and preview tiles and text fields (address bar, palette, find bars, the files filter) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` and `[keys.<platform>.files]` context sections |
+| `cmd+f` | find | `toggle_files_sidebar`, everywhere; `find` moved to `cmd+shift+f` (Nov 17, 2026). In the sidebar's Files view `/` and `cmd+shift+f` both open its filter |
 | `cmd+t` / `cmd+shift+t` | new tab / reopen closed tab | used for workspace / tab, as in herdr. No clash because browser tiles have no inner tabs |
 | `cmd+9` / `ctrl+9` | last tab (browsers) | `switch_workspace_last` / `switch_tab_last`: the last in order, as in a browser. The previously active workspace is `alt+0` |
 | `cmd+p` | print | taken by `goto`. Printing a browser tile goes through the palette |
@@ -532,9 +539,9 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 | `ctrl+cmd+f` / `ctrl+cmd+q` / `ctrl+cmd+space` | full screen / lock screen / emoji | avoided |
 | `alt+<letter>` | types `˙∆˚¬…` in text fields | in browser tiles `alt+h/j/k/l/w/o` won't type those characters, which is acceptable. Shells lose fish's `alt+h` (help), `alt+l` (list dir) and `alt+w` (whatis), as they already do under herdr |
 
-**Browser-tile shortcuts** (the `browser` context): `cmd+l` (address bar), `cmd+r` (reload), `cmd+[` / `cmd+]` (back/forward) and `cmd+f` (find) don't collide with anything above. `cmd+[` / `cmd+]` were deliberately not used for tab cycling; `ctrl+tab` covers that.
+**Browser-tile shortcuts** (the `browser` context): `cmd+l` (address bar), `cmd+r` (reload), `cmd+[` / `cmd+]` (back/forward) and `cmd+shift+f` (find) don't collide with anything above. `cmd+[` / `cmd+]` were deliberately not used for tab cycling; `ctrl+tab` covers that.
 
-**Find bar (`cmd+f`):** in terminal, browser and preview tiles a bar opens under the header. Its keys are the `find_bar` context: `enter` or `cmd+g` goes to the next match, `shift+enter` or `cmd+shift+g` to the previous one, and `esc` closes the bar and hands the keyboard back to the tile. While you type there, other chords resolve without the tile's context, so `cmd+a` selects the query. In terminals the search runs over herdr's history (at most its last 1000 rows; the count shows `+` when that cut anything off), newest match first. The pane scrolls so the match sits mid-view, libghostty highlights every match in view, and `esc` scrolls back to where you were. In files tiles, `cmd+f` opens the filter (like `/`), and the filter field uses the same `find_bar` keys: `enter` moves into the list, `esc` clears it.
+**Find bar (`cmd+shift+f`):** in terminal, browser and preview tiles a bar opens under the header. Its keys are the `find_bar` context: `enter` or `cmd+g` goes to the next match, `shift+enter` or `cmd+shift+g` to the previous one, and `esc` closes the bar and hands the keyboard back to the tile. While you type there, other chords resolve without the tile's context, so `cmd+a` selects the query. In terminals the search runs over herdr's history (at most its last 1000 rows; the count shows `+` when that cut anything off), newest match first. The pane scrolls so the match sits mid-view, libghostty highlights every match in view, and `esc` scrolls back to where you were. In files tiles and the sidebar's Files view, `cmd+shift+f` opens the filter (like `/`), and the filter field uses the same `find_bar` keys: `enter` moves into the list, `esc` clears it.
 
 ### Hammerspoon
 
@@ -547,5 +554,5 @@ For example, a global `alt+shift+h/j/k/l` window mover must stand aside for Azul
 Settled with the maintainer on Nov 3, 2026:
 
 1. **Tall layout.** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` live in the core (`layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`). Niri-style scrolling columns aren't built.
-2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else.
+2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else. (Nov 17, 2026: it's now the Agents view, `toggle_agents_sidebar`, and works from the sidebar's files list too; `cmd+f` is the Files view and `find` moved to `cmd+shift+f`.)
 3. **Linux uses Super by default** for the `cmd` chords, with the `ctrl+shift` layout documented as the alternative. **Every shortcut is configurable.**

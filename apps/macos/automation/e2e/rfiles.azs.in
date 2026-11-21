@@ -55,4 +55,6 @@ shot 04-unreachable
 sh rm -f @SIDE@/ssh.fail
 until sidebar.files.status ok 40000
 until sidebar.files.names beta.md 5000
+# Leave the shared dev profile on Agents: ⌘A collapses from there.
+sidebar mode agents
 quit

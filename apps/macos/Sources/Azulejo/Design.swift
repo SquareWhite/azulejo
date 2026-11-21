@@ -758,6 +758,10 @@ enum Design {
         static let layoutPickerGap: CGFloat = 8
         static let rowHeight: CGFloat = 22
         static let sidebarWidth: CGFloat = 230
+        static let sidebarMinWidth: CGFloat = 180
+        static let sidebarMaxWidth: CGFloat = 520
+        static let sidebarTilesMinWidth: CGFloat = 200
+        static let sidebarEdgeInset: CGFloat = 2
         static let sidebarPadding: CGFloat = 8
         static let sidebarRowHeight: CGFloat = 31
         static let sidebarSegmentTop: CGFloat = 8

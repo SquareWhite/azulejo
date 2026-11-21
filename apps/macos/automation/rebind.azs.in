@@ -43,7 +43,7 @@ until tile.source source 5000
 key alt+cmd+u
 until tile.source rendered 5000
 # find_bar: escape closes the bar
-key cmd+f
+key cmd+shift+f
 until tile.find open 3000
 expect key.context preview
 key escape
@@ -159,7 +159,7 @@ key cmd+shift+u
 until tile.source rendered 5000
 
 log === R08 find_bar: ctrl+g closes the bar, escape doesn't
-key cmd+f
+key cmd+shift+f
 until tile.find open 3000
 key escape
 expect key.last passed

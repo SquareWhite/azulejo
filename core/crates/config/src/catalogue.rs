@@ -318,6 +318,8 @@ pub(crate) fn title(action: Action) -> String {
         OpenConfig => "Open config file".into(),
         ReloadConfig => "Reload config".into(),
         ToggleSidebar => "Toggle sidebar".into(),
+        ToggleAgentsSidebar => "Toggle agents sidebar".into(),
+        ToggleFilesSidebar => "Toggle files sidebar".into(),
         SetTheme => "Set theme…".into(),
         EditScrollback => "Edit scrollback".into(),
         EnterPrefix => "Prefix".into(),
@@ -387,7 +389,8 @@ fn category(action: Action) -> &'static str {
             "terminal"
         }
         QuickOpen | CommandPalette | Goto | OpenConfig | ReloadConfig | ToggleSidebar
-        | SetTheme | EnterPrefix | Quit | Hide | HideOthers => "app",
+        | ToggleAgentsSidebar | ToggleFilesSidebar | SetTheme | EnterPrefix | Quit | Hide
+        | HideOthers => "app",
         PaletteClose | PaletteRun | PaletteNext | PalettePrevious | PalettePageDown
         | PalettePageUp | PaletteComplete => "palette",
         FindNext | FindPrevious | FindClose => "find",
@@ -535,9 +538,12 @@ mod tests {
             "{linux_bound:?}"
         );
         // The terminal-only cmd+a sidebar binding still shows up.
-        let sidebar = find(&mac, "toggle_sidebar");
+        let sidebar = find(&mac, "toggle_agents_sidebar");
         assert!(sidebar.chords.contains(&"cmd+a".to_owned()), "{sidebar:?}");
         assert_eq!(sidebar.method, None, "shell-only");
+        // The plain toggle stays in the list, unbound (the toolbar button's).
+        let toggle = find(&mac, "toggle_sidebar");
+        assert!(toggle.chords.is_empty(), "{toggle:?}");
 
         // A user override changes the listed chord.
         let config = Config::from_toml(

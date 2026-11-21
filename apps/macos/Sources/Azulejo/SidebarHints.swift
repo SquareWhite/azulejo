@@ -13,7 +13,7 @@ import AppKit
 /// and when the app goes to the background. Only the key window shows them.
 ///
 /// One exception to "a key with ⌘ keeps them away until ⌘ is let go": the
-/// full sidebar opening while ⌘ is still held alone (⌘A, toggle_sidebar,
+/// full sidebar opening while ⌘ is still held alone (⌘A, toggle_agents_sidebar,
 /// and ⌘ kept down) starts the wait again, so the badges show on the rows
 /// that just came in. They wait for the sidebar's motion to end too, so they
 /// don't fade in on rows still growing in. The keyboard must say ⌘ alone

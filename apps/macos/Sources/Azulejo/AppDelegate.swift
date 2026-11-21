@@ -507,6 +507,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Saved in the core so it comes back on relaunch.
             send(["method": "window.set_sidebar",
                   "params": ["window": controller.windowID, "visible": !controller.sidebarVisible]])
+        case "toggle_agents_sidebar", "toggle_files_sidebar":
+            // Opens on that view, switches to it, or collapses the sidebar
+            // when it already shows it.
+            let mode: SidebarView.Mode = name == "toggle_files_sidebar" ? .files : .agents
+            if let visible = controller.toggleSidebar(to: mode) {
+                send(["method": "window.set_sidebar",
+                      "params": ["window": controller.windowID, "visible": visible]])
+            }
         case "resize_mode":
             keys.enterResizeMode(in: controller)
         case "rename_tile", "rename_tab", "rename_workspace":
@@ -520,9 +528,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "goto": openQuickOpen(query: "@", in: controller)
         case "select_visible_item": controller.selectVisibleTerminalItem()
         case "find":
-            // The focused tile's find bar (terminal, browser, preview) or
-            // filter (files).
-            guard let findable = (controller.tiles.focusedView as? TileFrame)?.content as? Findable else {
+            // The sidebar's Files view's filter while it has the keyboard,
+            // else the focused tile's find bar (terminal, browser, preview)
+            // or filter (files).
+            let around = KeyScopes.around(controller.window) as? Findable
+            guard let findable = around ?? (controller.tiles.focusedView as? TileFrame)?.content as? Findable else {
                 return controller.flash("nothing to find in here")
             }
             if let problem = findable.beginFind() { controller.flash(problem) }

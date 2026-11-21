@@ -586,7 +586,8 @@ mod tests {
             md.contains("| `browser_back` | browser | `cmd+bracketleft` | `alt+left` |"),
             "{md}"
         );
-        assert!(md.contains("| `toggle_sidebar` | terminal | `cmd+a` | `super+a` |"));
+        assert!(md.contains("| `toggle_agents_sidebar` | terminal | `cmd+a` | `super+a` |"));
+        assert!(md.contains("| `toggle_files_sidebar` | global | `cmd+f` | `super+f` |"));
         assert!(md.contains("| `last_tab` | global | unbound | unbound |"));
         let doc = format!("intro\n{DOC_BEGIN}\nold\n{DOC_END}\nrest\n");
         let spliced = splice_reference(&doc).unwrap();

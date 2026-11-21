@@ -1038,7 +1038,7 @@ impl Keymap {
                 );
             }
             // The prefix wins over a direct binding of the same chord. The
-            // defaults rely on that on Linux (toggle_sidebar moves to prefix+b),
+            // defaults rely on that on Linux (toggle_agents_sidebar moves to prefix+b),
             // so only the user's own clashes are worth a warning.
             let mut clashes: HashSet<Origin> = HashSet::new();
             for (context, slots) in &slot_maps {

@@ -931,10 +931,10 @@ mod tests {
             assert_eq!(tab["index"], 3);
             assert_eq!(tab["command"], Value::Null);
 
-            // cmd+a toggles the sidebar only in terminal tiles.
+            // cmd+a opens the Agents sidebar only in terminal tiles.
             if cfg!(target_os = "macos") {
                 let term = key(c"{\"chord\":\"cmd+a\",\"tile\":\"terminal\"}");
-                assert_eq!(term["action"], "toggle_sidebar");
+                assert_eq!(term["action"], "toggle_agents_sidebar");
                 assert_eq!(term["method"], Value::Null);
                 let browser = key(c"{\"chord\":\"cmd+a\",\"tile\":\"browser\"}");
                 assert_eq!(browser["outcome"], "unhandled");

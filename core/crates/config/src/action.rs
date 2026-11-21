@@ -100,7 +100,14 @@ pub enum Action {
     Find,
     OpenConfig,
     ReloadConfig,
+    /// Opens or collapses the sidebar, whatever it shows (the toolbar
+    /// button).
     ToggleSidebar,
+    /// The sidebar's Agents view: opens the sidebar on it, switches to it
+    /// from Files, or collapses the sidebar when it already shows.
+    ToggleAgentsSidebar,
+    /// The same for the Files view, which also takes the keyboard.
+    ToggleFilesSidebar,
     /// Lists the themes in the ⌘K menu, previewing each as it's selected.
     SetTheme,
     EditScrollback,
@@ -267,6 +274,8 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("open_config", OpenConfig),
         ("reload_config", ReloadConfig),
         ("toggle_sidebar", ToggleSidebar),
+        ("toggle_agents_sidebar", ToggleAgentsSidebar),
+        ("toggle_files_sidebar", ToggleFilesSidebar),
         ("set_theme", SetTheme),
         ("edit_scrollback", EditScrollback),
         ("quit", Quit),
@@ -479,6 +488,8 @@ impl Action {
             | OpenConfig
             | ReloadConfig
             | ToggleSidebar
+            | ToggleAgentsSidebar
+            | ToggleFilesSidebar
             | SetTheme
             | EnterPrefix
             | Quit

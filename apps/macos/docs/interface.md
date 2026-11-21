@@ -65,6 +65,20 @@ workspaces by state.
   cwd. Return opens a file beside the focused tile; Esc gives the keyboard
   back. Refreshes don't steal the keyboard (`KeepsKeyboard`).
 
+Each view has its own key: ⌘A (`toggle_agents_sidebar`, in terminals and the
+files list) and ⌘F (`toggle_files_sidebar`, which also gives the tree the
+keyboard). Collapsed, the key opens the sidebar on its view; open on the
+other view, it switches; open on its own view, it collapses. The toolbar
+button keeps `toggle_sidebar`, which leaves the view alone. Find is ⇧⌘F.
+
+Drag the card's inner edge to resize it (`SidebarResize.swift`): 180 to
+520 pt, never leaving the tiles less than 200 pt. The tile area follows live
+and terminals reflow by whole cells, as in a divider drag. The width is saved
+on release, one for every window, and kept across launches (user defaults,
+`dev.`-prefixed in the dev profile). A double-click on the edge puts the
+default 230 pt back. Scripts use `sidebar width drag W` and `sidebar width
+double`; checked by `e2e/sbwidth.sh`.
+
 Folder listings never block the main thread: files tiles and the Files view
 list through `Core.executeAsync`, show "Loading…" until rows land, and drop
 listings for a root that has since changed. `files-slow.sh` checks this with

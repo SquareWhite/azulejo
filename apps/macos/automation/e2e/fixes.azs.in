@@ -1,5 +1,5 @@
 # N1–N6 (e2e 11-04): the features the Nov 3 fixes added, and the places where
-# several fixes meet: the find bar (⌘F) under motion, a herdr restart, ⌘K and a
+# several fixes meet: the find bar (⇧⌘F) under motion, a herdr restart, ⌘K and a
 # tab switch; `azj preview open` from a terminal; error wording in the HUD;
 # agent state in the header (a status icon by default, the badge on
 # request); tab overflow; the config banner row.
@@ -21,7 +21,7 @@ key alt+h
 expect focus 1
 
 log === N1a the find bar keeps its query and the keyboard through layout motion
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder terminal-find
 type azjneedle
@@ -82,7 +82,7 @@ until tab 1 2000
 wait 500
 expect tile.find open
 expect responder terminal-find
-key cmd+f
+key cmd+shift+f
 expect responder terminal-find
 key escape
 expect tile.find closed
@@ -93,7 +93,7 @@ log === N1h the find bar at the minimum window size
 type echo azj''needle
 key enter
 sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} azjneedle
-key cmd+f
+key cmd+shift+f
 expect tile.find.query azjneedle
 until tile.find.status 1 of 1 5000
 expect tile.find.controls count,steps,close
@@ -123,7 +123,7 @@ remember focus
 expect focus 1
 shot n2-preview-open-twice
 
-log === N1e cmd+f in a preview's Source mode
+log === N1e cmd+shift+f in a preview's Source mode
 # Each open lands right beside the terminal: nope.md | main.rs | plan.md.
 key alt+l
 key alt+l
@@ -133,7 +133,7 @@ remember tile.path
 tile mode source
 until tile.source source 3000
 wait 500
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect responder preview-find
 type step
@@ -144,17 +144,17 @@ key escape
 expect tile.find closed
 expect responder preview-page
 
-log === N1f cmd+f in a Quick Look preview says find isn't available
+log === N1f cmd+shift+f in a Quick Look preview says find isn't available
 core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@FX@/shot.png"}}}
 until tile.mode native-image 5000
 wait 800
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 expect tile.find closed
 capture n1f-find-quicklook 120
 wait 800
 
-log === N1g cmd+f on a failed browser page: banner and bar together
+log === N1g cmd+shift+f on a failed browser page: banner and bar together
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
 until tile.kind browser 5000
 wait 2000
@@ -162,7 +162,7 @@ core {"method":"browser.open","params":{"url":"https://example.invalid/failed/pa
 wait 2500
 remember tile.banner
 remember tile.address
-key cmd+f
+key cmd+shift+f
 expect responder browser-find
 type example
 wait 1000
@@ -259,7 +259,7 @@ log === N6 the config banner row, with a blocked icon and the find bar open
 key alt+h
 expect focus 1
 remember chrome.tiles
-key cmd+f
+key cmd+shift+f
 type azj
 sh cp {config} {config}.orig
 sh printf '\nthis is [not toml\n' >> {config}

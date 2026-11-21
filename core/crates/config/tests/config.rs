@@ -210,6 +210,8 @@ fn stateless_actions_build_commands() {
                 | OpenConfig
                 | ReloadConfig
                 | ToggleSidebar
+                | ToggleAgentsSidebar
+                | ToggleFilesSidebar
                 | EnterPrefix
                 | EditScrollback
                 | RenameTile
@@ -505,34 +507,97 @@ fn select_on_drag_lists_programs_and_defaults_to_omp() {
 // ----- context -----
 
 #[test]
-fn cmd_a_toggles_the_sidebar_only_in_terminal_tiles() {
+fn cmd_a_opens_the_agents_sidebar_only_in_terminals_and_the_files_list() {
     let config = Config::defaults(MAC);
-    assert_eq!(
-        resolve(&config, "cmd+a", Some(TileKind::Terminal)),
-        Some(Action::ToggleSidebar)
-    );
+    for tile in [Some(TileKind::Terminal), Some(TileKind::Files)] {
+        assert_eq!(
+            resolve(&config, "cmd+a", tile),
+            Some(Action::ToggleAgentsSidebar),
+            "{tile:?}"
+        );
+    }
+    for tile in [None, Some(TileKind::Browser), Some(TileKind::Preview)] {
+        assert_eq!(resolve(&config, "cmd+a", tile), None, "{tile:?}");
+    }
+    // Fields keep select-all: find bars, the files filter, quick open.
+    for scope in [KeyContext::Find, KeyContext::Palette] {
+        assert_eq!(
+            config
+                .keymap
+                .resolve(&Chord::parse("cmd+a").unwrap(), &Context::scope(scope)),
+            None,
+            "{scope:?}"
+        );
+    }
+    // Same rule on Linux, whatever the chord is there.
+    let linux = Config::defaults(LINUX);
+    for scope in [KeyContext::Terminal, KeyContext::Files] {
+        assert!(
+            !linux
+                .keymap
+                .chords_for(Action::ToggleAgentsSidebar, Some(scope))
+                .is_empty(),
+            "{scope:?}"
+        );
+    }
+    for scope in [None, Some(KeyContext::Browser), Some(KeyContext::Find)] {
+        assert!(
+            linux
+                .keymap
+                .chords_for(Action::ToggleAgentsSidebar, scope)
+                .is_empty(),
+            "{scope:?}"
+        );
+    }
+}
+
+/// cmd+f opens the Files sidebar from anywhere; search moved to
+/// cmd+shift+f; the plain toggle is the toolbar button's, with no chord.
+#[test]
+fn cmd_f_opens_the_files_sidebar_and_find_moved_to_cmd_shift_f() {
+    let mac = Config::defaults(MAC);
+    assert!(mac.diagnostics.is_empty(), "{:#?}", mac.diagnostics);
     for tile in [
         None,
+        Some(TileKind::Terminal),
         Some(TileKind::Browser),
         Some(TileKind::Preview),
         Some(TileKind::Files),
     ] {
-        assert_eq!(resolve(&config, "cmd+a", tile), None, "{tile:?}");
+        assert_eq!(
+            resolve(&mac, "cmd+f", tile),
+            Some(Action::ToggleFilesSidebar),
+            "{tile:?}"
+        );
+        assert_eq!(
+            resolve(&mac, "cmd+shift+f", tile),
+            Some(Action::Find),
+            "{tile:?}"
+        );
     }
-    // Same rule on Linux, whatever the chord is there.
+    assert!(
+        mac.keymap
+            .chords_for(Action::ToggleSidebar, None)
+            .is_empty()
+    );
     let linux = Config::defaults(LINUX);
-    assert!(
-        !linux
-            .keymap
-            .chords_for(Action::ToggleSidebar, Some(KeyContext::Terminal))
-            .is_empty()
+    assert!(linux.diagnostics.is_empty(), "{:#?}", linux.diagnostics);
+    assert_eq!(
+        resolve(&linux, "super+f", None),
+        Some(Action::ToggleFilesSidebar)
     );
-    assert!(
-        linux
-            .keymap
-            .chords_for(Action::ToggleSidebar, Some(KeyContext::Browser))
-            .is_empty()
+    assert_eq!(resolve(&linux, "super+shift+f", None), Some(Action::Find));
+    // Prefix mode: herdr's prefix+b is the Agents view, prefix+f Files.
+    let prefix = |a| mac.keymap.prefix_chords_for(a);
+    assert_eq!(
+        prefix(Action::ToggleAgentsSidebar),
+        [Chord::parse("b").unwrap()]
     );
+    assert_eq!(
+        prefix(Action::ToggleFilesSidebar),
+        [Chord::parse("f").unwrap()]
+    );
+    assert!(prefix(Action::ToggleSidebar).is_empty());
 }
 
 #[test]
@@ -540,22 +605,22 @@ fn context_sections_override_and_can_unbind() {
     let config = user(
         r#"
 [keys]
-find = "cmd+f"
+find = "cmd+e"
 [keys.browser]
-find = "cmd+shift+f"
+find = "cmd+shift+e"
 [keys.terminal]
 find = ""
 "#,
         MAC,
     );
     assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
-    assert_eq!(resolve(&config, "cmd+f", None), Some(Action::Find));
-    assert_eq!(resolve(&config, "cmd+f", Some(TileKind::Browser)), None);
+    assert_eq!(resolve(&config, "cmd+e", None), Some(Action::Find));
+    assert_eq!(resolve(&config, "cmd+e", Some(TileKind::Browser)), None);
     assert_eq!(
-        resolve(&config, "cmd+shift+f", Some(TileKind::Browser)),
+        resolve(&config, "cmd+shift+e", Some(TileKind::Browser)),
         Some(Action::Find)
     );
-    assert_eq!(resolve(&config, "cmd+f", Some(TileKind::Terminal)), None);
+    assert_eq!(resolve(&config, "cmd+e", Some(TileKind::Terminal)), None);
     // Other bindings still apply in a context.
     assert_eq!(
         resolve(&config, "alt+h", Some(TileKind::Browser)),
@@ -874,7 +939,8 @@ fn send_text_clashes_like_any_binding() {
     let w = warnings(&config);
     assert_eq!(w.len(), 1, "no ctrl+letter warning for a text: {w:#?}");
     assert!(
-        w[0].contains("`send_text` and `toggle_sidebar`") && w[0].contains("`send_text` wins"),
+        w[0].contains("`send_text` and `toggle_agents_sidebar`")
+            && w[0].contains("`send_text` wins"),
         "{w:#?}"
     );
 }
@@ -1311,7 +1377,7 @@ key.linux = "ctrl+alt+space"
 [prefix.keys]
 zoom_tile = "prefix+m"
 [prefix.keys.linux]
-zoom_tile = "f"
+zoom_tile = "y"
 "#;
     let mac = user(text, MAC);
     let linux = user(text, LINUX);
@@ -1323,7 +1389,7 @@ zoom_tile = "f"
     );
     assert_eq!(
         linux.keymap.prefix_chords_for(Action::ZoomTile),
-        vec![chord("f")]
+        vec![chord("y")]
     );
     assert_eq!(linux.keymap.prefix_key(), Some(chord("ctrl+alt+space")));
     assert_eq!(mac.keymap.prefix_key(), Some(chord("cmd+b")));

@@ -214,6 +214,12 @@ final class Automation {
             record("divider \(arg)\(problem.map { " FAILED: \($0)" } ?? "")")
             for line in lines { record("      · \(line)") }
             delay = wait
+        case "sidebar" where arg.hasPrefix("width"):
+            let (problem, wait) = SidebarEdgeAutomation.run(String(arg.dropFirst(5)).trimmingCharacters(in: .whitespaces),
+                                                            controller: app?.focusedController)
+            if let problem { failures.append("line \(step): sidebar \(arg): \(problem)") }
+            record("sidebar \(arg)")
+            delay = wait
         case "sidebar":
             if let problem = SidebarAutomation.run(arg, controller: app?.focusedController, app: app) {
                 failures.append("line \(step): sidebar \(arg): \(problem)")
@@ -740,6 +746,9 @@ final class Automation {
             ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
             Source(["sidebar.hints", "sidebar.hints.pending", "sidebar.hints.fade"]) {
                 SidebarAutomation.hintState(app: app, controller: controller)
+            },
+            Source(["sidebar.width", "sidebar.width.saved", "sidebar.edge", "sidebar.edge.steps", "sidebar.gap"]) {
+                SidebarEdgeAutomation.state(controller)
             },
             Source(["theme", "terminal.attaches"], prefixes: ["theme."]) { ThemeAutomation.state(controller) },
             // After the `theme.` source, so asking for it computes only it.

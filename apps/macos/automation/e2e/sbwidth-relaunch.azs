@@ -1,0 +1,16 @@
+# After sbwidth.azs, the same profile relaunched: the sidebar opens at the
+# width dragged last; a double-click on the edge forgets it (the default),
+# which leaves the dev profile as it found it.
+log sidebar width relaunch
+delivery direct
+seen-visible off
+window-size 1100 700
+until terminal.phase attached 10000
+until sidebar visible 5000
+expect sidebar.width 300
+expect sidebar.width.saved 300
+expect sidebar.gap 8
+sidebar width double
+expect sidebar.width 230
+expect sidebar.width.saved default
+quit

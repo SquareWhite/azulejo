@@ -163,12 +163,47 @@ expect key.last action:toggle_layout_manual
 expect kind manual
 key alt+shift+t
 expect kind tile
-# --- cmd+a: sidebar in a terminal, select-all elsewhere ---
+# --- cmd+a: the Agents sidebar in a terminal, select-all elsewhere ---
+sidebar mode agents
 expect sidebar visible
 key cmd+a
-expect key.last action:toggle_sidebar
+expect key.last action:toggle_agents_sidebar
 expect sidebar rail
 key cmd+a
+expect sidebar visible
+expect sidebar.mode agents
+# --- cmd+f: the Files sidebar from anywhere; cmd+a back to Agents ---
+key cmd+f
+expect key.last action:toggle_files_sidebar
+expect sidebar visible
+expect sidebar.mode files
+until sidebar.files.keyboard yes 3000
+key cmd+a
+expect key.last action:toggle_agents_sidebar
+expect key.context files
+expect sidebar visible
+expect sidebar.mode agents
+expect responder terminal
+key cmd+f
+until sidebar.files.keyboard yes 3000
+key cmd+f
+expect key.last action:toggle_files_sidebar
+expect sidebar rail
+expect responder terminal
+key cmd+f
+expect sidebar visible
+expect sidebar.mode files
+until sidebar.files.keyboard yes 3000
+key cmd+shift+f
+expect key.last action:find
+wait 300
+key cmd+a
+expect key.context find_bar
+expect key.last passed
+expect sidebar.mode files
+key escape
+key cmd+a
+expect sidebar.mode agents
 expect sidebar visible
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
 until tile.kind browser 3000
@@ -203,7 +238,7 @@ expect key.last action:cycle_layout_next
 expect kind three_column
 key alt+[
 expect kind tile
-key cmd+f
+key cmd+shift+f
 key alt+]
 expect key.last action:cycle_layout_next
 expect key.context find_bar
@@ -310,7 +345,7 @@ expect key.last palette-field
 expect kind tile
 key escape
 expect palette closed
-key cmd+f
+key cmd+shift+f
 expect key.last action:find
 key cmd+,
 expect key.last action:open_config

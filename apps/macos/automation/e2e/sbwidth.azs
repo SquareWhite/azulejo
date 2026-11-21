@@ -1,0 +1,94 @@
+# The sidebar's width (sbwidth.sh): dragging the card's inner edge resizes
+# it live, between its least and most, and never past what the window leaves
+# the tiles; the tile area follows a gutter away and its terminals end at
+# their tiles' exact size; collapsing and opening (rail and hidden) keep the
+# width; a double-click on the edge puts the default back. The edge's
+# mouse events are made in the app (`sidebar width …`), never the system's.
+log sidebar width
+delivery direct
+seen-visible off
+window-size 1100 700
+until terminal.phase attached 10000
+sidebar mode agents
+action split_right
+until tiles 2 5000
+wait 1500
+
+# ---- the default, and the edge takes the pointer
+expect sidebar visible
+expect sidebar.width 230
+expect sidebar.width.saved default
+expect sidebar.edge SidebarEdgeView
+expect sidebar.gap 8
+
+# ---- a drag: live, saved on release, terminals at their tiles' size
+sidebar width drag 330 400
+expect sidebar.width 330
+expect sidebar.width.saved 330
+expect sidebar.gap 8
+wait 600
+divider check
+# Past the most and the least: held there.
+sidebar width drag 900 300
+expect sidebar.width 520
+expect sidebar.width.saved 520
+sidebar width drag 60 300
+expect sidebar.width 180
+expect sidebar.width.saved 180
+expect sidebar.gap 8
+wait 600
+divider check
+
+# ---- a narrow window leaves the tiles their least; the saved width stays
+sidebar width drag 520 300
+expect sidebar.width 520
+window-size 600 700
+expect sidebar.width 384
+expect sidebar.width.saved 520
+expect sidebar.gap 8
+window-size 1100 700
+expect sidebar.width 520
+wait 600
+divider check
+
+# ---- collapsing and opening keep the width (the rail, then hidden)
+action toggle_sidebar
+until sidebar rail 3000
+expect sidebar.edge hidden
+wait 600
+action toggle_sidebar
+until sidebar visible 3000
+wait 600
+expect sidebar.width 520
+expect sidebar.edge SidebarEdgeView
+expect sidebar.gap 8
+divider check
+sh printf '\n[sidebar]\ncollapsed = "hidden"\n' >> {config}
+wait 1500
+action toggle_sidebar
+until sidebar hidden 3000
+expect sidebar.edge hidden
+wait 600
+key cmd+f
+until sidebar visible 3000
+expect sidebar.mode files
+wait 600
+expect sidebar.width 520
+expect sidebar.gap 8
+divider check
+key cmd+a
+expect sidebar.mode agents
+expect sidebar.width 520
+
+# ---- a double-click on the edge: the default again
+sidebar width double
+expect sidebar.width 230
+expect sidebar.width.saved default
+expect sidebar.gap 8
+wait 600
+divider check
+
+# ---- a width for the relaunch (sbwidth-relaunch.azs) to find
+sidebar width drag 300 300
+expect sidebar.width.saved 300
+quit

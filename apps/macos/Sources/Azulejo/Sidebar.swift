@@ -21,7 +21,6 @@ import AppKit
 final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     enum Mode: String { case agents, files }
 
-    static var width: CGFloat { Design.Space.sidebarWidth }
     var onSelect: ((String) -> Void)?
     /// "+" on a machine group: create a workspace on that machine.
     var onAdd: ((String) -> Void)?
@@ -58,6 +57,8 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     /// number that tells its reply from an older one's.
     private var panelOpening: (root: String, machine: String?, request: Int)?
     private var panelRequests = 0
+    /// The tree takes the keyboard when the panel on its way arrives.
+    private var focusPending = false
 
     /// Each row's ⌘N key badge shows (⌘ held alone, `WorkspaceHints`).
     private(set) var hintsShown = false
@@ -289,17 +290,26 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         (ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" ? "dev." : "") + "sidebarMode"
     }
 
-    /// Switches the view; with `focus`, the Files tree takes the keyboard.
+    /// Switches the view; with `focus`, the Files tree takes the keyboard
+    /// (once its panel is in, if it's still on its way). Leaving Files with
+    /// the keyboard in it hands the keyboard back to the tiles.
     func setMode(_ mode: Mode, focus: Bool = false) {
         guard mode != self.mode else {
-            if focus, mode == .files { panelView?.focusTree() }
+            if focus, mode == .files { focusTree() }
             return
         }
+        let hadKeyboard = (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
         self.mode = mode
         segments.selected = mode
         UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey)
         applyMode()
-        if mode == .files, focus { panelView?.focusTree() }
+        if mode == .files, focus { focusTree() }
+        if mode == .agents, hadKeyboard { onReturnFocus?() }
+    }
+
+    /// The Files tree takes the keyboard, now or when its panel arrives.
+    private func focusTree() {
+        if let panelView { panelView.focusTree() } else { focusPending = true }
     }
 
     private func applyMode() {
@@ -393,11 +403,16 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         }
         panelID = id
         needsLayout = true
+        if focusPending, let panelView {
+            focusPending = false
+            panelView.focusTree()
+        }
     }
 
     /// Stops the Files view's panel (switching to Agents, closing the window).
     func closePanel() {
         panelOpening = nil
+        focusPending = false
         if let panelID { FilesTileView.closePanel(panelID) }
         panelView?.tileWillClose()
         panelView?.removeFromSuperview()
