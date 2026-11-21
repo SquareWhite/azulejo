@@ -187,7 +187,7 @@ fn every_default_action_maps_to_a_protocol_method_or_shell_action() {
                     "{action:?} → unknown method {m}"
                 ),
             }
-            if let Some(command) = action.command() {
+            if let Some(command) = action.command(config.layout.resize_step) {
                 assert_eq!(action.target(), Target::Method(command.method()));
             }
         }
@@ -248,7 +248,7 @@ fn stateless_actions_build_commands() {
                 continue;
             }
             let command = action
-                .command()
+                .command(config.layout.resize_step)
                 .unwrap_or_else(|| panic!("{action:?} should build a command"));
             assert!(
                 METHODS.contains(&command.method()),
@@ -1793,6 +1793,66 @@ orientation = "diagonal"
     assert_eq!(errors(&config).len(), 6, "{:?}", errors(&config));
     assert_eq!(config.layout.default, LayoutKind::Tile);
     assert_eq!(config.layout.params.tile.masters, 1);
+}
+
+#[test]
+fn resize_step_defaults_to_four_percent_and_takes_overrides() {
+    use azulejo_protocol::{Command, DEFAULT_RESIZE_STEP, LayoutMasterRatio, LayoutResize};
+    assert_eq!(DEFAULT_RESIZE_STEP, 0.04);
+    assert_eq!(Config::defaults(MAC).layout.resize_step, 0.04);
+
+    let config = user("[layout]\nresize_step = 0.02\n", MAC);
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+    assert_eq!(config.layout.resize_step, 0.02);
+    // The ends of the range are fine, and so is a whole-number spelling.
+    for (text, want) in [("0.01", 0.01), ("0.25", 0.25)] {
+        let config = user(&format!("[layout]\nresize_step = {text}\n"), MAC);
+        assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+        assert_eq!(config.layout.resize_step, want);
+    }
+
+    // The resize and master-area keys move edges by the step.
+    let step = config.layout.resize_step;
+    assert_eq!(
+        Action::ResizeTile(Direction::Left).command(0.02),
+        Some(Command::LayoutResize(LayoutResize {
+            tile: None,
+            direction: Direction::Left,
+            amount: Some(0.02),
+        }))
+    );
+    assert_eq!(
+        Action::GrowMasterArea.command(step),
+        Some(Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: Some(step),
+        }))
+    );
+    assert_eq!(
+        Action::ShrinkMasterArea.command(step),
+        Some(Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: Some(-step),
+        }))
+    );
+
+    // Out of range or not a number: a warning, and the default stays. The
+    // rest of the config still applies.
+    for bad in ["0", "0.005", "0.3", "1", "-0.04", "\"small\"", "nan"] {
+        let config = user(
+            &format!("[layout]\nresize_step = {bad}\ninsert = \"master\"\n"),
+            MAC,
+        );
+        assert!(errors(&config).is_empty(), "{bad}: {:?}", errors(&config));
+        let warnings = warnings(&config);
+        assert_eq!(warnings.len(), 1, "{bad}: {warnings:?}");
+        assert!(
+            warnings[0].contains("`layout.resize_step` must be a number from 0.01 to 0.25"),
+            "{bad}: {warnings:?}"
+        );
+        assert_eq!(config.layout.resize_step, DEFAULT_RESIZE_STEP, "{bad}");
+        assert_eq!(config.layout.insert, azulejo_protocol::InsertAt::Master);
+    }
 }
 
 #[test]

@@ -7,10 +7,10 @@
 
 use crate::keymap::KeyContext;
 use azulejo_protocol::{
-    Command, DEFAULT_MASTER_RATIO_STEP, DEFAULT_RESIZE_STEP, Direction, LayoutCycle, LayoutFocus,
-    LayoutKind, LayoutMasterRatio, LayoutMasters, LayoutMove, LayoutMoveOrder, LayoutResize,
-    LayoutRotate, LayoutSetKind, LayoutSplit, LayoutSplitAuto, LayoutSwap, LayoutZoom, TabCreate,
-    TabTarget, TileClose, TileTarget, WindowCreate, WorkspaceCreate, WorkspaceTarget,
+    Command, Direction, LayoutCycle, LayoutFocus, LayoutKind, LayoutMasterRatio, LayoutMasters,
+    LayoutMove, LayoutMoveOrder, LayoutResize, LayoutRotate, LayoutSetKind, LayoutSplit,
+    LayoutSplitAuto, LayoutSwap, LayoutZoom, TabCreate, TabTarget, TileClose, TileTarget,
+    WindowCreate, WorkspaceCreate, WorkspaceTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -568,8 +568,10 @@ impl Action {
 
     /// The command for actions that act on whatever is focused and need no
     /// session state. `None` for shell-local actions and for ones the shell has
-    /// to resolve (switch to tab N, renames, cycling).
-    pub fn command(self) -> Option<Command> {
+    /// to resolve (switch to tab N, renames, cycling). `resize_step` is
+    /// `[layout] resize_step`: what the resize and master-area keys move an
+    /// edge by.
+    pub fn command(self, resize_step: f64) -> Option<Command> {
         use Action::*;
         Some(match self {
             FocusTile(direction) => Command::LayoutFocus(LayoutFocus { direction }),
@@ -584,7 +586,7 @@ impl Action {
             ResizeTile(direction) => Command::LayoutResize(LayoutResize {
                 tile: None,
                 direction,
-                amount: DEFAULT_RESIZE_STEP,
+                amount: Some(resize_step),
             }),
             ZoomTile => Command::LayoutZoom(LayoutZoom::default()),
             CloseTile => Command::TileClose(TileClose {
@@ -632,11 +634,11 @@ impl Action {
             }),
             GrowMasterArea => Command::LayoutMasterRatio(LayoutMasterRatio {
                 tab: None,
-                delta: DEFAULT_MASTER_RATIO_STEP,
+                delta: Some(resize_step),
             }),
             ShrinkMasterArea => Command::LayoutMasterRatio(LayoutMasterRatio {
                 tab: None,
-                delta: -DEFAULT_MASTER_RATIO_STEP,
+                delta: Some(-resize_step),
             }),
             MovePositionNext => Command::LayoutMoveOrder(LayoutMoveOrder {
                 tile: None,
@@ -659,7 +661,7 @@ impl Action {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use azulejo_protocol::METHODS;
+    use azulejo_protocol::{DEFAULT_RESIZE_STEP, METHODS};
 
     #[test]
     fn names_are_unique_and_round_trip() {
@@ -682,7 +684,7 @@ mod tests {
                 NameSpec::Plain(a) => a,
                 NameSpec::Indexed(make) => make(1),
             };
-            if let Some(command) = action.command() {
+            if let Some(command) = action.command(DEFAULT_RESIZE_STEP) {
                 assert_eq!(action.target(), Target::Method(command.method()));
             }
         }

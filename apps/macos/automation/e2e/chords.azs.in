@@ -58,7 +58,7 @@ key alt+h
 expect ratio 0.50
 key ctrl+alt+shift+l
 expect key.last action:resize_tile_right
-expect ratio 0.55
+expect ratio 0.54
 key ctrl+alt+shift+h
 expect key.last action:resize_tile_left
 expect ratio 0.50
@@ -72,19 +72,19 @@ key ctrl+alt+r
 expect key.last action:resize_mode
 key l
 expect key.last resize
-expect ratio 0.55
+expect ratio 0.54
 key l
 expect key.last resize
-expect ratio 0.60
+expect ratio 0.58
 key h
-expect ratio 0.55
+expect ratio 0.54
 key x
 expect key.last resize
 key escape
 key alt+l
 expect key.last action:focus_tile_right
 key alt+h
-expect ratio 0.55
+expect ratio 0.54
 key ctrl+alt+shift+h
 # --- zoom ---
 key alt+shift+m
@@ -122,7 +122,7 @@ expect key.last action:decrease_masters
 expect masters 1
 key alt+shift+equal
 expect key.last action:grow_master_area
-expect ratio 0.55
+expect ratio 0.54
 key alt+shift+minus
 expect key.last action:shrink_master_area
 expect ratio 0.50

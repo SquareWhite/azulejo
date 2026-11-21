@@ -22,10 +22,10 @@ mod stream;
 mod transfer;
 
 pub use azulejo_model::{
-    Axis, Direction, Focus, Frame, GitInfo, HerdrRef, InsertAt, LayoutKind, LayoutParams,
-    LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, REMOVED_KINDS, Rect, Session,
-    SidebarState, TabId, ThreeColumnParams, Tile, TileContent, TileHeader, TileId, TileKind,
-    TileParams, WindowId, WorkspaceId,
+    Axis, DEFAULT_RESIZE_STEP, Direction, Focus, Frame, GitInfo, HerdrRef, InsertAt, LayoutKind,
+    LayoutParams, LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, REMOVED_KINDS, Rect,
+    Session, SidebarState, TabId, ThreeColumnParams, Tile, TileContent, TileHeader, TileId,
+    TileKind, TileParams, WindowId, WorkspaceId,
 };
 pub use command::*;
 pub use error::{Error, ErrorCode};

@@ -37,7 +37,7 @@ expect part no
 key alt+minus
 expect masters 1
 key alt+shift+equal           # grow the master area
-expect ratio 0.55
+expect ratio 0.54
 key ctrl+alt+shift+h          # resize the master's left: no edge, its right edge moves left
 expect ratio 0.50
 

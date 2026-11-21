@@ -425,20 +425,20 @@ fn route_key(router: &mut KeyRouter, app: &App, request: &Value) -> Value {
         _ => return json!({"outcome": "error", "message": "`context` must be a string or null"}),
     };
     match router.handle(&app.config().keymap, chord, scope) {
-        KeyOutcome::Action(action) => action_json(action),
+        KeyOutcome::Action(action) => action_json(action, app),
         KeyOutcome::PrefixArmed => json!({"outcome": "prefix_armed"}),
         KeyOutcome::PrefixCancelled => json!({"outcome": "prefix_cancelled"}),
         KeyOutcome::Unhandled => json!({"outcome": "unhandled"}),
     }
 }
 
-fn action_json(action: Action) -> Value {
+fn action_json(action: Action, app: &App) -> Value {
     let method = match action.target() {
         Target::Shell => Value::Null,
         Target::Method(m) => m.into(),
     };
     let command = action
-        .command()
+        .command(app.config().layout.resize_step)
         .and_then(|c| serde_json::to_value(c).ok())
         .unwrap_or(Value::Null);
     json!({
@@ -469,12 +469,9 @@ pub unsafe extern "C" fn azj_core_action(
     core: *const AzjCore,
     request_json: *const c_char,
 ) -> *mut c_char {
-    if (unsafe { core.as_ref() })
-        .and_then(|c| c.app.as_ref())
-        .is_none()
-    {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
         return std::ptr::null_mut();
-    }
+    };
     let request: Value = unsafe { arg(request_json) }
         .and_then(|t| serde_json::from_str(t).ok())
         .unwrap_or(Value::Null);
@@ -484,7 +481,7 @@ pub unsafe extern "C" fn azj_core_action(
         .and_then(|name| Action::from_name(name, index))
         .map_or_else(
             || json!({"outcome": "error", "message": "unknown action"}),
-            action_json,
+            |action| action_json(action, app),
         );
     out(result)
 }
@@ -975,6 +972,8 @@ mod tests {
             let resize = key(c"{\"chord\":\"h\",\"context\":\"resize\"}");
             assert_eq!(resize["action"], "resize_tile_left");
             assert_eq!(resize["command"]["method"], "layout.resize");
+            // The step comes from `[layout] resize_step` (0.04 by default).
+            assert_eq!(resize["command"]["params"]["amount"], 0.04);
             let find = key(c"{\"chord\":\"escape\",\"context\":\"find_bar\"}");
             assert_eq!(find["action"], "find_close");
             let files = key(c"{\"chord\":\"j\",\"context\":\"files\"}");

@@ -148,7 +148,7 @@ fn refused_commands_change_nothing() {
             .handle(Command::LayoutResize(LayoutResize {
                 tile: None,
                 direction: Direction::Right,
-                amount: 0.1,
+                amount: Some(0.1),
             }))
             .is_empty()
     );
@@ -878,6 +878,47 @@ fn the_first_tab_takes_the_configured_default_once() {
 }
 
 #[test]
+fn resize_without_an_amount_takes_the_configured_step() {
+    let mut engine = tile_engine();
+    run(
+        &mut engine,
+        Command::LayoutSplitAuto(LayoutSplitAuto::default()),
+    );
+    let master = tab_of(&engine).layout.order[0];
+    let ratio = |e: &Engine| tab_of(e).layout.params.tile.ratio;
+    let resize = |amount| {
+        Command::LayoutResize(LayoutResize {
+            tile: Some(master),
+            direction: Direction::Right,
+            amount,
+        })
+    };
+    let master_ratio = |delta| Command::LayoutMasterRatio(LayoutMasterRatio { tab: None, delta });
+    // The default step: 4 %.
+    run(&mut engine, resize(None));
+    assert!((ratio(&engine) - 0.54).abs() < 1e-9, "{}", ratio(&engine));
+    run(&mut engine, master_ratio(None));
+    assert!((ratio(&engine) - 0.58).abs() < 1e-9, "{}", ratio(&engine));
+
+    // A config reload changes it for the next command.
+    engine.set_layout_prefs(azulejo_model::LayoutPrefs {
+        default: LayoutKind::Tile,
+        resize_step: 0.02,
+        ..azulejo_model::LayoutPrefs::default()
+    });
+    run(&mut engine, resize(None));
+    assert!((ratio(&engine) - 0.60).abs() < 1e-9, "{}", ratio(&engine));
+    run(&mut engine, master_ratio(None));
+    assert!((ratio(&engine) - 0.62).abs() < 1e-9, "{}", ratio(&engine));
+
+    // An explicit amount wins over the step.
+    run(&mut engine, resize(Some(-0.1)));
+    assert!((ratio(&engine) - 0.52).abs() < 1e-9, "{}", ratio(&engine));
+    run(&mut engine, master_ratio(Some(0.1)));
+    assert!((ratio(&engine) - 0.62).abs() < 1e-9, "{}", ratio(&engine));
+}
+
+#[test]
 fn dynamic_split_ignores_direction_and_reports_rects() {
     let mut engine = tile_engine();
     let a = engine.session().focused_tile().unwrap();
@@ -934,7 +975,7 @@ fn every_layout_command_maps_in_a_dynamic_tab() {
         Command::LayoutResize(LayoutResize {
             tile: Some(m),
             direction: Direction::Right,
-            amount: 0.1,
+            amount: Some(0.1),
         }),
     );
     assert!((tab_of(&engine).layout.params.tile.ratio - 0.6).abs() < 1e-9);
@@ -943,7 +984,7 @@ fn every_layout_command_maps_in_a_dynamic_tab() {
         Command::LayoutResize(LayoutResize {
             tile: Some(s1),
             direction: Direction::Down,
-            amount: 0.1,
+            amount: Some(0.1),
         }),
     );
     assert!(!tab_of(&engine).layout.weights.is_empty());
@@ -982,7 +1023,7 @@ fn every_layout_command_maps_in_a_dynamic_tab() {
         &mut engine,
         Command::LayoutMasterRatio(LayoutMasterRatio {
             tab: None,
-            delta: -0.3,
+            delta: Some(-0.3),
         }),
     );
     assert!((tab_of(&engine).layout.params.tile.ratio - 0.3).abs() < 1e-9);

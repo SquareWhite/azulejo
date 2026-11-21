@@ -91,7 +91,7 @@ expect order t1,t2,t3,t5
 # --- resize: the edge moves that way; at the tab's edge the far one does ---
 key alt+h                     # master
 key ctrl+alt+shift+l          # master's right edge right: ratio up
-expect ratio 0.55
+expect ratio 0.54
 key ctrl+alt+shift+h          # no left edge: the right one moves left
 expect ratio 0.50
 key alt+l                     # t3, in the middle of the stack
@@ -100,7 +100,7 @@ key ctrl+alt+shift+k          # its top edge up: t3 grows, t2 shrinks
 key alt+j                     # t5, bottom of the stack
 key ctrl+alt+shift+j          # no bottom edge: its top edge moves down
 key ctrl+alt+shift+l          # no right edge: its left edge moves right (master grows)
-expect ratio 0.55
+expect ratio 0.54
 key ctrl+alt+shift+h
 expect ratio 0.50
 key alt+shift+e               # equalize: every weight back to 1
@@ -155,10 +155,10 @@ expect masters 1
 
 # --- master area ---
 key alt+shift+equal
-expect ratio 0.55
+expect ratio 0.54
 key alt+shift+minus
 key alt+shift+minus
-expect ratio 0.45
+expect ratio 0.46
 key alt+shift+equal
 expect ratio 0.50
 
@@ -241,15 +241,15 @@ key alt+l                     # → right stack
 key alt+k
 key alt+j
 key alt+h                     # → the centre (t5)
-key ctrl+alt+shift+l          # the centre grows: + 0.05 · (2 − 0.6)
-expect ratio 0.67
+key ctrl+alt+shift+l          # the centre grows: + 0.04 · (2 − 0.6)
+expect ratio 0.66
 key ctrl+alt+shift+h          # and shrinks (its right edge moves left)
 expect ratio 0.60
 key alt+l                     # right stack
 key ctrl+alt+shift+h          # its left edge moves left: the centre shrinks
-expect ratio 0.53
+expect ratio 0.55
 key ctrl+alt+shift+l          # no right edge: its left edge moves right
-expect ratio 0.61                # Bismuth's maths: not quite back (0.6035, 0.534, 0.607)
+expect ratio 0.60                # Bismuth's maths: not quite back (0.6022, 0.5463, 0.6045)
 key alt+shift+h               # right stack ↔ centre
 key alt+shift+l
 key alt+h

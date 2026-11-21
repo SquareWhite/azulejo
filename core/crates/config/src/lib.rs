@@ -69,6 +69,8 @@
 //! cycle = ["manual", "tile", "three_column", "monocle"]
 //!                        # the kinds alt+] / alt+[ visit; they always step
 //!                        # right / left in the picker's order (this one), wrapping
+//! resize_step = 0.04     # what the resize keys (and grow/shrink_master_area) move an
+//!                        # edge by: a share of the split, 0.01 to 0.25
 //! [layout.tile]
 //! masters = 1            # 0 to 10
 //! ratio = 0.5            # master area, 0.2 to 0.8
@@ -89,7 +91,9 @@ pub mod theme;
 
 use std::path::{Path, PathBuf};
 
-use azulejo_protocol::{InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation, SidebarState};
+use azulejo_protocol::{
+    DEFAULT_RESIZE_STEP, InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation, SidebarState,
+};
 use toml::de::{DeTable, DeValue};
 
 pub use action::{Action, PLANNED_METHODS, SEND_TEXT, Target, control_key, quote_text};
@@ -891,6 +895,11 @@ fn whole(value: &DeValue<'_>) -> Option<i64> {
     }
 }
 
+/// The range `[layout] resize_step` takes: below 1 % a key press barely
+/// moves an edge, above 25 % a couple of presses hit the split's limits.
+pub const RESIZE_STEP_MIN: f64 = 0.01;
+pub const RESIZE_STEP_MAX: f64 = 0.25;
+
 fn parse_layout(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut LayoutPrefs) {
     let DeValue::Table(table) = value.get_ref() else {
         sink.error(value.span(), "`layout` must be a table");
@@ -983,6 +992,18 @@ fn parse_layout(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &m
                     }
                 }
             }
+            ("resize_step", raw) => match number(raw) {
+                Some(step) if (RESIZE_STEP_MIN..=RESIZE_STEP_MAX).contains(&step) => {
+                    out.resize_step = step
+                }
+                _ => sink.warn(
+                    value.span(),
+                    format!(
+                        "`layout.resize_step` must be a number from {RESIZE_STEP_MIN} to \
+                         {RESIZE_STEP_MAX}; using {DEFAULT_RESIZE_STEP}"
+                    ),
+                ),
+            },
             ("tile" | "three_column", _) => sink.error(
                 value.span(),
                 format!("`layout.{}` must be a table", key.get_ref().as_ref()),

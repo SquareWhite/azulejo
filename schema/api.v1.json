@@ -3239,10 +3239,12 @@
     "LayoutMasterRatio": {
       "properties": {
         "delta": {
-          "default": 0.05,
-          "description": "Change in the master area's share; negative shrinks. Defaults to 0.05.",
+          "description": "Change in the master area's share; negative shrinks. Defaults to\n`[layout] resize_step` (0.04 unless the config changes it).",
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "tab": {
           "anyOf": [
@@ -3348,10 +3350,12 @@
     "LayoutResize": {
       "properties": {
         "amount": {
-          "default": 0.05,
-          "description": "Share of the enclosing split to move the edge by. Defaults to 0.05.",
+          "description": "Share of the enclosing split to move the edge by. Defaults to\n`[layout] resize_step` (0.04 unless the config changes it).",
           "format": "double",
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "direction": {
           "$ref": "#/$defs/Direction"

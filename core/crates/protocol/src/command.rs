@@ -624,21 +624,15 @@ pub struct LayoutMove {
     pub direction: Direction,
 }
 
-/// Default step for `layout.resize`.
-pub const DEFAULT_RESIZE_STEP: f64 = 0.05;
-
-fn default_resize_step() -> f64 {
-    DEFAULT_RESIZE_STEP
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayoutResize {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
     pub direction: Direction,
-    /// Share of the enclosing split to move the edge by. Defaults to 0.05.
-    #[serde(default = "default_resize_step")]
-    pub amount: f64,
+    /// Share of the enclosing split to move the edge by. Defaults to
+    /// `[layout] resize_step` (0.04 unless the config changes it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -711,21 +705,15 @@ pub struct LayoutMasters {
     pub delta: i32,
 }
 
-/// Default step for `layout.master_ratio`, as in Bismuth.
-pub const DEFAULT_MASTER_RATIO_STEP: f64 = 0.05;
-
-fn default_master_ratio_step() -> f64 {
-    DEFAULT_MASTER_RATIO_STEP
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayoutMasterRatio {
     /// Defaults to the focused tab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<TabId>,
-    /// Change in the master area's share; negative shrinks. Defaults to 0.05.
-    #[serde(default = "default_master_ratio_step")]
-    pub delta: f64,
+    /// Change in the master area's share; negative shrinks. Defaults to
+    /// `[layout] resize_step` (0.04 unless the config changes it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

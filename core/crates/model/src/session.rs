@@ -18,6 +18,11 @@ use crate::tile::{HerdrRef, Tile};
 /// How many recently focused tiles a tab remembers for tie-breaking.
 const RECENT_MAX: usize = 32;
 
+/// The default keyboard resize step (`[layout] resize_step`): the share of
+/// a split one `layout.resize` or `layout.master_ratio` moves an edge by
+/// when the caller gives no amount.
+pub const DEFAULT_RESIZE_STEP: f64 = 0.04;
+
 /// Session-wide layout preferences from config. Not saved: the core sets
 /// them at startup and on config reload.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +36,10 @@ pub struct LayoutPrefs {
     pub cycle: Vec<LayoutKind>,
     /// Parameters new dynamic tabs start with.
     pub params: LayoutParams,
+    /// What `layout.resize` and `layout.master_ratio` move an edge by when
+    /// the command gives no amount (`azj layout resize` without `--amount`).
+    /// The resize and master-area keys send it as their amount.
+    pub resize_step: f64,
 }
 
 impl Default for LayoutPrefs {
@@ -40,6 +49,7 @@ impl Default for LayoutPrefs {
             insert: InsertAt::End,
             cycle: LayoutKind::ORDER.to_vec(),
             params: LayoutParams::default(),
+            resize_step: DEFAULT_RESIZE_STEP,
         }
     }
 }

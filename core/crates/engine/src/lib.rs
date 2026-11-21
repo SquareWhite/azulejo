@@ -500,7 +500,8 @@ impl Engine {
                 Reply::Ok
             }
             Command::LayoutResize(p) => {
-                s.resize(s.target(p.tile)?, p.direction, p.amount)?;
+                let amount = p.amount.unwrap_or(s.prefs.resize_step);
+                s.resize(s.target(p.tile)?, p.direction, amount)?;
                 Reply::Ok
             }
             Command::LayoutZoom(p) => {
@@ -553,7 +554,8 @@ impl Engine {
                 Reply::Ok
             }
             Command::LayoutMasterRatio(p) => {
-                s.change_master_ratio(p.tab.or(focus.tab).ok_or_else(nothing)?, p.delta)?;
+                let delta = p.delta.unwrap_or(s.prefs.resize_step);
+                s.change_master_ratio(p.tab.or(focus.tab).ok_or_else(nothing)?, delta)?;
                 Reply::Ok
             }
             Command::LayoutMoveOrder(p) => {

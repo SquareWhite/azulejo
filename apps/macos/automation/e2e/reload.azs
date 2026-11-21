@@ -47,3 +47,15 @@ until tiles 2 3000
 wait 500
 anim stats anim-after-reload
 sh cp {config}.orig {config}
+# --- [layout] resize_step reloads: the resize keys follow. The quick_open
+# rebind in the same save shows when it's in. ---
+until search.chord ⌘K 3000
+sh printf '\n[keys]\nquick_open = "cmd+j"\n[layout]\nresize_step = 0.1\n' >> {config}
+until search.chord ⌘J 3000
+key alt+h
+expect ratio 0.50
+key ctrl+alt+shift+l
+expect ratio 0.60
+key ctrl+alt+shift+h
+expect ratio 0.50
+sh cp {config}.orig {config}

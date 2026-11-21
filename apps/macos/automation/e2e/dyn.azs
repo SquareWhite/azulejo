@@ -38,7 +38,7 @@ expect key.last action:equalize_layout
 wait 600
 key alt+h
 key ctrl+alt+shift+l
-expect ratio 0.55
+expect ratio 0.54
 wait 600
 shot 01-tall-flow
 # --- cycle Tile → Three Column → Monocle, manual and back ---

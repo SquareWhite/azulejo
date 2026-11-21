@@ -115,7 +115,7 @@ fn sample_commands() -> Vec<Command> {
         Command::LayoutResize(LayoutResize {
             tile: None,
             direction: Direction::Down,
-            amount: -0.1,
+            amount: Some(-0.1),
         }),
         Command::LayoutZoom(LayoutZoom {
             tile: None,
@@ -156,7 +156,11 @@ fn sample_commands() -> Vec<Command> {
         }),
         Command::LayoutMasterRatio(LayoutMasterRatio {
             tab: None,
-            delta: -0.05,
+            delta: Some(-0.05),
+        }),
+        Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: None,
         }),
         Command::LayoutMoveOrder(LayoutMoveOrder {
             tile: Some(tile),
@@ -791,7 +795,25 @@ fn params_may_be_omitted_when_all_optional() {
         Command::LayoutResize(LayoutResize {
             tile: None,
             direction: Direction::Left,
-            amount: DEFAULT_RESIZE_STEP,
+            amount: None,
+        })
+    );
+    // No amount: the core uses `[layout] resize_step`. Left out on the
+    // wire too, so a round trip doesn't pin the step.
+    assert_eq!(
+        serde_json::to_value(Command::LayoutResize(LayoutResize {
+            tile: None,
+            direction: Direction::Left,
+            amount: None,
+        }))
+        .unwrap()["params"],
+        serde_json::json!({"direction": "left"})
+    );
+    assert_eq!(
+        Command::from_json(r#"{"method":"layout.master_ratio"}"#).unwrap(),
+        Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: None,
         })
     );
 }
