@@ -12,7 +12,7 @@ until terminal.phase attached 10000
 sidebar mode agents
 action split_right
 until tiles 2 5000
-wait 1500
+until motion still
 
 # ---- the default, and the edge takes the pointer
 expect sidebar visible

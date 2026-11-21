@@ -8,30 +8,12 @@
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-reorder}" E2E_SUITE=reorder
 source "$(dirname "$0")/lib.sh"
-watcher=""
-cleanup() { [[ -n "$watcher" ]] && kill "$watcher" 2>/dev/null || true; e2e_cleanup; }
-trap cleanup EXIT
+trap e2e_cleanup EXIT
 reset_instance
 write_config </dev/null
 
 # Real window captures (`capture` lines) of our own window, by id.
-watch_captures() {
-  while true; do
-    for dir in "$out"/*/.capture; do
-      [[ -d "$dir" ]] || continue
-      for req in "$dir"/*; do
-        [[ -e "$req" ]] || continue
-        name="$(basename "$req")"; rm -f "$req"
-        run="$(dirname "$dir")"
-        wid="$(cat "$run/window-id" 2>/dev/null || true)"
-        [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$run/$name.png" 2>/dev/null || true
-      done
-    done
-    sleep 0.02
-  done
-}
-watch_captures &
-watcher=$!
+start_capture_watcher "$out/*"
 
 run_azs "$e2e_here/reorder.azs" reorder
 # herdr's workspaces in its own order (its numbers).

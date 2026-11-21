@@ -10,7 +10,7 @@ action split_right
 until tiles 2 5000
 action split_right
 until tiles 3 5000
-wait 1200
+until motion still
 
 # --- the picker reflects the layout ---
 expect kind tile
@@ -26,72 +26,72 @@ key alt+bracketright
 until kind three_column 3000
 expect picker.kind three_column
 expect picker.index 2
-wait 600
+until motion still
 key alt+bracketright
 until kind monocle 3000
 expect picker.index 3
-wait 600
+until motion still
 key alt+bracketright          # the right end wraps round to the left one
 until kind manual 3000
 expect picker.index 0
-wait 600
+until motion still
 key alt+bracketright
 until kind tile 3000
 expect picker.index 1
-wait 600
+until motion still
 key alt+bracketleft
 until kind manual 3000
 expect picker.kind manual
 expect picker.index 0
-wait 600
+until motion still
 key alt+bracketleft           # the left end wraps round to the right one
 until kind monocle 3000
 expect picker.index 3
-wait 600
+until motion still
 key alt+bracketleft
 until kind three_column 3000
 expect picker.index 2
-wait 600
+until motion still
 key alt+bracketleft
 until kind tile 3000
 expect picker.kind tile
 expect picker.index 1
-wait 600
+until motion still
 action toggle_layout_manual
 until kind manual 3000
 expect picker.kind manual
-wait 600
+until motion still
 core {"method": "layout.set", "params": {"kind": "three_column"}}
 until picker.kind three_column 3000
 expect kind three_column
-wait 600
+until motion still
 
 # --- picking switches, as the keys do (motion counted) ---
 anim reset
 picker tile
 until kind tile 3000
 expect picker.kind tile
-wait 600
+until motion still
 picker monocle
 until kind monocle 3000
-wait 600
+until motion still
 picker three_column
 until kind three_column 3000
-wait 600
+until motion still
 picker manual
 until kind manual 3000
 expect picker.kind manual
-wait 600
+until motion still
 anim stats picker-stats
 # Picking the active kind does nothing (a toggle would go back).
 picker manual
 wait 400
 expect kind manual
 capture picker-manual 0
-wait 600
+until motion still
 picker tile
 until kind tile 3000
-wait 600
+until motion still
 
 # --- the tab menu ---
 menu answer one
@@ -108,7 +108,7 @@ action rename_tab
 until tab.names one|two|three 3000
 action switch_tab 1
 until tab 1 3000
-wait 800
+until motion still
 menu tab 2
 expect menu.items Rename…|Layout ▸ {Manual [alt+shift+t]; Master (Tile) [alt+t] (on); Three Column; Monocle [alt+z]}|-|New Tab [cmd+shift+t]|-|Move Left|Move Right|-|Close Tab [cmd+shift+w]|Close Other Tabs
 menu shot tab-menu
@@ -149,7 +149,7 @@ expect picker.kind tile
 # New Tab from the menu; Close Tab on a background tab.
 menu tab 1 invoke New Tab
 until tabs 4 5000
-wait 800
+until motion still
 action switch_tab 2
 until tab 2 3000
 menu tab 1 invoke Close Tab

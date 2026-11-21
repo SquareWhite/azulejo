@@ -44,7 +44,7 @@ wait 300
 anim reset
 key ctrl+cmd+t
 until tiles 2 3000
-wait 500
+until motion still
 anim stats anim-after-reload
 sh cp {config}.orig {config}
 # --- [layout] resize_step reloads: the resize keys follow. The quick_open

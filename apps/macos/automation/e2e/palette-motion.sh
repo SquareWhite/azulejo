@@ -7,35 +7,16 @@
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-palm}" E2E_SUITE=palette-motion
 source "$(dirname "$0")/lib.sh"
-trap 'kill "${watcher:-}" 2>/dev/null || true; e2e_cleanup' EXIT
+trap e2e_cleanup EXIT
 reset_instance
 write_config </dev/null
 name=palette-motion
-rm -rf "$out/$name"
-mkdir -p "$out/$name"
 
 # The app asks for window captures by dropping files in <out>/.capture (it
 # has no Screen Recording permission of its own); take them from here.
-watch_captures() {
-  local dir="$out/$name"
-  while [[ ! -f "$dir/result" ]]; do
-    for req in "$dir/.capture"/*; do
-      [[ -e "$req" ]] || continue
-      local shot
-      shot="$(basename "$req")"
-      rm -f "$req"
-      local wid
-      wid="$(cat "$dir/window-id" 2>/dev/null || true)"
-      [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$dir/$shot.png" 2>/dev/null || true
-    done
-    sleep 0.01
-  done
-}
-watch_captures &
-watcher=$!
-
+start_capture_watcher "$out/$name"
 run_azs "$e2e_here/$name.azs" "$name"
-kill "$watcher" 2>/dev/null || true
+stop_capture_watcher
 rm -rf "$out/$name/.capture"
 
 # Grow ~160 ms, shrink ~110 ms (Design.Motion.paletteOpen / paletteClose),

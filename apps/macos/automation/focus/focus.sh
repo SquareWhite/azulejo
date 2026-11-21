@@ -14,7 +14,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../../.." && pwd)"
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-focus}"
-out="$root/.dev/$AZJ_DEV_NAME/out/focus"
+# Outside .dev/<name>, which the reset on exit wipes: a failed run keeps its log.
+out="$root/.dev/e2e.out/focus"
 fixtures="$(mktemp -d "${TMPDIR:-/tmp}/azj-focus.XXXXXX")"
 # Resolved (/var is a link to /private/var), as the Files view shows it.
 fixtures="$(cd "$fixtures" && pwd -P)"
@@ -34,7 +35,7 @@ echo inner >"$fixtures/tree/sub/inner.txt"
 git -C "$fixtures/tree" init -q
 
 "$root/apps/macos/dev.sh" --reset >/dev/null
-mkdir -p "$out"
+rm -rf "$out"; mkdir -p "$out"
 sed -e "s|@DIR@|$fixtures|g" -e "s|@HERE@|$here|g" \
   "$here/focus.azs.in" >"$fixtures/focus.azs"
 
@@ -43,7 +44,7 @@ sed -e "s|@DIR@|$fixtures|g" -e "s|@HERE@|$here|g" \
 watchdog=$!
 
 "$root/apps/macos/dev.sh" --automation "$fixtures/focus.azs" --out "$out"
-result="$(cat "$out/result")"
+result="$(cat "$out/result" 2>/dev/null || echo 'no result')"
 scenarios="$(grep -c '^ *[0-9]* # === S' "$out/automation.log" || true)"
 [[ "$result" == ok ]] || { echo "focus: $scenarios scenarios run; $result"; exit 1; }
 echo "focus: ok, $scenarios scenarios ($out)"

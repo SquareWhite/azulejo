@@ -143,19 +143,8 @@ sys.stdout.write(text.replace("@TAIL@", end.rstrip("\n")))
 PY
 
 # The app asks for window captures by dropping files in $out/.capture.
-watch_captures() {
-  mkdir -p "$out/.capture"
-  while [[ ! -f "$out/result" ]]; do
-    for req in "$out/.capture"/*; do
-      [[ -e "$req" ]] || continue
-      name="$(basename "$req")"; rm -f "$req"
-      wid="$(cat "$out/window-id" 2>/dev/null || true)"
-      [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$out/$name.png" 2>/dev/null || true
-    done
-    sleep 0.05
-  done
-}
-watch_captures & watcher=$!
+source "$here/capture.sh"
+watch_captures "$out" & watcher=$!
 ( sleep "${AZJ_MOCKUP_TIMEOUT:-240}"; "$root/apps/macos/dev.sh" --stop ) & watchdog=$!
 
 status=0

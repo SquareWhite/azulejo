@@ -20,7 +20,7 @@ until tiles 5 3000
 key ctrl+cmd+shift+t
 expect key.last action:split_down
 until tiles 6 3000
-wait 1500
+until motion still
 # --- close detaches: the herdr pane stays ---
 sh test "$({herdr} --session {session} pane list | /opt/homebrew/bin/jq '.result.panes | length')" = 6
 key alt+w

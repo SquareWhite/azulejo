@@ -49,7 +49,11 @@ type sub
 key enter
 until sidebar.files.selected docs/sub 3000
 sh test -d @FX@/remote-proj/docs/sub
-# Taken: refused before it reaches the machine, and by the machine.
+# Taken: refused before it reaches the machine, and by the machine. The
+# second needs late.txt made before the next poll (every 3 s) lists it:
+# start right after one lands (a mark in docs/, which goes with it below).
+sh touch @FX@/remote-proj/docs/poll-mark
+until sidebar.files.names docs,sub,poll-mark,src,alpha.txt,notes.md,remote.txt 8000
 sidebar files select notes.md
 key cmd+n
 until sidebar.files.draft.focused yes 2000

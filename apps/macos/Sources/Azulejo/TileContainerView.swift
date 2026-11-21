@@ -349,6 +349,23 @@ final class TileContainerView: NSView, ThemeAware {
     /// Tiles are moving (a layout motion, not a drag).
     var isMoving: Bool { CACurrentMediaTime() < max(motionEnds, switchEnds) }
 
+    /// Automation (`motion`): what this container still has in flight, or
+    /// nil at rest: a layout motion, a tab or workspace switch, the dim's
+    /// cross-fade, a divider drag, a reflow, or live content still waiting
+    /// to show after a motion (the clock's reveals).
+    var motionInFlight: String? {
+        let now = CACurrentMediaTime()
+        if now < max(motionEnds, switchEnds) { return "layout" }
+        if now < dimEnds { return "dim" }
+        if dividerDrag != nil { return "divider-drag" }
+        if !reflowing.isEmpty { return "reflow" }
+        if slideRunning || !sheets.isEmpty { return "slide" }
+        if !clock.isEmpty { return "reveal" }
+        return nil
+    }
+    /// When the dim's cross-fade in flight ends (`motionInFlight`).
+    private var dimEnds: CFTimeInterval = 0
+
     /// Visible tiles whose content resizes live (running terminals).
     var liveTileViews: [(String, NSView)] {
         visibleTiles.compactMap { id in
@@ -1330,7 +1347,9 @@ final class TileContainerView: NSView, ThemeAware {
         let strength = shown.count > 1 ? Motion.dimStrength : 0
         for id in shown {
             guard let frame = views[id] as? TileFrame else { continue }
-            frame.setDim(id == tab.focused ? 0 : strength, duration: animate ? Motion.dimDuration : 0)
+            if frame.setDim(id == tab.focused ? 0 : strength, duration: animate ? Motion.dimDuration : 0) {
+                dimEnds = max(dimEnds, CACurrentMediaTime() + Motion.dimDuration)
+            }
         }
     }
 

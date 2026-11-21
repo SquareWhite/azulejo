@@ -2,9 +2,10 @@
 # Focus dim (dim.azs): unfocused tiles dim, the focused one stays bright,
 # nothing dims with one tile on screen, the keyboard leaving the tiles
 # changes nothing, the cross-fade is a fade with motion on and instant with
-# it off. Twice: with Azulejo's default strength, then with Ghostty's
-# unfocused-split-opacity and -fill set in the dev profile's own Ghostty
-# config (never the user's). Dev instance e2e-dim.
+# it off. With Azulejo's default strength; then the 4-tile part again with
+# Ghostty's unfocused-split-opacity and -fill set in the dev profile's own
+# Ghostty config (never the user's), for the strength and fill they give.
+# Dev instance e2e-dim.
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-dim}" E2E_SUITE=D-dim
 source "$(dirname "$0")/lib.sh"
@@ -12,14 +13,15 @@ trap e2e_cleanup EXIT
 ghostty="$dev/config/ghostty/config"
 : >"$out/check-output.txt"
 
-# check_pixels RUN STRENGTH FILL: the title in each tile's header strip, as
-# bright as it gets there (the strip's brightest pixel), against what the dim
-# should make of it.
+# check_pixels RUN STRENGTH FILL [tiles]: the title in each tile's header
+# strip, as bright as it gets there (the strip's brightest pixel), against
+# what the dim should make of it. `tiles`: the 4-tile capture only (the
+# second pass, which stops after it).
 check_pixels() {
-  python3 - "$out/$1" "$2" "$3" <<'PY'
+  python3 - "$out/$1" "$2" "$3" "${4:-all}" <<'PY'
 import re, sys
 from PIL import Image
-d, strength, fill = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+d, strength, fill, scope = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4]
 fill = sum(int(fill[i:i + 2], 16) for i in (1, 3, 5)) / 3
 log = open(f"{d}/automation.log").read()
 frames, chrome = {}, {}
@@ -54,6 +56,8 @@ expect("focused title, 4 tiles", bright, 180, 255)
 for t in tiles:
     if t != focus:
         expect(f"unfocused title {t}", title("dim-4-tiles", t), dimmed - 6, dimmed + 6)
+if scope == "tiles":
+    sys.exit(0 if ok else 1)
 for name in ("dim-zoom", "dim-monocle"):
     t, f = frames[name]
     expect(f"{name}: the one tile on screen", title(name, f), bright - 6, bright + 6)
@@ -87,12 +91,13 @@ run_azs "$out/dim-default.azs" default
 check "dim pixels (default 0.25 of the window colour)" check_pixels default 0.25 "#1b1d23"
 reset_instance
 
-# Ghostty's settings, from the profile's own Ghostty file.
+# Ghostty's settings, from the profile's own Ghostty file: the strength and
+# the fill, on the 4-tile capture (the first pass covers the rest).
 mkdir -p "$(dirname "$ghostty")"
 printf 'unfocused-split-opacity = 0.6\nunfocused-split-fill = #000000\n' >"$ghostty"
-sed -e 's/@STRENGTH@/0.40/' -e "s|@FX@|$fx|" "$e2e_here/dim.azs" >"$out/dim-ghostty.azs"
+sed -e 's/@STRENGTH@/0.40/' -e "s|@FX@|$fx|" -e '/@STRENGTH-PASS-ENDS@/q' "$e2e_here/dim.azs" >"$out/dim-ghostty.azs"
 run_azs "$out/dim-ghostty.azs" ghostty
-check "dim pixels (Ghostty: opacity 0.6, fill #000000)" check_pixels ghostty 0.40 "#000000"
+check "dim pixels (Ghostty: opacity 0.6, fill #000000)" check_pixels ghostty 0.40 "#000000" tiles
 rm -f "$ghostty"
 cat "$out/check-output.txt"
 ! grep -q FAIL "$checks"

@@ -10,9 +10,7 @@
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-wss}" E2E_SUITE=wsslide
 source "$(dirname "$0")/lib.sh"
-watcher=""
-cleanup() { [[ -n "$watcher" ]] && kill "$watcher" 2>/dev/null || true; e2e_cleanup; }
-trap cleanup EXIT
+trap e2e_cleanup EXIT
 reset_instance
 write_config </dev/null
 # A fixture folder per workspace (the sidebar's Files view and the terminals
@@ -25,23 +23,7 @@ done
 sed "s|@FX@|$fx|g" "$e2e_here/wsslide.azs" >"$out/wsslide.azs"
 
 # Window captures (`capture` lines) of our own window, by id.
-watch_captures() {
-  while true; do
-    for dir in "$out"/*/.capture; do
-      [[ -d "$dir" ]] || continue
-      for req in "$dir"/*; do
-        [[ -e "$req" ]] || continue
-        name="$(basename "$req")"; rm -f "$req"
-        run="$(dirname "$dir")"
-        wid="$(cat "$run/window-id" 2>/dev/null || true)"
-        [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$run/$name.png" 2>/dev/null || true
-      done
-    done
-    sleep 0.01
-  done
-}
-watch_captures &
-watcher=$!
+start_capture_watcher "$out/*"
 
 run_azs "$out/wsslide.azs" wsslide
 grep -E "frames 0[1-6]-" "$out/wsslide/automation.log" >>"$checks" || true

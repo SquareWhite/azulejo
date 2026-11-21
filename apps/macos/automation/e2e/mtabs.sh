@@ -12,24 +12,11 @@ trap e2e_cleanup EXIT
 reset_instance
 write_config </dev/null
 
-# The app asks for window captures (`capture`) by dropping requests in
-# .capture: `screencapture -l` of its own window only.
+# Window captures (`capture`): `screencapture -l` of our own window only.
 d="$out/mtabs"
-rm -rf "$d"; mkdir -p "$d/.capture"
-(
-  while [[ ! -f "$d/result" ]]; do
-    for req in "$d/.capture"/*; do
-      [[ -e "$req" ]] || continue
-      name="$(basename "$req")"; rm -f "$req"
-      wid="$(cat "$d/window-id" 2>/dev/null || true)"
-      [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$d/$name.png" 2>/dev/null || true
-    done
-    sleep 0.01
-  done
-) &
-watcher=$!
+start_capture_watcher "$d"
 run_azs "$e2e_here/mtabs.azs" mtabs
-kill "$watcher" 2>/dev/null || true
+stop_capture_watcher
 
 for shot in mtabs-dark mtabs-light mtabs-overflow; do
   check "shot $shot" test -s "$d/$shot.png"

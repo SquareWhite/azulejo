@@ -17,49 +17,49 @@ anim reset
 key alt+enter
 expect key.last action:promote_tile
 expect focus 1
-wait 600
+until motion still
 key alt+o
 expect orientation top
-wait 600
+until motion still
 key alt+o
 expect orientation right
-wait 600
+until motion still
 key alt+o
 expect orientation bottom
-wait 600
+until motion still
 key alt+o
 expect orientation left
-wait 600
+until motion still
 key alt+l
 key ctrl+alt+shift+j
-wait 600
+until motion still
 key alt+shift+e
 expect key.last action:equalize_layout
-wait 600
+until motion still
 key alt+h
 key ctrl+alt+shift+l
 expect ratio 0.54
-wait 600
+until motion still
 shot 01-tall-flow
 # --- cycle Tile → Three Column → Monocle, manual and back ---
 key alt+backslash
 expect kind three_column
-wait 600
+until motion still
 key alt+backslash
 expect kind monocle
-wait 600
+until motion still
 remember resizes
 key alt+l
-wait 400
+until motion still
 key alt+l
-wait 400
+until motion still
 key alt+h
 wait 400
 unchanged resizes
 shot 02-monocle
 key alt+shift+backslash
 expect kind three_column
-wait 600
+until motion still
 shot 03-three-column
 # --- Three Column on its side: alt+o swaps columns and rows, and back.
 # The focused tile sits in the right stack, which goes to the bottom. ---
@@ -70,23 +70,23 @@ key alt+o
 expect key.last action:rotate_layout
 expect orientation rows
 expect axis v
-wait 600
+until motion still
 expect rect.focused 0,714,1000x286
 shot 03b-three-column-rows
 key alt+o
 expect orientation columns
 expect axis h
-wait 600
+until motion still
 expect rect.focused 714,0,286x1000
 key alt+shift+t
 expect kind manual
-wait 600
+until motion still
 key alt+shift+t
 expect kind three_column
-wait 600
+until motion still
 key alt+t
 expect kind tile
-wait 800
+until motion still
 anim stats dyn-stats
 anim expect-clean
 shot 04-back-to-tile

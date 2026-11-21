@@ -163,6 +163,8 @@ expect tab.names one|two|three
 menu answer uno
 menu tab 1 invoke Rename…
 until tab.names uno|two|three 3000
+# The rename rebuilds the strip's buttons: let it, then click.
+wait 150
 tabdrag click 1
 until tab 1 3000
 expect tab.selected uno

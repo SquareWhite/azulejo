@@ -96,7 +96,8 @@ expect slide.in below
 expect slide.out above
 expect slide.gap 8
 capture 01-down-b-mid 0
-wait 1300
+until slide still 1300
+captured
 expect slide still
 expect slide.in rest
 expect slide.out -
@@ -121,7 +122,8 @@ expect slide.out below
 expect slide.gap 8
 expect slide.ca ok
 capture 02-up-b-mid 0
-wait 1300
+until slide still 1300
+captured
 expect slide still
 expect workspace.active two
 expect tiles 2
@@ -142,7 +144,8 @@ expect slide.in above
 expect slide.gap 8
 expect slide.ca ok
 capture 03-turn-a-mid 100
-wait 1500
+until slide still 1500
+captured
 expect slide still
 expect workspace.active two
 
@@ -157,7 +160,8 @@ expect responder.focused yes
 expect slide.gap 8
 expect slide.ca ok
 capture 04-rapid-a-mid 50
-wait 1500
+until slide still 1500
+captured
 expect slide still
 expect workspace.active two
 expect slide.retargets 3
@@ -174,7 +178,8 @@ expect slide.gap 8
 expect slide.ca ok
 remember slide.out.dy
 capture 04-rapid-b-mid 50
-wait 1500
+until slide still 1500
+captured
 expect slide still
 expect workspace.active five
 key cmd+2
@@ -222,7 +227,8 @@ key alt+cmd+w
 until workspaces 4 4000
 expect slide.gap 8
 capture 05-close-a-mid 200
-wait 1500
+until slide still 1500
+captured
 expect slide still
 log closed three: landed on the workspace below its place (slide up) or above (down)
 
@@ -235,7 +241,8 @@ until workspaces 5 5000
 expect slide up
 expect slide.in below
 capture 06-new-a-mid 200
-wait 1500
+until slide still 1500
+captured
 expect slide still
 until terminal.phase attached 10000
 

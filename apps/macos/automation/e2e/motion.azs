@@ -7,24 +7,24 @@ until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 key ctrl+cmd+v
 until tiles 2 3000
-wait 2500
+until motion still
 anim duration 1500
 key alt+h
 capture 01-focus-a 300
 capture 01-focus-b 750
-wait 1900
+until motion still
 expect focus 1
 expect dimmed 2
 capture 01-focus-c 0
 wait 300
 key cmd+shift+t
 until tabs 2 3000
-wait 2500
+until motion still
 key ctrl+1
 capture 02-tab-a 150
 capture 02-tab-b 500
 capture 02-tab-c 900
-wait 1900
+until motion still
 capture 02-tab-d 0
 wait 300
 anim stats motion-stats

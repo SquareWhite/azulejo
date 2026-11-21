@@ -80,6 +80,6 @@ sidebar mode agents
 wait 2500
 expect chrome.lights 29,26
 capture 01-scene 0
-wait 1500
+captured
 shot 01-scene-shot
 @TAIL@

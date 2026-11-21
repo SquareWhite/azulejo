@@ -16,42 +16,44 @@ key ctrl+cmd+t
 until tiles 3 3000
 key ctrl+cmd+t
 until tiles 4 3000
-wait 1500
+until motion still
 expect focus 4
 expect dimmed 1,2,3
 expect tile.dim no
 capture dim-4-tiles 0
 wait 300
+# @STRENGTH-PASS-ENDS@ dim.sh's second pass (Ghostty's strength and fill)
+# stops here: the 4-tile capture is all it checks.
 key alt+h
-wait 400
+until motion still
 expect focus 1
 expect dimmed 2,3,4
 
 # Zoom: the zoomed tile alone on screen, nothing dims.
 key alt+shift+m
-wait 600
+until motion still
 expect zoomed yes
 expect dimmed none
 capture dim-zoom 0
 wait 300
 key alt+shift+m
-wait 600
+until motion still
 expect dimmed 2,3,4
 
 # Monocle: one tile on screen, nothing dims; back in Three Column, the rest
 # dim. The cycle follows the layout picker: Tile, Three Column, Monocle.
 key alt+backslash
-wait 600
+until motion still
 expect kind three_column
 expect dimmed 2,3,4
 key alt+backslash
-wait 600
+until motion still
 expect kind monocle
 expect dimmed none
 capture dim-monocle 0
 wait 300
 key alt+shift+backslash
-wait 600
+until motion still
 expect kind three_column
 expect dimmed 2,3,4
 
@@ -78,7 +80,7 @@ wait 300
 anim duration 1500
 key alt+l
 capture dim-fade-on 0
-wait 1500
+until motion still
 anim enabled false
 key alt+h
 capture dim-fade-off 0

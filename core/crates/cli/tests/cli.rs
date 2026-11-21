@@ -544,6 +544,158 @@ fn json_errors_for_bad_arguments() {
     );
 }
 
+/// Whether `text` holds a raw ID (`tile_…`, `ws_…`, `tab_…`, `win_…` and 20
+/// or more ID characters) as a word of its own.
+fn has_raw_id(text: &str) -> bool {
+    ["tile_", "ws_", "tab_", "win_"].iter().any(|prefix| {
+        text.match_indices(prefix).any(|(at, _)| {
+            let starts_word = text[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+            let id = text[at + prefix.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
+                .count();
+            starts_word && id >= 20
+        })
+    })
+}
+
+/// The core's error wording through `azj`, as a person and a script see it
+/// (moved here from the fixes e2e suite's N3): unknown params are named,
+/// a message names no IDs (they're in the error's data, which `azj` prints
+/// after it), and `--json` prints the error itself as an object.
+#[test]
+fn error_wording_names_the_field_and_no_ids() {
+    let app = start();
+    let tiles = json_of(&azj(&app.socket, &[], &["--json", "tile", "list"]));
+    let term = tiles["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "terminal")
+        .expect("a terminal tile")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let missing_tile = "tile_01AAAAAAAAAAAAAAAAAAAAAAAA";
+    let missing_ws = "ws_01AAAAAAAAAAAAAAAAAAAAAAAA";
+    let cases: &[(&str, &[&str])] = &[
+        (
+            "unknown-param",
+            &[
+                "call",
+                "layout.split",
+                r#"{"direction":"right","kind":"terminal"}"#,
+            ],
+        ),
+        (
+            "nested-unknown",
+            &[
+                "call",
+                "layout.split",
+                r#"{"direction":"right","content":{"kind":"terminal","cwd":"/tmp","bogus":1}}"#,
+            ],
+        ),
+        ("no-params-method", &["call", "core.ping", r#"{"x":1}"#]),
+        ("no-such-tile", &["tile", "focus", "--tile", missing_tile]),
+        (
+            "no-such-workspace",
+            &["workspace", "focus", "--workspace", missing_ws],
+        ),
+        (
+            "files-relative",
+            &["files", "open", "--tile", &term, "--path", "README.md"],
+        ),
+        ("bad-value", &["call", "layout.set", r#"{"kind":"spiral"}"#]),
+        ("unknown-method", &["call", "nope.nothing", "{}"]),
+    ];
+    // Each case as a person runs it (the error on stderr) and with --json.
+    let mut human = std::collections::BTreeMap::new();
+    let mut json = std::collections::BTreeMap::new();
+    for (name, args) in cases {
+        let mut plain = vec!["--no-caller"];
+        plain.extend_from_slice(args);
+        let o = azj(&app.socket, &[], &plain);
+        human.insert(
+            *name,
+            (o.status.code(), format!("{}{}", stdout(&o), stderr(&o))),
+        );
+        let mut with_json = vec!["--json", "--no-caller"];
+        with_json.extend_from_slice(args);
+        let o = azj(&app.socket, &[], &with_json);
+        json.insert(*name, format!("{}{}", stdout(&o), stderr(&o)));
+    }
+    let both = |name: &str| format!("{}{}", human[name].1, json[name]);
+
+    assert!(
+        both("unknown-param").contains("unknown param `kind` for `layout.split`"),
+        "{}",
+        both("unknown-param")
+    );
+    assert!(
+        both("unknown-param").contains("invalid_params"),
+        "{}",
+        both("unknown-param")
+    );
+    assert!(
+        both("nested-unknown").contains("unknown param `content.bogus`"),
+        "{}",
+        both("nested-unknown")
+    );
+    let (code, text) = &human["no-params-method"];
+    assert!(
+        code.is_some_and(|c| c != 0),
+        "a method with no params refuses one: {text}"
+    );
+    assert!(
+        both("no-such-tile").contains("no such tile"),
+        "{}",
+        both("no-such-tile")
+    );
+    assert!(
+        both("no-such-workspace").contains("no such workspace"),
+        "{}",
+        both("no-such-workspace")
+    );
+    // A relative path without a files panel is refused in words.
+    let (code, text) = &human["files-relative"];
+    assert!(
+        code.is_some_and(|c| c != 0) && text.contains("isn't absolute"),
+        "{text}"
+    );
+
+    // The IDs are in the error's data: the --json error carries them…
+    let error: Value = serde_json::from_str(json["no-such-tile"].trim()).unwrap();
+    assert!(json["no-such-tile"].contains("tile_01AAAA"), "{error}");
+    // …as an object for scripts (code, message, data).
+    assert_eq!(error["code"], "not_found", "{error}");
+    assert!(error["message"].is_string(), "{error}");
+    assert!(error["data"].is_object(), "{error}");
+
+    // …and every human message (the line azj prints first) names none: azj
+    // prints the data after the message, in brackets.
+    assert!(has_raw_id(&format!("azj: no such tile {missing_tile}")));
+    assert!(!has_raw_id(
+        "azj: no such tile xtile_01AAAAAAAAAAAAAAAAAAAAAAAA tile_01AB"
+    ));
+    for (name, (_, text)) in &human {
+        let Some(first) = text.lines().find(|l| !l.trim().is_empty()) else {
+            continue;
+        };
+        if !first.starts_with("azj: ") {
+            continue; // not an error
+        }
+        let message = first
+            .strip_suffix(')')
+            .and_then(|rest| rest.rfind(" (").map(|at| (at, &rest[at + 2..])))
+            .filter(|(_, inner)| !inner.contains(['(', ')']))
+            .map_or(first, |(at, _)| &first[..at]);
+        assert!(!has_raw_id(message), "{name}: raw ID in {first:?}");
+    }
+}
+
 /// `azj config keys` lists every action with its context, default and current
 /// chords and source; `azj config defaults` prints a template that parses.
 #[test]

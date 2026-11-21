@@ -30,18 +30,18 @@ capture n1a-before 0
 anim duration 1500
 key alt+backslash
 capture n1a-cycle-mid 600
-wait 2300
+until motion still
 expect tile.find open
 expect tile.find.query azjneedle
 expect responder terminal-find
 key alt+backslash
-wait 2300
+until motion still
 key alt+t
-wait 2300
+until motion still
 expect responder terminal-find
 key alt+shift+l
 capture n1a-swap-mid 600
-wait 2300
+until motion still
 anim duration default
 expect tile.find open
 expect responder terminal-find
@@ -79,7 +79,7 @@ until tabs 2 3000
 until terminal.phase attached 10000
 key ctrl+1
 until tab 1 2000
-wait 500
+until motion still
 expect tile.find open
 expect responder terminal-find
 key cmd+shift+f
@@ -113,7 +113,7 @@ expect responder terminal
 key ctrl+2
 until tab 2 2000
 core {"method":"layout.set","params":{"kind":"manual"}}
-wait 500
+until motion still
 
 log === N2 azj files open from a terminal: each file opens in the editor beside it
 core {"method":"terminal.send_text","params":{"text":"cd @FX@; @AZJ@ files open --path plan.md > @OUT@/open1.out 2>&1; echo exit=$status >> @OUT@/open1.out; @AZJ@ files open --path main.rs > @OUT@/open2.out 2>&1; echo exit=$status >> @OUT@/open2.out; @AZJ@ files open --path nope.md > @OUT@/open3.out 2>&1; echo exit=$status >> @OUT@/open3.out\n"}}
@@ -129,13 +129,13 @@ until terminal.phase attached 10000
 log === N3 HUD messages for refused moves name no IDs
 key alt+l
 capture n3-hud-focus 120
-wait 1500
+captured
 key ctrl+alt+shift+l
 capture n3-hud-resize 120
-wait 1500
+captured
 key alt+shift+l
 capture n3-hud-swap 120
-wait 1500
+captured
 
 # ------------------------------------------------------ tab 4 (Tile): badges
 key cmd+shift+t
@@ -145,7 +145,7 @@ key ctrl+cmd+t
 key ctrl+cmd+t
 key ctrl+cmd+t
 until tiles 4 5000
-wait 2500
+until motion still
 log === N5 no agent badge in headers by default: each agent tile shows its status icon
 sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
 sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent codex --state blocked
@@ -201,7 +201,7 @@ expect focus 2
 anim duration 1500
 key alt+shift+h
 capture n5-badge-swap-mid 650
-wait 2300
+until motion still
 anim duration default
 expect header.agents blocked,working,done,none
 
@@ -234,13 +234,13 @@ key cmd+shift+t
 key cmd+shift+t
 key cmd+shift+t
 until tabs 14 6000
-wait 1500
+until motion still
 remember tab.overflow
 remember tab.statuses
 shot n4-overflow-last
 key ctrl+4
 until tab 4 2000
-wait 800
+until motion still
 remember tab.overflow
 shot n4-overflow-tab4
 window-size 480 320
@@ -269,6 +269,6 @@ key cmd+shift+w
 key cmd+shift+w
 key cmd+shift+w
 until tabs 4 6000
-wait 800
+until motion still
 remember tab.overflow
 shot n4-overflow-gone

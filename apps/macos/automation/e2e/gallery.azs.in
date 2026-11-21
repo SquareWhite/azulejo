@@ -6,11 +6,11 @@ window-size 1440 900
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 # --- read-only take-over overlay on the terminal ---
-sh python3 @FOCUS@/takeover.py {herdr} {session} {pane} 5 >/dev/null 2>&1 &
+sh python3 @FOCUS@/takeover.py {herdr} {session} {pane} 1.5 >/dev/null 2>&1 &
 until terminal.phase observing-taken-over 5000
 wait 500
 shot 06-taken-over
-wait 5500
+# Take it back (the other client may still be attached: focus.azs S29).
 terminal takeover
 until terminal.phase attached 8000
 # --- 1 tile, Monocle, Three Column are covered elsewhere; 10 tiles here ---
@@ -26,7 +26,7 @@ key ctrl+cmd+t
 key ctrl+cmd+t
 key ctrl+cmd+t
 until tiles 10 5000
-wait 2500
+until motion still
 shot 07-ten-tiles
 # --- many tabs: the strip overflows ---
 key cmd+shift+t
@@ -40,25 +40,25 @@ key cmd+shift+t
 key cmd+shift+t
 key cmd+shift+t
 until tabs 12 5000
-wait 1500
+until motion still
 shot 08-many-tabs
 # --- minimum window size, with the 10-tile tab ---
 key ctrl+2
-wait 300
+until motion still
 window-size 480 320
 wait 1200
 shot 09-min-size-ten-tiles
 key ctrl+1
-wait 600
+until motion still
 shot 10-min-size-one-tile
 window-size 1440 900
 wait 600
 # --- an empty workspace, and a tab whose last tile closed ---
 core {"method":"workspace.create","params":{"name":"empty"}}
-wait 1200
+until motion still
 shot 11-empty-workspace
 key cmd+shift+t
-wait 1500
+until terminal.phase attached 8000
 key alt+w
-wait 1200
+until motion still
 shot 12-tab-after-last-tile-closed

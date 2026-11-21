@@ -37,7 +37,7 @@ expect drag.slot 3
 expect drag.rows bravo|charlie|[alpha]|delta
 shot 01-sidebar-dragging
 capture 01-sidebar-dragging-window 0
-wait 300
+captured
 sidebar drag drop
 until workspace.names bravo|charlie|alpha|delta 2000
 expect drag.active no
@@ -94,6 +94,8 @@ expect workspace.names bravo|charlie|alpha|delta
 # A press that doesn't travel is still a click.
 sidebar drag click 4
 until workspace.active delta 2000
+# The click's release settles before the next press.
+wait 150
 
 # Refreshes wait while a row is held: an agent's state changes mid-drag,
 # and the drop still lands where it was aimed.
@@ -121,7 +123,7 @@ wait 400
 expect drag.rows [4]|1|2|3
 shot 04-rail-dragging
 capture 04-rail-dragging-window 0
-wait 300
+captured
 sidebar drag drop
 until workspace.names alpha|bravo|delta|charlie 2000
 expect drag.last moved 4→1
@@ -135,7 +137,7 @@ capture 05-rail-dropped-window 0
 sidebar rail hover 4
 wait 200
 capture 06-rail-hover-window 0
-wait 300
+captured
 sidebar rail hover 0
 key cmd+1
 until workspace.active alpha 2000

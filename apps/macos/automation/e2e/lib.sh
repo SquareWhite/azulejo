@@ -34,6 +34,34 @@ azj() { "${clean_env[@]}" AZULEJO_SOCKET="$sock" "$azj_bin" --no-caller "$@"; }
 say() { printf '\n== %s\n' "$*"; }
 now_ms() { python3 -c 'import time; print(int(time.time()*1000))'; }
 
+# wait_for [-t SECONDS] COMMAND…: poll COMMAND every 0.05 s until it
+# succeeds (default 10 s); fails if it never does. For "until the app has
+# done X" instead of a fixed sleep.
+wait_for() {
+  local timeout=10
+  if [[ "$1" == -t ]]; then timeout="$2"; shift 2; fi
+  local tries
+  tries="$(awk -v t="$timeout" 'BEGIN { print int(t * 20) + 1 }')"
+  for (( ; tries > 0; tries-- )); do
+    "$@" >/dev/null 2>&1 && return 0
+    sleep 0.05
+  done
+  echo "e2e: timed out after ${timeout} s waiting for: $*" >&2
+  return 1
+}
+
+# watch_captures PATTERN…: the window captures an automation run asks for
+# (`capture` lines), `screencapture -l` of our own window only. See capture.sh.
+source "$e2e_here/../capture.sh"
+# start_capture_watcher PATTERN…: watch_captures in the background, killed
+# with stop_capture_watcher (and by e2e_cleanup).
+capture_watcher=""
+start_capture_watcher() { watch_captures "$@" & capture_watcher=$!; }
+stop_capture_watcher() {
+  [[ -n "$capture_watcher" ]] && kill "$capture_watcher" 2>/dev/null || true
+  capture_watcher=""
+}
+
 # check NAME COMMAND…: run a check, record PASS/FAIL with the name.
 check() {
   local name="$1"; shift
@@ -100,6 +128,7 @@ make_fixtures() {
 }
 
 e2e_cleanup() {
+  stop_capture_watcher
   [[ "${E2E_KEEP:-}" == 1 ]] && return 0
   reset_instance
   [[ -n "${fx:-}" && -d "$fx" ]] && rm -rf "$fx"

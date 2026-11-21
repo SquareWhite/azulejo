@@ -15,7 +15,7 @@ until tiles 3 8000
 wait 2500
 sidebar select 1
 action switch_tab 1
-wait 1200
+until motion still
 
 #THEME
 log === contrast: @THEME@
@@ -28,34 +28,34 @@ action switch_tab 1
 sidebar mode agents
 wait 1200
 capture @THEME@-scene 0
-wait 1500
+captured
 palette open
 palette type theme
 wait 500
 remember theme.regions
 capture @THEME@-palette 0
-wait 1500
+captured
 palette close
 action toggle_sidebar
 until sidebar rail 3000
 wait 800
 capture @THEME@-rail 0
-wait 1500
+captured
 action toggle_sidebar
 until sidebar visible 3000
 sidebar select 8
 until workspace.active colours 3000
 wait 1500
 capture @THEME@-colours 0
-wait 1500
+captured
 mouse drag 0,2 40,3
 wait 300
 capture @THEME@-selection 0
-wait 1500
+captured
 key cmd+s
 wait 600
 capture @THEME@-hints 0
-wait 1500
+captured
 key escape
 wait 300
 sidebar mode files
@@ -63,7 +63,7 @@ wait 800
 sidebar focus
 wait 1500
 capture @THEME@-files 0
-wait 1500
+captured
 sidebar mode agents
 wait 500
 #END

@@ -57,7 +57,8 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 
 ## Running tests next to other agents
 
-- `apps/macos/automation/e2e/run-all.sh` runs every suite under a fixed dev name (each suite's default, e.g. `e2e-dyn`; or, if you exported `AZJ_DEV_NAME`, that one name for all of them). Two agents running it at once fight over the same herdr sessions. When others are testing, loop over the suites yourself and give each a distinct name: `AZJ_DEV_NAME=e2e-<you>-<n> apps/macos/automation/e2e/<suite>.sh`.
+- `apps/macos/automation/e2e/run-all.sh` runs every suite. Without `E2E_TAG` each suite uses its fixed default dev name (e.g. `e2e-dyn`), so two agents running it at once fight over the same herdr sessions. When others are testing, give your run its own tag (letters and digits, at most 3 characters in a worktree): `E2E_TAG=<tag> apps/macos/automation/e2e/run-all.sh`. Suite n then runs as `e2e<tag><nn>`.
+- `run-all.sh -j N` runs up to N suites at once (default 1). The load-sensitive suites (frame-drop and timing checks) still run alone at the end. It prints each suite's time either way. Parallel runs add load, so prefer `-j 1` when other agents are testing too.
 - Suites write to `.dev/e2e.out/<suite>/` in your checkout, whatever the dev name, so a re-run overwrites the last one's output.
 - The same goes for `focus.sh` (`focus`) and `anim.sh` (`anim`): set your own `AZJ_DEV_NAME`.
 
@@ -67,7 +68,7 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 - [ ] `just test`
 - [ ] `just mac`
 - [ ] Every e2e suite in `apps/macos/automation/e2e/` (see above for parallel runs)
-- [ ] `apps/macos/automation/focus/focus.sh`: 52 scenarios. Don't skip it: skipping it once let a Monocle resize bug through.
+- [ ] `apps/macos/automation/focus/focus.sh`: 39 scenarios. Don't skip it: skipping it once let a Monocle resize bug through.
 - [ ] Animation or layout changes: `apps/macos/automation/anim.sh` too.
 - [ ] herdr or mirror changes: `just test-herdr` too.
 - [ ] Generated files are regenerated, never hand-merged: `just design-tokens`, `just schema`, `just keys-doc`, `just icon`.

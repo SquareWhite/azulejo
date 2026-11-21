@@ -100,6 +100,6 @@ key cmd+8
 until workspace.active adopted-b 2000
 key cmd+9
 until workspace.active t1 2000
-wait 600
+until motion still
 shot 03-adopted
 quit

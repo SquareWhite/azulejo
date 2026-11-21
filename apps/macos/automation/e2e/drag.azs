@@ -48,7 +48,7 @@ wait 900
 log drag-3 settled
 # A double-click evens the split out (a | (b / c) is two in a row).
 divider double -
-wait 700
+until motion still
 expect divider.- 0.50
 divider check
 shot 01-manual
@@ -102,12 +102,12 @@ log drag-6 settled
 shot 03-three-column
 # --- Monocle: no dividers ---
 core {"method":"layout.set","params":{"kind":"monocle"}}
-wait 800
+until motion still
 expect dividers 0
 divider probe
 # --- more terminals, in manual splits ---
 core {"method":"layout.set","params":{"kind":"manual"}}
-wait 800
+until motion still
 core {"method":"layout.split","params":{"direction":"right"}}
 until tiles 5 3000
 core {"method":"layout.split","params":{"direction":"down"}}

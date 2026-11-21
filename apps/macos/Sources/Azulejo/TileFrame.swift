@@ -101,24 +101,27 @@ class TileFrame: NSView, TileView, ThemeAware {
     // MARK: Focus dim
 
     /// Dims the tile to `level` (0: full brightness), cross-fading over
-    /// `duration` with the motion curve, or at once when it's 0.
-    func setDim(_ level: CGFloat, duration: CFTimeInterval) {
+    /// `duration` with the motion curve, or at once when it's 0. Returns
+    /// whether a cross-fade started.
+    @discardableResult
+    func setDim(_ level: CGFloat, duration: CFTimeInterval) -> Bool {
         let fill = Motion.dimFill
         var colour: CGColor?
         // theme: re-read on every focus change; applyTheme() sets it too.
         effectiveAppearance.performAsCurrentDrawingAppearance { colour = fill.cgColor }
         if dim.backgroundColor != colour { dim.backgroundColor = colour }
-        guard level != dimLevel else { return }
+        guard level != dimLevel else { return false }
         let from = dim.presentation()?.opacity ?? dim.opacity
         dimLevel = level
         dim.opacity = Float(level)
         dim.removeAnimation(forKey: Self.dimKey)
-        guard duration > 0 else { return }
+        guard duration > 0 else { return false }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = from
         fade.toValue = Float(level)
         Motion.configure(fade, duration: duration)
         dim.add(fade, forKey: Self.dimKey)
+        return true
     }
 
     private static let dimKey = "azj.dim"

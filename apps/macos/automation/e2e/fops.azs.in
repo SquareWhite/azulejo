@@ -257,6 +257,9 @@ until tiles 1 5000
 sh cp @FX@/config.orig {config}
 sh printf '\n[editor]\napp = "NoSuchEditorApp"\n' >> {config}
 until sidebar.files.editor.command vim 8000
+# The copy of the original alone also gives vim: wait for the app too,
+# which only the second save sets.
+until sidebar.files.editor.app NoSuchEditorApp 8000
 menu files src invoke Open Folder in Editor
 until tiles 2 5000
 until sidebar.files.editor fallback:vim @FX@/proj/src 3000

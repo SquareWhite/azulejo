@@ -46,7 +46,7 @@ type rot
 expect palette.motion opening
 expect palette.top Rotate layout clockwise
 capture 01-open-b 60
-wait 1300
+captured
 until palette.motion none 2000
 expect palette.look 1.00@1.00
 expect palette.anims 0
@@ -153,37 +153,45 @@ until theme atom-one-dark 8000
 wait 400
 key cmd+k
 capture 10-atom-one-dark-open 40
-wait 1400
+captured
+until palette.motion none 3000
 key escape
 capture 11-atom-one-dark-close 20
-wait 1000
+captured
+until palette.visible no 3000
 theme set atom-one-light
 until theme atom-one-light 8000
 wait 400
 key cmd+k
 capture 20-atom-one-light-open 40
-wait 1400
+captured
+until palette.motion none 3000
 key escape
 capture 21-atom-one-light-close 20
-wait 1000
+captured
+until palette.visible no 3000
 theme set macos-dark
 until theme macos-dark 8000
 wait 400
 key cmd+k
 capture 30-macos-dark-open 40
-wait 1400
+captured
+until palette.motion none 3000
 key escape
 capture 31-macos-dark-close 20
-wait 1000
+captured
+until palette.visible no 3000
 theme set macos-light
 until theme macos-light 8000
 wait 400
 key cmd+k
 capture 40-macos-light-open 40
-wait 1400
+captured
+until palette.motion none 3000
 key escape
 capture 41-macos-light-close 20
-wait 1000
+captured
+until palette.visible no 3000
 theme set atom-one-dark
 until theme atom-one-dark 8000
 

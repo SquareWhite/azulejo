@@ -11,23 +11,10 @@ trap e2e_cleanup EXIT
 reset_instance
 write_config </dev/null
 
-# The app asks for window captures (`capture`) by dropping requests in
-# .capture: `screencapture -l` of its own window only.
-rm -rf "$out/tabdrag"; mkdir -p "$out/tabdrag/.capture"
-(
-  while [[ ! -f "$out/tabdrag/result" ]]; do
-    for req in "$out/tabdrag/.capture"/*; do
-      [[ -e "$req" ]] || continue
-      name="$(basename "$req")"; rm -f "$req"
-      wid="$(cat "$out/tabdrag/window-id" 2>/dev/null || true)"
-      [[ -n "$wid" ]] && /usr/sbin/screencapture -l "$wid" -x -o "$out/tabdrag/$name.png" 2>/dev/null || true
-    done
-    sleep 0.01
-  done
-) &
-watcher=$!
+# Window captures (`capture`): `screencapture -l` of our own window only.
+start_capture_watcher "$out/tabdrag"
 run_azs "$e2e_here/tabdrag.azs" tabdrag
-kill "$watcher" 2>/dev/null || true
+stop_capture_watcher
 
 d="$out/tabdrag"
 log="$d/app.log"

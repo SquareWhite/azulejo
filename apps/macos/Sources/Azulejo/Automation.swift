@@ -69,7 +69,20 @@ import AppKit
 ///                            (reflow: one to `Motion.maxLiveResizes`)
 ///     capture name [ms]      after ms, ask the harness to `screencapture` the
 ///                            window → <out>/name.png (Metal and in-flight
-///                            motion included, unlike `shot`)
+///                            motion included, unlike `shot`); the script
+///                            carries on at once (mid-motion samples)
+///     captured [ms]          wait until every capture asked for so far is on
+///                            disk: the harness took the request and wrote
+///                            the PNG (or gave up). A request nobody takes
+///                            within 2 s means no watcher runs: go on.
+///                            Default 5000 for the PNG; the end of a script
+///                            waits the same way
+///     until motion still [ms]   nothing moves or fades in the focused window
+///                            and nothing has for a moment (`motion`: layout
+///                            motion, tab or workspace switch, dim fade,
+///                            divider drag, live content's reveal; "still"
+///                            once 250 ms have passed since the last of them
+///                            and 200 ms since the last step that acted)
 ///     appearance light|dark|system   set NSApp.appearance (the system's
 ///                            setting is untouched)
 ///     dock-icon name         the Dock's icon image at 1024 → <out>/name.png;
@@ -95,6 +108,32 @@ final class Automation {
     private var directDelivery = false
     /// `trace on`: key and action lines also log the layout (`layoutTrace`).
     private var tracing = false
+    /// When the last step that acts on the app ran (anything but a wait, a
+    /// check or a note): `motion still` waits a moment past it, so a motion
+    /// the step sets off has begun before it counts as still.
+    private var actedAt: CFTimeInterval = 0
+    /// Captures asked for (`capture`) and not yet known to be on disk, and
+    /// when each one's request went out (after its delay).
+    private var pendingCaptures: [String] = []
+    private var requestedCaptures: [String: Date] = [:]
+    /// A harness took a capture request: one watches (`awaitCaptures`).
+    private var watcherSeen = false
+
+    /// Steps that only wait, check or note: everything else acts.
+    private static let passive: Set<String> = [
+        "wait", "until", "require", "expect", "remember", "unchanged", "log", "delivery", "trace",
+        "anim", "capture", "captured", "shot", "quit",
+    ]
+    /// The pause after a step that sets none of its own.
+    private static let implicitDelay = 0.15
+    /// Steps that only wait: the 0.15 s pause after the step before goes.
+    private static let waits: Set<String> = ["wait", "until", "require", "captured"]
+    /// `motion still`: quiet this long after the last motion ends (live
+    /// content's reveal, a fade the last frame started)…
+    private static let settleAfterMotion: CFTimeInterval = 0.25
+    /// …and this long after the last step that acted (a posted key reaches
+    /// the router within 0.05 s; the motion it sets off starts then).
+    private static let settleAfterStep: CFTimeInterval = 0.2
 
     init(app: AppController, script: String, out: String) {
         self.app = app
@@ -114,8 +153,26 @@ final class Automation {
             try? "\(controller.window.windowNumber)\n".write(
                 to: out.appendingPathComponent("window-id"), atomically: true, encoding: .utf8)
         }
-        // Let the first layout settle (and herdr bind the first terminal).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.next() }
+        // Let herdr bind the first terminal (most scripts open with `until
+        // terminal.phase attached`). No terminal in focus (yet): give the
+        // first layout half a second, as before; one stuck on its way
+        // (waiting, retrying): 10 s at most, then the script decides.
+        let started = Date()
+        func ready() {
+            let phase = state()["terminal.phase"] ?? "-"
+            let waited = Date().timeIntervalSince(started)
+            switch phase {
+            case "attached", "observing", "observing-taken-over", "ended":
+                record("automation ready: terminal \(phase) after \(Int(waited * 1000)) ms")
+                return next()
+            case "-" where waited >= 0.5, _ where waited >= 10:
+                record("automation ready: terminal \(phase) after \(Int(waited * 1000)) ms")
+                return next()
+            default:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: ready)
+            }
+        }
+        ready()
     }
 
     /// Lines the app logs while a step runs (key outcomes, failures).
@@ -128,8 +185,9 @@ final class Automation {
         guard !line.isEmpty else { return next() }
         let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
         let arg = parts.count > 1 ? parts[1] : ""
-        var delay = 0.15
+        var delay = Self.implicitDelay
         notes.removeAll()
+        if !Self.passive.contains(parts[0]) { actedAt = CACurrentMediaTime() }
         switch parts[0] {
         case "key": press(arg)
         case "type":
@@ -232,6 +290,9 @@ final class Automation {
         case "require": return until(arg, abort: true)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
+        case "captured":
+            record("captured \(pendingCaptures.joined(separator: " "))")
+            return awaitCaptures(timeout: (Double(arg) ?? 5000) / 1000) { self.next() }
         case "window-size":
             // `window-size <width> <height>`: the focused window's content size
             // in points (mockup comparisons capture at the mockup's size).
@@ -258,12 +319,26 @@ final class Automation {
         case "quit": return finish()
         default: failures.append("line \(step): unknown command \(parts[0])")
         }
+        // A wait or a poll next paces the script itself: no pause before it,
+        // but a key still gets to the router first (a posted key that the
+        // monitor doesn't see is routed directly after 0.05 s).
+        // (`wait`, `divider` and `sidebar width` set their own pause.)
+        let ownPause = ["wait", "divider"].contains(parts[0]) || (parts[0] == "sidebar" && arg.hasPrefix("width"))
+        if delay == Self.implicitDelay, !ownPause, let following = nextCommand(), Self.waits.contains(following) {
+            delay = ["key", "type", "action"].contains(parts[0]) ? 0.06 : 0
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             Perf.measure("automation") {
                 if parts[0] == "key" || parts[0] == "action" { self.record("\(parts[0]) \(arg)") }
                 self.next()
             }
         }
+    }
+
+    /// The command of the next line that has one.
+    private func nextCommand() -> String? {
+        lines[min(step, lines.count)...].first { !$0.isEmpty }
+            .map { String($0.split(separator: " ", maxSplits: 1)[0]) }
     }
 
     // MARK: Commands
@@ -477,7 +552,10 @@ final class Automation {
     /// A window capture by the system (Metal layers and running animations
     /// included). The app can't run `screencapture` itself (no Screen
     /// Recording permission), so it drops a request in `<out>/.capture/` for
-    /// the harness to take (apps/macos/automation/anim.sh watches it).
+    /// the harness to take (`watch_captures` in apps/macos/automation/
+    /// capture.sh): it removes the request when it takes it, then writes
+    /// `<name>.png`, or `.capture/.failed-<name>` if `screencapture` got
+    /// nothing (`captured` waits for one or the other).
     /// `screencapture` gets nothing while the screen is locked, so the app
     /// also renders the layer presentation tree itself to `<name>-app.png`:
     /// tiles, headers and corner caps where the motion has them at that
@@ -490,8 +568,14 @@ final class Automation {
         let delay = parts.count > 1 ? (Double(parts[1]) ?? 0) / 1000 : 0
         let dir = out.appendingPathComponent(".capture", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // A capture taken again replaces the last one.
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(".failed-\(name)"))
+        try? FileManager.default.removeItem(at: out.appendingPathComponent("\(name).png"))
+        requestedCaptures[name] = nil
+        if !pendingCaptures.contains(name) { pendingCaptures.append(name) }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             try? Data().write(to: dir.appendingPathComponent(name), options: .atomic)
+            self.requestedCaptures[name] = Date()
             self.renderPresentation("\(name)-app")
         }
         record("capture \(name) +\(Int(delay * 1000)) ms")
@@ -500,6 +584,41 @@ final class Automation {
             self.record("  frames \(name): \(controller.tiles.describeVisualFrames)")
             self.record("  chrome \(name): \(controller.describeChrome)")
         }
+    }
+
+    /// Calls `then` once every pending capture is on disk: its request went
+    /// out and the harness took it (removed it) and wrote the PNG or a
+    /// failure mark. A request nobody takes means no watcher runs (a suite
+    /// that only wants the `-app.png` renders): it counts as done after 2 s,
+    /// or half a second while no request has ever been taken. A PNG still
+    /// missing after `timeout` seconds is noted, not failed.
+    private func awaitCaptures(timeout: TimeInterval, then: @escaping () -> Void) {
+        let dir = out.appendingPathComponent(".capture", isDirectory: true)
+        let fm = FileManager.default
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            pendingCaptures.removeAll { name in
+                guard let asked = requestedCaptures[name] else { return false }
+                if fm.fileExists(atPath: out.appendingPathComponent("\(name).png").path) { return true }
+                if fm.fileExists(atPath: dir.appendingPathComponent(".failed-\(name)").path) {
+                    record("  capture \(name): the harness got no image")
+                    return true
+                }
+                guard fm.fileExists(atPath: dir.appendingPathComponent(name).path) else {
+                    watcherSeen = true  // taken: the PNG is on its way
+                    return false
+                }
+                return Date().timeIntervalSince(asked) > (watcherSeen ? 2 : 0.5)
+            }
+            if pendingCaptures.isEmpty { return then() }
+            if Date() > deadline {
+                record("  captured: still no \(pendingCaptures.joined(separator: ", ")) after \(Int(timeout * 1000)) ms")
+                pendingCaptures.removeAll()
+                return then()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+        }
+        poll()
     }
 
     /// The window's content as Core Animation is showing it right now
@@ -646,7 +765,23 @@ final class Automation {
         // Trace names go to tiles as they're first seen, on every read, as
         // when each read built the whole state (`order` and `layout` use them).
         if let tab = window.workspace?.tab { Self.nameNewTiles(in: tab) }
-        return AutomationState(Self.stateSources(app: app, controller: controller, session: session, window: window))
+        let motion = AutomationState.Source(["motion"]) { [actedAt] in
+            ["motion": Self.motionState(controller, actedAt: actedAt)]
+        }
+        return AutomationState(Self.stateSources(app: app, controller: controller, session: session, window: window)
+            + [motion])
+    }
+
+    /// `motion`: "still", or "moving: WHAT" while the focused window's tiles
+    /// move or fade (`TileContainerView.motionInFlight`), until a moment
+    /// after the last motion anywhere ends (live content's reveal) and after
+    /// the last step that acted (a motion it sets off has begun by then).
+    private static func motionState(_ controller: WindowController, actedAt: CFTimeInterval) -> String {
+        if let what = controller.tiles.motionInFlight { return "moving: \(what)" }
+        let now = CACurrentMediaTime()
+        if now < MotionStats.shared.movingUntil + settleAfterMotion { return "moving: settling" }
+        if now < actedAt + settleAfterStep { return "moving: step" }
+        return "still"
     }
 
     /// Every state key, from the sources below in order: a later source's
@@ -855,6 +990,11 @@ final class Automation {
     }
 
     private func finish() {
+        // The harness's watcher stops at the result: let it take the
+        // captures still on their way first.
+        guard pendingCaptures.isEmpty else {
+            return awaitCaptures(timeout: 5) { self.finish() }
+        }
         let result = failures.isEmpty ? "ok" : "fail: \(failures.joined(separator: "; "))"
         record("automation done: \(result)")
         try? logText.write(to: out.appendingPathComponent("automation.log"), atomically: true, encoding: .utf8)

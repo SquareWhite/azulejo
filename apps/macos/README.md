@@ -170,9 +170,24 @@ reaches other apps. A short example:
 # split, check, capture
 key ctrl+cmd+t
 until tiles 2 3000
+until motion still
 log split done
 shot after-split
 ```
+
+Pacing:
+
+- Every step but a wait or a check pauses 0.15 s before the next, unless the
+  next line is `wait`, `until`, `require` or `captured`: those pace the
+  script themselves. The script starts once the focused terminal has
+  attached (or half a second in, with no terminal in focus).
+- Wait for a state, not for a time. `until motion still` holds once the
+  focused window's tiles have stopped moving and fading (layout motion, tab
+  and workspace switches, the focus dim, divider drags, the reveal after a
+  motion). It doesn't cover the sidebar's or the tab strip's own
+  animations: use their keys (`until sidebar rail`…).
+- Keep a fixed `wait` only where the time is the point: a sample taken
+  mid-motion, or a check that nothing happens for a while.
 
 The full command list (`key`, `type`, `action`, `expect`, `until`, `mouse`,
 `menu`, `anim`, `core`, `tile`, `sh`, `palette` and more) is the comment at
@@ -186,10 +201,14 @@ in fixture paths and ports.
 - `shot NAME` renders the window's content to `<out>/NAME.png`. It needs no
   Screen Recording permission, but misses Metal content mid-motion.
 - `capture NAME [ms]` drops a request in `<out>/.capture/`; the driving
-  script (`anim.sh`, `toolbar.sh`, `e2e/wsslide.sh`…) takes it with
-  `screencapture -l` on the app's own window, Metal and motion included. The
-  app also renders its layer tree to `<out>/NAME-app.png`, which works with
-  the screen locked.
+  script takes it with `screencapture -l` on the app's own window, Metal and
+  motion included (`watch_captures` in `automation/capture.sh`, which
+  `e2e/lib.sh` sources: `start_capture_watcher "$out/run"`). The app also
+  renders its layer tree to `<out>/NAME-app.png`, which works with the
+  screen locked. The script carries on at once, so delayed captures can
+  sample a motion; `captured` waits until the watcher has written every PNG
+  asked for so far, and the script's end waits the same way. With no
+  watcher running, `captured` gives up on a request after half a second.
 
 Never capture the whole screen or another app's window. Captures stay under
 `.dev/`; don't commit them.
@@ -212,12 +231,25 @@ each, sharing `lib.sh`.
 ```sh
 apps/macos/automation/e2e/run-all.sh              # every suite, one after another
 apps/macos/automation/e2e/run-all.sh dyn mtabs    # some of them
+E2E_TAG=me apps/macos/automation/e2e/run-all.sh -j 3   # three at a time
 AZJ_DEV_NAME=e2e-me-1 apps/macos/automation/e2e/dyn.sh
 ```
 
 - Each suite defaults to its own name (`e2e-dyn`, `e2e-agents`…).
   `run-all.sh` with `AZJ_DEV_NAME` exported runs every suite under that one
   name.
+- `E2E_TAG=<tag>` gives suite *n* its own instance `e2e<tag><nn>`. herdr
+  session names are global, so use your own tag whenever another checkout
+  might run suites too. In a `.claude/worktrees/agent-*` checkout keep the
+  tag to 3 characters or fewer (the socket path limit); `run-all.sh` refuses
+  one that's too long.
+- `-j N` runs N suites at once, longest first, each one's output in
+  `.dev/e2e.out/run-all/<suite>.log`. The load-sensitive suites (`dyn` and
+  `drag` count dropped frames, `palette-motion` times the ⌘K menu, `api`
+  times herdr round trips) then run alone, one after another. The default
+  `-j 1` runs them all one after another in the order given, output on the
+  terminal.
+- Either way the summary lists each suite's result and time, and the total.
 - `lib.sh` refuses an `AZJ_DEV_NAME` that doesn't start with `e2e`, and
   `e2e/hd`, the suites' herdr wrapper, refuses any session not named
   `azj-dev-e2e*` and `herdr update`.
@@ -241,8 +273,8 @@ apps/macos/automation/focus/focus.sh [--keep]    # or: just mac-focus
 39 scenarios: which action each chord resolves to and where first responder
 ends up, across terminals, the sidebar's Files view, ⌘K, layouts, tabs,
 workspaces, herdr changes, take-over and input methods. It runs on
-instance `focus` and writes to `.dev/<name>/out/focus/`, which the reset at
-the end wipes: pass `--keep` to read the log afterwards. Don't skip it; it
+instance `focus` and writes to `.dev/e2e.out/focus/`, which survives the
+reset at the end (`--keep` also leaves the instance up). Don't skip it; it
 catches resize bugs nothing else does.
 
 ### Motion stress
