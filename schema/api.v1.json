@@ -970,7 +970,7 @@
           "type": "object"
         },
         {
-          "description": "Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area\ngoes left → top → right → bottom (clockwise), or back with `reverse`.\n`part` turns only the master area instead (\"rotate part\": masters\nside by side or stacked), and `flip` toggles master left ↔ top\n(`tall.py`'s rotate). A manual tab turns its whole split tree a\nquarter turn, whatever its shape (`reverse` turns it back; `flip`\nstill toggles master left ↔ top). Monocle and Three Column have\nnothing to turn: the command succeeds and changes nothing.",
+          "description": "Turns a Tile tab a quarter turn, as Bismuth's rotate: the master area\ngoes left → top → right → bottom (clockwise), or back with `reverse`.\n`part` turns only the master area instead (\"rotate part\": masters\nside by side or stacked), and `flip` toggles master left ↔ top\n(`tall.py`'s rotate). A manual tab turns its whole split tree a\nquarter turn, whatever its shape (`reverse` turns it back; `flip`\nstill toggles master left ↔ top). A Three Column tab toggles\nbetween columns and rows, whether turned, turned back or flipped;\n`part` leaves it alone. Monocle has nothing to turn: the command\nsucceeds and changes nothing.",
           "properties": {
             "method": {
               "const": "layout.rotate",
@@ -3231,7 +3231,7 @@
         },
         {
           "const": "three_column",
-          "description": "Masters centred, stacks left and right.",
+          "description": "Masters centred, stacks left and right (or, in rows, above and\nbelow).",
           "type": "string"
         }
       ]
@@ -3332,6 +3332,7 @@
           "$ref": "#/$defs/ThreeColumnParams",
           "default": {
             "masters": 1,
+            "orientation": "columns",
             "ratio": 0.6
           }
         },
@@ -3379,11 +3380,11 @@
     "LayoutRotate": {
       "properties": {
         "flip": {
-          "description": "Toggle master left ↔ top (and right ↔ bottom in a Tile tab) instead\nof turning; a manual tree is rebuilt in tall shape. Not with `part`.",
+          "description": "Toggle master left ↔ top (and right ↔ bottom in a Tile tab, columns\n↔ rows in a Three Column one) instead of turning; a manual tree is\nrebuilt in tall shape. Not with `part`.",
           "type": "boolean"
         },
         "part": {
-          "description": "Tile tabs: turn only the master area, so several masters sit side by\nside instead of stacked.",
+          "description": "Tile tabs: turn only the master area, so several masters sit side by\nside instead of stacked. Other kinds have no part to turn.",
           "type": "boolean"
         },
         "reverse": {
@@ -3537,6 +3538,7 @@
           "default": {
             "three_column": {
               "masters": 1,
+              "orientation": "columns",
               "ratio": 0.6
             },
             "tile": {
@@ -4631,6 +4633,7 @@
           "default": {
             "three_column": {
               "masters": 1,
+              "orientation": "columns",
               "ratio": 0.6
             },
             "tile": {
@@ -4952,6 +4955,21 @@
       ],
       "type": "object"
     },
+    "ThreeColumnOrientation": {
+      "description": "Which way the Three Column layout runs.",
+      "oneOf": [
+        {
+          "const": "columns",
+          "description": "Masters in a centre column, stacks to its left and right.",
+          "type": "string"
+        },
+        {
+          "const": "rows",
+          "description": "The same turned on its side: masters in a centre row, stacks above\nand below it. Every rect is the columns one with x and y swapped, so\nthe left stack sits on top, the right one at the bottom, and each\ncolumn's top-to-bottom order runs left to right.",
+          "type": "string"
+        }
+      ]
+    },
     "ThreeColumnParams": {
       "description": "The Three Column layout's parameters.",
       "properties": {
@@ -4962,8 +4980,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "orientation": {
+          "$ref": "#/$defs/ThreeColumnOrientation",
+          "default": "columns",
+          "description": "Columns or rows; missing (older state and files) means columns."
+        },
         "ratio": {
-          "description": "The centre column's weight against each side column's `1 − ratio`,\nas in Bismuth: 0.2–0.75. With three columns the centre takes\n`ratio / (2 − ratio)` of the width (0.6 gives 3/7); with two (the\nmasters and one stack tile) it takes `ratio` itself.",
+          "description": "The centre column's weight against each side column's `1 − ratio`,\nas in Bismuth: 0.2–0.75. With three columns the centre takes\n`ratio / (2 − ratio)` of the width (0.6 gives 3/7); with two (the\nmasters and one stack tile) it takes `ratio` itself. In rows it\nweighs the rows' heights the same way.",
           "format": "double",
           "type": "number"
         }

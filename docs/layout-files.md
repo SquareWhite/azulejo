@@ -59,7 +59,7 @@ A file uses either top-level tab keys or `[[tab]]` sections, not both.
 | `tile` (default) | Dynamic: masters on one side, the others stacked evenly on the other. New tiles join the stack. | `masters`: 0–10, default 1; `ratio`: the master area's share, 0.2–0.8, default 0.5; `orientation`: `left` (default), `top`, `right` or `bottom` |
 | `tall` | The same as `tile` with one master; kept for older files | `ratio` |
 | `monocle` | Dynamic: every tile full size, the focused one shown | none |
-| `three_column` | Dynamic: masters in the centre, the rest split between a left and a right stack | `masters`: 1–10, default 1; `ratio`: 0.2–0.75, default 0.6, the centre column's weight against each side's `1 − ratio` as in Bismuth (0.6 gives the centre 3/7 of the width; with only one stack tile the centre takes `ratio` itself) |
+| `three_column` | Dynamic: masters in the centre, the rest split between a left and a right stack (or, in rows, a top and a bottom one) | `masters`: 1–10, default 1; `ratio`: 0.2–0.75, default 0.6, the centre column's weight against each side's `1 − ratio` as in Bismuth (0.6 gives the centre 3/7 of the width; with only one stack tile the centre takes `ratio` itself); `orientation`: `columns` (default) or `rows`, the same layout on its side, which `alt+o` toggles |
 | `columns` | Manual: side by side | `sizes`: one relative size per tile, default even |
 | `rows` | Manual: stacked | `sizes` |
 

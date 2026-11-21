@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use azulejo_model::{
     Axis, Direction, FIT_TOLERANCE, LayoutKind, LayoutParams, Node, Orientation, Rect, Session,
-    TabLayout, ThreeColumnParams, Tile, TileContent, TileId, TileParams, arrange, fit,
+    TabLayout, ThreeColumnOrientation, ThreeColumnParams, Tile, TileContent, TileId, TileParams,
+    arrange, fit,
 };
 use proptest::prelude::*;
 
@@ -21,8 +22,9 @@ fn params() -> impl Strategy<Value = LayoutParams> {
         any::<bool>(),
         1u8..4,
         0.2f64..0.75,
+        any::<bool>(),
     )
-        .prop_map(|(m, r, o, part, cm, cr)| {
+        .prop_map(|(m, r, o, part, cm, cr, rows)| {
             let mut p = LayoutParams {
                 tile: TileParams {
                     masters: m,
@@ -33,6 +35,11 @@ fn params() -> impl Strategy<Value = LayoutParams> {
                 three_column: ThreeColumnParams {
                     masters: cm,
                     ratio: cr,
+                    orientation: if rows {
+                        ThreeColumnOrientation::Rows
+                    } else {
+                        ThreeColumnOrientation::Columns
+                    },
                 },
             };
             p.clamp();

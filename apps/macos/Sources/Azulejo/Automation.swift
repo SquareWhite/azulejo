@@ -699,6 +699,7 @@ final class Automation {
                     s["ratio"] = params.map { String(format: "%.2f", $0.tile.ratio) } ?? "?"
                 case .threeColumn:
                     s["masters"] = params.map { "\($0.threeColumn.masters)" } ?? "?"
+                    s["orientation"] = params.map { $0.threeColumn.orientation ?? "columns" } ?? "?"
                     s["ratio"] = params.map { String(format: "%.2f", $0.threeColumn.ratio) } ?? "?"
                 case .manual, .monocle:
                     break
@@ -814,7 +815,8 @@ final class Automation {
             parts.append("o=\(p?.tile.orientation ?? "?") m=\(p?.tile.masters ?? -1)"
                 + " r=\(String(format: "%.3f", p?.tile.ratio ?? 0)) part=\(p?.tile.rotatePart == true ? "yes" : "no")")
         case .threeColumn:
-            parts.append("m=\(p?.threeColumn.masters ?? -1) r=\(String(format: "%.3f", p?.threeColumn.ratio ?? 0))")
+            parts.append("o=\(p.map { $0.threeColumn.orientation ?? "columns" } ?? "?") m=\(p?.threeColumn.masters ?? -1)"
+                + " r=\(String(format: "%.3f", p?.threeColumn.ratio ?? 0))")
         case .manual, .monocle: break
         }
         parts.append("order=\(tab.order.map(name).joined(separator: ","))")

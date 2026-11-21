@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use azulejo_model::{
-    Direction, LayoutKind, LayoutParams, Node, Orientation, Rect, Session, Tile, TileContent,
-    TileId, TileParams, arrange, freeze,
+    Direction, LayoutKind, LayoutParams, Node, Orientation, Rect, Session, ThreeColumnOrientation,
+    Tile, TileContent, TileId, TileParams, arrange, freeze,
 };
 use proptest::prelude::*;
 
@@ -23,8 +23,9 @@ fn params() -> impl Strategy<Value = LayoutParams> {
         any::<bool>(),
         0u8..14,
         -0.5f64..1.5,
+        any::<bool>(),
     )
-        .prop_map(|(m, r, o, part, cm, cr)| {
+        .prop_map(|(m, r, o, part, cm, cr, rows)| {
             let mut p = LayoutParams {
                 tile: TileParams {
                     masters: m,
@@ -35,6 +36,11 @@ fn params() -> impl Strategy<Value = LayoutParams> {
                 three_column: azulejo_model::ThreeColumnParams {
                     masters: cm,
                     ratio: cr,
+                    orientation: if rows {
+                        ThreeColumnOrientation::Rows
+                    } else {
+                        ThreeColumnOrientation::Columns
+                    },
                 },
             };
             p.clamp();
@@ -211,6 +217,56 @@ proptest! {
         s.rotate_part(tab).unwrap();
         s.rotate_part(tab).unwrap();
         prop_assert_eq!(s.tab(tab).unwrap().placements(), start);
+    }
+
+    /// Three Column's rotate (either way) and flip swap columns and rows:
+    /// every tile's rect mirrors across the diagonal (x ↔ y), weights and
+    /// all, so each stack stays on its side (left ↔ top, right ↔ bottom),
+    /// and a second press gives the start back exactly. Rotate part leaves
+    /// it alone.
+    #[test]
+    fn three_column_turns_between_columns_and_rows(
+        n in 1usize..12,
+        params in params(),
+        weights in prop::collection::vec(0.1f64..5.0, 1..8),
+        reverse in any::<bool>(),
+        flip in any::<bool>(),
+    ) {
+        let mut s = Session::new();
+        s.prefs.default = LayoutKind::ThreeColumn;
+        s.prefs.params = params;
+        let (_, ws) = s.create_window("main", None);
+        s.create_tab(ws, Tile::new(TileContent::terminal()), None).unwrap();
+        let tab = s.focus().tab.unwrap();
+        for _ in 1..n {
+            s.split_auto(tab, Tile::new(TileContent::terminal())).unwrap();
+        }
+        let order = s.tab(tab).unwrap().layout.order.clone();
+        for (t, w) in order.iter().zip(weights.iter().cycle()) {
+            for d in [Direction::Down, Direction::Right] {
+                let _ = s.resize(*t, d, (w - 1.0) / 20.0);
+            }
+        }
+        let start = s.tab(tab).unwrap().clone();
+        let press = |s: &mut Session| {
+            if flip { s.flip(tab) } else { s.rotate_turn(tab, reverse) }
+        };
+        prop_assert!(press(&mut s).unwrap());
+        let t = s.tab(tab).unwrap();
+        prop_assert_eq!(
+            t.layout.params.three_column.orientation,
+            start.layout.params.three_column.orientation.toggled()
+        );
+        prop_assert_eq!(s.check_invariants(), Ok(()));
+        let before = start.placements();
+        for p in t.placements() {
+            let r = before.iter().find(|x| x.tile == p.tile).unwrap().rect;
+            prop_assert!((p.rect.x - r.y).abs() < EPS && (p.rect.y - r.x).abs() < EPS);
+            prop_assert!((p.rect.width - r.height).abs() < EPS && (p.rect.height - r.width).abs() < EPS);
+        }
+        prop_assert!(!s.rotate_part(tab).unwrap());
+        prop_assert!(press(&mut s).unwrap());
+        prop_assert_eq!(s.tab(tab).unwrap(), &start);
     }
 
     /// Swapping one way and then back restores the order when the two tiles

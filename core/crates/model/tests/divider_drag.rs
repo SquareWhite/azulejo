@@ -3,8 +3,8 @@
 //! its parameters, the clamps, and evening a split out.
 
 use azulejo_model::{
-    Direction, LayoutKind, LayoutParams, Node, Orientation, Rect, Session, TabId, Tile,
-    TileContent, TileId, TileParams,
+    Direction, LayoutKind, LayoutParams, Node, Orientation, Rect, Session, TabId,
+    ThreeColumnOrientation, Tile, TileContent, TileId, TileParams,
 };
 use proptest::prelude::*;
 
@@ -232,6 +232,76 @@ fn three_columns_keep_the_centre_centred() {
 }
 
 #[test]
+fn three_rows_keep_the_centre_centred() {
+    let mut params = LayoutParams::default();
+    params.three_column.orientation = ThreeColumnOrientation::Rows;
+    let (mut s, tab, t) = tab_of(LayoutKind::ThreeColumn, 3, params);
+    // order: centre master t0, bottom t1, top t2. Default 2/7, 3/7, 2/7 of
+    // the height.
+    assert!(close(rect(&s, tab, t[2]).height, 2.0 / 7.0));
+    assert!(close(rect(&s, tab, t[1]).y, 5.0 / 7.0));
+    // The top|centre divider is the root's; drag it down to y = 0.2.
+    assert!(s.set_split_ratio(tab, &[], Some(0.2)).unwrap());
+    assert!(close(rect(&s, tab, t[2]).height, 0.2));
+    assert!(
+        close(rect(&s, tab, t[1]).height, 0.2),
+        "the bottom row follows"
+    );
+    assert!(close(rect(&s, tab, t[0]).y, 0.2));
+    // The centre|bottom divider, in the root's `b`, to y = 0.7.
+    let (_, ratio_b, area) = s.tab(tab).unwrap().root.split_at(&[true]).unwrap();
+    assert!(close(area.y + area.height * ratio_b, 0.8));
+    let r = (0.7 - area.y) / area.height;
+    assert!(s.set_split_ratio(tab, &[true], Some(r)).unwrap());
+    assert!(close(rect(&s, tab, t[1]).height, 0.3));
+    assert!(close(rect(&s, tab, t[2]).height, 0.3));
+    // Evened out: equal rows, full width.
+    s.set_split_ratio(tab, &[], None).unwrap();
+    for x in &t {
+        assert!(close(rect(&s, tab, *x).height, 1.0 / 3.0));
+        assert!(close(rect(&s, tab, *x).width, 1.0));
+    }
+    // Two stack tiles side by side in the bottom row trade widths.
+    let (mut s, tab, t) = tab_of(LayoutKind::ThreeColumn, 5, params);
+    let (b0, b1) = (rect(&s, tab, t[1]), rect(&s, tab, t[2]));
+    assert!(close(b0.y, b1.y) && close(b0.right(), b1.x));
+    // The vertical divider at the right edge of t1, in the bottom row.
+    let path = {
+        fn walk(n: &Node, at: &mut Vec<bool>, out: &mut Vec<Vec<bool>>) {
+            if let Node::Split { a, b, .. } = n {
+                out.push(at.clone());
+                at.push(false);
+                walk(a, at, out);
+                at.pop();
+                at.push(true);
+                walk(b, at, out);
+                at.pop();
+            }
+        }
+        let t0 = s.tab(tab).unwrap();
+        let mut all = Vec::new();
+        walk(&t0.root, &mut Vec::new(), &mut all);
+        all.into_iter()
+            .find(|p| {
+                let (axis, ratio, area) = t0.root.split_at(p).unwrap();
+                axis == azulejo_model::Axis::Horizontal
+                    && close(area.x + area.width * ratio, b0.right())
+                    && area.y <= b0.y + 1e-9
+                    && b0.bottom() <= area.bottom() + 1e-9
+            })
+            .expect("a divider between the bottom row's tiles")
+    };
+    let (_, _, area) = s.tab(tab).unwrap().root.split_at(&path).unwrap();
+    assert!(
+        s.set_split_ratio(tab, &path, Some((0.6 - area.x) / area.width))
+            .unwrap()
+    );
+    assert!(close(rect(&s, tab, t[1]).width, 0.6));
+    assert!(close(rect(&s, tab, t[2]).width, 0.4));
+    s.check_invariants().unwrap();
+}
+
+#[test]
 fn two_columns_take_the_ratio_as_it_is() {
     let (mut s, tab, t) = tab_of(LayoutKind::ThreeColumn, 2, LayoutParams::default());
     assert!(s.set_split_ratio(tab, &[], Some(0.4)).unwrap());
@@ -304,6 +374,7 @@ proptest! {
             Orientation::Left, Orientation::Top, Orientation::Right, Orientation::Bottom,
         ]),
         part in any::<bool>(),
+        rows in any::<bool>(),
         drags in prop::collection::vec((any::<u64>(), prop::option::of(-0.2f64..1.2)), 1..12),
     ) {
         let mut params = LayoutParams {
@@ -311,6 +382,9 @@ proptest! {
             ..LayoutParams::default()
         };
         params.three_column.masters = masters.max(1);
+        if rows {
+            params.three_column.orientation = ThreeColumnOrientation::Rows;
+        }
         params.clamp();
         let (mut s, tab, _) = tab_of(kind, n, params);
         for (pick, ratio) in drags {

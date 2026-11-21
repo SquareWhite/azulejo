@@ -368,6 +368,63 @@ mod tests {
         assert_eq!(loaded.focused_tile(), Some(terminal));
     }
 
+    /// Three Column's orientation survives a save, and a state file from
+    /// before it existed loads as columns.
+    #[test]
+    fn three_column_rows_round_trip_and_old_files_load_as_columns() {
+        use azulejo_model::{LayoutKind, ThreeColumnOrientation};
+        use azulejo_protocol::{LayoutRotate, LayoutSetKind};
+        let mut engine = Engine::new();
+        engine
+            .execute(Command::LayoutSplit(LayoutSplit {
+                tile: None,
+                direction: Direction::Right,
+                content: None,
+            }))
+            .unwrap();
+        engine
+            .execute(Command::LayoutSet(LayoutSetKind {
+                tab: None,
+                kind: LayoutKind::ThreeColumn,
+            }))
+            .unwrap();
+        engine
+            .execute(Command::LayoutRotate(LayoutRotate::default()))
+            .unwrap();
+        let session = engine.session().clone();
+        let tab = session.focus().tab.unwrap();
+        let orientation = |s: &Session| s.tab(tab).unwrap().layout.params.three_column.orientation;
+        assert_eq!(orientation(&session), ThreeColumnOrientation::Rows);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        save(&path, &session).unwrap();
+        let Loaded::Session(loaded) = load(&path).unwrap() else {
+            panic!("expected a session");
+        };
+        assert_eq!(loaded, session);
+
+        // Older builds only had columns and wrote no `orientation`: such a
+        // file loads as the same columns tab.
+        engine
+            .execute(Command::LayoutRotate(LayoutRotate::default()))
+            .unwrap();
+        let session = engine.session().clone();
+        assert_eq!(orientation(&session), ThreeColumnOrientation::Columns);
+        save(&path, &session).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let params = &mut value["session"]["windows"][0]["workspaces"][0]["tabs"][0]["layout"]["params"]
+            ["three_column"];
+        assert_eq!(params["orientation"], json!("columns"));
+        params.as_object_mut().unwrap().remove("orientation");
+        fs::write(&path, value.to_string()).unwrap();
+        let Loaded::Session(loaded) = load(&path).unwrap() else {
+            panic!("expected a session");
+        };
+        assert_eq!(loaded, session);
+    }
+
     #[test]
     fn missing_file_is_not_an_error() {
         let dir = tempfile::tempdir().unwrap();

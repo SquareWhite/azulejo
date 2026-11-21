@@ -333,6 +333,36 @@ fn a_dynamic_tab_freezes_when_herdr_makes_what_its_rule_cant() {
     s.check_invariants().unwrap();
 }
 
+#[test]
+fn three_column_rows_absorb_a_moved_row_edge() {
+    let mut s = Session::new();
+    s.prefs.default = LayoutKind::ThreeColumn;
+    s.prefs.params.three_column.orientation = azulejo_model::ThreeColumnOrientation::Rows;
+    let (_, ws) = s.create_window("main", None);
+    let a = terminal();
+    let aid = a.id;
+    let tab = s.create_tab(ws, a, None).unwrap();
+    let mut ids = vec![aid];
+    for _ in 0..2 {
+        let t = terminal();
+        ids.push(t.id);
+        s.split_auto(tab, t).unwrap();
+    }
+    for (i, t) in ids.iter().enumerate() {
+        bind(&mut s, *t, &format!("w1:p{}", i + 1), "w1:t1");
+    }
+    // Order: master p1 in the centre row, p2 at the bottom, p3 on top. In
+    // herdr the rows became 0.25 : 0.5 : 0.25.
+    let tree = down(0.25, p("w1:p3"), down(2.0 / 3.0, p("w1:p1"), p("w1:p2")));
+    assert!(absorb(&mut s, &None, &export("w1:t1", tree)));
+    let t = s.tab(tab).unwrap();
+    assert_eq!(t.layout.kind, LayoutKind::ThreeColumn);
+    let c = t.layout.params.three_column;
+    assert_eq!(c.orientation, azulejo_model::ThreeColumnOrientation::Rows);
+    assert!((c.ratio - 2.0 / 3.0).abs() < 1e-6, "{}", c.ratio);
+    s.check_invariants().unwrap();
+}
+
 // ---- pulls: our own writes vs someone's change ----------------------------
 
 fn set(panes: &[&str]) -> std::collections::BTreeSet<String> {

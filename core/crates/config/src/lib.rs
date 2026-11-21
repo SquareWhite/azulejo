@@ -78,6 +78,8 @@
 //! [layout.three_column]
 //! masters = 1            # 1 to 10
 //! ratio = 0.6            # centre column, 0.2 to 0.75
+//! orientation = "columns" # "columns" (stacks left and right) or "rows"
+//!                        # (stacks above and below); alt+o toggles
 //! ```
 
 mod action;
@@ -93,6 +95,7 @@ use std::path::{Path, PathBuf};
 
 use azulejo_protocol::{
     DEFAULT_RESIZE_STEP, InsertAt, LayoutKind, LayoutPrefs, OnExit, Orientation, SidebarState,
+    ThreeColumnOrientation,
 };
 use toml::de::{DeTable, DeValue};
 
@@ -985,6 +988,23 @@ fn parse_layout(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &m
                             _ => sink
                                 .error(v.span(), "`layout.three_column.ratio` must be 0.2 to 0.75"),
                         },
+                        ("orientation", DeValue::String(o)) => match o.as_ref() {
+                            "columns" => {
+                                out.params.three_column.orientation =
+                                    ThreeColumnOrientation::Columns
+                            }
+                            "rows" => {
+                                out.params.three_column.orientation = ThreeColumnOrientation::Rows
+                            }
+                            _ => sink.error(
+                                v.span(),
+                                "`layout.three_column.orientation` must be \"columns\" or \"rows\"",
+                            ),
+                        },
+                        ("orientation", _) => sink.error(
+                            v.span(),
+                            "`layout.three_column.orientation` must be a string",
+                        ),
                         (other, _) => sink.warn(
                             k.span(),
                             format!("unknown setting `layout.three_column.{other}`"),

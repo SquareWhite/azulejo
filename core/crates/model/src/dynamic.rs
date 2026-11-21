@@ -25,7 +25,8 @@ pub enum LayoutKind {
     Tile,
     /// Every tile full size, the focused one on top.
     Monocle,
-    /// Masters centred, stacks left and right.
+    /// Masters centred, stacks left and right (or, in rows, above and
+    /// below).
     ThreeColumn,
 }
 
@@ -124,6 +125,38 @@ impl Orientation {
     }
 }
 
+/// Which way the Three Column layout runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreeColumnOrientation {
+    /// Masters in a centre column, stacks to its left and right.
+    #[default]
+    Columns,
+    /// The same turned on its side: masters in a centre row, stacks above
+    /// and below it. Every rect is the columns one with x and y swapped, so
+    /// the left stack sits on top, the right one at the bottom, and each
+    /// column's top-to-bottom order runs left to right.
+    Rows,
+}
+
+impl ThreeColumnOrientation {
+    /// Columns ↔ rows: what `rotate_layout` and `flip_layout` do.
+    pub fn toggled(self) -> ThreeColumnOrientation {
+        match self {
+            ThreeColumnOrientation::Columns => ThreeColumnOrientation::Rows,
+            ThreeColumnOrientation::Rows => ThreeColumnOrientation::Columns,
+        }
+    }
+
+    /// The axis that separates the stacks from the masters.
+    fn main_axis(self) -> Axis {
+        match self {
+            ThreeColumnOrientation::Columns => Axis::Horizontal,
+            ThreeColumnOrientation::Rows => Axis::Vertical,
+        }
+    }
+}
+
 /// Where a new tile goes in a dynamic tab.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -180,8 +213,12 @@ pub struct ThreeColumnParams {
     /// The centre column's weight against each side column's `1 − ratio`,
     /// as in Bismuth: 0.2–0.75. With three columns the centre takes
     /// `ratio / (2 − ratio)` of the width (0.6 gives 3/7); with two (the
-    /// masters and one stack tile) it takes `ratio` itself.
+    /// masters and one stack tile) it takes `ratio` itself. In rows it
+    /// weighs the rows' heights the same way.
     pub ratio: f64,
+    /// Columns or rows; missing (older state and files) means columns.
+    #[serde(default)]
+    pub orientation: ThreeColumnOrientation,
 }
 
 impl Default for ThreeColumnParams {
@@ -189,6 +226,7 @@ impl Default for ThreeColumnParams {
         Self {
             masters: 1,
             ratio: 0.6,
+            orientation: ThreeColumnOrientation::Columns,
         }
     }
 }
@@ -471,7 +509,40 @@ fn masters_in_place(p: &TileParams, masters: &[TileId]) -> Vec<TileId> {
     tiles
 }
 
+/// Three Column's groups: the columns arrangement, turned on its side in
+/// rows (x ↔ y, so each group's axis swaps too).
 fn three_column_groups(p: &ThreeColumnParams, order: &[TileId]) -> Vec<Group> {
+    let mut groups = three_column_groups_as_columns(p, order);
+    if p.orientation == ThreeColumnOrientation::Rows {
+        for g in &mut groups {
+            g.area = transpose(g.area);
+            g.axis = g.axis.other();
+        }
+    }
+    groups
+}
+
+/// A rect mirrored across the unit square's diagonal: x ↔ y.
+fn transpose(r: Rect) -> Rect {
+    Rect {
+        x: r.y,
+        y: r.x,
+        width: r.height,
+        height: r.width,
+    }
+}
+
+/// A direction mirrored across the diagonal: left ↔ up, right ↔ down.
+fn transpose_direction(d: Direction) -> Direction {
+    match d {
+        Direction::Left => Direction::Up,
+        Direction::Up => Direction::Left,
+        Direction::Right => Direction::Down,
+        Direction::Down => Direction::Right,
+    }
+}
+
+fn three_column_groups_as_columns(p: &ThreeColumnParams, order: &[TileId]) -> Vec<Group> {
     let n = order.len();
     if n == 0 {
         return Vec::new();
@@ -744,10 +815,16 @@ pub fn fit(layout: &TabLayout, rects: &[(TileId, Rect)]) -> Option<TabLayout> {
             }
             _ => {
                 let p = &mut out.params.three_column;
+                // The masters' share across the stacks: width in columns,
+                // height in rows.
+                let share = match p.orientation.main_axis() {
+                    Axis::Horizontal => m.width,
+                    Axis::Vertical => m.height,
+                };
                 p.ratio = if groups.len() == 2 {
-                    m.width
+                    share
                 } else {
-                    2.0 * m.width / (1.0 + m.width)
+                    2.0 * share / (1.0 + share)
                 };
             }
         }
@@ -947,10 +1024,16 @@ pub(crate) fn adjust(
             true
         }
         LayoutKind::ThreeColumn => {
+            let p = &mut layout.params.three_column;
+            // Rows are columns turned on their side: work it out as
+            // columns, where the bottom edge plays the right one.
+            let direction = match p.orientation {
+                ThreeColumnOrientation::Columns => direction,
+                ThreeColumnOrientation::Rows => transpose_direction(direction),
+            };
             if direction.axis() != Axis::Horizontal {
                 return false;
             }
-            let p = &mut layout.params.three_column;
             let right = direction == Direction::Right;
             // With three columns, moving an edge by `amount` changes the
             // ratio by `amount · (2 − ratio)`, as Bismuth's adjust works it
@@ -1093,10 +1176,12 @@ fn move_group_edge(
             true
         }
         LayoutKind::ThreeColumn => {
-            if axis != Axis::Horizontal {
+            let p = &mut layout.params.three_column;
+            // Across the columns, or in rows down them: `to` is then a y,
+            // and the left stack is the top one.
+            if axis != p.orientation.main_axis() {
                 return false;
             }
-            let p = &mut layout.params.three_column;
             let (left, right) = (groups[ga[0]].role, groups[gb[0]].role);
             // The width of a side column the boundary leaves.
             let side = match (groups.len(), left, right, to) {
@@ -1328,6 +1413,191 @@ mod tests {
         assert!(close(rect_of(&p, c), (0.0, 0.0, s, 1.0)));
     }
 
+    fn rows() -> LayoutParams {
+        LayoutParams {
+            three_column: ThreeColumnParams {
+                orientation: ThreeColumnOrientation::Rows,
+                ..ThreeColumnParams::default()
+            },
+            ..LayoutParams::default()
+        }
+    }
+
+    #[test]
+    fn three_column_rows_golden() {
+        let [a, b, c, d, e, f] = ids();
+        let (s, m) = (2.0 / 7.0, 3.0 / 7.0);
+        let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &[a]);
+        assert!(close(rect_of(&p, a), (0.0, 0.0, 1.0, 1.0)));
+        // Master on top at the ratio, the one stack tile below.
+        let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &[a, b]);
+        assert!(close(rect_of(&p, a), (0.0, 0.0, 1.0, 0.6)));
+        assert!(close(rect_of(&p, b), (0.0, 0.6, 1.0, 0.4)));
+        // Three rows, 2/7 : 3/7 : 2/7 of the height: the right stack (b)
+        // at the bottom, the left one (c) on top.
+        let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &[a, b, c]);
+        assert!(close(rect_of(&p, a), (0.0, s, 1.0, m)));
+        assert!(close(rect_of(&p, b), (0.0, s + m, 1.0, s)));
+        assert!(close(rect_of(&p, c), (0.0, 0.0, 1.0, s)));
+        let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &[a, b, c, d]);
+        assert!(close(rect_of(&p, a), (0.0, s, 1.0, m)));
+        assert!(close(rect_of(&p, b), (0.0, s + m, 1.0, s)));
+        assert!(close(rect_of(&p, c), (0.0, 0.0, 0.5, s)));
+        assert!(close(rect_of(&p, d), (0.5, 0.0, 0.5, s)));
+        // Each stack runs left to right, as the columns run top to bottom.
+        let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &[a, b, c, d, e]);
+        assert!(close(rect_of(&p, a), (0.0, s, 1.0, m)));
+        assert!(close(rect_of(&p, b), (0.0, s + m, 0.5, s)));
+        assert!(close(rect_of(&p, c), (0.5, s + m, 0.5, s)));
+        assert!(close(rect_of(&p, d), (0.0, 0.0, 0.5, s)));
+        assert!(close(rect_of(&p, e), (0.5, 0.0, 0.5, s)));
+        // Two masters share the centre row side by side.
+        let mut two = rows();
+        two.three_column.masters = 2;
+        let p = arrange_kind(LayoutKind::ThreeColumn, two, &[a, b, c, d, e, f]);
+        assert!(close(rect_of(&p, a), (0.0, s, 0.5, m)));
+        assert!(close(rect_of(&p, b), (0.5, s, 0.5, m)));
+        assert!(close(rect_of(&p, c), (0.0, s + m, 0.5, s)));
+        assert!(close(rect_of(&p, d), (0.5, s + m, 0.5, s)));
+        assert!(close(rect_of(&p, e), (0.0, 0.0, 0.5, s)));
+        assert!(close(rect_of(&p, f), (0.5, 0.0, 0.5, s)));
+        // Every count: rows are the columns with x and y swapped.
+        let order = [a, b, c, d, e, f];
+        for n in 1..=6 {
+            let cols = arrange_kind(
+                LayoutKind::ThreeColumn,
+                LayoutParams::default(),
+                &order[..n],
+            );
+            let p = arrange_kind(LayoutKind::ThreeColumn, rows(), &order[..n]);
+            for x in &cols {
+                let r = rect_of(&p, x.tile);
+                assert!(
+                    close(r, (x.rect.y, x.rect.x, x.rect.height, x.rect.width)),
+                    "n={n}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn three_column_orientation_defaults_to_columns() {
+        let old: ThreeColumnParams = serde_json::from_str(r#"{"masters":2,"ratio":0.5}"#).unwrap();
+        assert_eq!(old.orientation, ThreeColumnOrientation::Columns);
+        assert_eq!(old.masters, 2);
+        let p = rows().three_column;
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains(r#""orientation":"rows""#), "{json}");
+        assert_eq!(serde_json::from_str::<ThreeColumnParams>(&json).unwrap(), p);
+    }
+
+    #[test]
+    fn adjust_three_column_rows_works_down_the_tab() {
+        let [a, b, c] = ids();
+        let mut l = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: vec![a, b, c],
+            params: rows(),
+            ..TabLayout::default()
+        };
+        // The centre row's bottom edge plays the columns' right one.
+        assert!(adjust(&mut l, a, Direction::Down, 0.05));
+        assert!((l.params.three_column.ratio - 0.67).abs() < 1e-9);
+        assert!(adjust(&mut l, a, Direction::Up, 0.05));
+        assert!((l.params.three_column.ratio - (0.67 - 0.05 * 1.33)).abs() < 1e-9);
+        l.params.three_column.ratio = 0.6;
+        // Sideways there's no edge between rows.
+        assert!(!adjust(&mut l, a, Direction::Right, 0.05));
+        assert!(!adjust(&mut l, a, Direction::Left, 0.05));
+        // The top stack's bottom edge down: the centre shrinks.
+        assert!(adjust(&mut l, c, Direction::Down, 0.05));
+        assert!((l.params.three_column.ratio - 0.53).abs() < 1e-9);
+        assert!(!adjust(&mut l, c, Direction::Up, 0.05));
+        assert!(!adjust(&mut l, b, Direction::Down, 0.05));
+        // Two rows: the ratio is the master's height.
+        let mut l = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: vec![a, b],
+            params: rows(),
+            ..TabLayout::default()
+        };
+        assert!(adjust(&mut l, a, Direction::Down, 0.05));
+        assert!((l.params.three_column.ratio - 0.65).abs() < 1e-9);
+        // Inside a stack row, tiles trade widths.
+        let [a, b, c, d] = ids();
+        let mut l = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: vec![a, b, c, d],
+            params: rows(),
+            ..TabLayout::default()
+        };
+        assert!(adjust(&mut l, c, Direction::Right, 0.1));
+        let p = l.arrange(a);
+        assert!((rect_of(&p, c).width - 0.6).abs() < 1e-9);
+        assert!((rect_of(&p, d).width - 0.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn three_column_rows_divider_moves_the_ratio() {
+        let [a, b, c] = ids();
+        let mut l = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: vec![a, b, c],
+            params: rows(),
+            ..TabLayout::default()
+        };
+        let s = 2.0 / 7.0;
+        // The divider under the top stack (c | a), dragged down to 0.25.
+        assert!(move_boundary(
+            &mut l,
+            Axis::Vertical,
+            &[c],
+            &[a],
+            s,
+            Some(0.25)
+        ));
+        assert!((l.params.three_column.ratio - (0.5 / 0.75)).abs() < 1e-9);
+        // Across the tab it isn't a divider at all.
+        assert!(!move_boundary(
+            &mut l,
+            Axis::Horizontal,
+            &[c],
+            &[a],
+            s,
+            Some(0.25)
+        ));
+        // Evened out: equal rows.
+        assert!(move_boundary(&mut l, Axis::Vertical, &[a], &[b], 0.5, None));
+        assert!((l.params.three_column.ratio - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fit_reads_three_column_rows() {
+        let order: Vec<TileId> = (0..5).map(|_| TileId::new()).collect();
+        let mut want = TabLayout {
+            kind: LayoutKind::ThreeColumn,
+            order: order.clone(),
+            params: rows(),
+            ..TabLayout::default()
+        };
+        want.params.three_column.ratio = 0.5;
+        let rects: Vec<_> = want
+            .arrange(order[0])
+            .into_iter()
+            .map(|p| (p.tile, p.rect))
+            .collect();
+        let start = TabLayout {
+            params: rows(),
+            ..want.clone()
+        };
+        let got = fit(&start, &rects).expect("fits");
+        assert!((got.params.three_column.ratio - 0.5).abs() < 1e-9);
+        assert_eq!(
+            got.params.three_column.orientation,
+            ThreeColumnOrientation::Rows
+        );
+    }
+
     #[test]
     fn monocle_shows_only_the_focused_tile() {
         let [a, b, c] = ids();
@@ -1348,9 +1618,13 @@ mod tests {
     #[test]
     fn freeze_reproduces_tile_and_three_column() {
         let order: Vec<TileId> = (0..7).map(|_| TileId::new()).collect();
-        for kind in [LayoutKind::Tile, LayoutKind::ThreeColumn] {
+        for (kind, params) in [
+            (LayoutKind::Tile, LayoutParams::default()),
+            (LayoutKind::ThreeColumn, LayoutParams::default()),
+            (LayoutKind::ThreeColumn, rows()),
+        ] {
             for n in 1..=7 {
-                let p = arrange_kind(kind, LayoutParams::default(), &order[..n]);
+                let p = arrange_kind(kind, params, &order[..n]);
                 let rects: Vec<_> = p.iter().map(|x| (x.tile, x.rect)).collect();
                 let tree = freeze(&rects).expect("guillotine");
                 for (t, r) in tree.rects() {

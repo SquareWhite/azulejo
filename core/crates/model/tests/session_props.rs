@@ -336,7 +336,8 @@ proptest! {
             }
             // A turn of a manual tab turns its whole tree, whatever its
             // shape, and a turn back gives it back exactly (ratios on the
-            // turn's grid); Monocle and Three Column don't move.
+            // turn's grid); Three Column swaps columns and rows, and a turn
+            // back gives it back exactly too; Monocle doesn't move.
             if let Op::RotateTurn(i, reverse) = *op {
                 let tabs: Vec<_> = before.windows.iter()
                     .flat_map(|w| w.workspaces.iter().flat_map(|ws| ws.tabs.iter().map(|t| t.id)))
@@ -354,7 +355,14 @@ proptest! {
                             prop_assert_eq!(now.focused, was.focused);
                             prop_assert_eq!(now.zoomed, was.zoomed);
                         }
-                        LayoutKind::Monocle | LayoutKind::ThreeColumn => {
+                        LayoutKind::ThreeColumn => {
+                            let c = |t: &azulejo_model::Tab| t.layout.params.three_column.orientation;
+                            prop_assert_eq!(c(now), c(was).toggled());
+                            let mut back = session.clone();
+                            back.rotate_turn(id, !reverse).unwrap();
+                            prop_assert_eq!(back.tab(id).unwrap(), was);
+                        }
+                        LayoutKind::Monocle => {
                             prop_assert_eq!(now, was, "{:?} turned a {:?} tab", op, was.layout.kind);
                         }
                         LayoutKind::Tile => {}

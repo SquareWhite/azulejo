@@ -61,6 +61,23 @@ key alt+shift+backslash
 expect kind three_column
 wait 600
 shot 03-three-column
+# --- Three Column on its side: alt+o swaps columns and rows, and back.
+# The focused tile sits in the right stack, which goes to the bottom. ---
+expect orientation columns
+expect axis h
+expect rect.focused 714,0,286x1000
+key alt+o
+expect key.last action:rotate_layout
+expect orientation rows
+expect axis v
+wait 600
+expect rect.focused 0,714,1000x286
+shot 03b-three-column-rows
+key alt+o
+expect orientation columns
+expect axis h
+wait 600
+expect rect.focused 714,0,286x1000
 key alt+shift+t
 expect kind manual
 wait 600

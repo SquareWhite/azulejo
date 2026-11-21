@@ -12,7 +12,7 @@ mod tile;
 
 pub use dynamic::{
     FIT_TOLERANCE, InsertAt, LayoutKind, LayoutParams, Orientation, Placement, TabLayout,
-    ThreeColumnParams, TileParams, arrange, fit, freeze, neighbour_among,
+    ThreeColumnOrientation, ThreeColumnParams, TileParams, arrange, fit, freeze, neighbour_among,
 };
 pub use error::ModelError;
 pub use ids::{ParseIdError, TabId, TileId, WindowId, WorkspaceId};

@@ -582,7 +582,7 @@ fn on_exit_per_tile_parses_and_round_trips() {
 
 #[test]
 fn dynamic_kinds_from_files() {
-    use azulejo_model::{LayoutKind, Orientation};
+    use azulejo_model::{LayoutKind, Orientation, ThreeColumnOrientation};
     // `tall` is `tile` with one master.
     let plan = parse(SCRIPTED, Some(&base())).unwrap();
     let tab = &plan.tabs[0];
@@ -595,6 +595,18 @@ fn dynamic_kinds_from_files() {
     assert_eq!(tab.layout.kind, LayoutKind::ThreeColumn);
     assert_eq!(tab.layout.params.three_column.masters, 2);
     assert_eq!(tab.layout.params.three_column.ratio, 0.5);
+    assert_eq!(
+        tab.layout.params.three_column.orientation,
+        ThreeColumnOrientation::Columns,
+        "no `orientation`: columns"
+    );
+
+    let text = "layout = \"three_column\"\norientation = \"rows\"\n[[tile]]\n[[tile]]\n[[tile]]\n";
+    let tab = &parse(text, None).unwrap().tabs[0];
+    assert_eq!(
+        tab.layout.params.three_column.orientation,
+        ThreeColumnOrientation::Rows
+    );
 
     let text =
         "layout = \"tile\"\nmasters = 2\norientation = \"top\"\n[[tile]]\n[[tile]]\n[[tile]]\n";
@@ -622,6 +634,14 @@ fn dynamic_kinds_from_files() {
         ("layout = \"tall\"\nmasters = 2\n[[tile]]\n", "one master"),
         (
             "layout = \"three_column\"\norientation = \"top\"\n[[tile]]\n",
+            "`columns` or `rows`",
+        ),
+        (
+            "layout = \"tile\"\norientation = \"rows\"\n[[tile]]\n",
+            "`left`, `top`, `right` or `bottom`",
+        ),
+        (
+            "layout = \"columns\"\norientation = \"rows\"\n[[tile]]\n",
             "orientation",
         ),
         ("layout = \"monocle\"\nratio = 0.5\n[[tile]]\n", "monocle"),
@@ -672,6 +692,10 @@ fn dynamic_tabs_export_as_their_kind_and_round_trip() {
     };
     assert!(toml.contains("layout = \"three_column\""), "{toml}");
     assert!(toml.contains("masters = 2"), "{toml}");
+    assert!(
+        !toml.contains("orientation"),
+        "columns is the default: {toml}"
+    );
     let plan = parse(&toml, None).unwrap();
     let again = &plan.tabs[0];
     assert_eq!(again.layout.kind, LayoutKind::ThreeColumn);
@@ -690,5 +714,33 @@ fn dynamic_tabs_export_as_their_kind_and_round_trip() {
     assert_eq!(
         commands(engine.session().tab(tab).unwrap()),
         vec!["c", "a", "b"]
+    );
+
+    // Rotated to rows, it exports `orientation = "rows"` and reads back so.
+    engine
+        .execute(Command::LayoutRotate(
+            azulejo_protocol::LayoutRotate::default(),
+        ))
+        .unwrap();
+    let toml = match engine
+        .execute(Command::LayoutExport(LayoutExport {
+            tab: Some(tab),
+            ..LayoutExport::default()
+        }))
+        .unwrap()
+        .reply
+    {
+        Reply::LayoutFile { toml, .. } => toml,
+        other => panic!("{other:?}"),
+    };
+    assert!(toml.contains("orientation = \"rows\""), "{toml}");
+    let plan = parse(&toml, None).unwrap();
+    assert_eq!(
+        plan.tabs[0].layout.params,
+        engine.session().tab(tab).unwrap().layout.params
+    );
+    assert_eq!(
+        plan.tabs[0].layout.params.three_column.orientation,
+        azulejo_model::ThreeColumnOrientation::Rows
     );
 }

@@ -1762,6 +1762,7 @@ orientation = "top"
 [layout.three_column]
 masters = 3
 ratio = 0.5
+orientation = "rows"
 "#,
         MAC,
     );
@@ -1775,6 +1776,10 @@ ratio = 0.5
     assert_eq!(l.params.tile.orientation, Orientation::Top);
     assert_eq!(l.params.three_column.masters, 3);
     assert_eq!(l.params.three_column.ratio, 0.5);
+    assert_eq!(
+        l.params.three_column.orientation,
+        azulejo_protocol::ThreeColumnOrientation::Rows
+    );
 
     // Bad values are errors and keep the defaults.
     let config = user(
@@ -1787,10 +1792,16 @@ cycle = []
 masters = 11
 ratio = 0.95
 orientation = "diagonal"
+[layout.three_column]
+orientation = "left"
 "#,
         MAC,
     );
-    assert_eq!(errors(&config).len(), 6, "{:?}", errors(&config));
+    assert_eq!(errors(&config).len(), 7, "{:?}", errors(&config));
+    assert_eq!(
+        config.layout.params.three_column.orientation,
+        azulejo_protocol::ThreeColumnOrientation::Columns
+    );
     assert_eq!(config.layout.default, LayoutKind::Tile);
     assert_eq!(config.layout.params.tile.masters, 1);
 }

@@ -159,6 +159,13 @@ impl Tab {
         }
     }
 
+    /// Three Column: columns ↔ rows, the tree re-derived.
+    fn toggle_three_column(&mut self) {
+        let o = &mut self.layout.params.three_column.orientation;
+        *o = o.toggled();
+        self.sync();
+    }
+
     /// Focuses `id` and remembers it as the most recent.
     pub fn set_focused(&mut self, id: TileId) {
         self.focused = id;
@@ -1304,8 +1311,9 @@ impl Session {
     }
 
     /// Flips the tab on its side: master left ↔ master on top (and right ↔
-    /// bottom in a Tile tab), `tall.py`'s rotate. Focus and zoom are kept.
-    /// Other dynamic kinds have nothing to flip.
+    /// bottom in a Tile tab), `tall.py`'s rotate. Three Column flips
+    /// between columns and rows, as its rotate does. Focus and zoom are
+    /// kept. Monocle has nothing to flip.
     pub fn flip(&mut self, tab: TabId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let tab = self.tab_at_mut(p);
@@ -1317,16 +1325,23 @@ impl Session {
                 tab.sync();
                 true
             }
-            _ => false,
+            LayoutKind::ThreeColumn => {
+                tab.toggle_three_column();
+                true
+            }
+            LayoutKind::Monocle => false,
         })
     }
 
     /// A quarter turn clockwise, or back with `reverse`. A Tile tab turns as
     /// Bismuth's rotate: master left → top → right → bottom. A manual tab
     /// turns its whole split tree as a picture, whatever its shape (a grid,
-    /// columns, a tall layout), and four turns give it back exactly. Monocle
-    /// and Three Column have nothing to turn: a silent no-op (`Ok(false)`),
-    /// as is a lone tile. Focus and zoom are kept.
+    /// columns, a tall layout), and four turns give it back exactly. Three
+    /// Column toggles between columns and rows either way: it's symmetric,
+    /// so a half turn would only swap the stacks, and swapping x and y
+    /// keeps each stack on its own side (left ↔ top, right ↔ bottom).
+    /// Monocle has nothing to turn: a silent no-op (`Ok(false)`), as is a
+    /// lone tile in a manual tab. Focus and zoom are kept.
     pub fn rotate_turn(&mut self, tab: TabId, reverse: bool) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);
@@ -1339,12 +1354,19 @@ impl Session {
                 t.sync();
                 true
             }
-            _ => false,
+            LayoutKind::ThreeColumn => {
+                t.toggle_three_column();
+                true
+            }
+            LayoutKind::Monocle => false,
         })
     }
 
     /// Toggles a Tile tab's masters between stacked and side by side
-    /// ("rotate part").
+    /// ("rotate part"). Three Column has no part to turn: its masters
+    /// always line up along the centre column (or row), as in Bismuth, and
+    /// side by side they'd split an already narrow centre. Monocle has no
+    /// masters.
     pub fn rotate_part(&mut self, tab: TabId) -> Result<bool, ModelError> {
         let p = self.tab_index(tab)?;
         let t = self.tab_at_mut(p);

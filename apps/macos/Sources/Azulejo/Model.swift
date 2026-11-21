@@ -191,6 +191,8 @@ struct LayoutParamsModel: Decodable, Equatable {
     struct ThreeColumn: Decodable, Equatable {
         var masters: Int
         var ratio: Double
+        /// "columns" or "rows"; older cores send none (columns).
+        var orientation: String?
     }
 
     var tile: Tile

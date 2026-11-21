@@ -26,7 +26,7 @@ use std::path::{Component, Path, PathBuf};
 
 use azulejo_model::{
     Axis, LayoutKind, LayoutParams, MAX_RATIO, MIN_RATIO, Node, OnExit, Orientation, Session, Tab,
-    TabId, TabLayout, Tile, TileContent, TileId, TileParams, WorkspaceId,
+    TabId, TabLayout, ThreeColumnOrientation, Tile, TileContent, TileId, TileParams, WorkspaceId,
 };
 use azulejo_protocol::{
     ApplyMode, Created, Error, ErrorCode, Focus, LayoutApply, LayoutExport, Reply,
@@ -59,7 +59,7 @@ struct FileSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ratio: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    orientation: Option<Orientation>,
+    orientation: Option<OrientationSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sizes: Option<Vec<f64>>,
     #[serde(default, rename = "tile", skip_serializing_if = "Vec::is_empty")]
@@ -112,9 +112,9 @@ struct TabSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ratio: Option<f64>,
     /// `tile`: which side the masters sit on (`left`, `top`, `right`,
-    /// `bottom`).
+    /// `bottom`); `three_column`: `columns` or `rows`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    orientation: Option<Orientation>,
+    orientation: Option<OrientationSpec>,
     /// `columns`/`rows`: relative sizes, one per tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sizes: Option<Vec<f64>>,
@@ -123,6 +123,59 @@ struct TabSpec {
     /// An explicit split tree, instead of `layout` + `tile`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     root: Option<NodeSpec>,
+}
+
+/// A file's `orientation`: a side for `tile`, columns or rows for
+/// `three_column`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum OrientationSpec {
+    Left,
+    Top,
+    Right,
+    Bottom,
+    Columns,
+    Rows,
+}
+
+impl OrientationSpec {
+    fn tile(self) -> Option<Orientation> {
+        match self {
+            OrientationSpec::Left => Some(Orientation::Left),
+            OrientationSpec::Top => Some(Orientation::Top),
+            OrientationSpec::Right => Some(Orientation::Right),
+            OrientationSpec::Bottom => Some(Orientation::Bottom),
+            OrientationSpec::Columns | OrientationSpec::Rows => None,
+        }
+    }
+
+    fn three_column(self) -> Option<ThreeColumnOrientation> {
+        match self {
+            OrientationSpec::Columns => Some(ThreeColumnOrientation::Columns),
+            OrientationSpec::Rows => Some(ThreeColumnOrientation::Rows),
+            _ => None,
+        }
+    }
+}
+
+impl From<Orientation> for OrientationSpec {
+    fn from(o: Orientation) -> Self {
+        match o {
+            Orientation::Left => OrientationSpec::Left,
+            Orientation::Top => OrientationSpec::Top,
+            Orientation::Right => OrientationSpec::Right,
+            Orientation::Bottom => OrientationSpec::Bottom,
+        }
+    }
+}
+
+impl From<ThreeColumnOrientation> for OrientationSpec {
+    fn from(o: ThreeColumnOrientation) -> Self {
+        match o {
+            ThreeColumnOrientation::Columns => OrientationSpec::Columns,
+            ThreeColumnOrientation::Rows => OrientationSpec::Rows,
+        }
+    }
 }
 
 impl TabSpec {
@@ -394,7 +447,7 @@ fn dynamic_layout(
     order: Vec<TileId>,
     masters: Option<u8>,
     ratio: Option<f64>,
-    orientation: Option<Orientation>,
+    orientation: Option<OrientationSpec>,
 ) -> Result<TabLayout, String> {
     let mut params = LayoutParams::default();
     match kind {
@@ -413,14 +466,18 @@ fn dynamic_layout(
                 p.ratio = in_range(r, 0.2, 0.8, "`ratio`")?;
             }
             if let Some(o) = orientation {
-                p.orientation = o;
+                p.orientation = o
+                    .tile()
+                    .ok_or("`orientation` for `tile` is `left`, `top`, `right` or `bottom`")?;
             }
         }
         LayoutKind::ThreeColumn => {
-            if orientation.is_some() {
-                return Err("`orientation` is for `tile`".into());
-            }
             let p = &mut params.three_column;
+            if let Some(o) = orientation {
+                p.orientation = o
+                    .three_column()
+                    .ok_or("`orientation` for `three_column` is `columns` or `rows`")?;
+            }
             if let Some(m) = masters {
                 if !(1..=10).contains(&m) {
                     return Err(format!("`masters` must be 1 to 10, not {m}"));
@@ -866,7 +923,7 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
                 out.ratio =
                     ((p.tile.ratio - d.tile.ratio).abs() > 1e-9).then_some(round(p.tile.ratio));
                 out.orientation =
-                    (p.tile.orientation != d.tile.orientation).then_some(p.tile.orientation);
+                    (p.tile.orientation != d.tile.orientation).then_some(p.tile.orientation.into());
             }
             LayoutKind::ThreeColumn => {
                 out.layout = Some(Arrangement::ThreeColumn);
@@ -874,6 +931,8 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
                 out.masters = (c.masters != d.three_column.masters).then_some(c.masters);
                 out.ratio =
                     ((c.ratio - d.three_column.ratio).abs() > 1e-9).then_some(round(c.ratio));
+                out.orientation =
+                    (c.orientation != d.three_column.orientation).then_some(c.orientation.into());
             }
             _ => out.layout = Some(Arrangement::Monocle),
         }

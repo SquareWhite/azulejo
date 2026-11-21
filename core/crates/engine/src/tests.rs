@@ -866,6 +866,138 @@ fn run(engine: &mut Engine, command: Command) -> Vec<Event> {
 }
 
 #[test]
+fn rotate_and_flip_turn_three_column_into_rows_and_back() {
+    use azulejo_model::ThreeColumnOrientation::{Columns, Rows};
+    let mut engine = tile_engine();
+    for _ in 0..2 {
+        run(
+            &mut engine,
+            Command::LayoutSplitAuto(LayoutSplitAuto::default()),
+        );
+    }
+    run(
+        &mut engine,
+        Command::LayoutSet(LayoutSetKind {
+            tab: None,
+            kind: LayoutKind::ThreeColumn,
+        }),
+    );
+    let columns = tab_of(&engine).placements();
+    let orientation = |e: &Engine| tab_of(e).layout.params.three_column.orientation;
+    assert_eq!(orientation(&engine), Columns);
+
+    // alt+o: rows, announced with the new params and rects; the focus stays.
+    let focused = engine.session().focused_tile();
+    let events = run(&mut engine, Command::LayoutRotate(LayoutRotate::default()));
+    let state = layout_event(&events);
+    assert_eq!(state.params.three_column.orientation, Rows);
+    assert_eq!(state.rects, tab_of(&engine).placements());
+    assert_eq!(engine.session().focused_tile(), focused);
+    // Stacks above and below a full-width centre row.
+    let order = tab_of(&engine).layout.order.clone();
+    let rect = |e: &Engine, t| {
+        tab_of(e)
+            .placements()
+            .into_iter()
+            .find(|p| p.tile == t)
+            .unwrap()
+            .rect
+    };
+    let (master, right, left) = (
+        rect(&engine, order[0]),
+        rect(&engine, order[1]),
+        rect(&engine, order[2]),
+    );
+    assert_eq!(master.width, 1.0);
+    assert!(
+        left.bottom() <= master.y + 1e-9,
+        "the left stack goes on top"
+    );
+    assert!(
+        right.y >= master.bottom() - 1e-9,
+        "the right stack goes below"
+    );
+
+    // Reverse, or a flip, goes back the same way.
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            reverse: true,
+            ..LayoutRotate::default()
+        }),
+    );
+    assert_eq!(orientation(&engine), Columns);
+    assert_eq!(tab_of(&engine).placements(), columns);
+    run(
+        &mut engine,
+        Command::LayoutRotate(LayoutRotate {
+            flip: true,
+            ..LayoutRotate::default()
+        }),
+    );
+    assert_eq!(orientation(&engine), Rows);
+
+    // The master-ratio keys grow the centre row's height by the configured
+    // step, as they grow the centre column's width.
+    let step = engine.session().prefs.resize_step;
+    let ratio = |e: &Engine| tab_of(e).layout.params.three_column.ratio;
+    let (before, r0) = (rect(&engine, order[0]).height, ratio(&engine));
+    run(
+        &mut engine,
+        Command::LayoutMasterRatio(LayoutMasterRatio {
+            tab: None,
+            delta: None,
+        }),
+    );
+    let after = rect(&engine, order[0]);
+    assert!(after.height > before + 1e-6 && after.width == 1.0);
+    assert!((ratio(&engine) - (r0 + step)).abs() < 1e-9);
+
+    // Keyboard resize works down the tab with the same step: the centre's
+    // bottom edge grows it, its top edge shrinks it, sideways is no edge.
+    let r0 = ratio(&engine);
+    run(
+        &mut engine,
+        Command::LayoutResize(LayoutResize {
+            tile: Some(order[0]),
+            direction: Direction::Down,
+            amount: None,
+        }),
+    );
+    assert!((ratio(&engine) - (r0 + step * (2.0 - r0))).abs() < 1e-9);
+    let r1 = ratio(&engine);
+    run(
+        &mut engine,
+        Command::LayoutResize(LayoutResize {
+            tile: Some(order[0]),
+            direction: Direction::Up,
+            amount: None,
+        }),
+    );
+    assert!((ratio(&engine) - (r1 - step * (2.0 - r1))).abs() < 1e-9);
+    assert!(
+        engine
+            .execute(Command::LayoutResize(LayoutResize {
+                tile: Some(order[0]),
+                direction: Direction::Right,
+                amount: None,
+            }))
+            .is_err()
+    );
+
+    // Rotate part has nothing to turn here: Ok, and no event.
+    let before = tab_of(&engine).clone();
+    let outcome = engine
+        .execute(Command::LayoutRotate(LayoutRotate {
+            part: true,
+            ..LayoutRotate::default()
+        }))
+        .unwrap();
+    assert!(outcome.events.is_empty(), "{:?}", names(&outcome.events));
+    assert_eq!(tab_of(&engine), &before);
+}
+
+#[test]
 fn the_first_tab_takes_the_configured_default_once() {
     let mut engine = tile_engine();
     assert_eq!(tab_of(&engine).kind(), LayoutKind::Tile);
