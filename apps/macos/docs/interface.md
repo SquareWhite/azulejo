@@ -154,8 +154,10 @@ keeps its own right-click.
 
 - **Tabs**: Rename…, Layout ▸, New Tab, Move Left / Right, Close Tab, Close
   Other Tabs.
-- **Workspace rows**: Rename…, New Tab, Mark All as Read, folder items
-  (Reveal, Copy Path), Close Workspace.
+- **Workspace rows**: Rename…, New Tab, Mark All as Read, Close Workspace.
+  No folder items: a workspace's panes each have their own folder, so the
+  tile menu reveals or copies a pane's, and the Files sidebar shows the
+  project folder.
 - **Tile headers**: Split Right / Down, Zoom, Rename…, Mark as Unread, Copy
   Title, Copy Working Directory, Reveal in Finder, Close Tile, Kill Pane….
 

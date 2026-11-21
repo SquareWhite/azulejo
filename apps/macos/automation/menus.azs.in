@@ -20,17 +20,13 @@ until workspace.names alpha|beta 3000
 
 log === workspace row: items and chords (catalogue), acting on a row that isn't the active one
 menu workspace 2
-expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Copy Path|-|Close Workspace [alt+cmd+w]
+expect menu.items Rename…|New Tab [cmd+shift+t]|-|Close Workspace [alt+cmd+w]
 wait 300
 menu shot menus-workspace
 menu answer gamma
 menu workspace 2 invoke Rename…
 until workspace.names alpha|gamma 3000
 expect workspace 1
-menu workspace 2 invoke Copy Path
-expect menu.copied @DIR@/beta
-menu workspace 2 invoke Reveal Folder in Finder
-expect menu.revealed @DIR@/beta
 menu answer cancel
 menu workspace 2 invoke Rename…
 expect workspace.names alpha|gamma

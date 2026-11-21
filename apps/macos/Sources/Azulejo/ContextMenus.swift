@@ -94,8 +94,6 @@ enum ContextMenus {
         guard let app, let ws = app.session?.windows.flatMap(\.workspaces).first(where: { $0.id == id })
         else { return nil }
         let chords = catalogueChords(app)
-        let local = ws.machineID == MachineModel.local
-        let folder = folder(of: ws)
         let target = ActionTarget.workspace(id)
         let menu = NSMenu(title: ws.name)
         menu.autoenablesItems = false
@@ -113,23 +111,11 @@ enum ContextMenus {
                 app.markAllRead(workspace: id, in: controller)
             })
         }
-        if let folder {
-            menu.addItem(.separator())
-            if local {
-                menu.addItem(ContextMenuItem("Reveal Folder in Finder") { reveal(folder) })
-            }
-            menu.addItem(ContextMenuItem("Copy Path") { copy(folder) })
-        }
         menu.addItem(.separator())
         let close = action("Close Workspace", "close_workspace", target, chords, controller)
         close.toolTip = "Closes the herdr workspace too: its processes end. Asks first if any still run"
         menu.addItem(close)
         return menu
-    }
-
-    /// The folder a workspace is about: its repository, else its cwd.
-    static func folder(of ws: WorkspaceModel) -> String? {
-        ws.repo ?? ws.git?.repo ?? ws.cwd
     }
 
     // MARK: Tabs
