@@ -128,6 +128,8 @@ pub const INTERNAL_METHODS: &[&str] = &[
     // The sidebar's Files view opens and closes its panel.
     "files.panel",
     "files.panel_close",
+    // Drops on a terminal (its folder) move or copy files there.
+    "files.transfer",
     "layout.get",
     // Dragging a divider sends it; from the keyboard, layout.resize does.
     "layout.set_ratio",

@@ -6,7 +6,10 @@
 # escaping, several), image data (PNG, TIFF, an image off a web page) written
 # to a temp PNG, text and URLs, each with bracketed paste off and on; the
 # highlight while a drag hovers; a drop on an unfocused tile focuses it; a
-# drag of something else is refused.
+# drag of something else is refused. A drag of files splits the tile into
+# drop zones (paste, or move into the pane's folder; ⌥ copies): their
+# layout and labels, shots in a dark and a light theme, a move, a copy and a
+# name clash in temp folders, and a pane whose folder is gone (paste only).
 # Dev instance e2e-drop (herdr session azj-dev-e2e-drop), reset before and after.
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-drop}" E2E_SUITE=drop
@@ -24,6 +27,14 @@ echo other >"$fx/other file.md"
 sips -s format png /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericDocumentIcon.icns \
   --resampleWidth 96 --out "$fx/shot.png" >/dev/null
 sips -s format tiff "$fx/shot.png" --out "$fx/shot.tiff" >/dev/null
+# Drop zones: files to move or copy from src into dest (the pane's folder),
+# a name dest already has, and a folder the pane leaves for gone.
+mkdir -p "$fx/src/folder" "$fx/dest" "$fx/gone"
+echo one >"$fx/src/one.txt"
+echo two >"$fx/src/two.txt"
+echo new >"$fx/src/clash.txt"
+echo old >"$fx/dest/clash.txt"
+echo inner >"$fx/src/folder/inner.md"
 
 # What each drop should type, before any bracketed-paste framing: Ghostty.app's
 # escaping (a backslash before \ ()[]{}<>"'`!#$&;|*? and tab), written again
@@ -41,6 +52,7 @@ cases = {
     "url": "https://example.com/a?b=1&c=2",
     "lines": "line one\nline two",
     "focus": "dropped on tile two",
+    "two": esc(f"{fx}/src/two.txt"),
 }
 for name, text in cases.items():
     open(f"{fx}/expect/{name}", "w", encoding="utf-8").write(text)

@@ -270,12 +270,12 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// Shows `text` briefly, in sentence case: core messages start lower
     /// case because the CLI prints them after an error code. Every flash is
     /// logged and counted (automation: `hud.flashes`, `hud.last`).
-    func flash(_ text: String) {
+    func flash(_ text: String, seconds: TimeInterval = 1.5) {
         let shown = text.prefix(1).uppercased() + text.dropFirst()
         flashes += 1
         lastFlash = shown
         app?.log("hud: flash \"\(shown)\"")
-        hud.show(shown, sticky: false)
+        hud.show(shown, sticky: false, seconds: seconds)
     }
 
     /// A failed command a key, menu or quick open asked for: flashed,
@@ -807,7 +807,7 @@ final class HUDView: NSView, ThemeAware {
         layer?.backgroundColor = Design.Color.hud.cgColor
     }
 
-    func show(_ text: String, sticky: Bool) {
+    func show(_ text: String, sticky: Bool, seconds: TimeInterval = 1.5) {
         hideWork?.cancel()
         label.stringValue = text
         isHidden = false
@@ -815,7 +815,7 @@ final class HUDView: NSView, ThemeAware {
         guard !sticky else { return }
         let work = DispatchWorkItem { [weak self] in self?.isHidden = true }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
     func hide() {

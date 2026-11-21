@@ -188,6 +188,11 @@ pub enum Command {
     /// Closes a files panel and stops watching its folders.
     #[serde(rename = "files.panel_close")]
     FilesPanelClose(crate::files::FilesPanelClose),
+    /// Moves or copies files and folders into a folder, on this machine or
+    /// between Local and a herdr machine (`scp`); replies `transferred`
+    /// when it's done, with what became of each.
+    #[serde(rename = "files.transfer")]
+    FilesTransfer(crate::transfer::FilesTransfer),
 
     // ----- layout -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
@@ -373,6 +378,7 @@ pub const METHODS: &[&str] = &[
     "files.open",
     "files.panel",
     "files.panel_close",
+    "files.transfer",
     "layout.get",
     "layout.split",
     "layout.focus",

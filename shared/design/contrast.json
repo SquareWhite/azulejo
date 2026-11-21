@@ -224,7 +224,12 @@
 
     {"id": "divider.hint", "surface": "tiles", "what": "divider hover hint (alpha.rowHover)", "fg": "textMuted*0.45", "bg": ["window"], "kind": "faint", "relative": false},
     {"id": "divider.drag", "surface": "tiles", "what": "divider while dragging (alpha.workingMarker)", "fg": "accent*0.6", "bg": ["window"], "kind": "faint", "relative": false},
-    {"id": "drop.border", "surface": "tiles", "what": "drop target border", "fg": "accent*0.8", "bg": ["term.background"], "kind": "ui", "relative": false}
+    {"id": "drop.border", "surface": "tiles", "what": "drop target border", "fg": "accent*0.8", "bg": ["term.background"], "kind": "ui", "relative": false},
+    {"id": "drop.zone.action", "surface": "tiles", "what": "drop zone action (\"move into ~/src\")", "fg": "textPrimary", "bg": ["accent@0.06", "overlay", "term.background"], "kind": "text"},
+    {"id": "drop.zone.hint", "surface": "tiles", "what": "drop zone first line (\"Drop to\")", "fg": "textMuted", "bg": ["accent@0.06", "overlay", "term.background"], "kind": "secondary"},
+    {"id": "drop.zone.hot.action", "surface": "tiles", "what": "drop zone action, under the pointer", "fg": "textPrimary", "bg": ["accent@0.16", "overlay", "term.background"], "kind": "text"},
+    {"id": "drop.zone.hot.hint", "surface": "tiles", "what": "drop zone first line, under the pointer", "fg": "textMuted", "bg": ["accent@0.16", "overlay", "term.background"], "kind": "secondary"},
+    {"id": "drop.zone.border", "surface": "tiles", "what": "drop zone outline (alpha.dropZoneBorder)", "fg": "accent*0.35", "bg": ["overlay", "term.background"], "kind": "faint", "relative": false}
   ],
   "_accept": "Known failures, listed (KNOWN) but not failing the check, each with why it stays: a design call for the user, not a token to nudge.",
   "accept": [
@@ -253,6 +258,7 @@
     {"stronger": "preview.body", "weaker": "preview.muted", "what": "preview body over muted"},
     {"stronger": "term.fg", "weaker": "term.8", "what": "terminal text over bright black"},
     {"stronger": "sidebar.name", "weaker": "sidebar.name.offline", "what": "connected workspaces over offline ones"},
-    {"stronger": "sidebar.selected.fill", "weaker": "sidebar.hover.fill", "what": "the selected row over a hovered one"}
+    {"stronger": "sidebar.selected.fill", "weaker": "sidebar.hover.fill", "what": "the selected row over a hovered one"},
+    {"stronger": "drop.zone.action", "weaker": "drop.zone.hint", "what": "a drop zone's action over its first line"}
   ]
 }

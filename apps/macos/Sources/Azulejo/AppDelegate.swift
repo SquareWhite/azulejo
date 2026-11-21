@@ -51,6 +51,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
         FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
+        // A drop that moves files into a terminal's folder says how it went.
+        TerminalTileView.notice = { [weak self] window, text, kind in
+            guard let controller = self?.controller(for: window) else { return }
+            switch kind {
+            case .running: controller.setStatus(text)
+            case .done: controller.flash(text)
+            case .failed: controller.flash(text, seconds: 5)
+            }
+        }
         Motion.load(core.animation())
         TerminalHints.apply(core.hints())
         TileModel.applyTerminalSettings(core.terminal())

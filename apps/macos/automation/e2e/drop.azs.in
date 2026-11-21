@@ -11,6 +11,9 @@ clip clear
 remember drop.dir
 
 log --- bracketed paste off
+# The pane's folder (where the move zone sends files): herdr reports it.
+sh {herdr} --session {session} pane run {pane} "cd @FX@/dest"
+until terminal.cwd @FX@/dest 10000
 sh {herdr} --session {session} pane run {pane} "python3 @HERE@/pastecap.py @FX@/cap.bin off 300"
 sh @HERE@/../focus/pane-has.sh {herdr} {session} {pane} 'pastecap ready'
 
@@ -55,10 +58,11 @@ log === D08 a URL, as text
 drop url https://example.com/a?b=1&c=2
 sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/url off
 
-log === D09 a drag that hovers shows the highlight, and loses it when it leaves
-drop hover files @FX@/plain.txt
+log === D09 a drag of text that hovers shows the highlight, and loses it when it leaves
+drop hover text hello from a drop
 expect drop.op copy
 expect drop.highlight 1
+expect drop.zones none
 shot d09-drop-highlight
 drop leave
 expect drop.highlight none
@@ -74,6 +78,73 @@ sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
 
 log === D11 drops never touch the clipboard
 expect clipboard -
+
+log === Z01 a drag of files splits the tile: paste on top, move into the pane's folder below
+drop hover files @FX@/src/one.txt
+expect drop.op copy
+expect drop.highlight none
+expect drop.zones paste,move
+expect drop.zone paste
+expect drop.geometry stacked inset=12 gap=8
+expect drop.label.paste Drop to|paste path
+expect drop.label.move Drop to|move into @FX@/dest
+drop at 0.5,0.8 hover files @FX@/src/one.txt|@FX@/src/two.txt
+expect drop.zone move
+expect drop.op move
+expect drop.label.paste Drop to|paste paths
+wait 300
+shot z01-zones-dark
+drop at 0.5,0.3 hover files @FX@/src/one.txt
+expect drop.zone paste
+expect drop.op copy
+
+log === Z02 holding ⌥ copies instead, and the label says so live
+drop copy at 0.5,0.8 hover files @FX@/src/one.txt
+expect drop.zone move
+expect drop.op copy
+expect drop.label.move Drop to|copy into @FX@/dest
+drop at 0.5,0.8 hover files @FX@/src/one.txt
+expect drop.label.move Drop to|move into @FX@/dest
+theme set atom-one-light
+wait 300
+shot z02-zones-light
+theme set atom-one-dark
+drop leave
+expect drop.zones none
+expect drop.highlight none
+
+log === Z03 a drop on the move zone moves the file into the pane's folder; nothing is typed
+drop at 0.5,0.8 files @FX@/src/one.txt
+expect drop.op dropped
+until drop.transfer done 5000
+expect drop.transfer.dests one.txt
+expect hud.last Moved one.txt to @FX@/dest
+sh test -f @FX@/dest/one.txt && test ! -e @FX@/src/one.txt
+sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
+expect drop.zones none
+
+log === Z04 a name the folder already has gets Finder's number; nothing is overwritten
+drop at 0.5,0.8 files @FX@/src/clash.txt
+until drop.transfer done 5000
+expect drop.transfer.dests clash 2.txt
+expect hud.last Moved clash.txt to @FX@/dest as clash 2.txt
+sh grep -qx new "@FX@/dest/clash 2.txt" && grep -qx old @FX@/dest/clash.txt
+sh test ! -e @FX@/src/clash.txt
+
+log === Z05 with ⌥, a file and a folder are copied; the originals stay
+drop copy at 0.5,0.8 files @FX@/src/two.txt|@FX@/src/folder
+until drop.transfer done 5000
+expect drop.transfer.dests two.txt|folder
+expect hud.last Copied 2 items to @FX@/dest
+sh test -f @FX@/src/two.txt && test -f @FX@/src/folder/inner.md
+sh grep -qx two @FX@/dest/two.txt && grep -qx inner @FX@/dest/folder/inner.md
+sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
+
+log === Z06 files dropped on the paste half still type their paths
+drop at 0.5,0.2 files @FX@/src/two.txt
+expect drop.op dropped
+sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/two off
+sh test -f @FX@/src/two.txt
 
 log --- bracketed paste on
 key ctrl+c
@@ -117,3 +188,20 @@ expect responder terminal
 sh @HERE@/drop-check.py @FX@/cap2.bin @FX@/expect/focus off
 expect drop.highlight none
 key ctrl+c
+
+log === Z07 a pane whose folder is gone: only the paste zone
+sh {herdr} --session {session} pane run {pane:2} "cd @FX@/gone"
+until terminal.cwd @FX@/gone 10000
+sh rmdir @FX@/gone
+drop @2 hover files @FX@/src/two.txt
+expect drop.zones paste
+expect drop.geometry single inset=12
+expect drop.label.paste Drop to|paste path
+expect drop.label.move -
+drop @2 at 0.5,0.8 hover files @FX@/src/two.txt
+expect drop.zone paste
+expect drop.op copy
+wait 300
+shot z07-paste-only
+drop @2 leave
+expect drop.zones none

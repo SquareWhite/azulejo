@@ -664,6 +664,7 @@ enum Design {
         static let tile: CGFloat = 10
         static let terminal: CGFloat = 4
         static let overlay: CGFloat = 4
+        static let dropZone: CGFloat = 12
         static let ghost: CGFloat = 4
         static let row: CGFloat = 5
         static let pill: CGFloat = 6
@@ -688,6 +689,7 @@ enum Design {
     enum Border {
         static let hairline: CGFloat = 1
         static let drop: CGFloat = 2
+        static let dropZone: CGFloat = 1
     }
 
     /// Opacities (0 to 1) applied on top of colour tokens.
@@ -699,6 +701,9 @@ enum Design {
         static let unfocusedDim: CGFloat = 0.25
         static let dropFill: CGFloat = 0.1
         static let dropBorder: CGFloat = 0.8
+        static let dropZoneFill: CGFloat = 0.06
+        static let dropZoneBorder: CGFloat = 0.35
+        static let dropZoneHot: CGFloat = 0.16
         static let badgePulse: CGFloat = 0.35
         static let bannerFill: CGFloat = 0.16
         static let bannerMix: CGFloat = 0.75
@@ -769,6 +774,9 @@ enum Design {
         static let railExpandHeight: CGFloat = 30
         static let dragThreshold: CGFloat = 4
         static let dropMargin: CGFloat = 24
+        static let dropZoneInset: CGFloat = 12
+        static let dropZoneGap: CGFloat = 8
+        static let dropZoneLabelGap: CGFloat = 3
         static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
         static let findFieldMin: CGFloat = 60
@@ -834,6 +842,8 @@ enum Design {
         nonisolated(unsafe) static let overlayTitle: NSFont = .systemFont(ofSize: 14, weight: .semibold)
         nonisolated(unsafe) static let overlayTitleSmall: NSFont = .systemFont(ofSize: 12, weight: .semibold)
         nonisolated(unsafe) static let overlayBody: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let dropZoneHint: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let dropZoneAction: NSFont = .systemFont(ofSize: 15, weight: .semibold)
         nonisolated(unsafe) static let gitBadge: NSFont = .monospacedSystemFont(ofSize: 10, weight: .semibold)
         nonisolated(unsafe) static let monoDetail: NSFont = .monospacedSystemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let tileLabel: NSFont = .monospacedSystemFont(ofSize: 12, weight: .medium)
@@ -936,5 +946,6 @@ enum Design {
         static let hintFilter: TimeInterval = 0.08
         static let hintExtendDelay: TimeInterval = 0.1
         static let hintExtend: TimeInterval = 0.08
+        static let dropZone: TimeInterval = 0.1
     }
 }

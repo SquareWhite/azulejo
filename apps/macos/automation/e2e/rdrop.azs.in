@@ -1,0 +1,56 @@
+# Files dropped on a remote terminal. rdrop.sh sets up the "remote" machine
+# `standin` (a throwaway herdr session reached only through
+# scripts/ssh-standin.sh) and fills @FX@ (fixtures, resolved: local/ holds
+# what's dropped, remote-dest/ is the pane's folder "on" standin) and @SIDE@
+# (the stand-in's folder).
+log rdrop
+delivery direct
+until machines Local=connected,standin=connected 20000
+
+# A workspace on standin, its shell in the folder files go to.
+machine-add standin
+until workspace.machine standin 5000
+until terminal.phase attached 10000
+wait 800
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/remote-dest\n"}}
+until terminal.cwd @FX@/remote-dest 10000
+
+log === R01 the move zone names the pane's folder on its machine
+drop hover files @FX@/local/one.txt
+expect drop.zones paste,move
+expect drop.geometry stacked inset=12 gap=8
+expect drop.label.move Drop to|move into standin:@FX@/remote-dest
+drop at 0.5,0.8 hover files @FX@/local/one.txt
+expect drop.zone move
+expect drop.op move
+wait 300
+shot r01-remote-zones
+drop copy at 0.5,0.8 hover files @FX@/local/one.txt
+expect drop.label.move Drop to|copy into standin:@FX@/remote-dest
+drop leave
+expect drop.zones none
+
+log === R02 a drop there uploads the file with scp, then removes the original
+drop at 0.5,0.8 files @FX@/local/one.txt
+expect drop.op dropped
+until drop.transfer done 20000
+expect drop.transfer.dests one.txt
+expect hud.last Moved one.txt to standin:@FX@/remote-dest
+sh grep -qx one @FX@/remote-dest/one.txt && test ! -e @FX@/local/one.txt
+
+log === R03 with ⌥ it's a copy; a name already there gets Finder's number
+drop copy at 0.5,0.8 files @FX@/local/clash.txt
+until drop.transfer done 20000
+expect drop.transfer.dests clash 2.txt
+expect hud.last Uploaded clash.txt to standin:@FX@/remote-dest as clash 2.txt
+sh grep -qx new "@FX@/remote-dest/clash 2.txt" && grep -qx old @FX@/remote-dest/clash.txt
+sh grep -qx new @FX@/local/clash.txt
+
+log === R04 the link is cut: the upload fails and the original stays
+sh touch @SIDE@/ssh.fail
+drop at 0.5,0.8 files @FX@/local/two.txt
+until drop.transfer failed 30000
+expect hud.last Couldn't move to standin:@FX@/remote-dest: can't reach standin: ssh: connect to host standin port 22: Connection refused
+sh test -f @FX@/local/two.txt && test ! -e @FX@/remote-dest/two.txt
+sh rm -f @SIDE@/ssh.fail
+quit

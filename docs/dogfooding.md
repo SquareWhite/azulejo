@@ -137,7 +137,10 @@ badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
 - The mouse: drag the gutter between tiles to resize (double-click evens the
   split), drag tabs in the top bar or workspaces in the sidebar to reorder
   them, and drop files, images or text onto a terminal to paste their paths or
-  contents.
+  contents. Files split the terminal in two while you drag: the top half
+  pastes their paths, the bottom half moves them into the shell's folder
+  (hold ⌥ to copy; a remote pane gets them uploaded with scp). A name that's
+  already there gets a number ("notes 2.txt"); nothing is overwritten.
 - Text selection: a plain drag selects at a shell prompt. Programs that take
   the mouse (vim, most agent TUIs) get plain drags; hold shift to select.
   Programs on `[terminal] select_on_drag` (`["omp"]` by default) select on a

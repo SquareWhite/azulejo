@@ -17,6 +17,7 @@ mod preview;
 mod remote_files;
 mod repos;
 pub mod terminal;
+mod transfer;
 
 use azulejo_model::{
     HerdrRef, LayoutPrefs, ModelError, PreviewMode, Session, SidebarState, TabId, Tile,
@@ -665,6 +666,13 @@ impl Engine {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
                     "the keymap needs a running core with a config",
+                ));
+            }
+            // Copying files takes time, and machines are links `Core` holds.
+            Command::FilesTransfer(_) => {
+                return Err(Error::new(
+                    ErrorCode::Unavailable,
+                    "file transfers need a running core",
                 ));
             }
             // Machines are links `Core` holds.

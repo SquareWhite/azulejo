@@ -20,6 +20,12 @@ import UniformTypeIdentifiers
 /// a bracketed paste when the program asked for that. A drop reads only the
 /// drag's own pasteboard: the general pasteboard (Claude Code's ctrl+v image
 /// paste) is never read or written.
+///
+/// A drag of files splits the tile in two (`DropZonesView`) when the pane's
+/// folder is known: the top half pastes as above, the bottom half moves the
+/// files into that folder (⌥: copies them) through `FileTransfer`, an
+/// upload with scp when the pane is on a herdr machine. Nothing is typed
+/// then; a HUD line says how it went.
 @MainActor
 enum TerminalDrop {
     /// Image data a drop writes out as a PNG.
@@ -41,6 +47,15 @@ enum TerminalDrop {
     /// drag is only hovering).
     static func accepts(_ pasteboard: NSPasteboard) -> Bool {
         pasteboard.canReadItem(withDataConformingToTypes: types.map(\.rawValue))
+    }
+
+    /// The files a drag carries (file URLs, no promises), in order; empty
+    /// for anything else. A drag with files splits the tile into two drop
+    /// zones (`DropZonesView`): paste the paths, or move the files into the
+    /// terminal's folder.
+    static func fileURLs(_ pasteboard: NSPasteboard) -> [URL] {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+        return (urls as? [URL] ?? []).filter(\.isFileURL)
     }
 
     /// What a drop does: type this text, or receive promised files first.
@@ -230,6 +245,12 @@ enum TerminalDrop {
     }
 }
 
+/// What a drop's HUD line is about: a transfer still running (the line
+/// stays), done, or failed (it stays longer, to be read).
+enum DropNotice {
+    case running, done, failed
+}
+
 /// A terminal tile's look while a drag it would take hovers over it: a faint
 /// wash and a thin border in the theme's accent. Never takes a click.
 final class DropHighlightView: NSView, ThemeAware {
@@ -253,6 +274,185 @@ final class DropHighlightView: NSView, ThemeAware {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// A terminal tile's look while a drag of files hovers over it, the way
+/// Telegram splits a chat: the tile goes under `color.overlay` and two
+/// stacked cards share it. The top one pastes the files' paths (what any
+/// drop does); the bottom one moves them into the terminal's folder, or
+/// copies them with ⌥ held. With no folder known, one card pastes. Each
+/// card says what it does in two centred lines, and the one under the
+/// pointer lights up. Fades in, and the highlight cross-fades, over
+/// `motion.dropZone` (instant with motion off or Reduce Motion). Never
+/// takes a click.
+final class DropZonesView: NSView, ThemeAware {
+    enum Zone: String {
+        case paste, move
+    }
+
+    private let cards: [Zone: DropZoneCard] = [.paste: DropZoneCard(), .move: DropZoneCard()]
+    /// The cards showing, top first.
+    private(set) var zones: [Zone] = []
+    /// The card under the pointer.
+    private(set) var hot: Zone?
+
+    override var isFlipped: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        autoresizingMask = [.width, .height]
+        for zone in [Zone.paste, .move] {
+            guard let card = cards[zone] else { continue }
+            card.layer.cornerRadius = Design.Radius.dropZone
+            card.layer.cornerCurve = .continuous
+            layer?.insertSublayer(card.layer, at: 0)
+            card.hint.font = Design.Font.dropZoneHint
+            card.action.font = Design.Font.dropZoneAction
+            for label in [card.hint, card.action] {
+                label.alignment = .center
+                label.lineBreakMode = .byTruncatingMiddle
+                label.cell?.truncatesLastVisibleLine = true
+                addSubview(label)
+            }
+        }
+        Theme.track(self)
+        configure(paste: "paste path", move: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// What the cards say: `move` nil shows the paste card alone.
+    func configure(paste: String, move: String?) {
+        let zones: [Zone] = move == nil ? [.paste] : [.paste, .move]
+        cards[.paste]?.action.stringValue = paste
+        if let move { cards[.move]?.action.stringValue = move }
+        guard zones != self.zones else { return }
+        self.zones = zones
+        let moveShown = zones.contains(.move)
+        if let card = cards[.move] {
+            card.layer.isHidden = !moveShown
+            card.hint.isHidden = !moveShown
+            card.action.isHidden = !moveShown
+        }
+        if let hot, !zones.contains(hot) { self.hot = nil }
+        needsLayout = true
+    }
+
+    /// The overlay fades in (at once with motion off).
+    func appear() {
+        alphaValue = 0
+        guard Motion.active else { return alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Design.Motion.dropZone
+            animator().alphaValue = 1
+        }
+    }
+
+    /// The zone a drop at `point` (this view's coordinates) lands in: the
+    /// top half pastes, the bottom half moves.
+    func zone(at point: NSPoint) -> Zone {
+        zones.count > 1 && point.y >= bounds.midY ? .move : .paste
+    }
+
+    func setHot(_ zone: Zone?) {
+        guard zone != hot else { return }
+        hot = zone
+        restyle(animated: Motion.active)
+    }
+
+    /// A card's frame (top-left origin), for automation.
+    func frame(of zone: Zone) -> NSRect? {
+        guard zones.contains(zone) else { return nil }
+        return cards[zone]?.layer.frame
+    }
+
+    /// What a card says, its two lines joined by `|`.
+    func label(of zone: Zone) -> String? {
+        guard zones.contains(zone), let card = cards[zone] else { return nil }
+        return "\(card.hint.stringValue)|\(card.action.stringValue)"
+    }
+
+    override func layout() {
+        super.layout()
+        let inset = Design.Space.dropZoneInset, gap = Design.Space.dropZoneGap
+        let area = bounds.insetBy(dx: inset, dy: inset)
+        var frames: [Zone: NSRect] = [.paste: area]
+        if zones.count > 1 {
+            let height = max(0, (area.height - gap) / 2)
+            frames[.paste] = NSRect(x: area.minX, y: area.minY, width: area.width, height: height)
+            frames[.move] = NSRect(x: area.minX, y: area.minY + height + gap, width: area.width, height: height)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (zone, frame) in frames {
+            guard let card = cards[zone] else { continue }
+            card.layer.frame = frame
+            let width = max(0, frame.width - 2 * inset)
+            let hint = card.hint.intrinsicContentSize.height
+            let action = card.action.intrinsicContentSize.height
+            let top = frame.midY - (hint + Design.Space.dropZoneLabelGap + action) / 2
+            card.hint.frame = NSRect(x: frame.minX + inset, y: top, width: width, height: hint)
+            card.action.frame = NSRect(
+                x: frame.minX + inset, y: top + hint + Design.Space.dropZoneLabelGap, width: width, height: action)
+        }
+        CATransaction.commit()
+    }
+
+    func applyTheme() {
+        layer?.backgroundColor = Design.Color.overlay.cgColor
+        for card in cards.values {
+            card.hint.textColor = Design.Color.textMuted
+            card.action.textColor = Design.Color.textPrimary
+        }
+        restyle(animated: false)
+    }
+
+    private func restyle(animated: Bool) {
+        // theme: applyTheme calls it, and so does every change of the hot card.
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        CATransaction.setAnimationDuration(Design.Motion.dropZone)
+        for (zone, card) in cards {
+            let hot = zone == self.hot
+            card.layer.backgroundColor = Design.Color.accent
+                .withAlphaComponent(hot ? Design.Alpha.dropZoneHot : Design.Alpha.dropZoneFill).cgColor
+            card.layer.borderColor = Design.Color.accent
+                .withAlphaComponent(hot ? Design.Alpha.dropBorder : Design.Alpha.dropZoneBorder).cgColor
+            card.layer.borderWidth = hot ? Design.Border.drop : Design.Border.dropZone
+        }
+        CATransaction.commit()
+    }
+
+    /// Automation: how the cards sit, e.g. `stacked inset=12 gap=8` (paste
+    /// over move, the same size, the same inset all round) or
+    /// `single inset=12`.
+    var geometry: String {
+        guard let paste = frame(of: .paste) else { return "none" }
+        let inset = paste.minX
+        let even = { (r: NSRect) in
+            abs(r.minX - inset) < 0.5 && abs(self.bounds.maxX - r.maxX - inset) < 0.5
+        }
+        guard even(paste), abs(paste.minY - inset) < 0.5 else { return "uneven \(paste)" }
+        guard let move = frame(of: .move) else {
+            return abs(bounds.maxY - paste.maxY - inset) < 0.5 ? "single inset=\(Int(inset))" : "uneven \(paste)"
+        }
+        guard even(move), abs(bounds.maxY - move.maxY - inset) < 0.5, abs(move.height - paste.height) < 0.5,
+              move.minY > paste.maxY
+        else { return "uneven \(paste) \(move)" }
+        return "stacked inset=\(Int(inset)) gap=\(Int((move.minY - paste.maxY).rounded()))"
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// One of `DropZonesView`'s cards: its fill and outline, and two lines.
+@MainActor
+private final class DropZoneCard {
+    let layer = CALayer()
+    let hint = NSTextField(labelWithString: "Drop to")
+    let action = NSTextField(labelWithString: "")
+}
+
 // MARK: - Automation
 
 /// Automation verbs for drops (`drop …`): a private pasteboard, never the
@@ -269,29 +469,75 @@ final class DropHighlightView: NSView, ThemeAware {
 ///                                   from (a picture out of a web page)
 ///     drop [@N] hover KIND ARG…     the drag only enters (any kind above)
 ///     drop [@N] leave               …and leaves
+///     drop [@N] at FX,FY …          where the drag is, as fractions of the
+///                                   tile from its top left (0.5,0.25 by
+///                                   default: the top half, which pastes)
+///     drop [@N] copy …              ⌥ held: the drag's mask narrows to copy
 ///
 /// `@N` is the tile's place in the tab (`expect focus`); the focused tile
 /// by default. Keys: `drop.op` (what the last hover or drop got:
-/// `copy`, `none`, `dropped`, `refused`), `drop.highlight` (places showing
-/// the highlight, `2` or `none`), `drop.last` (the text the last drop typed),
-/// `drop.dir` (where images go).
+/// `copy`, `move`, `none`, `dropped`, `refused`), `drop.highlight` (places
+/// showing the highlight, `2` or `none`), `drop.last` (the text the last
+/// drop typed), `drop.dir` (where images go). A drag of files shows drop
+/// zones instead of the highlight: `drop.zones` (`paste,move`, `paste` or
+/// `none`), `drop.zone` (the one under the pointer), `drop.label.paste` and
+/// `drop.label.move` (two lines joined by `|`), `drop.geometry` (`stacked
+/// inset=12 gap=8`). A drop on the move zone transfers the files:
+/// `drop.transfer` (`running`, `done` or `failed`), `drop.transfer.text`
+/// (the HUD line), `drop.transfer.dests` (where they went, names joined by
+/// `|`).
 @MainActor
 enum DropAutomation {
     private static var lastOp = "-"
     private(set) static var lastText = "-"
+    private static var transfer = "-"
+    private static var transferText = "-"
+    private static var transferDests = "-"
 
     static func noteDropped(_ text: String) { lastText = text }
+
+    /// A drop's transfer started (nil) or finished.
+    static func noteTransfer(_ done: (result: FileTransfer.Result, text: String, failed: Bool)?) {
+        guard let done else {
+            (transfer, transferText, transferDests) = ("running", "-", "-")
+            return
+        }
+        transfer = done.failed ? "failed" : "done"
+        transferText = done.text
+        let dests = done.result.items.compactMap(\.dest).map { ($0 as NSString).lastPathComponent }
+        transferDests = dests.isEmpty ? "-" : dests.joined(separator: "|")
+    }
 
     static func run(_ arg: String, controller: WindowController, tab: TabModel?) -> String? {
         var words = arg.split(separator: " ", maxSplits: 1).map(String.init)
         var place: Int?
-        if let first = words.first, first.hasPrefix("@") {
-            place = Int(first.dropFirst())
+        var at = NSPoint(x: 0.5, y: 0.25)
+        var copy = false
+        func shift() {
             words = words.count > 1 ? words[1].split(separator: " ", maxSplits: 1).map(String.init) : []
+        }
+        while let first = words.first {
+            if first.hasPrefix("@") {
+                place = Int(first.dropFirst())
+            } else if first == "copy" {
+                copy = true
+            } else if first == "at" {
+                shift()
+                let xy = (words.first ?? "").split(separator: ",").compactMap { Double($0) }
+                guard xy.count == 2 else { return "drop at FX,FY: fractions of the tile" }
+                at = NSPoint(x: xy[0], y: xy[1])
+            } else {
+                break
+            }
+            shift()
         }
         guard let tab else { return "no tab" }
         let id = place.map { $0 >= 1 && $0 <= tab.order.count ? tab.order[$0 - 1] : "" } ?? tab.focused
         guard let tile = controller.window.contentView?.terminalTile(id) else { return "no terminal tile there" }
+        // The tile isn't flipped: y counts from the bottom.
+        let point = NSPoint(x: tile.bounds.width * at.x, y: tile.bounds.height * (1 - at.y))
+        let location = tile.convert(point, to: nil)
+        let mask: NSDragOperation = copy ? .copy : [.copy, .move, .link, .generic]
         let verb = words.first ?? "", rest = words.count > 1 ? words[1] : ""
         switch verb {
         case "leave":
@@ -303,14 +549,14 @@ enum DropAutomation {
             guard let pasteboard = pasteboard(bits.first ?? "", bits.count > 1 ? bits[1] : "") else {
                 return "drop hover files|text|custom|url|image|web-image ARG"
             }
-            lastOp = tile.draggingEntered(StandInDrag(pasteboard)) == .copy ? "copy" : "none"
+            lastOp = name(tile.draggingEntered(StandInDrag(pasteboard, location: location, mask: mask)))
             return nil
         default:
             guard let pasteboard = pasteboard(verb, rest) else {
-                return "drop [@N] files|text|custom|url|image|web-image|hover|leave ARG"
+                return "drop [@N] [at FX,FY] [copy] files|text|custom|url|image|web-image|hover|leave ARG"
             }
-            let drag = StandInDrag(pasteboard)
-            guard tile.draggingEntered(drag) == .copy, tile.prepareForDragOperation(drag) else {
+            let drag = StandInDrag(pasteboard, location: location, mask: mask)
+            guard tile.draggingEntered(drag) != [], tile.prepareForDragOperation(drag) else {
                 tile.draggingExited(drag)
                 lastOp = "refused"
                 return nil
@@ -363,24 +609,43 @@ enum DropAutomation {
         where controller.window.contentView?.terminalTile(id)?.showsDropHighlight == true {
             places.append("\(i + 1)")
         }
+        let zones = (tab?.order ?? []).lazy
+            .compactMap { controller.window.contentView?.terminalTile($0)?.dropZonesShown }.first
         return [
             "drop.op": lastOp,
             "drop.highlight": places.isEmpty ? "none" : places.joined(separator: ","),
             "drop.last": lastText,
             "drop.dir": TerminalDrop.directory.path,
+            "drop.zones": zones.map { $0.zones.map(\.rawValue).joined(separator: ",") } ?? "none",
+            "drop.zone": zones?.hot?.rawValue ?? "none",
+            "drop.label.paste": zones?.label(of: .paste) ?? "-",
+            "drop.label.move": zones?.label(of: .move) ?? "-",
+            "drop.geometry": zones?.geometry ?? "none",
+            "drop.transfer": transfer,
+            "drop.transfer.text": transferText,
+            "drop.transfer.dests": transferDests,
         ]
+    }
+
+    private static func name(_ op: NSDragOperation) -> String {
+        op.contains(.move) ? "move" : op.contains(.copy) ? "copy" : "none"
     }
 }
 
-/// A drag as far as a drop destination sees one: its pasteboard, a copy.
+/// A drag as far as a drop destination sees one: its pasteboard, where it
+/// is (window coordinates) and what its source allows.
 @MainActor
 private final class StandInDrag: NSObject, @preconcurrency NSDraggingInfo {
     let draggingPasteboard: NSPasteboard
-    init(_ pasteboard: NSPasteboard) { draggingPasteboard = pasteboard }
+    let draggingLocation: NSPoint
+    let draggingSourceOperationMask: NSDragOperation
+    init(_ pasteboard: NSPasteboard, location: NSPoint, mask: NSDragOperation) {
+        draggingPasteboard = pasteboard
+        draggingLocation = location
+        draggingSourceOperationMask = mask
+    }
 
     var draggingDestinationWindow: NSWindow? { nil }
-    var draggingSourceOperationMask: NSDragOperation { .copy }
-    var draggingLocation: NSPoint { .zero }
     var draggedImageLocation: NSPoint { .zero }
     var draggedImage: NSImage? { nil }
     var draggingSource: Any? { nil }

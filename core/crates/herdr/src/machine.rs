@@ -269,6 +269,33 @@ impl RemoteMachine {
         }
     }
 
+    /// `scp -r -p -q -S <ssh> <options> -- <args…>`: copies files to or from
+    /// the machine over its shared SSH connection (OpenSSH's default SFTP
+    /// protocol, so paths go as they are, never through a remote shell).
+    /// Name a path on the machine with [`Self::scp_path`].
+    pub fn scp(&self, args: Vec<String>) -> AttachCommand {
+        let mut all: Vec<String> = vec![
+            "-r".into(),
+            "-p".into(),
+            "-q".into(),
+            "-S".into(),
+            self.ssh.program.to_string_lossy().into_owned(),
+        ];
+        all.extend(self.ssh.options());
+        all.push("--".into());
+        all.extend(args);
+        AttachCommand {
+            program: "scp".into(),
+            args: all,
+            env: Self::env(),
+        }
+    }
+
+    /// `target:path`, a path on this machine as `scp` takes it.
+    pub fn scp_path(&self, path: &str) -> String {
+        format!("{}:{}", self.profile.target, path)
+    }
+
     pub fn control_dir(&self) -> &Path {
         &self.ssh.control_dir
     }

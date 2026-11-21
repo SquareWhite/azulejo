@@ -28,6 +28,7 @@ use crate::mirror::{self, MirrorMsg};
 use crate::persist::{self, Loaded, Saver};
 use crate::preview::{self, Previews};
 use crate::repos::{self, Repos};
+use crate::transfer;
 use crate::{Engine, Outcome, meta, terminal};
 
 /// Called with a log line. Defaults to stderr.
@@ -352,6 +353,9 @@ fn run<P: HerdrPort>(
     };
     files.sync(engine.session());
 
+    // `files.transfer`: the machines it can reach over SSH, by ID.
+    let mut transfer_machines: HashMap<String, azulejo_herdr::RemoteMachine> = HashMap::new();
+
     // Workspaces' git branches: find, watch and read off this thread.
     let mut repos = {
         let out = self_tx.clone();
@@ -500,6 +504,33 @@ fn run<P: HerdrPort>(
                             });
                         }
                     },
+                }
+            }
+            // Moving and copying files: off this thread, replied when done.
+            Msg::Command(Command::FilesTransfer(p), reply) => {
+                match transfer::Transfer::new(p, &transfer_machines) {
+                    Err(e) => {
+                        let _ = reply.send(Err(e));
+                    }
+                    Ok(t) => {
+                        let spawned = thread::Builder::new()
+                            .name("azulejo-transfer".into())
+                            .spawn({
+                                let reply = reply.clone();
+                                move || {
+                                    let _ = reply.send(transfer::run(&t).map(|items| Outcome {
+                                        reply: Reply::Transferred { items },
+                                        events: Vec::new(),
+                                    }));
+                                }
+                            });
+                        if spawned.is_err() {
+                            let _ = reply.send(Err(Error::new(
+                                ErrorCode::Internal,
+                                "couldn't start a thread for the transfer",
+                            )));
+                        }
+                    }
                 }
             }
             Msg::Command(command, reply) if file_tiles::is_runtime(&command) => {
@@ -877,6 +908,10 @@ fn run<P: HerdrPort>(
                 }
             }
             Msg::MachineFiles(id, machine) => {
+                match &machine {
+                    Some(m) => transfer_machines.insert(id.clone(), m.clone()),
+                    None => transfer_machines.remove(&id),
+                };
                 for event in files.set_machine(id, machine) {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
                 }

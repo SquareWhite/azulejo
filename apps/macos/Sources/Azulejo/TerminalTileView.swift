@@ -67,6 +67,8 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     private let overlay = TerminalOverlay()
     /// Shown while a drag the terminal would take hovers over the tile.
     private var dropHighlight: DropHighlightView?
+    /// Shown instead while a drag of files hovers: paste, or move here.
+    private var dropZones: DropZonesView?
     /// ⌘F: made on first use, then kept with its query.
     private var finder: TerminalFinder?
     private let runDir: URL
@@ -406,7 +408,11 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
     /// The core's machine list (`machines.list`): which machines are connected.
     static func noteMachines(_ machines: [MachineModel]) {
         connected = Set(machines.filter { $0.state == .connected }.map(\.id))
+        machineLabels = Dictionary(machines.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
     }
+
+    /// Machines' names by ID, for drop zones and transfer messages.
+    private(set) static var machineLabels: [String: String] = [:]
 
     private func startObserve(takenOver: Bool) {
         guard let herdr = model.herdr else { return }
@@ -833,6 +839,11 @@ final class TerminalTileView: NSView, TileView, ThemeAware {
 // MARK: - Drops (TerminalDrop)
 
 extension TerminalTileView {
+    /// How a drop's outcome is shown: a HUD line in the tile's window
+    /// (held while a transfer runs, and a while longer when it failed). Set
+    /// by the app at launch.
+    static var notice: (NSWindow?, String, DropNotice) -> Void = { _, _, _ in }
+
     /// The surface a drop types into: a live, writable one. Waiting, ended
     /// and read-only (observing) tiles take no drops.
     private var dropSurface: TerminalSurfaceView? {
@@ -840,26 +851,69 @@ extension TerminalTileView {
         return surface
     }
 
+    /// The pane's folder, where a drop's files can move: herdr's report of
+    /// the shell's cwd (else where the terminal started), on the pane's
+    /// machine. nil when it isn't known (or, here, isn't a folder).
+    var dropFolder: FileTransfer.Folder? {
+        guard let path = model.terminalCwd, path.hasPrefix("/") else { return nil }
+        guard let machine = model.herdr?.machine, machine != MachineModel.local else {
+            var dir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &dir), dir.boolValue else { return nil }
+            return FileTransfer.Folder(path: path)
+        }
+        return FileTransfer.Folder(path: path, machine: machine, label: Self.machineLabels[machine] ?? machine)
+    }
+
+    /// A drag of files moves them unless ⌥ is held (or the source only
+    /// lets them be copied): AppKit then narrows the drag's mask to copy.
+    private func dropCopies(_ sender: any NSDraggingInfo) -> Bool {
+        let mask = sender.draggingSourceOperationMask
+        return !mask.contains(.move) || NSEvent.modifierFlags.contains(.option)
+    }
+
     private func dropOperation(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard dropSurface != nil, TerminalDrop.accepts(sender.draggingPasteboard) else {
-            showDropHighlight(false)
+        let pasteboard = sender.draggingPasteboard
+        guard dropSurface != nil, TerminalDrop.accepts(pasteboard) else {
+            endDropLook()
             return []
         }
-        showDropHighlight(true)
-        return .copy
+        let files = TerminalDrop.fileURLs(pasteboard)
+        guard !files.isEmpty else {
+            showDropZones(nil)
+            showDropHighlight(true)
+            return .copy
+        }
+        showDropHighlight(false)
+        let copies = dropCopies(sender)
+        let move = dropFolder.map { "\(copies ? "copy" : "move") into \($0.shown)" }
+        let zones = showDropZones((paste: files.count == 1 ? "paste path" : "paste paths", move: move))
+        let zone = zones?.zone(at: zones?.convert(sender.draggingLocation, from: nil) ?? .zero) ?? .paste
+        zones?.setHot(zone)
+        guard zone == .move else { return .copy }
+        return copies ? .copy : .move
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { dropOperation(sender) }
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { dropOperation(sender) }
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) { showDropHighlight(false) }
-    override func draggingEnded(_ sender: any NSDraggingInfo) { showDropHighlight(false) }
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { endDropLook() }
+    override func draggingEnded(_ sender: any NSDraggingInfo) { endDropLook() }
     override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { dropSurface != nil }
 
     /// Types the drop into the terminal as a paste, and focuses the tile
-    /// if it wasn't (the window stays where it is: no activation).
+    /// if it wasn't (the window stays where it is: no activation). Files
+    /// dropped on the move zone go into the pane's folder instead, and
+    /// focus stays where it was.
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        showDropHighlight(false)
+        let zones = dropZones
+        let zone = zones?.zone(at: zones?.convert(sender.draggingLocation, from: nil) ?? .zero)
+        let copies = dropCopies(sender)
+        endDropLook()
         guard dropSurface != nil else { return false }
+        let files = TerminalDrop.fileURLs(sender.draggingPasteboard)
+        if zone == .move, !files.isEmpty, let folder = dropFolder {
+            transferDropped(files, into: folder, mode: copies ? .copy : .move)
+            return true
+        }
         switch TerminalDrop.plan(sender.draggingPasteboard) {
         case .nothing:
             return false
@@ -886,7 +940,35 @@ extension TerminalTileView {
         Self.log("terminal \(Short.id(tileID)): drop of \(text.utf8.count) bytes")
     }
 
+    /// Moves or copies dropped files into the pane's folder (uploads them
+    /// to its machine). Nothing is typed; the HUD says how it went.
+    private func transferDropped(_ files: [URL], into folder: FileTransfer.Folder, mode: FileTransfer.Mode) {
+        guard let core = Self.core else { return }
+        let window = self.window
+        let paths = files.map(\.path)
+        let place = folder.isRemote ? "the pane's machine" : "the pane's folder"
+        Self.log("terminal \(Short.id(tileID)): drop \(mode.rawValue)s \(paths.count) item(s) to \(place)")
+        DropAutomation.noteTransfer(nil)
+        if folder.isRemote {
+            Self.notice(window, FileTransfer.progress(paths.count, into: folder, mode: mode), .running)
+        }
+        FileTransfer.run(paths, into: folder, mode: mode, core: core) { result in
+            let (text, failed) = FileTransfer.summary(result, into: folder, mode: mode)
+            Self.log("drop transfer \(failed ? "failed" : "done"): \(result.items.count) item(s)")
+            DropAutomation.noteTransfer((result, text, failed))
+            Self.notice(window, text, failed ? .failed : .done)
+        }
+    }
+
     var showsDropHighlight: Bool { dropHighlight != nil }
+
+    /// Automation: the drop zones showing, or nil.
+    var dropZonesShown: DropZonesView? { dropZones }
+
+    private func endDropLook() {
+        showDropHighlight(false)
+        showDropZones(nil)
+    }
 
     private func showDropHighlight(_ on: Bool) {
         if on, dropHighlight == nil {
@@ -897,6 +979,28 @@ extension TerminalTileView {
             view.removeFromSuperview()
             dropHighlight = nil
         }
+    }
+
+    /// Shows the drop zones with these labels (`move` nil: paste only), or
+    /// takes them away.
+    @discardableResult
+    private func showDropZones(_ labels: (paste: String, move: String?)?) -> DropZonesView? {
+        guard let labels else {
+            dropZones?.removeFromSuperview()
+            dropZones = nil
+            return nil
+        }
+        if let zones = dropZones {
+            zones.configure(paste: labels.paste, move: labels.move)
+            return zones
+        }
+        let zones = DropZonesView(frame: bounds)
+        zones.configure(paste: labels.paste, move: labels.move)
+        addSubview(zones, positioned: .above, relativeTo: nil)
+        zones.layoutSubtreeIfNeeded()
+        zones.appear()
+        dropZones = zones
+        return zones
     }
 }
 

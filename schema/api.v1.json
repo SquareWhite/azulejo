@@ -907,6 +907,23 @@
           "type": "object"
         },
         {
+          "description": "Moves or copies files and folders into a folder, on this machine or\nbetween Local and a herdr machine (`scp`); replies `transferred`\nwhen it's done, with what became of each.",
+          "properties": {
+            "method": {
+              "const": "files.transfer",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesTransfer"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
           "properties": {
             "method": {
@@ -2838,6 +2855,45 @@
       },
       "type": "object"
     },
+    "FilesTransfer": {
+      "description": "Moves or copies files and folders into a folder. Nothing is ever\noverwritten: a name already taken there gets a Finder-style number\n(`notes 2.txt`, `notes 3.txt`, …).\n\nBetween machines it runs `scp` over the machine's shared SSH\nconnection: Local to a herdr machine (upload) or back (download). Both\nends on one remote machine, or on two, isn't supported.",
+      "properties": {
+        "folder": {
+          "description": "The folder they go into: absolute, on `to`.",
+          "type": "string"
+        },
+        "from": {
+          "description": "The machine the sources are on (`machines.list` ID); Local when\nabsent or `local`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/TransferMode",
+          "default": "copy"
+        },
+        "sources": {
+          "description": "Absolute paths of the files and folders, on `from`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "to": {
+          "description": "The machine the folder is on; Local when absent or `local`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sources",
+        "folder"
+      ],
+      "type": "object"
+    },
     "Focus": {
       "description": "Where the user's focus is. Inner fields are `None` when that level is empty.",
       "properties": {
@@ -4389,6 +4445,26 @@
             "machines"
           ],
           "type": "object"
+        },
+        {
+          "description": "What `files.transfer` did, one item per source, in order.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/TransferItem"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "transferred",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -5626,6 +5702,47 @@
       },
       "type": "object"
     },
+    "TransferItem": {
+      "description": "What became of one source of `files.transfer`.",
+      "properties": {
+        "dest": {
+          "description": "Where it is now, on the folder's machine; absent when it failed.\nMoving something into the folder it's already in leaves it there\n(`dest` is `source`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "description": "Why it failed. With `dest` set, the copy is in place but something\nafter it failed (a move's original couldn't be removed).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "TransferMode": {
+      "description": "What `files.transfer` does with the originals.",
+      "oneOf": [
+        {
+          "const": "copy",
+          "description": "The originals stay.",
+          "type": "string"
+        },
+        {
+          "const": "move",
+          "description": "The originals go once their copy is in place (between machines: once\nthe upload or download succeeded).",
+          "type": "string"
+        }
+      ]
+    },
     "Window": {
       "description": "An app window. It always holds at least one workspace; closing its last\nworkspace closes the window.",
       "properties": {
@@ -6191,6 +6308,7 @@
     "files.open",
     "files.panel",
     "files.panel_close",
+    "files.transfer",
     "layout.get",
     "layout.split",
     "layout.focus",

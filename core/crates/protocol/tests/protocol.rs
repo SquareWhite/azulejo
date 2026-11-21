@@ -269,6 +269,13 @@ fn sample_commands() -> Vec<Command> {
             machine: Some("0123456789abcdef0123456789abcdef".into()),
         }),
         Command::FilesPanelClose(FilesPanelClose { panel: tile }),
+        Command::FilesTransfer(FilesTransfer {
+            sources: vec!["/tmp/report.pdf".into(), "/tmp/shots".into()],
+            from: None,
+            folder: "/srv/shop/uploads".into(),
+            to: Some("0123456789abcdef0123456789abcdef".into()),
+            mode: TransferMode::Move,
+        }),
         Command::LayoutApply(LayoutApply {
             path: Some("/src/shop/.azulejo.toml".into()),
             mode: ApplyMode::ReplaceTab,
@@ -723,6 +730,20 @@ fn replies_round_trip() {
                 state: MachineState::Connected,
                 message: None,
             }],
+        },
+        Reply::Transferred {
+            items: vec![
+                TransferItem {
+                    source: "/tmp/report.pdf".into(),
+                    dest: Some("/srv/shop/uploads/report 2.pdf".into()),
+                    error: None,
+                },
+                TransferItem {
+                    source: "/tmp/gone".into(),
+                    dest: None,
+                    error: Some("no such file or folder".into()),
+                },
+            ],
         },
     ];
     for reply in replies {

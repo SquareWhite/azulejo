@@ -88,6 +88,10 @@ pub enum Reply {
     Machines {
         machines: Vec<crate::machines::MachineInfo>,
     },
+    /// What `files.transfer` did, one item per source, in order.
+    Transferred {
+        items: Vec<crate::transfer::TransferItem>,
+    },
 }
 
 /// A window without its workspaces' contents.

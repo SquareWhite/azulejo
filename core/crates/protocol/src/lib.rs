@@ -19,6 +19,7 @@ mod project;
 mod reply;
 mod schema;
 mod stream;
+mod transfer;
 
 pub use azulejo_model::{
     Axis, Direction, Focus, Frame, GitInfo, HerdrRef, InsertAt, LayoutKind, LayoutParams,
@@ -35,6 +36,7 @@ pub use project::*;
 pub use reply::*;
 pub use schema::{api_schema, api_schema_text};
 pub use stream::*;
+pub use transfer::*;
 
 /// Version of the public API schema. Breaking changes bump it.
 pub const API_VERSION: u32 = 1;
