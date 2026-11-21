@@ -708,6 +708,8 @@ enum Design {
         static let dropZoneInset: CGFloat = 12
         static let dropZoneGap: CGFloat = 8
         static let dropZoneLabelGap: CGFloat = 3
+        static let dropZoneIcon: CGFloat = 36
+        static let dropZoneIconGap: CGFloat = 8
         static let badgeInset: CGFloat = 6
         static let findFieldMin: CGFloat = 60
     }
@@ -732,6 +734,7 @@ enum Design {
         static let railExpand: CGFloat = 11
         static let paletteKind: CGFloat = 12
         static let paletteStatus: CGFloat = 11
+        static let dropZone: CGFloat = 28
     }
 
     /// UI fonts. Terminals use the user's Ghostty font, not these.
@@ -855,6 +858,9 @@ enum Design {
         static let layoutTile = "inset.filled.leadinghalf.toptrailing.bottomtrailing.rectangle"
         static let layoutThreeColumn = "inset.filled.leftthird.middlethird.rightthird.rectangle"
         static let layoutMonocle = "rectangle.inset.filled"
+        static let dropMove = "arrow.forward.folder"
+        static let dropCopy = "doc.on.doc"
+        static let dropPaste = "character.cursor.ibeam"
     }
 
     /// Reference durations in seconds; the [animation] config owns the live values.

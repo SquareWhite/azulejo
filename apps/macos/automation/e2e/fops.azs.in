@@ -174,11 +174,11 @@ sidebar files drop on src files @FX@/proj/keep.txt
 until sidebar.files.selected src/keep.txt 5000
 sh test -f @FX@/proj/src/keep.txt && test ! -e @FX@/proj/keep.txt
 
-log === F10 a tree entry dragged onto a terminal: its drop zones; the top one pastes the path
-drop at 0.5,0.25 hover tree README.md
-expect drop.zones paste,move
+log === F10 a tree entry dragged onto a terminal: its drop zones; the bottom one pastes the path
+drop at 0.5,0.75 hover tree README.md
+expect drop.zones move,paste
 drop leave
-drop at 0.5,0.25 tree README.md
+drop at 0.5,0.75 tree README.md
 expect drop.op dropped
 expect drop.last @FX@/proj/README.md
 

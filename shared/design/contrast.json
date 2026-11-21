@@ -208,6 +208,8 @@
     {"id": "drop.zone.hint", "surface": "tiles", "what": "drop zone first line (\"Drop to\")", "fg": "textMuted", "bg": ["accent@0.06", "overlay", "term.background"], "kind": "secondary"},
     {"id": "drop.zone.hot.action", "surface": "tiles", "what": "drop zone action, under the pointer", "fg": "textPrimary", "bg": ["accent@0.16", "overlay", "term.background"], "kind": "text"},
     {"id": "drop.zone.hot.hint", "surface": "tiles", "what": "drop zone first line, under the pointer", "fg": "textMuted", "bg": ["accent@0.16", "overlay", "term.background"], "kind": "secondary"},
+    {"id": "drop.zone.icon", "surface": "tiles", "what": "drop zone icon", "fg": "textMuted", "bg": ["accent@0.06", "overlay", "term.background"], "kind": "ui"},
+    {"id": "drop.zone.hot.icon", "surface": "tiles", "what": "drop zone icon, under the pointer", "fg": "textPrimary", "bg": ["accent@0.16", "overlay", "term.background"], "kind": "ui"},
     {"id": "drop.zone.border", "surface": "tiles", "what": "drop zone outline (alpha.dropZoneBorder)", "fg": "accent*0.35", "bg": ["overlay", "term.background"], "kind": "faint", "relative": false}
   ],
   "_accept": "Known failures, listed (KNOWN) but not failing the check, each with why it stays: a design call for the user, not a token to nudge.",

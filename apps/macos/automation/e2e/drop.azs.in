@@ -79,32 +79,38 @@ sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
 log === D11 drops never touch the clipboard
 expect clipboard -
 
-log === Z01 a drag of files splits the tile: paste on top, move into the pane's folder below
+log === Z01 a drag of files splits the tile: move into the pane's folder on top, paste below
 drop hover files @FX@/src/one.txt
 expect drop.op copy
 expect drop.highlight none
-expect drop.zones paste,move
+expect drop.zones move,paste
 expect drop.zone paste
 expect drop.geometry stacked inset=12 gap=8
-expect drop.label.paste Drop to|paste path
 expect drop.label.move Drop to|move into @FX@/dest
-drop at 0.5,0.8 hover files @FX@/src/one.txt|@FX@/src/two.txt
+expect drop.label.paste Drop to|paste path
+expect drop.icon.move arrow.forward.folder
+expect drop.icon.paste character.cursor.ibeam
+drop at 0.5,0.2 hover files @FX@/src/one.txt|@FX@/src/two.txt
 expect drop.zone move
 expect drop.op move
 expect drop.label.paste Drop to|paste paths
 wait 300
 shot z01-zones-dark
-drop at 0.5,0.3 hover files @FX@/src/one.txt
+drop at 0.5,0.7 hover files @FX@/src/one.txt
 expect drop.zone paste
 expect drop.op copy
 
-log === Z02 holding ⌥ copies instead, and the label says so live
-drop copy at 0.5,0.8 hover files @FX@/src/one.txt
+log === Z02 holding ⌥ copies instead, and the label and icon say so live
+drop copy at 0.5,0.2 hover files @FX@/src/one.txt
 expect drop.zone move
 expect drop.op copy
 expect drop.label.move Drop to|copy into @FX@/dest
-drop at 0.5,0.8 hover files @FX@/src/one.txt
+expect drop.icon.move doc.on.doc
+wait 300
+shot z02-zones-copy-dark
+drop at 0.5,0.2 hover files @FX@/src/one.txt
 expect drop.label.move Drop to|move into @FX@/dest
+expect drop.icon.move arrow.forward.folder
 theme set atom-one-light
 wait 300
 shot z02-zones-light
@@ -114,7 +120,7 @@ expect drop.zones none
 expect drop.highlight none
 
 log === Z03 a drop on the move zone moves the file into the pane's folder; nothing is typed
-drop at 0.5,0.8 files @FX@/src/one.txt
+drop at 0.5,0.2 files @FX@/src/one.txt
 expect drop.op dropped
 until drop.transfer done 5000
 expect drop.transfer.dests one.txt
@@ -124,7 +130,7 @@ sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
 expect drop.zones none
 
 log === Z04 a name the folder already has gets Finder's number; nothing is overwritten
-drop at 0.5,0.8 files @FX@/src/clash.txt
+drop at 0.5,0.2 files @FX@/src/clash.txt
 until drop.transfer done 5000
 expect drop.transfer.dests clash 2.txt
 expect hud.last Moved clash.txt to @FX@/dest as clash 2.txt
@@ -132,7 +138,7 @@ sh grep -qx new "@FX@/dest/clash 2.txt" && grep -qx old @FX@/dest/clash.txt
 sh test ! -e @FX@/src/clash.txt
 
 log === Z05 with ⌥, a file and a folder are copied; the originals stay
-drop copy at 0.5,0.8 files @FX@/src/two.txt|@FX@/src/folder
+drop copy at 0.5,0.2 files @FX@/src/two.txt|@FX@/src/folder
 until drop.transfer done 5000
 expect drop.transfer.dests two.txt|folder
 expect hud.last Copied 2 items to @FX@/dest
@@ -140,8 +146,8 @@ sh test -f @FX@/src/two.txt && test -f @FX@/src/folder/inner.md
 sh grep -qx two @FX@/dest/two.txt && grep -qx inner @FX@/dest/folder/inner.md
 sh @HERE@/drop-check.py @FX@/cap.bin /dev/null off
 
-log === Z06 files dropped on the paste half still type their paths
-drop at 0.5,0.2 files @FX@/src/two.txt
+log === Z06 files dropped on the paste half (the bottom) still type their paths
+drop at 0.5,0.8 files @FX@/src/two.txt
 expect drop.op dropped
 sh @HERE@/drop-check.py @FX@/cap.bin @FX@/expect/two off
 sh test -f @FX@/src/two.txt
@@ -198,10 +204,25 @@ expect drop.zones paste
 expect drop.geometry single inset=12
 expect drop.label.paste Drop to|paste path
 expect drop.label.move -
-drop @2 at 0.5,0.8 hover files @FX@/src/two.txt
+expect drop.icon.paste character.cursor.ibeam
+expect drop.icon.move -
+drop @2 at 0.5,0.2 hover files @FX@/src/two.txt
 expect drop.zone paste
 expect drop.op copy
 wait 300
 shot z07-paste-only
 drop @2 leave
+expect drop.zones none
+
+log === Z08 a short tile: the cards keep their labels and drop their icons
+window-size 900 280
+drop @1 at 0.5,0.2 hover files @FX@/src/two.txt
+expect drop.zones move,paste
+expect drop.zone move
+expect drop.label.move Drop to|move into @FX@/dest
+expect drop.icon.move hidden
+expect drop.icon.paste hidden
+wait 300
+shot z08-short-tile
+drop @1 leave
 expect drop.zones none

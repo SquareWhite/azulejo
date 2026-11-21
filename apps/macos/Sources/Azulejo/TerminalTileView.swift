@@ -892,7 +892,8 @@ extension TerminalTileView {
         showDropHighlight(false)
         let copies = dropCopies(sender)
         let move = dropFolder.map { "\(copies ? "copy" : "move") into \($0.shown)" }
-        let zones = showDropZones((paste: files.count == 1 ? "paste path" : "paste paths", move: move))
+        let zones = showDropZones(
+            (paste: files.count == 1 ? "paste path" : "paste paths", move: move, copies: copies))
         let zone = zones?.zone(at: zones?.convert(sender.draggingLocation, from: nil) ?? .zero) ?? .paste
         zones?.setHot(zone)
         guard zone == .move else { return .copy }
@@ -992,21 +993,21 @@ extension TerminalTileView {
         }
     }
 
-    /// Shows the drop zones with these labels (`move` nil: paste only), or
-    /// takes them away.
+    /// Shows the drop zones with these labels (`move` nil: paste only;
+    /// `copies`: ⌥ makes the move a copy), or takes them away.
     @discardableResult
-    private func showDropZones(_ labels: (paste: String, move: String?)?) -> DropZonesView? {
+    private func showDropZones(_ labels: (paste: String, move: String?, copies: Bool)?) -> DropZonesView? {
         guard let labels else {
             dropZones?.removeFromSuperview()
             dropZones = nil
             return nil
         }
         if let zones = dropZones {
-            zones.configure(paste: labels.paste, move: labels.move)
+            zones.configure(paste: labels.paste, move: labels.move, copies: labels.copies)
             return zones
         }
         let zones = DropZonesView(frame: bounds)
-        zones.configure(paste: labels.paste, move: labels.move)
+        zones.configure(paste: labels.paste, move: labels.move, copies: labels.copies)
         addSubview(zones, positioned: .above, relativeTo: nil)
         zones.layoutSubtreeIfNeeded()
         zones.appear()

@@ -7,9 +7,11 @@
 # to a temp PNG, text and URLs, each with bracketed paste off and on; the
 # highlight while a drag hovers; a drop on an unfocused tile focuses it; a
 # drag of something else is refused. A drag of files splits the tile into
-# drop zones (paste, or move into the pane's folder; ⌥ copies): their
-# layout and labels, shots in a dark and a light theme, a move, a copy and a
-# name clash in temp folders, and a pane whose folder is gone (paste only).
+# drop zones (move into the pane's folder on top, ⌥ copies; paste below):
+# their layout, labels and icons (the move icon turns to copy with ⌥), shots
+# in a dark and a light theme, a move, a copy and a name clash in temp
+# folders, a pane whose folder is gone (paste only), and a tile too short for
+# the icons.
 # Dev instance e2e-drop (herdr session azj-dev-e2e-drop), reset before and after.
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-drop}" E2E_SUITE=drop

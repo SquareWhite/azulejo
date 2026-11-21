@@ -22,10 +22,10 @@ import UniformTypeIdentifiers
 /// paste) is never read or written.
 ///
 /// A drag of files splits the tile in two (`DropZonesView`) when the pane's
-/// folder is known: the top half pastes as above, the bottom half moves the
-/// files into that folder (⌥: copies them) through `FileTransfer`, an
-/// upload with scp when the pane is on a herdr machine. Nothing is typed
-/// then; a HUD line says how it went.
+/// folder is known: the top half moves the files into that folder (⌥:
+/// copies them) through `FileTransfer`, an upload with scp when the pane is
+/// on a herdr machine, and nothing is typed (a HUD line says how it went);
+/// the bottom half pastes as above.
 @MainActor
 enum TerminalDrop {
     /// Image data a drop writes out as a PNG.
@@ -65,8 +65,8 @@ enum TerminalDrop {
 
     /// The files a drag carries (file URLs, no promises), in order; empty
     /// for anything else. A drag with files splits the tile into two drop
-    /// zones (`DropZonesView`): paste the paths, or move the files into the
-    /// terminal's folder.
+    /// zones (`DropZonesView`): move the files into the terminal's folder,
+    /// or paste the paths.
     static func fileURLs(_ pasteboard: NSPasteboard) -> [URL] {
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
         return (urls as? [URL] ?? []).filter(\.isFileURL)
@@ -290,19 +290,20 @@ final class DropHighlightView: NSView, ThemeAware {
 
 /// A terminal tile's look while a drag of files hovers over it, the way
 /// Telegram splits a chat: the tile goes under `color.overlay` and two
-/// stacked cards share it. The top one pastes the files' paths (what any
-/// drop does); the bottom one moves them into the terminal's folder, or
-/// copies them with ⌥ held. With no folder known, one card pastes. Each
-/// card says what it does in two centred lines, and the one under the
+/// stacked cards share it. The top one moves the files into the terminal's
+/// folder, or copies them with ⌥ held; the bottom one pastes their paths
+/// (what any drop does). With no folder known, one card pastes. Each card
+/// shows an icon over two centred lines saying what it does (the icon
+/// hides when the card is too short for both), and the one under the
 /// pointer lights up. Fades in, and the highlight cross-fades, over
 /// `motion.dropZone` (instant with motion off or Reduce Motion). Never
 /// takes a click.
 final class DropZonesView: NSView, ThemeAware {
     enum Zone: String {
-        case paste, move
+        case move, paste
     }
 
-    private let cards: [Zone: DropZoneCard] = [.paste: DropZoneCard(), .move: DropZoneCard()]
+    private let cards: [Zone: DropZoneCard] = [.move: DropZoneCard(), .paste: DropZoneCard()]
     /// The cards showing, top first.
     private(set) var zones: [Zone] = []
     /// The card under the pointer.
@@ -314,7 +315,7 @@ final class DropZonesView: NSView, ThemeAware {
         super.init(frame: frame)
         wantsLayer = true
         autoresizingMask = [.width, .height]
-        for zone in [Zone.paste, .move] {
+        for zone in [Zone.move, .paste] {
             guard let card = cards[zone] else { continue }
             card.layer.cornerRadius = Design.Radius.dropZone
             card.layer.cornerCurve = .continuous
@@ -328,6 +329,7 @@ final class DropZonesView: NSView, ThemeAware {
                 addSubview(label)
             }
         }
+        cards[.paste]?.setSymbol(Design.Icon.dropPaste)
         Theme.track(self)
         configure(paste: "paste path", move: nil)
     }
@@ -335,11 +337,13 @@ final class DropZonesView: NSView, ThemeAware {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    /// What the cards say: `move` nil shows the paste card alone.
-    func configure(paste: String, move: String?) {
-        let zones: [Zone] = move == nil ? [.paste] : [.paste, .move]
+    /// What the cards say: `move` nil shows the paste card alone. `copies`
+    /// (⌥ held) gives the move card the copy icon.
+    func configure(paste: String, move: String?, copies: Bool = false) {
+        let zones: [Zone] = move == nil ? [.paste] : [.move, .paste]
         cards[.paste]?.action.stringValue = paste
         if let move { cards[.move]?.action.stringValue = move }
+        cards[.move]?.setSymbol(copies ? Design.Icon.dropCopy : Design.Icon.dropMove)
         guard zones != self.zones else { return }
         self.zones = zones
         let moveShown = zones.contains(.move)
@@ -363,9 +367,9 @@ final class DropZonesView: NSView, ThemeAware {
     }
 
     /// The zone a drop at `point` (this view's coordinates) lands in: the
-    /// top half pastes, the bottom half moves.
+    /// top half moves, the bottom half pastes.
     func zone(at point: NSPoint) -> Zone {
-        zones.count > 1 && point.y >= bounds.midY ? .move : .paste
+        zones.count > 1 && point.y < bounds.midY ? .move : .paste
     }
 
     func setHot(_ zone: Zone?) {
@@ -386,30 +390,51 @@ final class DropZonesView: NSView, ThemeAware {
         return "\(card.hint.stringValue)|\(card.action.stringValue)"
     }
 
+    /// A card's icon: its SF Symbol, or `hidden` when the card is too short
+    /// for it.
+    func icon(of zone: Zone) -> String? {
+        guard zones.contains(zone), let card = cards[zone] else { return nil }
+        return card.icon.isHidden ? "hidden" : card.symbol
+    }
+
     override func layout() {
         super.layout()
         let inset = Design.Space.dropZoneInset, gap = Design.Space.dropZoneGap
         let area = bounds.insetBy(dx: inset, dy: inset)
-        var frames: [Zone: NSRect] = [.paste: area]
-        if zones.count > 1 {
-            let height = max(0, (area.height - gap) / 2)
-            frames[.paste] = NSRect(x: area.minX, y: area.minY, width: area.width, height: height)
-            frames[.move] = NSRect(x: area.minX, y: area.minY + height + gap, width: area.width, height: height)
-        }
+        let height = zones.count > 1 ? max(0, (area.height - gap) / 2) : area.height
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (zone, frame) in frames {
+        for (i, zone) in zones.enumerated() {
             guard let card = cards[zone] else { continue }
+            let frame = NSRect(
+                x: area.minX, y: area.minY + CGFloat(i) * (height + gap), width: area.width, height: height)
             card.layer.frame = frame
             let width = max(0, frame.width - 2 * inset)
             let hint = card.hint.intrinsicContentSize.height
             let action = card.action.intrinsicContentSize.height
-            let top = frame.midY - (hint + Design.Space.dropZoneLabelGap + action) / 2
-            card.hint.frame = NSRect(x: frame.minX + inset, y: top, width: width, height: hint)
+            let labels = hint + Design.Space.dropZoneLabelGap + action
+            let iconBlock = Design.Space.dropZoneIcon + Design.Space.dropZoneIconGap
+            let iconFits = card.symbol != nil && frame.height >= iconBlock + labels + 2 * inset
+                && width >= Design.Space.dropZoneIcon
+            card.icon.isHidden = !iconFits
+            let top = frame.midY - (labels + (iconFits ? iconBlock : 0)) / 2
+            // The icon's frame is in the card layer's coordinates.
+            card.icon.frame = NSRect(
+                x: (frame.width - Design.Space.dropZoneIcon) / 2, y: top - frame.minY,
+                width: Design.Space.dropZoneIcon, height: Design.Space.dropZoneIcon)
+            card.mask.frame = card.icon.bounds
+            let labelTop = top + (iconFits ? iconBlock : 0)
+            card.hint.frame = NSRect(x: frame.minX + inset, y: labelTop, width: width, height: hint)
             card.action.frame = NSRect(
-                x: frame.minX + inset, y: top + hint + Design.Space.dropZoneLabelGap, width: width, height: action)
+                x: frame.minX + inset, y: labelTop + hint + Design.Space.dropZoneLabelGap, width: width,
+                height: action)
         }
         CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for card in cards.values { card.mask.contentsScale = window?.backingScaleFactor ?? 2 }
     }
 
     func applyTheme() {
@@ -433,38 +458,60 @@ final class DropZonesView: NSView, ThemeAware {
             card.layer.borderColor = Design.Color.accent
                 .withAlphaComponent(hot ? Design.Alpha.dropBorder : Design.Alpha.dropZoneBorder).cgColor
             card.layer.borderWidth = hot ? Design.Border.drop : Design.Border.dropZone
+            card.icon.backgroundColor = (hot ? Design.Color.textPrimary : Design.Color.textMuted).cgColor
         }
         CATransaction.commit()
     }
 
-    /// Automation: how the cards sit, e.g. `stacked inset=12 gap=8` (paste
-    /// over move, the same size, the same inset all round) or
+    /// Automation: how the cards sit, e.g. `stacked inset=12 gap=8` (move
+    /// over paste, the same size, the same inset all round) or
     /// `single inset=12`.
     var geometry: String {
-        guard let paste = frame(of: .paste) else { return "none" }
-        let inset = paste.minX
+        let frames = zones.compactMap { frame(of: $0) }
+        guard let first = frames.first, let last = frames.last else { return "none" }
+        let inset = first.minX
         let even = { (r: NSRect) in
             abs(r.minX - inset) < 0.5 && abs(self.bounds.maxX - r.maxX - inset) < 0.5
         }
-        guard even(paste), abs(paste.minY - inset) < 0.5 else { return "uneven \(paste)" }
-        guard let move = frame(of: .move) else {
-            return abs(bounds.maxY - paste.maxY - inset) < 0.5 ? "single inset=\(Int(inset))" : "uneven \(paste)"
-        }
-        guard even(move), abs(bounds.maxY - move.maxY - inset) < 0.5, abs(move.height - paste.height) < 0.5,
-              move.minY > paste.maxY
-        else { return "uneven \(paste) \(move)" }
-        return "stacked inset=\(Int(inset)) gap=\(Int((move.minY - paste.maxY).rounded()))"
+        guard frames.allSatisfy(even), abs(first.minY - inset) < 0.5, abs(bounds.maxY - last.maxY - inset) < 0.5
+        else { return "uneven \(frames)" }
+        guard frames.count > 1 else { return "single inset=\(Int(inset))" }
+        guard abs(first.height - last.height) < 0.5, last.minY > first.maxY else { return "uneven \(frames)" }
+        return "stacked inset=\(Int(inset)) gap=\(Int((last.minY - first.maxY).rounded()))"
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// One of `DropZonesView`'s cards: its fill and outline, and two lines.
+/// One of `DropZonesView`'s cards: its fill and outline, an icon (the
+/// symbol masks a layer filled with the icon's colour, so the colour
+/// cross-fades), and two lines.
 @MainActor
 private final class DropZoneCard {
     let layer = CALayer()
+    let icon = CALayer()
+    let mask = CALayer()
     let hint = NSTextField(labelWithString: "Drop to")
     let action = NSTextField(labelWithString: "")
+    private(set) var symbol: String?
+
+    init() {
+        mask.contentsGravity = .center
+        icon.mask = mask
+        layer.addSublayer(icon)
+    }
+
+    func setSymbol(_ name: String) {
+        guard name != symbol else { return }
+        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.dropZone, weight: .regular)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        symbol = image == nil ? nil : name
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.contents = image
+        if image == nil { icon.isHidden = true }
+        CATransaction.commit()
+    }
 }
 
 // MARK: - Automation
@@ -487,8 +534,9 @@ private final class DropZoneCard {
 ///     drop [@N] hover KIND ARG…     the drag only enters (any kind above)
 ///     drop [@N] leave               …and leaves
 ///     drop [@N] at FX,FY …          where the drag is, as fractions of the
-///                                   tile from its top left (0.5,0.25 by
-///                                   default: the top half, which pastes)
+///                                   tile from its top left (0.5,0.75 by
+///                                   default: the bottom half, which
+///                                   pastes; the top half moves)
 ///     drop [@N] copy …              ⌥ held: the drag's mask narrows to copy
 ///
 /// `@N` is the tile's place in the tab (`expect focus`); the focused tile
@@ -496,10 +544,12 @@ private final class DropZoneCard {
 /// `copy`, `move`, `none`, `dropped`, `refused`), `drop.highlight` (places
 /// showing the highlight, `2` or `none`), `drop.last` (the text the last
 /// drop typed), `drop.dir` (where images go). A drag of files shows drop
-/// zones instead of the highlight: `drop.zones` (`paste,move`, `paste` or
-/// `none`), `drop.zone` (the one under the pointer), `drop.label.paste` and
-/// `drop.label.move` (two lines joined by `|`), `drop.geometry` (`stacked
-/// inset=12 gap=8`). A drop on the move zone transfers the files:
+/// zones instead of the highlight: `drop.zones` (top first: `move,paste`,
+/// `paste` or `none`), `drop.zone` (the one under the pointer),
+/// `drop.label.move` and `drop.label.paste` (two lines joined by `|`),
+/// `drop.icon.move` and `drop.icon.paste` (the card's SF Symbol, `hidden`
+/// when the card is too short for it), `drop.geometry` (`stacked inset=12
+/// gap=8`). A drop on the move zone transfers the files:
 /// `drop.transfer` (`running`, `done` or `failed`), `drop.transfer.text`
 /// (the HUD line), `drop.transfer.dests` (where they went, names joined by
 /// `|`).
@@ -528,7 +578,7 @@ enum DropAutomation {
     static func run(_ arg: String, controller: WindowController, tab: TabModel?) -> String? {
         var words = arg.split(separator: " ", maxSplits: 1).map(String.init)
         var place: Int?
-        var at = NSPoint(x: 0.5, y: 0.25)
+        var at = NSPoint(x: 0.5, y: 0.75)
         var copy = false
         func shift() {
             words = words.count > 1 ? words[1].split(separator: " ", maxSplits: 1).map(String.init) : []
@@ -640,8 +690,10 @@ enum DropAutomation {
             "drop.dir": TerminalDrop.directory.path,
             "drop.zones": zones.map { $0.zones.map(\.rawValue).joined(separator: ",") } ?? "none",
             "drop.zone": zones?.hot?.rawValue ?? "none",
-            "drop.label.paste": zones?.label(of: .paste) ?? "-",
             "drop.label.move": zones?.label(of: .move) ?? "-",
+            "drop.label.paste": zones?.label(of: .paste) ?? "-",
+            "drop.icon.move": zones?.icon(of: .move) ?? "-",
+            "drop.icon.paste": zones?.icon(of: .paste) ?? "-",
             "drop.geometry": zones?.geometry ?? "none",
             "drop.transfer": transfer,
             "drop.transfer.text": transferText,
