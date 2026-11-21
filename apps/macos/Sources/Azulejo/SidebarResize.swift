@@ -4,26 +4,24 @@ import QuartzCore
 /// The full sidebar's width. Dragging the card's inner edge
 /// (`SidebarEdgeView`) sets it, between `Design.Space.sidebarMinWidth` and
 /// `sidebarMaxWidth`; a double-click on the edge puts the default
-/// (`sidebarWidth`) back. One width for every window, kept in the user
-/// defaults across launches (`dev.`-prefixed in the dev profile, as the
-/// sidebar's Agents | Files mode is).
+/// (`sidebarWidth`) back. One width for every window, kept across launches
+/// in `SettingsStore` (a dev instance keeps its own, as it does the
+/// sidebar's Agents | Files mode).
 @MainActor
 enum SidebarWidth {
     /// Posted when the saved width changes: every window lays out again.
     static let changed = Notification.Name("azj.sidebarWidthChanged")
 
-    private static var key: String {
-        (ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" ? "dev." : "") + "sidebarWidth"
-    }
+    private static let key = "sidebarWidth"
 
     /// The width the sidebar opens at: the saved one, else the default.
     private(set) static var saved: CGFloat = {
-        let stored = UserDefaults.standard.double(forKey: key)
+        let stored = SettingsStore.shared.double(forKey: key)
         return stored > 0 ? clamp(CGFloat(stored)) : Design.Space.sidebarWidth
     }()
 
     /// Whether a width other than the default is saved.
-    static var isCustom: Bool { UserDefaults.standard.object(forKey: key) != nil }
+    static var isCustom: Bool { SettingsStore.shared.object(forKey: key) != nil }
 
     static func clamp(_ width: CGFloat) -> CGFloat {
         min(max(width.rounded(), Design.Space.sidebarMinWidth), Design.Space.sidebarMaxWidth)
@@ -42,10 +40,10 @@ enum SidebarWidth {
     static func save(_ width: CGFloat?) {
         if let width {
             saved = clamp(width)
-            UserDefaults.standard.set(Double(saved), forKey: key)
+            SettingsStore.shared.set(Double(saved), forKey: key)
         } else {
             saved = Design.Space.sidebarWidth
-            UserDefaults.standard.removeObject(forKey: key)
+            SettingsStore.shared.removeObject(forKey: key)
         }
         NotificationCenter.default.post(name: changed, object: nil)
     }

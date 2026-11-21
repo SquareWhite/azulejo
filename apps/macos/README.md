@@ -41,6 +41,7 @@ under `.dev/` in the repo and runs its own herdr session:
 | --- | --- |
 | Config | `.dev/config/azulejo/config.toml` (generated, `[herdr] session = "azj-dev"`) |
 | State | `.dev/state/state.json` |
+| UI settings | `.dev/state/settings.plist` (sidebar mode and width, ⌘K recents) |
 | API socket | `.dev/run/azulejo.sock` |
 | herdr session | `azj-dev` (`AZJ_DEV_SESSION` overrides it; `default` is refused) |
 | Ghostty dim settings | `.dev/config/ghostty/config`, if it exists |
@@ -77,6 +78,20 @@ short.
 `--reset` leaves `.dev/<name>/config/` alone, so a hand-edited dev config
 survives. Delete it to start over.
 
+### UI settings stay in the instance
+
+The installed app keeps its small UI settings (sidebar mode and width, ⌘K
+recents) in the user defaults, the `dev.azulejo.Azulejo` domain. A dev build
+has the same bundle id, so it never writes there: with
+`AZULEJO_PROFILE=dev`, `SettingsStore` keeps them in `settings.plist` next to
+the core's `state_path` instead (`.dev/<name>/state/`). So each instance has
+its own, a relaunch of the same instance reads them back (the `*-relaunch`
+e2e scripts rely on that), `--reset` deletes them, and `palette forget`
+clears only its own instance's recents. A dev run without a `state_path`
+keeps them in memory only. Dev windows also opt out of window restoration,
+so nothing lands in `~/Library/Saved Application State` either. Add any new
+persisted UI setting through `SettingsStore`, never `UserDefaults.standard`.
+
 ### Guards
 
 - `dev.sh` refuses `AZJ_DEV_SESSION=default` and a dev config that points at
@@ -99,7 +114,7 @@ survives. Delete it to start over.
 | Variable | Does |
 | --- | --- |
 | `AZULEJO_CORE_OPTIONS` | JSON for `azj_core_new_with_options`: paths, herdr session, `api_required` |
-| `AZULEJO_PROFILE=dev` | The session guard above; also turns on logging to the app log |
+| `AZULEJO_PROFILE=dev` | The session guard above; UI settings in the instance's `state/settings.plist`, not the user defaults; also turns on logging to the app log |
 | `AZULEJO_PIDFILE` | Lets `--stop` send SIGTERM, so the app quits cleanly (state flushed, socket removed) |
 | `AZULEJO_BACKGROUND=1` | `--bg`: never `NSApp.activate()`; windows are ordered to the back |
 | `AZULEJO_AUTOMATION`, `AZULEJO_AUTOMATION_OUT` | `--automation`: run a script, then quit |

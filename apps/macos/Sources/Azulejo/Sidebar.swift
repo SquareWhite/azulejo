@@ -71,7 +71,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
     override func mouseDown(with event: NSEvent) {}
 
     override init(frame: NSRect) {
-        mode = Mode(rawValue: UserDefaults.standard.string(forKey: Self.modeKey) ?? "") ?? .agents
+        mode = Mode(rawValue: SettingsStore.shared.string(forKey: Self.modeKey) ?? "") ?? .agents
         super.init(frame: frame)
         wantsLayer = true
 
@@ -286,9 +286,8 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
 
     // MARK: Agents | Files
 
-    private static var modeKey: String {
-        (ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" ? "dev." : "") + "sidebarMode"
-    }
+    /// Kept across launches in `SettingsStore`, as the sidebar's width is.
+    private static let modeKey = "sidebarMode"
 
     /// Switches the view; with `focus`, the Files tree takes the keyboard
     /// (once its panel is in, if it's still on its way). Leaving Files with
@@ -301,7 +300,7 @@ final class SidebarView: NSView, KeepsKeyboard, ThemeAware, WorkspaceDragHost {
         let hadKeyboard = (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
         self.mode = mode
         segments.selected = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey)
+        SettingsStore.shared.set(mode.rawValue, forKey: Self.modeKey)
         applyMode()
         if mode == .files, focus { focusTree() }
         if mode == .agents, hadKeyboard { onReturnFocus?() }

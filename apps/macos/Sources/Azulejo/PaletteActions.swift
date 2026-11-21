@@ -17,12 +17,14 @@ enum PaletteStore {
     static let modeContexts: Set<String> = ["palette", "find_bar", "resize"]
 
     /// Recently run rows (commands and places), newest first. A per-viewer
-    /// convenience: lost with the app's defaults, which is fine.
+    /// convenience: lost with the app's settings, which is fine. Each dev
+    /// instance keeps its own (`SettingsStore`).
     static func recents() -> [String] {
-        if let list = UserDefaults.standard.stringArray(forKey: key("quickOpen")) { return list }
+        let settings = SettingsStore.shared
+        if let list = settings.stringArray(forKey: "quickOpen") { return list }
         // Before ⌘K there were two lists: start from both, places first.
-        let goto = UserDefaults.standard.stringArray(forKey: key("paletteRecent.goto")) ?? []
-        let commands = UserDefaults.standard.stringArray(forKey: key("paletteRecent.commands")) ?? []
+        let goto = settings.stringArray(forKey: "paletteRecent.goto") ?? []
+        let commands = settings.stringArray(forKey: "paletteRecent.commands") ?? []
         var merged: [String] = []
         for id in zip(goto, commands).flatMap({ [$0, $1] }) + goto + commands where !merged.contains(id) {
             merged.append(id)
@@ -33,23 +35,17 @@ enum PaletteStore {
     static func remember(_ id: String) {
         var list = recents().filter { $0 != id }
         list.insert(id, at: 0)
-        UserDefaults.standard.set(Array(list.prefix(30)), forKey: key("quickOpen"))
+        SettingsStore.shared.set(Array(list.prefix(30)), forKey: "quickOpen")
     }
 
-    /// Dev runs share the installed app's defaults domain: keep their
-    /// recents apart so test runs never reorder the user's menu.
-    private static var isDev: Bool { ProcessInfo.processInfo.environment["AZULEJO_PROFILE"] == "dev" }
-
-    private static func key(_ name: String) -> String {
-        (isDev ? "dev." : "") + name
-    }
-
-    /// Clears the dev profile's recents (automation). Never touches the
-    /// installed app's keys: refuses outside dev runs.
+    /// Clears this dev instance's recents (automation); other instances keep
+    /// theirs. Refuses outside dev runs, so it never touches the installed
+    /// app's settings.
     static func forgetDevRecents() -> Bool {
-        guard isDev else { return false }
+        let settings = SettingsStore.shared
+        guard settings.isDevInstance else { return false }
         for name in ["quickOpen", "paletteRecent.goto", "paletteRecent.commands"] {
-            UserDefaults.standard.removeObject(forKey: key(name))
+            settings.removeObject(forKey: name)
         }
         return true
     }

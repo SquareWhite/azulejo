@@ -49,8 +49,8 @@ key escape
 expect key.last find
 expect key.context find_bar
 expect tile.find closed
-# palette: down / up move the selection (dev recents are shared between
-# dev instances: start without them)
+# palette: down / up move the selection (start without the recents an
+# earlier run on this dev instance left)
 palette forget
 key cmd+k
 expect palette all

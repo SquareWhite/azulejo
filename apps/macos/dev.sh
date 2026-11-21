@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Runs Azulejo.app against an isolated dev profile: its own config, state, API
-# socket and herdr session (`azj-dev`), all under .dev/ in the repo. The user's
-# real herdr session and saved Azulejo state are never touched.
+# Runs Azulejo.app against an isolated dev profile: its own config, state, UI
+# settings (state/settings.plist, not the user defaults), API socket and herdr
+# session (`azj-dev`), all under .dev/ in the repo. The user's real herdr
+# session, saved Azulejo state and defaults are never touched.
 #
 #   apps/macos/dev.sh [--bg] [--automation FILE] [--out DIR] [--wait]
 #   apps/macos/dev.sh --stop      quit the dev app

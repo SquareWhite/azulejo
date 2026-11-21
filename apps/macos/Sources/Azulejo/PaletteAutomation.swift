@@ -4,7 +4,7 @@ import AppKit
 /// attention badges (dev runs only; see `Automation`).
 ///
 ///     palette open [QUERY]         open the ⌘K menu (QUERY `>` or `@` scopes it)
-///     palette forget               clear the dev profile's recents
+///     palette forget               clear this dev instance's recents
 ///     palette type TEXT            set the search text (as if typed)
 ///     palette key CHORD            hand a navigation key to the palette
 ///     palette close
@@ -88,7 +88,7 @@ enum ShellAutomation {
                 guard controller.palette.isOpen else { return "palette isn't open" }
                 if !controller.palette.select(id: rest) { return "no row \(rest)" }
             case "forget":
-                // Fresh recents for a deterministic run (dev keys only).
+                // Fresh recents for a deterministic run (this dev instance's only).
                 guard PaletteStore.forgetDevRecents() else { return "palette forget is dev-only" }
             default:
                 return "palette open|type|key|close|toggle|select|forget"

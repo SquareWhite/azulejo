@@ -109,6 +109,9 @@ final class WindowController: NSObject, NSWindowDelegate {
         window.appearance = Theme.current.appearance.nsAppearance
         window.minSize = NSSize(width: 480, height: 320)
         window.tabbingMode = .disallowed
+        // A dev instance writes no window state where the installed app
+        // keeps its own (~/Library/Saved Application State, per bundle id).
+        if SettingsStore.shared.isDevInstance { window.isRestorable = false }
         content.sidebarCard = sidebarCard
         content.sidebar = sidebar
         content.rail = rail
