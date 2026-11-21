@@ -865,19 +865,28 @@ enum Design {
 
     /// Reference durations in seconds; the [animation] config owns the live values.
     enum Motion {
-        static let layout: TimeInterval = 0.2
+        static let layout: TimeInterval = 0.23
+        static let workspaceSwitch: TimeInterval = 0.295
         static let focus: TimeInterval = 0.12
-        static let tabSwitch: TimeInterval = 0.15
+        static let tabSwitch: TimeInterval = 0.1725
         static let outlineFade: TimeInterval = 0.08
         static let revealMax: TimeInterval = 0.25
-        static let paletteOpen: TimeInterval = 0.16
-        static let paletteClose: TimeInterval = 0.11
-        static let drag: TimeInterval = 0.15
+        static let paletteOpen: TimeInterval = 0.184
+        static let paletteClose: TimeInterval = 0.126
+        static let drag: TimeInterval = 0.17
         static let sidebarHint: TimeInterval = 0.08
         static let sidebarHintDelay: TimeInterval = 0.1
         static let hintFilter: TimeInterval = 0.08
         static let hintExtendDelay: TimeInterval = 0.1
         static let hintExtend: TimeInterval = 0.08
         static let dropZone: TimeInterval = 0.1
+    }
+
+    /// Motion curves: cubic Bézier control points (x1, y1, x2, y2).
+    enum Easing {
+        static let easeOut: (Float, Float, Float, Float) = (0.15, 0.85, 0.35, 1)
+        static let slide: (Float, Float, Float, Float) = (0.28, 1, 0.7, 1)
+        static let snappy: (Float, Float, Float, Float) = (0.2, 0.9, 0.3, 1)
+        static let snappySlide: (Float, Float, Float, Float) = (0.33, 1, 0.68, 1)
     }
 }

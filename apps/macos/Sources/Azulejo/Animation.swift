@@ -33,14 +33,14 @@ import QuartzCore
 enum Motion {
     struct Settings: Equatable {
         var enabled = true
-        var durationMs = 200
+        var durationMs = 230
         var curve = "ease_out"
         var style = "reflow"
         var tabSwitch = "fade"
         /// "slide" (vertical, sidebar order), "fade" or "none" (experimental).
         var workspaceSwitch = "slide"
         /// How long a workspace slide takes (`workspace_switch_ms`); 0: instant.
-        var workspaceSwitchMs = 260
+        var workspaceSwitchMs = 295
         var reduceMotion = "system"
         /// Ghostty's `unfocused-split-opacity` and `-fill`, when its config
         /// sets them (the core reads them; nil otherwise).
@@ -215,30 +215,54 @@ enum Motion {
     static var duration: CFTimeInterval { durationOverride ?? Double(settings.durationMs) / 1000 }
     /// Tab switches (and workspace switches set to "fade").
     static var tabDuration: CFTimeInterval { duration * 0.75 }
-    /// A workspace slide: `workspace_switch_ms` (260 by default, its own
+    /// A workspace slide: `workspace_switch_ms` (295 by default, its own
     /// setting). Automation's slow motion stretches it with everything else
     /// (1.3 × the override).
     static var workspaceDuration: CFTimeInterval {
         durationOverride.map { $0 * 1.3 } ?? Double(settings.workspaceSwitchMs) / 1000
     }
 
-    /// A workspace slide's curve. The default ease-out covers 40 % of the
+    /// A workspace slide's curve. The layout ease-out covers 40 % of the
     /// way in the first tenth of the time, which on a whole tile area reads
-    /// as a jump; a cubic ease-out slows down evenly (half the way in a
-    /// fifth of the time), calmer, like Spaces. Other curves as configured.
+    /// as a jump; the slide's starts calmer (half the way in a fifth of the
+    /// time), like Spaces, and settles as gently. Other curves as configured.
     static var slideTiming: CAMediaTimingFunction {
-        settings.curve == "ease_out" ? CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1) : timing
+        switch settings.curve {
+        case "ease_out": slideEaseOut
+        case "snappy": snappySlide
+        default: timing
+        }
     }
     /// A focus switch between Monocle's stacked tiles: the next one
     /// dissolves in over the last, quicker than a move (nothing travels).
     static var stackDuration: CFTimeInterval { duration * 0.6 }
 
+    /// The configured curve (`[animation] curve`), for layout motion and
+    /// the chrome that moves with it.
     static var timing: CAMediaTimingFunction {
         switch settings.curve {
         case "linear": CAMediaTimingFunction(name: .linear)
         case "ease_in_out": CAMediaTimingFunction(name: .easeInEaseOut)
-        default: CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0) // ease-out
+        case "snappy": snappy
+        default: easeOut
         }
+    }
+
+    /// The default ease-out (`Design.Easing.easeOut`): off the mark as
+    /// quickly as `snappy` over its 15 % longer default length, then a
+    /// gentle finish, like a critically damped macOS spring but over in
+    /// finite time (sub-pixel movement in the last tenth). The ⌘K menu
+    /// uses it whatever `curve` says.
+    static let easeOut = timingFunction(Design.Easing.easeOut)
+    /// The workspace slide's counterpart (`Design.Easing.slide`).
+    static let slideEaseOut = timingFunction(Design.Easing.slide)
+    /// The older ease-out (`curve = "snappy"`): brakes hard early and
+    /// stops sooner. `snappySlide` is its workspace slide.
+    static let snappy = timingFunction(Design.Easing.snappy)
+    static let snappySlide = timingFunction(Design.Easing.snappySlide)
+
+    private static func timingFunction(_ p: (Float, Float, Float, Float)) -> CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: p.0, p.1, p.2, p.3)
     }
 
     /// The highest refresh rate of the screens we're on (120 on ProMotion).

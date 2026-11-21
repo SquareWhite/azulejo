@@ -9,16 +9,44 @@ arrives mid-motion starts from wherever every tile is on screen.
 ```toml
 [animation]
 enabled = true             # false: changes are instant
-duration_ms = 200          # 0–1000
-curve = "ease_out"         # "ease_out", "ease_in_out", "linear"
+duration_ms = 230          # 0–1000
+curve = "ease_out"         # "ease_out", "snappy", "ease_in_out", "linear"
 style = "reflow"           # "reflow", "crop", "scale", "outline"
 tab_switch = "fade"        # "fade", "slide" (sideways), "none"
 workspace_switch = "slide" # "slide", "fade", "none" (experimental)
-workspace_switch_ms = 260  # a workspace slide's length, 0–1000; not tied to duration_ms
+workspace_switch_ms = 295  # a workspace slide's length, 0–1000; not tied to duration_ms
 reduce_motion = "system"   # "system": no motion while macOS Reduce Motion is on; "ignore"
 ```
 
 Changes apply when the config is saved.
+
+### Curves
+
+`ease_out` (default) starts quickly and settles gently, the way macOS's
+own animations finish: a cubic Bézier shaped like a critically damped
+spring, but one that comes to rest on time. It covers about 40 % of the way
+in the first tenth of the time, 95 % by just over half and 99 % by three
+quarters; the last tenth moves less than 0.15 % of the way, under a pixel
+for most moves. Workspace slides get a calmer version of the same curve.
+
+`snappy` is the ease-out Azulejo had before: it leaves as quickly but brakes
+hard and stops sooner. For the old feel exactly, set it with its old
+lengths:
+
+```toml
+[animation]
+curve = "snappy"
+duration_ms = 200
+workspace_switch_ms = 260
+```
+
+The defaults grew by 15 % (200 → 230 ms, 260 → 295 ms) so that the new
+curve's steeper start moves as fast as the old one did; the extra time is
+the soft finish. Tile moves and resizes, the sidebar opening, closing and
+folding to its rail, the tab strip, workspace rows sliding under a drag,
+tab fades and Monocle's stack dissolve all take `curve`. The ⌘K menu's grow
+and shrink (184 and 126 ms) always uses the default ease-out.
+The control points are tokens (`easing` in `shared/design/tokens.json`).
 
 ### Styles
 

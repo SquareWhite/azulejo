@@ -40,8 +40,8 @@ rm -f "$root/.dev/$AZJ_DEV_NAME/config/azulejo/config.toml"
 rm -rf "$out"
 mkdir -p "$out"
 
-# Waits: motion (200 ms by default) plus the reveal (≤ 250 ms after it).
-settle=520
+# Waits: motion (230 ms by default) plus the reveal (≤ 250 ms after it).
+settle=550
 
 emit() { printf '%s\n' "$@" >>"$script"; }
 : >"$script"

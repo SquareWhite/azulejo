@@ -9,7 +9,8 @@ skipped. Standard library only, deterministic output.
 
 Colours live per theme (themes.<id>.color); validate() checks that every
 theme sets every token in colorTokens, with a valid value, plus its
-appearance, sidebar material and terminal palette.
+appearance, sidebar material and terminal palette, and that the easing
+curves are well-formed.
 scripts/test_design_tokens.py tests this file.
 """
 
@@ -162,6 +163,28 @@ def validate(tokens: dict) -> list[str]:
         if not isinstance(palette, list) or len(palette) != 16 or not all(
                 isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette):
             errors.append(f"{where}.terminal.palette: needs 16 #rrggbb colours")
+    errors += check_easing(tokens.get("easing", {}))
+    return errors
+
+
+def check_easing(section: dict) -> list[str]:
+    """Each curve: [x1, y1, x2, y2], every value 0 to 1 (time runs forwards,
+    no overshoot), ending at rest (y2 = 1)."""
+    errors: list[str] = []
+    for name, value in section.items():
+        if name.startswith("_"):
+            continue
+        where = f"easing.{name}"
+        if not IDENT.match(name):
+            errors.append(f"{where}: token names are lowerCamelCase")
+        if not isinstance(value, list) or len(value) != 4 or not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+            errors.append(f"{where}: needs [x1, y1, x2, y2]")
+            continue
+        if not all(0 <= v <= 1 for v in value):
+            errors.append(f"{where}: control points must lie within 0…1")
+        elif value[3] != 1:
+            errors.append(f"{where}: y2 must be 1 (the motion comes to rest)")
     return errors
 
 
@@ -331,6 +354,15 @@ def generate(tokens: dict) -> str:
         ms = number(value, f"motion.{name}")
         add(f"        static let {name}: TimeInterval = {float(ms) / 1000:g}")
     add("    }")
+    add("")
+
+    # Easing
+    add("    /// Motion curves: cubic Bézier control points (x1, y1, x2, y2).")
+    add("    enum Easing {")
+    for name, value in entries(tokens["easing"]):
+        points = ", ".join(number(v, f"easing.{name}") for v in value)
+        add(f"        static let {name}: (Float, Float, Float, Float) = ({points})")
+    add("    }")
     add("}")
     add("")
     return "\n".join(lines)
@@ -343,12 +375,12 @@ def main() -> None:
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
     for section in ("colorTokens", "themes", "radius", "border", "alpha", "space", "symbol",
-                    "font", "status", "icon", "motion"):
+                    "font", "status", "icon", "motion", "easing"):
         if section not in tokens:
             fail(f"missing section {section!r}")
     problems = validate(tokens)
     if problems:
-        fail("\n  ".join(["invalid themes:"] + problems))
+        fail("\n  ".join(["invalid tokens:"] + problems))
     text = generate(tokens)
     if check:
         if not OUT.exists() or OUT.read_text() != text:

@@ -69,6 +69,22 @@ class Themes(unittest.TestCase):
                        "terminal.palette: needs 16"]:
             self.assertIn(needle, problems)
 
+    def test_bad_easing_fails(self):
+        broken = copy.deepcopy(TOKENS)
+        broken["easing"]["easeOut"] = [0.15, 0.85, 0.35]
+        broken["easing"]["slide"] = [0.3, 1.2, 0.7, 1]
+        broken["easing"]["snappy"] = [0.2, 0.9, 0.3, 0.98]
+        problems = "\n".join(gen.validate(broken))
+        for needle in ["easing.easeOut: needs [x1, y1, x2, y2]",
+                       "easing.slide: control points must lie within 0…1",
+                       "easing.snappy: y2 must be 1"]:
+            self.assertIn(needle, problems)
+
+    def test_generated_swift_carries_the_curves(self):
+        swift = gen.generate(TOKENS)
+        self.assertIn("static let easeOut: (Float, Float, Float, Float) = (0.15, 0.85, 0.35, 1)", swift)
+        self.assertIn("static let snappy: (Float, Float, Float, Float) = (0.2, 0.9, 0.3, 1)", swift)
+
     def test_generated_swift_carries_every_theme(self):
         swift = gen.generate(TOKENS)
         for tid in BUILT_INS:

@@ -306,7 +306,10 @@ final class PaletteView: NSView, NSTextFieldDelegate, ThemeAware {
     }
 
     typealias Look = (scale: CGFloat, opacity: Float)
-    private static let curve = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
+    /// The default ease-out, whatever `[animation] curve` says (the menu's
+    /// motion is fixed). Its gentle finish stays out of sight here: the
+    /// scale travels 4 %, so the last 1 % of the way is under a pixel.
+    private static var curve: CAMediaTimingFunction { Motion.easeOut }
 
     /// Scale and opacity where the menu shows now, from the motion's own
     /// clock (a motion added this turn hasn't reached the presentation yet).

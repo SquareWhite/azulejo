@@ -1494,7 +1494,7 @@ fn animation_settings() {
     let bad = user("[animation]\nduration_ms = 5000\nspeed = 2\n", MAC);
     assert_eq!(errors(&bad).len(), 1);
     assert_eq!(warnings(&bad).len(), 1);
-    assert_eq!(bad.animation.duration_ms, 200);
+    assert_eq!(bad.animation.duration_ms, 230);
 }
 
 #[test]
@@ -1514,6 +1514,10 @@ fn animation_style_settings() {
     assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
     assert_eq!(config.animation.curve, Curve::Linear);
     assert_eq!(config.animation.style, Style::Outline);
+    // The older, snappier ease-out, kept for whoever prefers it.
+    let snappy = user("[animation]\ncurve = \"snappy\"\n", MAC);
+    assert!(snappy.diagnostics.is_empty(), "{:?}", snappy.diagnostics);
+    assert_eq!(snappy.animation.curve, Curve::Snappy);
     let scale = user("[animation]\nstyle = \"scale\"\n", MAC);
     assert_eq!(scale.animation.style, Style::Scale);
     // The old default, kept for whoever prefers it.
@@ -1547,9 +1551,9 @@ fn animation_style_settings() {
         assert!(c.diagnostics.is_empty(), "{:?}", c.diagnostics);
         assert_eq!(c.animation.workspace_switch, want);
     }
-    // Its length is its own (260 ms by default, whatever duration_ms says),
+    // Its length is its own (295 ms by default, whatever duration_ms says),
     // clamped to 0..=1000 with a warning; 0 is instant.
-    assert_eq!(defaults.animation.workspace_switch_ms, 260);
+    assert_eq!(defaults.animation.workspace_switch_ms, 295);
     let slow = user(
         "[animation]\nduration_ms = 500\nworkspace_switch_ms = 400\n",
         MAC,
@@ -1565,7 +1569,7 @@ fn animation_style_settings() {
     assert_eq!(negative.animation.workspace_switch_ms, 0);
     let words = user("[animation]\nworkspace_switch_ms = \"fast\"\n", MAC);
     assert_eq!(errors(&words).len(), 1);
-    assert_eq!(words.animation.workspace_switch_ms, 260);
+    assert_eq!(words.animation.workspace_switch_ms, 295);
     let bad_ws = user("[animation]\nworkspace_switch = \"spin\"\n", MAC);
     assert_eq!(errors(&bad_ws).len(), 1);
     assert_eq!(bad_ws.animation.workspace_switch, WorkspaceSwitch::Slide);

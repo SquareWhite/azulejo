@@ -23,13 +23,14 @@
 //!
 //! [animation]
 //! enabled = true
-//! duration_ms = 200
-//! curve = "ease_out"     # or "ease_in_out", "linear"
+//! duration_ms = 230
+//! curve = "ease_out"     # quick start, gentle macOS-like finish; or "snappy" (the
+//!                        # older ease-out: brakes hard, stops sooner), "ease_in_out", "linear"
 //! style = "reflow"       # moving tiles: "reflow" (content resizes live), "crop" (content at 1:1, revealed or cut off), "scale", "outline"
 //! tab_switch = "fade"    # tab switches: "fade", "slide" (sideways) or "none"
 //! workspace_switch = "slide"  # workspace switches (experimental): "slide" (vertical, in
 //!                        # sidebar order), "fade" or "none"
-//! workspace_switch_ms = 260  # how long a workspace slide takes, 0 to 1000 (0: instant);
+//! workspace_switch_ms = 295  # how long a workspace slide takes, 0 to 1000 (0: instant);
 //!                        # its own setting, not tied to duration_ms
 //! reduce_motion = "system"  # "system": off when macOS Reduce Motion is on; "ignore"
 //!
@@ -132,16 +133,20 @@ pub struct Animation {
 
 impl Animation {
     pub const MAX_DURATION_MS: u32 = 1000;
+    /// `duration_ms` by default. The ease-out's gentle finish takes 15 %
+    /// longer than the 200 ms the older, snappier curve had, with the same
+    /// start.
+    pub const DURATION_MS: u32 = 230;
     /// `workspace_switch_ms` by default: a little longer than a layout move,
     /// since the whole tile area travels its own height.
-    pub const WORKSPACE_SWITCH_MS: u32 = 260;
+    pub const WORKSPACE_SWITCH_MS: u32 = 295;
 }
 
 impl Default for Animation {
     fn default() -> Self {
         Animation {
             enabled: true,
-            duration_ms: 200,
+            duration_ms: Animation::DURATION_MS,
             curve: Curve::EaseOut,
             style: Style::Reflow,
             tab_switch: TabSwitch::Fade,
@@ -152,10 +157,14 @@ impl Default for Animation {
     }
 }
 
-/// The timing curve of layout motion.
+/// The timing curve of layout motion. `EaseOut` starts quick and settles
+/// gently; `Snappy` is the older ease-out, which brakes hard and stops
+/// sooner. The shell's control points live in `shared/design/tokens.json`
+/// (`easing`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Curve {
     EaseOut,
+    Snappy,
     EaseInOut,
     Linear,
 }
@@ -217,7 +226,7 @@ macro_rules! named {
         }
     };
 }
-named!(Curve { EaseOut = "ease_out", EaseInOut = "ease_in_out", Linear = "linear" });
+named!(Curve { EaseOut = "ease_out", Snappy = "snappy", EaseInOut = "ease_in_out", Linear = "linear" });
 named!(Style { Reflow = "reflow", Crop = "crop", Scale = "scale", Outline = "outline" });
 named!(TabSwitch { Fade = "fade", Slide = "slide", None = "none" });
 named!(WorkspaceSwitch { Slide = "slide", Fade = "fade", None = "none" });
