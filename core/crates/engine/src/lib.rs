@@ -13,15 +13,14 @@ pub mod link;
 mod meta;
 pub mod mirror;
 pub mod persist;
-mod preview;
 mod remote_files;
 mod repos;
 pub mod terminal;
 mod transfer;
 
 use azulejo_model::{
-    HerdrRef, LayoutPrefs, ModelError, PreviewMode, Session, SidebarState, TabId, Tile,
-    TileContent, TileId, WorkspaceId,
+    HerdrRef, LayoutPrefs, ModelError, Session, SidebarState, TabId, Tile, TileContent, TileId,
+    WorkspaceId,
 };
 use azulejo_protocol::{
     API_VERSION, Command, Created, Error, ErrorCode, Event, LayoutState, Reply, TabSummary,
@@ -428,63 +427,6 @@ impl Engine {
                 s.tile_mut(id)?.title = p.title.filter(|t| !t.is_empty());
                 Reply::Ok
             }
-            Command::BrowserOpen(p) => {
-                let id = s.target(p.tile)?;
-                match &mut s.tile_mut(id)?.content {
-                    TileContent::Browser { url, .. } => *url = Some(p.url),
-                    other => return Err(wrong_kind(id, other, "browser")),
-                }
-                Reply::Ok
-            }
-            Command::BrowserState(p) => {
-                let id = s.target(p.tile)?;
-                match &mut s.tile_mut(id)?.content {
-                    TileContent::Browser { url, page_title } => {
-                        if let Some(new) = p.url {
-                            *url = Some(new);
-                        }
-                        *page_title = p.page_title.filter(|t| !t.is_empty());
-                    }
-                    other => return Err(wrong_kind(id, other, "browser")),
-                }
-                Reply::Ok
-            }
-            Command::PreviewOpen(p) => preview_open(s, p)?,
-            Command::PreviewSetMode(p) => {
-                let id = s.target(p.tile)?;
-                let tile = s.tile_mut(id)?;
-                if !matches!(tile.content, TileContent::Preview { .. }) {
-                    return Err(wrong_kind(id, &tile.content, "preview"));
-                }
-                tile.preview_mode = p.mode.unwrap_or(match tile.preview_mode {
-                    PreviewMode::Rendered => PreviewMode::Source,
-                    PreviewMode::Source => PreviewMode::Rendered,
-                });
-                Reply::Ok
-            }
-            // Rendering reads files; `Core` answers this off the engine.
-            Command::PreviewGet(_) => {
-                return Err(Error::new(
-                    ErrorCode::Unavailable,
-                    "previews need a running core",
-                ));
-            }
-
-            Command::FilesSetRoot(p) => {
-                let id = s.target(p.tile)?;
-                let path = files::expand_home(&p.root);
-                if !path.is_dir() {
-                    return Err(Error::new(
-                        ErrorCode::InvalidParams,
-                        format!("{} isn't a folder", path.display()),
-                    ));
-                }
-                match &mut s.tile_mut(id)?.content {
-                    TileContent::Files { root } => *root = Some(path.display().to_string()),
-                    other => return Err(wrong_kind(id, other, "files")),
-                }
-                Reply::Ok
-            }
             Command::FilesOpen(p) => Reply::Created(files_open(s, p)?),
             // Listing and watching touch the disk; `Core` answers these.
             Command::FilesList(_)
@@ -496,7 +438,7 @@ impl Engine {
             | Command::FilesPanelClose(_) => {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
-                    "file tiles need a running core",
+                    "files panels need a running core",
                 ));
             }
 
@@ -703,25 +645,6 @@ impl Engine {
         })
     }
 
-    /// The file a preview tile shows (the focused tile when `tile` is absent).
-    pub fn preview_path(&self, tile: Option<TileId>) -> Result<(TileId, Option<String>), Error> {
-        let id = self.session.target(tile)?;
-        match &self.session.tile(id)?.content {
-            TileContent::Preview { path } => Ok((id, path.clone())),
-            other => Err(wrong_kind(id, other, "preview")),
-        }
-    }
-
-    /// A files tile (the focused tile when `tile` is absent) and the folder
-    /// it shows: its root, or the home folder.
-    pub fn files_root(&self, tile: Option<TileId>) -> Result<(TileId, std::path::PathBuf), Error> {
-        let id = self.session.target(tile)?;
-        match &self.session.tile(id)?.content {
-            TileContent::Files { root } => Ok((id, files::configured_root(root.as_deref()))),
-            other => Err(wrong_kind(id, other, "files")),
-        }
-    }
-
     /// The herdr pane behind a terminal tile (the focused tile when `tile` is
     /// absent), for terminal I/O.
     pub fn terminal_pane(&self, tile: Option<TileId>) -> Result<HerdrRef, Error> {
@@ -743,100 +666,69 @@ impl Engine {
     }
 }
 
-/// `preview.open`: a preview tile shows the path; any other tile gets a new
-/// preview tile to its right, and focus stays where it was (an agent in a
-/// terminal opening its plan keeps typing).
-fn preview_open(s: &mut Session, p: azulejo_protocol::PreviewOpen) -> Result<Reply, Error> {
-    let id = s.target(p.tile)?;
-    if let TileContent::Preview { path } = &mut s.tile_mut(id)?.content {
-        *path = Some(p.path);
-        return Ok(Reply::Ok);
-    }
-    let focused = s.focused_tile();
-    let tile = Tile::new(TileContent::Preview { path: Some(p.path) });
-    let new = tile.id;
-    s.split(id, azulejo_model::Direction::Right, tile)?;
-    s.focus_tile(id)?;
-    if let Some(focused) = focused.filter(|f| *f != id) {
-        s.focus_tile(focused)?;
-    }
-    Ok(Reply::Created(Created {
-        tile: Some(new),
-        ..Created::default()
-    }))
-}
-
-/// `files.open`: shows a path from a files tile in the tab's first preview
-/// tile (or a new one to its right, keeping focus in the files tile), or in a
-/// new terminal below it. With an absolute path any tile can be the anchor:
-/// a files panel's paths open beside the focused tile (the driver sends them
-/// here without `tile`).
+/// `files.open`: opens an absolute path beside `tile` (the focused tile
+/// when absent; the driver sends a files panel's paths here, made absolute,
+/// without one). A file opens in the editor, a new terminal to the right
+/// in the file's folder ([`editor_command`]); a folder, or any path with the
+/// `terminal` target, opens a new terminal below, in the folder (a file's
+/// folder for a file). The new tile takes focus. In a remote workspace the
+/// path is on its machine, where the terminal runs: the driver has already
+/// worked out what a remote panel's path is.
 fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created, Error> {
     use azulejo_model::Direction;
     use azulejo_protocol::FilesOpenTarget;
+    use std::path::{Path, PathBuf};
     let id = s.target(p.tile)?;
     let path = files::expand_home(&p.path);
-    let root = match &s.tile(id)?.content {
-        TileContent::Files { root } => files::configured_root(root.as_deref()),
-        _ if path.is_absolute() => path
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_default(),
-        other => return Err(wrong_kind(id, other, "files")),
-    };
-    let path = if path.is_absolute() {
-        path
-    } else {
-        root.join(path)
-    };
-    let created = |tile| Created {
-        tile: Some(tile),
-        ..Created::default()
-    };
-    match p.target {
-        FilesOpenTarget::Preview => {
-            let (_, _, tab) = s.ids_at(s.locate(id)?);
-            let existing = s.tab(tab)?.root.tiles().into_iter().find(|t| {
-                matches!(
-                    s.tile(*t).map(|t| &t.content),
-                    Ok(TileContent::Preview { .. })
-                )
-            });
-            let shown = Some(path.display().to_string());
-            if let Some(preview) = existing {
-                if let TileContent::Preview { path } = &mut s.tile_mut(preview)?.content {
-                    *path = shown;
-                }
-                return Ok(created(preview));
-            }
-            let tile = Tile::new(TileContent::Preview { path: shown });
-            let new = tile.id;
-            s.split(id, Direction::Right, tile)?;
-            s.focus_tile(id)?;
-            Ok(created(new))
-        }
-        FilesOpenTarget::Terminal => {
-            // In a remote workspace the path is on its machine, where the
-            // terminal runs: a remote files panel hands over the folder.
-            let (_, workspace, _) = s.ids_at(s.locate(id)?);
-            let remote = s.workspace(workspace)?.machine.is_some();
-            let folder = if remote || path.is_dir() {
-                path
-            } else {
-                path.parent()
-                    .map(std::path::Path::to_path_buf)
-                    .unwrap_or(root)
-            };
-            let mut content = TileContent::terminal();
-            if let TileContent::Terminal { cwd, .. } = &mut content {
-                *cwd = Some(folder.display().to_string());
-            }
-            let tile = Tile::new(content);
-            let new = tile.id;
-            s.split(id, Direction::Down, tile)?;
-            Ok(created(new))
-        }
+    if !path.is_absolute() {
+        return Err(Error::new(
+            ErrorCode::InvalidParams,
+            format!(
+                "{} isn't absolute; files.open takes absolute paths, or a files panel's",
+                p.path
+            ),
+        ));
     }
+    let (_, workspace, _) = s.ids_at(s.locate(id)?);
+    let remote = s.workspace(workspace)?.machine.is_some();
+    let folder_of = |p: &Path| {
+        p.parent()
+            .map_or_else(|| p.to_path_buf(), Path::to_path_buf)
+    };
+    let folder = remote || path.is_dir();
+    let terminal = |cwd: PathBuf, command: Option<Vec<String>>| {
+        let mut content = TileContent::terminal();
+        if let TileContent::Terminal {
+            cwd: c, command: k, ..
+        } = &mut content
+        {
+            *c = Some(cwd.display().to_string());
+            *k = command;
+        }
+        Tile::new(content)
+    };
+    let (tile, direction) = match p.target {
+        FilesOpenTarget::Editor if !(path.is_dir() && !remote) => (
+            terminal(folder_of(&path), Some(editor_command(&path))),
+            Direction::Right,
+        ),
+        _ => {
+            let cwd = if folder { path } else { folder_of(&path) };
+            (terminal(cwd, None), Direction::Down)
+        }
+    };
+    let new = tile.id;
+    s.split(id, direction, tile)?;
+    Ok(Created {
+        tile: Some(new),
+        ..Created::default()
+    })
+}
+
+/// The command a terminal runs to edit `path`: `vim <path>`, sent as an
+/// argv (quoted for the pane's shell).
+pub(crate) fn editor_command(path: &std::path::Path) -> Vec<String> {
+    vec!["vim".to_owned(), path.display().to_string()]
 }
 
 fn wrong_kind(id: TileId, content: &TileContent, want: &str) -> Error {

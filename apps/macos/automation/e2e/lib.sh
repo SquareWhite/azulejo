@@ -97,20 +97,9 @@ make_fixtures() {
   mkdir -p "$fx/not-a-repo"
   printf '# Plan\n\n- [ ] step one\n\n```rust\nfn main() {}\n```\n' >"$fx/plan.md"
   printf 'fn main() {\n    println!("hi");\n}\n' >"$fx/main.rs"
-  sips -s format png /System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericDocumentIcon.icns \
-    --out "$fx/shot.png" >/dev/null
-  printf 'Azulejo e2e PDF\n' | cupsfilter -i text/plain -m application/pdf - >"$fx/doc.pdf" 2>/dev/null
-  avconvert --source /System/Library/CoreServices/ControlCenter.app/Contents/Resources/BentoGalleryIntroduction.mov \
-    --preset PresetLowQuality --output "$fx/clip.mp4" --replace >/dev/null 2>&1 || true
-}
-
-serve_site() { # PORT → serves automation/browser-site on 127.0.0.1:PORT
-  (cd "$root/apps/macos/automation/browser-site" && exec python3 -m http.server "$1" --bind 127.0.0.1 >/dev/null 2>&1) &
-  site_pid=$!
 }
 
 e2e_cleanup() {
-  [[ -n "${site_pid:-}" ]] && kill "$site_pid" 2>/dev/null || true
   [[ "${E2E_KEEP:-}" == 1 ]] && return 0
   reset_instance
   [[ -n "${fx:-}" && -d "$fx" ]] && rm -rf "$fx"

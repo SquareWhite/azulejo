@@ -1,5 +1,5 @@
 # Right-click menus, in-process (menus.sh fills in @DIR@: fixture folders
-# alpha, beta and a notes.md). `menu …` builds the menu a right-click would
+# alpha and beta). `menu …` builds the menu a right-click would
 # show, logs it and runs an item through the menu itself; no mouse events.
 # Copy items write to the automation's private pasteboard, Reveal only logs.
 
@@ -20,7 +20,7 @@ until workspace.names alpha|beta 3000
 
 log === workspace row: items and chords (catalogue), acting on a row that isn't the active one
 menu workspace 2
-expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Open Folder in Files Tile|Copy Path|-|Close Workspace [alt+cmd+w]
+expect menu.items Rename…|New Tab [cmd+shift+t]|-|Reveal Folder in Finder|Copy Path|-|Close Workspace [alt+cmd+w]
 wait 300
 menu shot menus-workspace
 menu answer gamma
@@ -39,15 +39,11 @@ until workspace 2 3000
 until tabs 2 3000
 wait 800
 
-log === workspace row: Open Folder in Files Tile, beside the row's focused tile
-menu workspace 1 invoke Open Folder in Files Tile
-until workspace 1 3000
-until tiles 2 3000
-until tile.kind files 3000
-
 log === tile header: a terminal (cwd known, bound to herdr)
+key cmd+1
+until workspace 1 3000
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@/alpha"}}}
-until tiles 3 3000
+until tiles 2 3000
 wait 1500
 menu tile
 expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Copy Working Directory|Reveal in Finder|-|Close Tile [alt+w]|Kill Pane…
@@ -68,44 +64,17 @@ expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [a
 menu tile invoke Zoom
 expect zoomed no
 menu tile invoke Split Right
-until tiles 4 3000
+until tiles 3 3000
 wait 1500
 menu answer no
 menu tile invoke Kill Pane…
 wait 500
-expect tiles 4
+expect tiles 3
 sh {herdr} --session {session} pane list >{out}/panes-before-close.json
 menu tile invoke Close Tile
-until tiles 3 3000
+until tiles 2 3000
 wait 800
 sh {herdr} --session {session} pane list >{out}/panes-after-tile-close.json
-
-log === tile header: files and preview kinds
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"files","root":"@DIR@/alpha"}}}
-until tiles 4 3000
-until tile.kind files 3000
-menu tile
-expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Reveal in Finder|-|Close Tile [alt+w]
-menu tile invoke Reveal in Finder
-expect menu.revealed @DIR@/alpha
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/notes.md"}}}
-until tiles 5 3000
-until tile.kind preview 3000
-menu tile
-expect menu.items Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|Reveal in Finder|-|Close Tile [alt+w]
-menu tile invoke Close Tile
-until tiles 4 3000
-
-log === browser: the tile's items merged into the chrome's menu
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"browser","url":"about:blank"}}}
-until tiles 5 3000
-until tile.kind browser 3000
-menu tile
-expect menu.items Web Inspector|Copy URL|Open in Default Browser|-|Reload from Origin|-|Split Right [ctrl+cmd+v]|Split Down [ctrl+cmd+shift+t]|Zoom [alt+shift+m]|Rename…|-|Copy Title|-|Close Tile [alt+w]
-menu tile invoke Copy URL
-expect menu.copied about:blank
-menu tile invoke Split Down
-until tiles 6 3000
 
 log === Close Workspace: the workspace goes, and herdr closes it with its panes
 sh {herdr} --session {session} workspace list >{out}/workspaces-before.json
@@ -118,19 +87,12 @@ sh {herdr} --session {session} workspace list >{out}/workspaces-after.json
 sh {herdr} --session {session} pane list >{out}/panes-after.json
 expect workspace.names alpha
 
-log === cmd+w closes a browser tile and a preview tile (the router sees it before the web view); alt+cmd+w the workspace
+log === cmd+w closes the focused tile and its pane; alt+cmd+w the workspace
 key cmd+t
 until workspaces 2 3000
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
-until tile.kind browser 3000
+core {"method":"layout.split","params":{"direction":"right"}}
 until tiles 2 3000
-key cmd+w
-expect key.last action:close_pane
-until tiles 1 3000
-expect workspaces 2
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/notes.md"}}}
-until tile.kind preview 3000
-until tiles 2 3000
+until terminal.phase attached 10000
 key cmd+w
 expect key.last action:close_pane
 until tiles 1 3000

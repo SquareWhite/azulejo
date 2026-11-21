@@ -101,12 +101,12 @@ expect palette closed
 key cmd+1
 until workspace 1
 
-# Jump to a tile by kind from a mixed query: the browser tile by its URL host.
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"http://localhost:9/azj-quickopen"}}}
+# Jump to a tile from a mixed query: a terminal by the command it runs.
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","command":["echo azj-quickopen"]}}}
 until tiles 3
 key cmd+k
 palette type @quickopen
-expect palette.topkind Browser
+expect palette.topkind Terminal
 key escape
 
 # The old chords are unbound by default.

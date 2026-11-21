@@ -7,8 +7,8 @@
 #   scripts/nfr/coldstart.sh [runs]            debug build (just mac first)
 #   NFR_APP=target/release-mac/Azulejo.app scripts/nfr/coldstart.sh [runs]
 #
-# Two states: empty (no saved session) and restored (2 workspaces, 8 tiles:
-# 6 terminals, a browser, a preview). Runs on the dev instance `nfr`.
+# Two states: empty (no saved session) and restored (2 workspaces, 8
+# terminals). Runs on the dev instance `nfr`.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 runs="${1:-10}"
@@ -72,8 +72,8 @@ printf '# Plan\n\n- [x] cold start\n- [ ] memory\n' >"$plan"
 azj workspace create --name second >/dev/null
 azj tab create >/dev/null
 azj layout split-auto >/dev/null
-azj layout split-auto --kind browser --url "http://127.0.0.1:9/nfr" >/dev/null
-azj layout split-auto --kind preview --path "$plan" >/dev/null
+azj layout split-auto >/dev/null
+azj layout split-auto --kind terminal --command "cat $plan" >/dev/null
 sleep 2
 first_ws="$(azj --json session get | jq -r '.session.windows[0].workspaces[0].id')"
 azj workspace focus --workspace "$first_ws" >/dev/null

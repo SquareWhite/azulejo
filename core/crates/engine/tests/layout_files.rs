@@ -29,10 +29,10 @@ fn applies_a_file_or_a_directory_and_exports_back_to_disk() {
     // macOS temp dirs sit behind a /var → /private/var link; use the real path
     // so the exported file's relative paths can be checked.
     let root = dir.path().canonicalize().unwrap();
-    std::fs::create_dir(root.join("web")).unwrap();
+    std::fs::create_dir_all(root.join("web/docs")).unwrap();
     std::fs::write(
         root.join(".azulejo.toml"),
-        "layout = \"tall\"\n[[tile]]\ncommand = \"nvim .\"\n[[tile]]\ncwd = \"web\"\n[[tile]]\npath = \"README.md\"\n",
+        "layout = \"tall\"\n[[tile]]\ncommand = \"nvim .\"\n[[tile]]\ncwd = \"web\"\n[[tile]]\ncwd = \"web/docs\"\n",
     )
     .unwrap();
 
@@ -72,7 +72,7 @@ fn applies_a_file_or_a_directory_and_exports_back_to_disk() {
     let written = std::fs::read_to_string(&out).unwrap();
     assert_eq!(written, toml);
     assert!(written.contains("cwd = \"web\""), "{written}");
-    assert!(written.contains("path = \"README.md\""), "{written}");
+    assert!(written.contains("cwd = \"web/docs\""), "{written}");
 
     // And the written file opens again.
     core.execute(Command::LayoutApply(LayoutApply {

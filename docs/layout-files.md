@@ -10,7 +10,7 @@ azj layout apply ops.toml --mode new-tab
 
 `azj layout export > .azulejo.toml` writes the focused workspace back out, and `--path FILE` writes the file for you, with paths made relative to it. Add `--tab ID` to export a single tab.
 
-The example in [examples/azulejo.toml](examples/azulejo.toml) opens an editor, a test watcher, a dev server and a browser on it.
+The example in [examples/azulejo.toml](examples/azulejo.toml) opens an editor, a test watcher, a dev server and its log.
 
 ## The format
 
@@ -27,7 +27,8 @@ focus = true
 command = ["cargo", "watch", "-x", "test"]
 
 [[tile]]
-url = "http://localhost:3000"
+cwd = "web"
+command = "npm run dev"
 ```
 
 ### Tabs
@@ -85,16 +86,13 @@ Sizes are relative: `[60, 40]`, `[3, 2]` and `[0.6, 0.4]` mean the same. Every t
 
 | Key | Tiles | Meaning |
 | --- | --- | --- |
-| `kind` | all | `terminal`, `browser`, `preview` or `files`. Usually left out: `url` means browser, `path` preview, `root` files, anything else terminal. |
+| `kind` | all | `terminal`, the only kind; usually left out. Files from builds that had browser, preview and files tiles (`kind`, or `url`, `path` or `root`) are refused with an error naming the tile. |
 | `title` | all | The tile's name (and the herdr pane's label). |
 | `focus` | all | `true` on at most one tile per tab: it gets focus. Otherwise the first tile does. |
 | `command` | terminal | Typed into the shell once it starts. A string is sent as a shell line (`"npm run dev"`, pipes and all); an array is an argv, quoted for the shell. |
 | `cwd` | terminal | Working directory, relative to the file. Defaults to the file's `cwd`, else the file's folder. |
 | `env` | terminal | Extra environment, e.g. `env = { RUST_LOG = "debug" }`. `AZULEJO_*` names are reserved. |
 | `on_exit` | terminal | `"close"` or `"keep"`: what happens when the tile's shell exits. Overrides `[terminal] on_exit` in the config (default `"close"`). |
-| `url` | browser | The page to load. |
-| `path` | preview | The file to show, relative to the layout file. |
-| `root` | files | The folder to browse, relative to the layout file. |
 
 Paths may start with `~/`.
 
@@ -122,7 +120,7 @@ Mistakes come back as `invalid_params` errors that say where:
 
 ```
 not a valid layout file: TOML parse error at line 3, column 1 … unknown field `commnd`, expected one of `split`, `sizes`, …
-tab 2 (`ops`): tile 1: `url` only applies to browser tiles
+tab 2 (`ops`): tile 1: Azulejo no longer has browser tiles; every tile is a terminal
 tab 1: root.children[2]: a split needs at least two children
 ```
 

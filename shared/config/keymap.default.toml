@@ -21,13 +21,14 @@
 # Sections:
 #   [keys.macos] / [keys.linux]     per platform
 #   [keys.<platform>.<context>]     only in that context; wins over the
-#                                   platform section there. Tile kinds while
-#                                   focused (terminal | browser | preview |
-#                                   files), or a mode with the keyboard:
-#                                   palette (quick open), find_bar (a find bar or
-#                                   the files filter), resize (resize mode,
-#                                   which ignores every other binding)
-#   Actions that only work in one context (palette_next, browser_back, …)
+#                                   platform section there. terminal (a
+#                                   terminal tile focused), files (the
+#                                   sidebar's Files view), or a mode with the
+#                                   keyboard: palette (quick open), find_bar
+#                                   (a find bar or the files filter), resize
+#                                   (resize mode, which ignores every other
+#                                   binding)
+#   Actions that only work in one context (palette_next, files_open, …)
 #   land there even when written in [keys] or [keys.<platform>].
 #   [prefix] / [prefix.keys]        optional herdr-style prefix mode
 # Chords match the physical key, not the shifted character: "ctrl+shift+minus"
@@ -105,7 +106,7 @@ close_tab       = "cmd+shift+w"
 quick_open      = "cmd+k"             # one menu: commands + workspaces/tabs/tiles (">" commands, "@" jump)
 # command_palette (opens quick open with ">") and goto (with "@") are unbound
 # by default; bind them here to get cmd+shift+p / cmd+p back.
-find            = "cmd+shift+f"       # scrollback search via herdr in terminals, page find in browsers and previews, the files filter
+find            = "cmd+shift+f"       # scrollback search via herdr in terminals, the files filter
 toggle_files_sidebar = "cmd+f"        # the sidebar's Files view (the tree takes the keyboard); again to collapse
 # toggle_sidebar (open or collapse the sidebar as it was) is the toolbar button's; unbound
 new_window      = "cmd+n"
@@ -129,27 +130,12 @@ select_visible_item = "cmd+s"         # smart select: kind-letter labels (u URL,
 # so ask the shell instead: ctrl+l clears and redraws the prompt.
 "cmd+l" = { send_text = "\u000c" }
 
-[keys.macos.browser]
-browser_focus_address      = "cmd+l"
-browser_reload             = "cmd+r"
-browser_reload_from_origin = "cmd+shift+r"
-browser_back               = "cmd+["
-browser_forward            = "cmd+]"
-browser_stop               = "cmd+period"
-browser_zoom_in            = "cmd+equal"
-browser_zoom_out           = "cmd+minus"
-browser_zoom_reset         = "cmd+0"
-browser_inspector          = "alt+cmd+i"
-
-[keys.macos.preview]
-preview_toggle_source = "alt+cmd+u"   # Preview | Source (Safari's View Source chord)
-
 [keys.macos.files]
-# Files tiles and the sidebar's Files view, while the list has the keyboard.
+# The sidebar's Files view, while the list has the keyboard.
 # left/right stay AppKit's (collapse/expand); the filter field is [find_bar].
 files_down          = ["j", "down"]
 files_up            = ["k", "up"]
-files_open          = "enter"         # open in a preview beside, or open/close the folder
+files_open          = "enter"         # edit in a new terminal beside, or open/close the folder
 files_expand        = "l"             # expand the folder, or open the file
 files_collapse      = "h"             # collapse the folder, or go to the parent
 files_open_external = "cmd+down"      # default app (folders expand)
@@ -157,7 +143,7 @@ files_parent        = "cmd+up"
 files_quick_look    = "space"
 files_filter        = "/"
 files_toggle_hidden = "."
-files_leave         = "escape"        # sidebar Files view: back to the tiles
+files_leave         = "escape"        # back to the tiles
 toggle_agents_sidebar = "cmd+a"       # from the Files view to Agents, as in terminals
 
 [keys.macos.palette]
@@ -173,7 +159,7 @@ palette_page_up   = "pageup"
 palette_complete  = "tab"             # complete the query with the selected row
 
 [keys.macos.find_bar]
-# A find bar's field (terminal, browser, preview), or the files filter. Other
+# A terminal's find bar field, or the files filter. Other
 # chords resolve without the tile's context here, so cmd+a selects the query.
 find_next     = ["enter", "cmd+g"]
 find_previous = ["shift+enter", "cmd+shift+g"]
@@ -254,22 +240,6 @@ quit            = "ctrl+shift+q"      # GTK terminals' chord; hide/minimize are 
 [keys.linux.terminal]
 toggle_agents_sidebar = "super+a"     # terminals and the files list only, like macOS
 send_herdr_prefix = "ctrl+b"
-
-[keys.linux.browser]
-# Linux browser conventions here, not super: super+l locks the screen.
-browser_focus_address      = "ctrl+l"
-browser_reload             = "ctrl+r"
-browser_reload_from_origin = "ctrl+shift+r"
-browser_back               = "alt+left"
-browser_forward            = "alt+right"
-browser_stop               = ""        # no Linux convention besides escape, which pages need
-browser_zoom_in            = "ctrl+equal"
-browser_zoom_out           = "ctrl+minus"
-browser_zoom_reset         = "ctrl+0"
-browser_inspector          = "ctrl+shift+i"
-
-[keys.linux.preview]
-preview_toggle_source = "ctrl+u"      # View Source in Linux browsers
 
 [keys.linux.files]
 files_down          = ["j", "down"]

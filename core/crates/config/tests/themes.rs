@@ -61,7 +61,6 @@ fn four_built_ins_define_every_token() {
             );
         }
         assert_eq!(theme.colors.len(), color_tokens().len(), "{}", theme.id);
-        assert!(theme::SYNTAXES.contains(&theme.syntax.as_str()));
         assert!(theme.is_builtin());
     }
     let appearance = |id: &str| builtin(id).unwrap().appearance;
@@ -129,7 +128,7 @@ fn under(theme: &Theme, token: &str) -> Rgba {
     let get = |t: &str| theme.rgba(t).unwrap();
     match token {
         "selected" | "control" => get("sidebar").over(window),
-        "header" | "sunken" | "tileAlt" | "overlay" | "browserField" => get("tile").over(window),
+        "header" | "sunken" | "tileAlt" | "overlay" | "findField" => get("tile").over(window),
         "tabSelected" => get("tabStrip").over(window),
         _ => window,
     }
@@ -154,7 +153,6 @@ fn text_meets_wcag_aa_in_every_built_in() {
                 ],
                 4.5,
             ),
-            // Preview body text (the webview's --azj-fg).
             ("textSecondary", &["tile", "tileAlt"], 4.5),
             ("textSecondary", &["sidebar", "header", "window"], 3.0),
             (
@@ -206,12 +204,14 @@ fn user_theme_inherits_and_overrides() {
             r##"
 name = "Dusk"
 inherits = "atom-one-dark"
-syntax = "github-dark"
+syntax = "github-dark"      # preview tiles' colours, from older builds: ignored
 
 [color]
 window = "#101114"
 text_muted = "#8a8f99"      # snake_case works too
 accent = "#ff00ff80"
+browser_chrome = "#202020"  # renamed: find_bar
+kind_preview = "#5c4078"    # a retired tile kind's: ignored
 
 [terminal]
 background = "#1d2026"
@@ -226,7 +226,7 @@ palette = { 1 = "#ff6c6b", 9 = "#ff8080" }
     let base = builtin("atom-one-dark").unwrap();
     assert_eq!(dusk.name, "Dusk");
     assert_eq!(dusk.appearance, Appearance::Dark);
-    assert_eq!(dusk.syntax, "github-dark");
+    assert_eq!(dusk.rgba("findBar"), Some(rgba("#202020")));
     assert_eq!(dusk.rgba("window"), Some(rgba("#101114")));
     assert_eq!(dusk.rgba("textMuted"), Some(rgba("#8a8f99")));
     assert_eq!(dusk.rgba("accent"), Some(rgba("#ff00ff80")));
@@ -267,7 +267,6 @@ fn bad_theme_values_warn_and_keep_the_inherited_ones() {
             r##"
 inherits = "atom-one-light"
 appearance = "sepia"
-syntax = "monokai"
 shade = 3
 [color]
 window = "blue"
@@ -284,7 +283,6 @@ palette = ["#000000", "nope"]
     let warnings = messages(&config, Severity::Warning);
     for needle in [
         "`appearance` must be",
-        "`syntax` must be one of",
         "unknown setting `shade`",
         "`color.window` isn't a colour",
         "unknown colour token `not_a_token`",
@@ -304,11 +302,10 @@ palette = ["#000000", "nope"]
         .iter()
         .find(|d| d.message.contains("color.window"))
         .unwrap();
-    assert!(d.to_string().contains("broken.toml:7:"), "{d}");
+    assert!(d.to_string().contains("broken.toml:6:"), "{d}");
     let broken = config.themes.get("broken").unwrap();
     let light = builtin("atom-one-light").unwrap();
     assert_eq!(broken.appearance, Appearance::Light);
-    assert_eq!(broken.syntax, light.syntax);
     assert_eq!(broken.colors["window"], light.colors["window"]);
     assert_eq!(broken.colors["tile"], light.colors["tile"]);
     assert_eq!(broken.terminal.foreground, light.terminal.foreground);

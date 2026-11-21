@@ -9,11 +9,8 @@ export E2E_SUITE="C-gallery${E2E_LIGHT:+-light}"
 source "$(dirname "$0")/lib.sh"
 trap e2e_cleanup EXIT
 reset_instance
-make_fixtures
-serve_site 47843
 write_config </dev/null
-sed -e "s|@FX@|$fx|g" -e "s|@SITE@|http://127.0.0.1:47843/a.html|g" \
-  -e "s|@FOCUS@|$root/apps/macos/automation/focus|g" "$e2e_here/gallery.azs.in" >"$out/gallery.azs"
+sed -e "s|@FOCUS@|$root/apps/macos/automation/focus|g" "$e2e_here/gallery.azs.in" >"$out/gallery.azs"
 if [[ -z "${E2E_LIGHT:-}" ]]; then
   run_azs "$out/gallery.azs" gallery
 else

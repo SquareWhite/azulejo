@@ -7,7 +7,6 @@
 //! name = "Dusk"
 //! inherits = "atom-one-dark"   # a built-in; omitted, the atom theme of `appearance`
 //! appearance = "dark"          # "light" or "dark"; defaults to the inherited one
-//! syntax = "one-dark"          # preview syntax colours
 //!
 //! [color]                      # colour tokens (tokens.json colorTokens), camelCase or snake_case
 //! window = "#14161b"
@@ -42,8 +41,27 @@ pub const DEFAULT_DARK_THEME: &str = "atom-one-dark";
 /// `theme = "auto"`: follow the system's light or dark appearance.
 pub const AUTO: &str = "auto";
 
-/// Preview syntax colours a theme can name (`azulejo-preview` builds them).
-pub const SYNTAXES: &[&str] = &["one-dark", "one-light", "github-dark", "github-light"];
+/// Colour tokens that were renamed, old → new: a user theme setting the old
+/// name sets the new one.
+const RENAMED_TOKENS: &[(&str, &str)] =
+    &[("browserChrome", "findBar"), ("browserField", "findField")];
+
+/// Colour tokens of the browser and preview tiles older builds had. A user
+/// theme may still set them; they're read and ignored.
+const RETIRED_TOKENS: &[&str] = &[
+    "previewToggleTrack",
+    "previewToggleSelected",
+    "kindBrowser",
+    "kindPreview",
+    "kindFiles",
+    "noticeFill",
+    "noticeBorder",
+    "selectedStrong",
+];
+
+/// Theme settings older builds read and this one ignores: `syntax` picked
+/// the preview tiles' syntax colours.
+const RETIRED_SETTINGS: &[&str] = &["syntax"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Appearance {
@@ -260,8 +278,6 @@ pub struct Theme {
     pub id: String,
     pub name: String,
     pub appearance: Appearance,
-    /// One of [`SYNTAXES`].
-    pub syntax: String,
     /// A vibrancy material for the sidebar card (macOS
     /// `NSVisualEffectView.Material` name), or none: a flat card.
     pub sidebar_material: Option<String>,
@@ -300,7 +316,6 @@ impl Theme {
             "id": self.id,
             "name": self.name,
             "appearance": self.appearance.name(),
-            "syntax": self.syntax,
             "sidebar_material": self.sidebar_material,
             "builtin": builtin,
             "path": path,
@@ -393,11 +408,6 @@ fn parse_builtins(json: &str) -> Result<BuiltIns, String> {
             id: id.clone(),
             name: t["name"].as_str().ok_or_else(|| err("name"))?.to_owned(),
             appearance,
-            syntax: t["syntax"]
-                .as_str()
-                .filter(|s| SYNTAXES.contains(s))
-                .ok_or_else(|| err("syntax"))?
-                .to_owned(),
             sidebar_material: t["sidebarMaterial"].as_str().map(str::to_owned),
             colors,
             terminal: TerminalPalette {
@@ -529,15 +539,28 @@ fn valid_id(id: &str) -> bool {
 
 /// A colour token by its tokens.json name or the snake_case spelling.
 fn token_named(key: &str) -> Option<&'static str> {
-    let wanted: String = key
-        .chars()
-        .filter(|c| *c != '_')
-        .flat_map(char::to_lowercase)
-        .collect();
+    let wanted = normalized(key);
+    let wanted = RENAMED_TOKENS
+        .iter()
+        .find(|(old, _)| old.to_lowercase() == wanted)
+        .map_or(wanted, |(_, new)| new.to_lowercase());
     color_tokens()
         .iter()
         .find(|t| t.to_lowercase() == wanted)
         .map(String::as_str)
+}
+
+/// A colour token name, camelCase or snake_case, folded for comparing.
+fn normalized(key: &str) -> String {
+    key.chars()
+        .filter(|c| *c != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn is_retired_token(key: &str) -> bool {
+    let key = normalized(key);
+    RETIRED_TOKENS.iter().any(|t| t.to_lowercase() == key)
 }
 
 /// Parses one user theme. `None` only when the file isn't valid TOML (a
@@ -632,20 +655,13 @@ pub fn parse_user_theme(
             ("appearance" | "inherits", _) => {}
             ("name", DeValue::String(s)) if !s.trim().is_empty() => theme.name = s.trim().into(),
             ("name", _) => sink.warn(value.span(), "`name` must be a non-empty string"),
-            ("syntax", DeValue::String(s)) if SYNTAXES.contains(&s.as_ref()) => {
-                theme.syntax = s.to_string()
-            }
-            ("syntax", _) => sink.warn(
-                value.span(),
-                format!(
-                    "`syntax` must be one of {}; keeping {}",
-                    quoted(SYNTAXES.iter().copied()),
-                    theme.syntax
-                ),
-            ),
+            (retired, _) if RETIRED_SETTINGS.contains(&retired) => {}
             ("color", DeValue::Table(colors)) => {
                 for (k, v) in colors.iter() {
                     let key = k.get_ref().as_ref();
+                    if is_retired_token(key) {
+                        continue;
+                    }
                     let Some(token) = token_named(key) else {
                         sink.warn(
                             k.span(),

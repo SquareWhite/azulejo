@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Right-click menus (workspace rows, tile headers, the browser's chrome)
-# check, in-process, on its own dev instance (AZJ_DEV_NAME=mnu): items and
+# Right-click menus (workspace rows, tile headers) check, in-process, on its own dev instance (AZJ_DEV_NAME=mnu): items and
 # chords, rename, copy (private pasteboard), reveal (logged, Finder never
 # opens), split, zoom, kill (cancelled), Close Tile (detaches), Close
-# Workspace, cmd+w (close_pane) closing browser and preview tiles, and
-# alt+cmd+w closing the workspace. Then it checks herdr: Close Workspace
+# Workspace, cmd+w (close_pane) closing a tile, and alt+cmd+w closing the
+# workspace. Then it checks herdr: Close Workspace
 # closes that herdr workspace with its panes and nothing else,
 # and after a relaunch herdr holds only the fresh workspace that replaced
 # the app's last one. Captures menus-workspace.png and
@@ -26,7 +25,6 @@ trap 'cleanup "${KEEP:-}"' EXIT
 [[ "${1:-}" == "--keep" ]] && KEEP=--keep
 
 mkdir -p "$fixtures/alpha" "$fixtures/beta"
-printf '# Notes\n\nRight-click menus.\n' >"$fixtures/notes.md"
 
 "$root/apps/macos/dev.sh" --reset >/dev/null   # also clears $out
 mkdir -p "$out"

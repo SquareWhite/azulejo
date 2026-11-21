@@ -1,67 +1,72 @@
-# File browser tile (2.5) check, in-process. files.sh fills in @BIG@ (a
-# 50k-file git repo) and @DIR@ (a small one), and edits @BIG@/d03 when the
-# 03-watching shot appears (no OS input, no raised window).
+# The sidebar's Files view, in-process. files.sh fills in @BIG@ (a 50k-file
+# git repo) and @DIR@ (a small one), and edits @BIG@/d03 when the
+# 03-watching shot appears (no OS input, no raised window). The view follows
+# the workspace's repository: `workspace.set_repo` points it at each.
 
 log start
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@BIG@"}}}
-until tile.kind files 5000
+core {"method":"workspace.set_repo","params":{"path":"@BIG@"}}
+sidebar mode files
+until sidebar.files.root @BIG@ 10000
 # 10 folders + README.md; .gitignore is hidden and node_modules ignored.
-until tile.rows 11 5000
-expect tile.names d00,d01,d02,d03,d04,d05,d06,d07,d08,d09,README.md
+until sidebar.files.rows 11 5000
+expect sidebar.files.names d00,d01,d02,d03,d04,d05,d06,d07,d08,d09,README.md
 shot 01-big-repo
 
 # Keys: select d03, open it (l), step down (j), open s00 (l).
-tile select d03
+sidebar focus
+sidebar files select d03
 key l
-until tile.rows 61 3000
+until sidebar.files.rows 61 3000
 key j
-expect tile.selected d03/s00
+expect sidebar.files.selected d03/s00
 key l
-until tile.rows 161 3000
+until sidebar.files.rows 161 3000
 key j
-expect tile.selected d03/s00/f000.txt
+expect sidebar.files.selected d03/s00/f000.txt
 key h
-expect tile.selected d03/s00
+expect sidebar.files.selected d03/s00
 shot 02-expanded
 
 # files.sh creates, renames and deletes @BIG@/d03/live.txt now.
 shot 03-watching
-until tile.changes 1 5000
-until tile.changes 2 5000
-until tile.changes 3 5000
+until sidebar.files.changes 1 5000
+until sidebar.files.changes 2 5000
+until sidebar.files.changes 3 5000
 shot 04-after-changes
 
-# Hidden and ignored entries.
-core {"method":"files.toggle_hidden","params":{}}
-until tile.hidden shown 3000
-until tile.rows 165 3000
+# Hidden and ignored entries (`.`).
+key .
+until sidebar.files.hidden shown 3000
+until sidebar.files.rows 165 3000
 shot 05-hidden
-core {"method":"files.toggle_hidden","params":{"show":false}}
-until tile.hidden hidden 3000
-until tile.rows 161 3000
+key .
+until sidebar.files.hidden hidden 3000
+until sidebar.files.rows 161 3000
 
 # Filter as you type over loaded entries.
-tile filter f04
-until tile.rows 12 3000
+sidebar files filter f04
+until sidebar.files.rows 12 3000
 shot 06-filter
-tile clear-filter
-until tile.rows 161 3000
+sidebar files clear-filter
+until sidebar.files.rows 161 3000
 
 # Reveal opens folders down to a path and selects it.
-core {"method":"files.reveal","params":{"path":"d07/s12/f099.txt"}}
-until tile.revealed 1 3000
-expect tile.selected d07/s12/f099.txt
+sidebar files reveal d07/s12/f099.txt
+until sidebar.files.revealed 1 3000
+expect sidebar.files.selected d07/s12/f099.txt
 shot 07-revealed
 
-# Return on a file opens it in a preview tile to the right; focus stays.
+# Return on a file edits it: a new terminal beside the focused tile runs
+# the editor.
+expect tiles 1
 key enter
-until tiles 3 5000
-expect tile.kind files
-shot 08-opened-preview
+until tiles 2 5000
+shot 08-opened-editor
 
 # A small git repo: decorations arrive as files.git.
-core {"method":"files.set_root","params":{"root":"@DIR@"}}
-until tile.root @DIR@ 5000
-until tile.git 3 8000
+core {"method":"workspace.set_repo","params":{"path":"@DIR@"}}
+until sidebar.files.root @DIR@ 5000
+until sidebar.files.git 3 8000
 shot 09-git
+sidebar mode agents
 quit

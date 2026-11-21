@@ -21,7 +21,8 @@ command = "npm run dev"
 cwd = "web"
 
 [[tile]]
-url = "http://localhost:3000"
+title = "logs"
+command = "tail -f log/dev.log"
 "#;
 
 fn base() -> PathBuf {
@@ -72,10 +73,7 @@ fn parses_the_scripted_layout_use_case() {
         "tile cwd is relative to the file"
     );
 
-    assert!(matches!(
-        &t(3).content,
-        TileContent::Browser { url: Some(u), .. } if u == "http://localhost:3000"
-    ));
+    assert_eq!(t(3).title.as_deref(), Some("logs"));
 
     // Canonical tall: master | even vertical stack.
     let tall = tab.root.tall();
@@ -98,7 +96,7 @@ sizes = [60, 40]
 command = "htop"
 [[tab.root.children]]
 split = "vertical"
-children = [{ path = "README.md" }, { root = "." }, { kind = "browser" }]
+children = [{ cwd = "." }, { title = "b" }, { kind = "terminal" }]
 
 [[tab]]
 layout = "rows"
@@ -122,15 +120,9 @@ tile = [{}, {}]
         .map(|id| custom.tile(*id).unwrap().kind())
         .collect();
     use azulejo_model::TileKind::*;
-    assert_eq!(kinds, [Terminal, Preview, Files, Browser]);
-    let preview = custom.tile(custom.root.tiles()[1]).unwrap();
-    assert!(
-        matches!(&preview.content, TileContent::Preview { path: Some(p) } if p == "/projects/shop/README.md")
-    );
-    let files = custom.tile(custom.root.tiles()[2]).unwrap();
-    assert!(
-        matches!(&files.content, TileContent::Files { root: Some(p) } if p == "/projects/shop")
-    );
+    assert_eq!(kinds, [Terminal; 4]);
+    let (cwd, _, _) = terminal(custom.tile(custom.root.tiles()[1]).unwrap());
+    assert_eq!(cwd, Some("/projects/shop"));
 
     let rows = &plan.tabs[1];
     let Node::Split { axis, ratio, .. } = &rows.root else {
@@ -148,8 +140,14 @@ fn diagnostics_say_where_and_what() {
         ("[[tile]]\ncommnd = \"x\"\n", "commnd"),
         (
             "[[tile]]\nurl = \"x\"\ncommand = \"y\"\n",
-            "`command` only applies to terminal tiles",
+            "tile 1: Azulejo no longer has browser tiles",
         ),
+        (
+            "[[tile]]\npath = \"README.md\"\n",
+            "no longer has preview tiles",
+        ),
+        ("[[tile]]\nkind = \"files\"\n", "no longer has files tiles"),
+        ("[[tile]]\nkind = \"spreadsheet\"\n", "spreadsheet"),
         (
             "[[tile]]\nfocus = true\n[[tile]]\nfocus = true\n",
             "more than one tile",
@@ -182,10 +180,6 @@ fn diagnostics_say_where_and_what() {
             "tab 1 (`dev`): no tiles",
         ),
         ("[[tile]]\ncommand = []\n", "`command` is empty"),
-        (
-            "[[tile]]\nurl = \"x\"\non_exit = \"keep\"\n",
-            "`on_exit` only applies to terminal tiles",
-        ),
         ("[[tile]]\non_exit = \"linger\"\n", "linger"),
     ];
     for (text, want) in cases {
@@ -363,7 +357,7 @@ title = "left"
 [[tab.root.children]]
 split = "vertical"
 sizes = [70, 30]
-children = [{ path = "/etc/hosts" }, { url = "https://example.com" }]
+children = [{ cwd = "/etc" }, { command = "top" }]
 [[tab.root.children]]
 command = ["echo", "hi there"]
 on_exit = "keep"
@@ -372,7 +366,7 @@ focus = true
 [[tab]]
 layout = "tall"
 ratio = 0.62
-tile = [{ root = "/tmp" }, {}, {}]
+tile = [{ cwd = "/tmp" }, {}, {}]
 "#,
     ];
     for text in texts {
@@ -552,7 +546,7 @@ fn the_documented_example_parses() {
         .map(|id| tab.tile(*id).unwrap().kind())
         .collect();
     use azulejo_model::TileKind::*;
-    assert_eq!(kinds, [Terminal, Terminal, Terminal, Browser]);
+    assert_eq!(kinds, [Terminal; 4]);
 }
 
 #[test]

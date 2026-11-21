@@ -37,7 +37,7 @@ pub struct EventsSubscribe {
     /// particular workspace (`herdr.status`, window events) are left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceId>,
-    /// Only events about this tile: its own `tile.*`, `preview.updated` and
+    /// Only events about this tile: its own `tile.*` and
     /// `agent.state_changed` events, layout changes of its tab, and focus
     /// changes to or from it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -8,7 +8,7 @@ parameter has a `TypedDict` in `azulejo.types`.
 from azulejo import Client
 
 with Client() as c:
-    c.layout_split("right", content={"kind": "browser", "url": "http://localhost:3000"})
+    c.layout_split("right", content={"kind": "terminal", "command": ["npm run dev"]})
     with c.subscribe(["tile.", "agent.state_changed"]) as events:
         for event in events:
             print(event["event"], event["data"])
@@ -51,9 +51,8 @@ asyncio.run(main())
 
 | Script | Use case |
 | --- | --- |
-| `scripted_layout.py` | Open a project's layout in one command: editor, tests, dev server, browser |
+| `scripted_layout.py` | Open a project's layout in one command: editor, tests, dev server, logs |
 | `drive_terminal.py` | An agent runs a command in another terminal and reads the output |
-| `plan_review.py` | An agent writes `plan.md`, previews it, and watches each revision land (asyncio) |
 
 ## Development
 

@@ -22,11 +22,10 @@ use azulejo_protocol::{
 };
 use tokio::sync::mpsc as tmpsc;
 
-use crate::files::{self as file_tiles, Files, Handled};
+use crate::files::{self as files_panels, Files, Handled};
 use crate::link::{self, Effect, HerdrPort, Internal, Machine};
 use crate::mirror::{self, MirrorMsg};
 use crate::persist::{self, Loaded, Saver};
-use crate::preview::{self, Previews};
 use crate::repos::{self, Repos};
 use crate::transfer;
 use crate::{Engine, Outcome, meta, terminal};
@@ -77,14 +76,8 @@ enum Msg {
     RemoveMachine(String),
     /// How remote files panels reach a machine, or that they can't.
     MachineFiles(String, Option<azulejo_herdr::RemoteMachine>),
-    /// A preview tile's file finished rendering.
-    Preview(
-        azulejo_protocol::TileId,
-        PathBuf,
-        Box<azulejo_preview::Rendered>,
-    ),
-    /// File tile work finished off this thread.
-    Files(file_tiles::Delivery),
+    /// Files panel work finished off this thread.
+    Files(files_panels::Delivery),
     /// Workspace repository work finished off this thread.
     Repos(repos::Delivery),
     Subscribe(mpsc::Sender<Event>),
@@ -329,19 +322,7 @@ fn run<P: HerdrPort>(
         saver.schedule(engine.session().clone());
     }
 
-    // Preview tiles: watch their files and render off this thread.
-    let mut previews = {
-        let out = self_tx.clone();
-        Previews::new(
-            Arc::new(move |tile, path, rendered| {
-                let _ = out.send(Msg::Preview(tile, path, Box::new(rendered)));
-            }),
-            opts.log.clone(),
-        )
-    };
-    previews.sync(engine.session());
-
-    // Files tiles: list folders off this thread, watch the open ones.
+    // Files panels: list folders off this thread, watch the open ones.
     let mut files = {
         let out = self_tx.clone();
         Files::new(
@@ -351,7 +332,6 @@ fn run<P: HerdrPort>(
             opts.log.clone(),
         )
     };
-    files.sync(engine.session());
 
     // `files.transfer`: the machines it can reach over SSH, by ID.
     let mut transfer_machines: HashMap<String, azulejo_herdr::RemoteMachine> = HashMap::new();
@@ -393,14 +373,10 @@ fn run<P: HerdrPort>(
                    events: &[Event],
                    herdr: &Links<P>,
                    listeners: &mut Vec<mpsc::Sender<Event>>,
-                   previews: &mut Previews,
-                   files: &mut Files,
                    repos: &mut Repos| {
         if events.is_empty() {
             return;
         }
-        previews.sync(engine.session());
-        files.sync(engine.session());
         repos.sync(engine.session());
         if let Some(saver) = &saver {
             saver.schedule(engine.session().clone());
@@ -421,10 +397,10 @@ fn run<P: HerdrPort>(
             // there, a file shows as a copy once it's here.
             Msg::Command(Command::FilesOpen(p), reply) if files.is_remote_panel(p.tile) => {
                 match files.remote_open(p) {
-                    file_tiles::RemoteOpen::Forward(p) => {
+                    files_panels::RemoteOpen::Forward(p) => {
                         Msg::Command(Command::FilesOpen(p), reply)
                     }
-                    file_tiles::RemoteOpen::Done(result) => {
+                    files_panels::RemoteOpen::Done(result) => {
                         let _ = reply.send(*result);
                         continue;
                     }
@@ -465,47 +441,6 @@ fn run<P: HerdrPort>(
                     }
                 }
             }
-            Msg::Command(Command::PreviewGet(target), reply) => {
-                let result = engine.preview_path(target.tile).and_then(|(id, path)| {
-                    path.map(|p| (id, PathBuf::from(p))).ok_or_else(|| {
-                        Error::new(
-                            ErrorCode::InvalidState,
-                            "the preview has no file yet; use preview.open",
-                        )
-                        .with_data(serde_json::json!({ "tile": id }))
-                    })
-                });
-                match result {
-                    Err(e) => {
-                        let _ = reply.send(Err(e));
-                    }
-                    Ok((id, path)) => match previews.latest(id, &path) {
-                        Some(content) => {
-                            let _ = reply.send(Ok(Outcome {
-                                reply: Reply::Preview(content.clone()),
-                                events: Vec::new(),
-                            }));
-                        }
-                        // Not rendered yet: render now, off this thread.
-                        None => {
-                            let revision = previews.revision();
-                            let mode = engine
-                                .session()
-                                .tile(id)
-                                .map(|t| t.preview_mode)
-                                .unwrap_or_default();
-                            std::thread::spawn(move || {
-                                let rendered = preview::render(&path, mode);
-                                let content = preview::content(id, &path, rendered, revision);
-                                let _ = reply.send(Ok(Outcome {
-                                    reply: Reply::Preview(content),
-                                    events: Vec::new(),
-                                }));
-                            });
-                        }
-                    },
-                }
-            }
             // Moving and copying files: off this thread, replied when done.
             Msg::Command(Command::FilesTransfer(p), reply) => {
                 match transfer::Transfer::new(p, &transfer_machines) {
@@ -533,8 +468,8 @@ fn run<P: HerdrPort>(
                     }
                 }
             }
-            Msg::Command(command, reply) if file_tiles::is_runtime(&command) => {
-                match files.handle(&engine, command) {
+            Msg::Command(command, reply) if files_panels::is_runtime(&command) => {
+                match files.handle(command) {
                     Handled::Done(result) => {
                         let result = *result;
                         if let Ok(outcome) = &result {
@@ -595,15 +530,7 @@ fn run<P: HerdrPort>(
                     let before = mirror::arrangements(engine.session());
                     let outcome = engine.execute(Command::LayoutApply(p))?;
                     herdr.authorise(&before, engine.session());
-                    publish(
-                        &engine,
-                        &outcome.events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &outcome.events, &herdr, &mut listeners, &mut repos);
                     Ok(outcome)
                 });
                 let _ = reply.send(result);
@@ -634,15 +561,7 @@ fn run<P: HerdrPort>(
                     let before = mirror::arrangements(engine.session());
                     let outcome = engine.execute(Command::WorkspaceCreate(p))?;
                     herdr.authorise(&before, engine.session());
-                    publish(
-                        &engine,
-                        &outcome.events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &outcome.events, &herdr, &mut listeners, &mut repos);
                     Ok(outcome)
                 });
                 let _ = reply.send(result);
@@ -669,15 +588,7 @@ fn run<P: HerdrPort>(
                     herdr.send(&machine, effect, engine.session());
                 }
                 if let Ok(outcome) = &result {
-                    publish(
-                        &engine,
-                        &outcome.events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &outcome.events, &herdr, &mut listeners, &mut repos);
                 }
                 let _ = reply.send(result);
             }
@@ -724,15 +635,7 @@ fn run<P: HerdrPort>(
                     herdr.created(*tile);
                 }
                 let events = herdr.apply_internal(&mut engine, internal);
-                publish(
-                    &engine,
-                    &events,
-                    &herdr,
-                    &mut listeners,
-                    &mut previews,
-                    &mut files,
-                    &mut repos,
-                );
+                publish(&engine, &events, &herdr, &mut listeners, &mut repos);
                 if let Some(machine) = surveyed {
                     for effect in renames {
                         herdr.send(&machine, effect, engine.session());
@@ -798,15 +701,7 @@ fn run<P: HerdrPort>(
                 }
                 for internal in reaction.internals {
                     let events = herdr.apply_internal(&mut engine, internal);
-                    publish(
-                        &engine,
-                        &events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &events, &herdr, &mut listeners, &mut repos);
                 }
                 if connected {
                     let (checks, rest): (Vec<Effect>, Vec<Effect>) = reaction
@@ -834,15 +729,7 @@ fn run<P: HerdrPort>(
                     // The sidebar's machine groups may have moved: so do the
                     // workspaces' numbers.
                     let events = engine.set_machine_order(herdr.order());
-                    publish(
-                        &engine,
-                        &events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &events, &herdr, &mut listeners, &mut repos);
                 }
                 Err(_) => (opts.log)(format!(
                     "machine {}: its port isn't the core's herdr port type",
@@ -855,15 +742,7 @@ fn run<P: HerdrPort>(
                 // The sidebar's machine groups may have moved: so do the
                 // workspaces' numbers.
                 let events = engine.set_machine_order(herdr.order());
-                publish(
-                    &engine,
-                    &events,
-                    &herdr,
-                    &mut listeners,
-                    &mut previews,
-                    &mut files,
-                    &mut repos,
-                );
+                publish(&engine, &events, &herdr, &mut listeners, &mut repos);
             }
             Msg::RemoveMachine(id) => {
                 if let Some(event) = herdr.remove(&id) {
@@ -872,39 +751,11 @@ fn run<P: HerdrPort>(
                 // The sidebar's machine groups may have moved: so do the
                 // workspaces' numbers.
                 let events = engine.set_machine_order(herdr.order());
-                publish(
-                    &engine,
-                    &events,
-                    &herdr,
-                    &mut listeners,
-                    &mut previews,
-                    &mut files,
-                    &mut repos,
-                );
-            }
-            Msg::Preview(tile, path, rendered) => {
-                if let Some(event) = previews.accept(tile, &path, *rendered) {
-                    listeners.retain(|l| l.send(event.clone()).is_ok());
-                }
+                publish(&engine, &events, &herdr, &mut listeners, &mut repos);
             }
             Msg::Files(delivery) => {
                 for event in files.accept(delivery) {
                     listeners.retain(|l| l.send(event.clone()).is_ok());
-                }
-                // Remote files copied here for the preview tile.
-                for open in files.take_opens() {
-                    match engine.execute(Command::FilesOpen(open)) {
-                        Ok(outcome) => publish(
-                            &engine,
-                            &outcome.events,
-                            &herdr,
-                            &mut listeners,
-                            &mut previews,
-                            &mut files,
-                            &mut repos,
-                        ),
-                        Err(e) => (opts.log)(format!("files: can't show a remote file: {e}")),
-                    }
                 }
             }
             Msg::MachineFiles(id, machine) => {
@@ -919,15 +770,7 @@ fn run<P: HerdrPort>(
             Msg::Repos(delivery) => {
                 if let Some(internal) = repos.accept(delivery) {
                     let events = engine.apply_internal(internal);
-                    publish(
-                        &engine,
-                        &events,
-                        &herdr,
-                        &mut listeners,
-                        &mut previews,
-                        &mut files,
-                        &mut repos,
-                    );
+                    publish(&engine, &events, &herdr, &mut listeners, &mut repos);
                 }
             }
             Msg::Subscribe(listener) => listeners.push(listener),
@@ -970,7 +813,6 @@ fn run<P: HerdrPort>(
             }
         }
     }
-    drop(previews);
     drop(files);
     drop(repos);
     // Stop herdr work before the saver goes; panes keep running in herdr.

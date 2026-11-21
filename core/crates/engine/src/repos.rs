@@ -2,7 +2,7 @@
 //!
 //! Which folder: the workspace's own `repo` when the user set one, else the
 //! working directory of its focused terminal (then any terminal in it), else
-//! a files tile's root, else the workspace's `cwd`. The core finds that
+//! the workspace's `cwd`. The core finds that
 //! folder's repository once (`rev-parse`), watches the repository's git
 //! folder (HEAD, index, refs written there) and reads the branch with one
 //! `git status` per burst of changes, never taking git's locks. Commands
@@ -306,18 +306,8 @@ pub(crate) fn repo_dir(ws: &Workspace) -> Option<PathBuf> {
             .flat_map(|tab| &tab.tiles)
             .find_map(terminal_dir)
     };
-    let files_root = || {
-        ws.tabs
-            .iter()
-            .flat_map(|tab| &tab.tiles)
-            .find_map(|t| match &t.content {
-                TileContent::Files { root: Some(r) } => Some(r.clone()),
-                _ => None,
-            })
-    };
     focused
         .or_else(any_terminal)
-        .or_else(files_root)
         .or_else(|| ws.cwd.clone())
         .and_then(|d| existing(&d))
 }

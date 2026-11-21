@@ -12,7 +12,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use azulejo_model::Session;
+use azulejo_model::{REMOVED_KINDS, Session, TileId};
 use serde_json::{Value, json};
 
 /// Version of the state file format. Bump it and extend [`migrate`] when the
@@ -82,13 +82,54 @@ fn parse(text: &str) -> Result<Session, String> {
         .and_then(Value::as_u64)
         .ok_or("missing `version`")? as u32;
     let value = migrate(version, value)?;
-    let session = value.get("session").cloned().ok_or("missing `session`")?;
-    let session: Session =
+    let mut session = value.get("session").cloned().ok_or("missing `session`")?;
+    let removed = stub_removed_tiles(&mut session);
+    let mut session: Session =
         serde_json::from_value(session).map_err(|e| format!("bad session: {e}"))?;
+    for id in removed {
+        session
+            .close_tile(id)
+            .map_err(|e| format!("broken session: {e}"))?;
+    }
     session
         .check_invariants()
         .map_err(|e| format!("broken session: {e}"))?;
     Ok(session)
+}
+
+/// Older builds saved browser, preview and files tiles ([`REMOVED_KINDS`]).
+/// Each one becomes a bare terminal here so the session parses, and its id
+/// is returned for closing, which tidies the layout, focus and zoom as a
+/// user's close would. Tiles of kinds no build had stay as they are and fail
+/// the parse.
+fn stub_removed_tiles(session: &mut Value) -> Vec<TileId> {
+    let mut removed = Vec::new();
+    let tiles = session
+        .get_mut("windows")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+        .filter_map(|w| w.get_mut("workspaces").and_then(Value::as_array_mut))
+        .flatten()
+        .filter_map(|ws| ws.get_mut("tabs").and_then(Value::as_array_mut))
+        .flatten()
+        .filter_map(|tab| tab.get_mut("tiles").and_then(Value::as_array_mut))
+        .flatten();
+    for tile in tiles {
+        let gone = tile
+            .get("kind")
+            .and_then(Value::as_str)
+            .is_some_and(|k| REMOVED_KINDS.contains(&k));
+        let id = tile
+            .get("id")
+            .cloned()
+            .and_then(|id| serde_json::from_value::<TileId>(id).ok());
+        if let (true, Some(id)) = (gone, id) {
+            *tile = json!({ "id": id, "kind": "terminal", "ended": true });
+            removed.push(id);
+        }
+    }
+    removed
 }
 
 /// Upgrades a state file from `version` to [`STATE_VERSION`], one step at a
@@ -284,6 +325,47 @@ mod tests {
         };
         assert_eq!(loaded, session);
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    /// A state file from a build with browser, preview and files tiles
+    /// loads without them: a tab that held only those closes, a split
+    /// collapses to its terminal, and focus moves off a dropped tile.
+    #[test]
+    fn removed_tile_kinds_are_dropped_on_load() {
+        let mut session = sample();
+        let tab = session.focus().tab.unwrap();
+        let ids = session.tab(tab).unwrap().root.tiles();
+        let (terminal, other) = (ids[0], ids[1]);
+        session.focus_tile(other).unwrap();
+        let mut value = json!({ "version": STATE_VERSION, "session": session });
+        let tabs = value["session"]["windows"][0]["workspaces"][0]["tabs"]
+            .as_array_mut()
+            .unwrap();
+        let mut lone = tabs[0].clone();
+        for tile in tabs[0]["tiles"].as_array_mut().unwrap() {
+            if tile["id"] == json!(other) {
+                *tile = json!({ "id": other, "kind": "preview", "path": "/x.md" });
+            }
+        }
+        // A second tab whose only tile is a browser.
+        let browser = TileId::new();
+        lone["id"] = json!(azulejo_model::TabId::new());
+        lone["root"] = json!({ "type": "leaf", "id": browser });
+        lone["tiles"] = json!([{ "id": browser, "kind": "browser", "url": "http://x/" }]);
+        lone["focused"] = json!(browser);
+        lone["recent"] = json!([browser]);
+        tabs.push(lone);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, value.to_string()).unwrap();
+        let Loaded::Session(loaded) = load(&path).unwrap() else {
+            panic!("expected a session");
+        };
+        let ws = &loaded.windows[0].workspaces[0];
+        assert_eq!(ws.tabs.len(), 1);
+        assert_eq!(ws.tabs[0].root.tiles(), vec![terminal]);
+        assert_eq!(loaded.focused_tile(), Some(terminal));
     }
 
     #[test]

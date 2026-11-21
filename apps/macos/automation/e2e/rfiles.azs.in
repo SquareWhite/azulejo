@@ -33,11 +33,15 @@ core {"method":"terminal.send_text","params":{"text":"touch @FX@/remote-proj/src
 until sidebar.files.names docs,src,lib.rs,zeta.rs,alpha.txt,notes.md 8000
 shot 02-expanded
 
-# Return on a file: a copy shows in a preview tile beside the terminal.
+# Return on a file: the editor opens on standin, beside the terminal.
 sidebar files select notes.md
 sidebar files activate
 until tiles 2 5000
-shot 03-preview
+shot 03-editor
+# The editor took focus; back to the shell.
+key alt+h
+wait 500
+until terminal.phase attached 5000
 
 # cd in the remote shell: the panel follows.
 core {"method":"terminal.send_text","params":{"text":"cd @FX@/other\n"}}

@@ -191,8 +191,8 @@ fn waiting(tab: &Tab, workspace_machine: &Machine, machine: &Machine) -> bool {
 }
 
 /// The tile whose pane herdr should zoom, of those `live` in herdr. A zoomed
-/// tile; in Monocle the focused tile, or when that has no pane (a browser,
-/// a preview) the terminal focused last, so herdr keeps showing one pane
+/// tile; in Monocle the focused tile, or when that has no pane (it ended,
+/// or it runs on another machine) the terminal focused last, so herdr keeps showing one pane
 /// rather than unzooming. None with fewer than two panes: herdr doesn't zoom
 /// a tab's only pane.
 fn zoom_tile(tab: &Tab, live: &dyn Fn(TileId) -> bool) -> Option<TileId> {
@@ -547,7 +547,7 @@ fn old_place(old: &Node, tile: TileId) -> Option<(Vec<TileId>, Direction, f64)> 
 }
 
 /// The tab's tree built from herdr's, with the tiles herdr doesn't have
-/// (browsers, previews, files, other machines) put back beside their old
+/// (ended terminals, terminals on other machines) put back beside their old
 /// neighbours.
 fn rebuild(old: &Node, herdr_tree: Node, others: &[TileId]) -> Node {
     let mut root = herdr_tree;
@@ -617,7 +617,7 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
     let kind = tab.layout.kind;
     let zoomed = tab.zoomed;
     // What we'd have herdr zoom: a pane herdr shows for us (Monocle with a
-    // browser focused shows the terminal focused last) isn't a change.
+    // paneless tile focused shows the terminal focused last) isn't a change.
     let expected_zoom = zoom_tile(tab, &|t| live.contains(&t));
     if new_root != tab.root {
         changed |= session.apply_tree(tab_id, new_root).unwrap_or(false);
@@ -655,8 +655,8 @@ pub fn absorb(session: &mut Session, machine: &Machine, layout: &herdr::TabLayou
 
 /// `tab`'s tree with herdr's arrangement of the panes both have: ratios and
 /// order carried over when herdr has the same shape, else herdr's tree with
-/// the tab's other tiles (browsers, panes on other machines or not in this
-/// herdr tab) put back beside their old neighbours. Panes herdr's tab holds
+/// the tab's other tiles (ended terminals, panes on other machines or not in
+/// this herdr tab) put back beside their old neighbours. Panes herdr's tab holds
 /// that this tab doesn't show are left out. `None` when they share none.
 fn followed_root(tab: &Tab, machine: &Machine, herdr_root: &herdr::LayoutNode) -> Option<Node> {
     let by_pane: HashMap<String, TileId> = live_panes(tab, machine)

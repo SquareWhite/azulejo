@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(
             refused(
                 "layout.split",
-                json!({"direction": "right", "tile": null, "content": {"kind": "browser", "url": "http://x/"}})
+                json!({"direction": "right", "tile": null, "content": {"kind": "terminal", "cwd": "/x"}})
             ),
             None
         );
@@ -198,14 +198,14 @@ mod tests {
         assert_eq!(
             refused(
                 "layout.split",
-                json!({"direction": "right", "kind": "browser", "url": "http://x/"})
+                json!({"direction": "right", "kind": "terminal"})
             ),
             Some("kind".into())
         );
         assert_eq!(
             refused(
                 "layout.split",
-                json!({"direction": "right", "content": {"kind": "browser", "path": "/x"}})
+                json!({"direction": "right", "content": {"kind": "terminal", "path": "/x"}})
             ),
             Some("content.path".into())
         );

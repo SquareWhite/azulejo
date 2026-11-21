@@ -238,9 +238,9 @@ fail on a loaded machine.
 apps/macos/automation/focus/focus.sh [--keep]    # or: just mac-focus
 ```
 
-52 scenarios: which action each chord resolves to and where first responder
-ends up, across terminal, browser, preview and files tiles, ⌘K, layouts,
-tabs, workspaces, herdr changes, take-over and input methods. It runs on
+39 scenarios: which action each chord resolves to and where first responder
+ends up, across terminals, the sidebar's Files view, ⌘K, layouts, tabs,
+workspaces, herdr changes, take-over and input methods. It runs on
 instance `focus` and writes to `.dev/<name>/out/focus/`, which the reset at
 the end wipes: pass `--keep` to read the log afterwards. Don't skip it; it
 catches resize bugs nothing else does.
@@ -268,11 +268,9 @@ Each runs in-process on the instance named, unless `AZJ_DEV_NAME` is set.
 | `just mac-layouts` | default | `layouts.azs`: the dynamic layouts |
 | `just mac-bismuth` | default | `bismuth.azs`: every default layout chord, traced |
 | `just mac-rebind` (`rebind.sh`) | `rebind` | Live rebinding of every keymap context |
-| `browser.sh` | `browser` | Browser tiles against a local test site, with a relaunch |
-| `preview.sh` | `preview` | Markdown, live reload, code, image, PDF |
-| `files.sh` | `files` | The files tile on a 50k-file repository |
+| `files.sh` | `files` | The sidebar's Files view on a 50k-file repository |
 | `files-slow.sh` | `fslow` | Slow folder listings never block the main thread |
-| `headers.sh` | `hdr` | Tile headers, a branch switch, the preview toggle across a relaunch |
+| `headers.sh` | `hdr` | Tile headers and a branch switch |
 | `chrome.sh` | `shell` | ⌘K, the layout picker, the config banner, attention badges |
 | `toolbar.sh` | `toolbar` | Where clicks land under the title bar; window captures |
 | `topbar.sh LABEL`, `rail.sh LABEL` | `topbar`, `railcap` | The toolbar row and the collapsed sidebar in all four themes, for before/after comparison |

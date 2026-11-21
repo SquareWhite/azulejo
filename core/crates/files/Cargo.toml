@@ -1,6 +1,6 @@
 [package]
 name = "azulejo-files"
-description = "File browser tiles: list folders lazily (gitignore-aware), watch expanded folders, git status"
+description = "File trees: list folders lazily (gitignore-aware), watch expanded folders, git status"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

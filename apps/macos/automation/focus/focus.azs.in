@@ -1,7 +1,7 @@
 # Key and focus suite: every scenario checks what a chord
 # resolved to (`key.last`) and where first responder ended up (`responder`,
 # `responder.focused`), plus the focused tile. Run with focus.sh.
-# @URL@ (a page with an input), @DIR@ (fixtures), @HERE@ (this folder).
+# @DIR@ (fixtures: a small git repo in tree/), @HERE@ (this folder).
 
 log setup
 # Keys go the way a key window routes them (router, key equivalents, Edit
@@ -142,124 +142,64 @@ expect responder terminal
 expect responder.focused yes
 expect focus 1
 
-# --- other tile kinds, in a tab of their own: T | V(B / H(P | F)) ---
+# --- the sidebar's Files view, on a small repo ---
+log === S16 the sidebar's Files view takes the keyboard; j / k move the selection there
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/tree"}}
+sidebar mode files
+until sidebar.files.root @DIR@/tree 10000
+until sidebar.files.rows 4 5000
+sidebar focus
+until sidebar.files.keyboard yes 2000
+expect sidebar.files.selected sub
+key j
+expect key.last action:files_down
+expect sidebar.files.selected alpha.txt
+key j
+expect sidebar.files.selected beta.txt
+key k
+expect sidebar.files.selected alpha.txt
+expect sidebar.files.keyboard yes
+
+log === S17 / opens the Files view's filter; typing filters; escape goes back to the tree
+key /
+expect key.last action:files_filter
+type gam
+until sidebar.files.rows 1 3000
+key escape
+until sidebar.files.rows 4 3000
+expect sidebar.files.keyboard yes
+
+log === S18 escape hands the keyboard back to the focused terminal
+key escape
+expect key.last action:files_leave
+until responder terminal 3000
+expect responder.focused yes
+sidebar mode agents
+
+# --- focus after layout changes, in a tab of their own: T | V(T / H(T | T)) ---
 key cmd+shift+t
 expect key.last action:new_tab
 until tab 2
 until responder terminal 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
+core {"method":"layout.split","params":{"direction":"right"}}
+until tiles 2 5000
+core {"method":"layout.split","params":{"direction":"down"}}
+until tiles 3 5000
+core {"method":"layout.split","params":{"direction":"right"}}
+until tiles 4 5000
+until terminal.phase attached 10000
+until responder terminal 10000
 
-log === S16 a browser tile takes first responder in its page
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
-until tile.title focus page 10000
-until responder browser-page
-expect responder.focused yes
-
-log === S17 typing in a page input reaches the page, not the router
-tile js document.getElementById('q').focus()
-wait 200
-type azj
-expect key.last passed
-tile js document.getElementById('q').value
-until tile.js azj
-expect responder browser-page
-
-log === S18 app chords still work from inside the page input
-key alt+h
-expect key.last action:focus_tile_left
-until responder terminal
-expect responder.focused yes
-key alt+l
-expect key.last action:focus_tile_right
-until responder browser-page
-expect responder.focused yes
-
-log === S19 cmd+l (the browser context's browser_focus_address) focuses the address bar
-key cmd+l
-expect key.last action:browser_focus_address
-expect responder browser-address
-expect tile.address_focused yes
-
-log === S20 escape in the address bar returns first responder to the page
-key escape
-expect responder browser-page
-expect tile.address_focused no
-expect responder.focused yes
-
-log === S21 cmd+k over a browser: typing goes to the field; escape gives the page back
-key cmd+k
-expect palette all
-expect responder palette
-type zoo
-expect palette.query zoo
-shot s21-quickopen-over-browser
-key escape
-expect palette closed
-expect responder browser-page
-expect responder.focused yes
-
-log === S22 a preview tile holds first responder in its page; alt+k / alt+j move between it and the browser
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
-until responder preview-page 10000
-expect responder.focused yes
-key alt+k
-expect key.last action:focus_tile_up
-until responder browser-page
-key alt+j
-expect key.last action:focus_tile_down
-until responder preview-page
-
-log === S23 cmd+k over a preview, then escape, gives the preview its page back
-key cmd+k
-expect responder palette
-key escape
-expect responder preview-page
-expect responder.focused yes
-
-log === S24 a files tile takes first responder in its tree; j / k move the selection there
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
-until responder files-tree 10000
-until tile.rows 4
-expect tile.selected sub
-key j
-expect key.last action:files_down
-expect tile.selected alpha.txt
-key j
-expect tile.selected beta.txt
-key k
-expect tile.selected alpha.txt
-expect responder files-tree
-
-log === S25 alt+h / alt+l are still app chords from the tree
-key alt+h
-expect key.last action:focus_tile_left
-until responder preview-page
-key alt+l
-until responder files-tree
-expect responder.focused yes
-expect tile.selected alpha.txt
-
-log === S26 / opens the files filter; typing filters; escape goes back to the tree
-key /
-expect key.last action:files_filter
-expect responder files-filter
-type gam
-until tile.rows 1
-shot s26-files-filter
-key escape
-until responder files-tree
-expect responder.focused yes
-
-# --- focus after layout changes ---
-log === S27 closing a tile (manual) hands focus and first responder to its neighbour
+log === S19 closing a tile (manual) hands focus and first responder to its neighbour
 expect tiles 4
 key alt+w
 expect key.last action:close_tile
 until tiles 3
-until responder preview-page
+until responder terminal 10000
 expect responder.focused yes
 
-log === S28 closing in a dynamic Tile layout focuses a tile in the layout, with first responder
+log === S20 closing in a dynamic Tile layout focuses a tile in the layout, with first responder
 core {"method":"layout.set","params":{"kind":"tile"}}
 expect kind tile
 until responder.focused yes
@@ -268,14 +208,16 @@ until tiles 2
 until responder.focused yes
 remember focused.id
 
-log === S29 in Monocle, focus switches restack without resizes and first responder follows
+log === S21 in Monocle, focus switches restack without resizes and first responder follows
 key alt+z
 expect key.last action:toggle_layout_monocle
 expect kind monocle
 expect visible 1
 until responder.focused yes
-# The switch lands mid-motion (the hidden terminal still fading out): it
-# comes back in place at the tab's size, so neither switch resizes it.
+# Both tiles are terminals: the focused one grows to the tab's size with
+# the toggle's motion, so let that land before counting. The other comes
+# back in place at the tab's size, so neither switch resizes either.
+wait 1500
 remember resizes
 key alt+l
 until responder.focused yes
@@ -286,7 +228,7 @@ until responder.focused yes
 unchanged focused.id
 unchanged resizes
 
-log === S30 closing in Monocle shows the next tile with first responder
+log === S22 closing in Monocle shows the next tile with first responder
 key alt+w
 until tiles 1
 expect visible 1
@@ -294,23 +236,24 @@ until responder.focused yes
 key alt+z
 expect kind tile
 
-log === S31 zoom and unzoom keep first responder in the focused tile
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
+log === S23 zoom and unzoom keep first responder in the focused tile
+core {"method":"layout.split","params":{"direction":"right"}}
 until tiles 2
-until responder preview-page 10000
+until terminal.phase attached 10000
+until responder terminal 10000
 remember responder.tile
 key alt+shift+m
 expect key.last action:zoom_tile
 expect zoomed yes
 expect visible 1
-expect responder preview-page
+expect responder terminal
 unchanged responder.tile
 key alt+shift+m
 expect zoomed no
-expect responder preview-page
+expect responder terminal
 unchanged responder.tile
 
-log === S32 switching tabs and back restores each tab's focused tile and first responder
+log === S24 switching tabs and back restores each tab's focused tile and first responder
 remember focused.id
 key ctrl+1
 expect key.last action:switch_tab(1)
@@ -320,11 +263,11 @@ expect responder.focused yes
 expect focus 1
 key ctrl+2
 expect tab 2
-until responder preview-page
+until responder terminal
 unchanged focused.id
 expect responder.focused yes
 
-log === S33 switching workspaces and back does the same
+log === S25 switching workspaces and back does the same
 key cmd+t
 expect key.last action:new_workspace
 until workspaces 2
@@ -333,12 +276,12 @@ expect responder.focused yes
 key cmd+1
 expect key.last action:switch_workspace(1)
 expect workspace 1
-until responder preview-page
+until responder terminal
 unchanged focused.id
 expect responder.focused yes
 
 # --- focus and herdr ---
-log === S34 a pane split in herdr (phone, CLI) arrives as a tile without taking focus
+log === S26 a pane split in herdr (phone, CLI) arrives as a tile without taking focus
 key ctrl+1
 until responder terminal
 until terminal.phase attached 10000
@@ -352,14 +295,14 @@ unchanged focused.id
 unchanged responder.tile
 expect responder terminal
 
-log === S35 a shell that exits closes its tile; the neighbour gets focus and first responder
+log === S27 a shell that exits closes its tile; the neighbour gets focus and first responder
 type exit
 key enter
 until tiles 2 5000
 until responder.focused yes
 expect responder terminal
 
-log === S36 taken over by another client: read-only, app chords still work, first responder stays on the tile
+log === S28 taken over by another client: read-only, app chords still work, first responder stays on the tile
 until terminal.phase attached 10000
 remember focused.id
 sh python3 @HERE@/takeover.py {herdr} {session} {pane} 6 >/dev/null 2>&1 &
@@ -376,13 +319,13 @@ key alt+h
 until responder terminal-ro
 unchanged focused.id
 
-log === S37 take back: the tile is writable again and holds first responder
+log === S29 take back: the tile is writable again and holds first responder
 terminal takeover
 until terminal.phase attached 8000
 until responder terminal
 expect responder.focused yes
 
-log === S38 a config error banner doesn't take first responder
+log === S30 a config error banner doesn't take first responder
 remember responder.tile
 sh printf 'this line = = is broken\n' >> '{config}'
 until banner.shown yes 5000
@@ -395,14 +338,14 @@ sh sed -i '' '$d' '{config}'
 until banner.shown no 5000
 expect responder terminal
 
-# --- find (⇧⌘F) in each tile kind, in a tab of its own: T | V(B / H(P | F)) ---
+# --- find (⇧⌘F) in a terminal, in a tab of its own ---
 key cmd+shift+t
 until tab 3
 until responder terminal 10000
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 
-log === S39 cmd+shift+f in a terminal opens its find bar with the keyboard in it
+log === S31 cmd+shift+f in a terminal opens its find bar with the keyboard in it
 # The shell prints the markers; the command line itself doesn't hold them.
 type echo azj''needle; echo azj''twin; echo azj''twin
 key enter
@@ -415,7 +358,7 @@ expect responder terminal-find
 expect responder.focused yes
 expect tile.find open
 
-log === S40 typing in the bar searches herdr's history and scrolls the match into view, highlighted
+log === S32 typing in the bar searches herdr's history and scrolls the match into view, highlighted
 type azjneedle
 expect key.last passed
 until tile.find.status 1 of 1 5000
@@ -427,7 +370,7 @@ until tile.find.highlights 1
 capture s40-find-terminal 300
 wait 500
 
-log === S41 herdr refreshes and app refreshes leave the keyboard in the bar
+log === S33 herdr refreshes and app refreshes leave the keyboard in the bar
 sh {herdr} --session {session} pane rename {pane} azjfind >/dev/null
 seen-visible on
 wait 300
@@ -442,7 +385,7 @@ sh @HERE@/pane-has.sh --not {herdr} {session} {pane} azjneedlex
 key backspace
 until tile.find.status 1 of 1 5000
 
-log === S42 enter and shift+enter step through the matches, newest first; cmd+a stays in the bar
+log === S34 enter and shift+enter step through the matches, newest first; cmd+a stays in the bar
 key cmd+a
 expect key.last passed
 expect sidebar visible
@@ -457,7 +400,7 @@ key shift+enter
 expect tile.find.status 2 of 2
 expect responder terminal-find
 
-log === S43 escape closes the bar, gives the keyboard back to the terminal and the view to the bottom
+log === S35 escape closes the bar, gives the keyboard back to the terminal and the view to the bottom
 key escape
 expect key.last find
 expect tile.find closed
@@ -468,7 +411,7 @@ type echo azjafter
 key enter
 sh @HERE@/pane-has.sh {herdr} {session} {pane} azjafter
 
-log === S44 cmd+shift+f again reopens the bar with the last query, searched afresh
+log === S36 cmd+shift+f again reopens the bar with the last query, searched afresh
 key cmd+shift+f
 expect responder terminal-find
 expect tile.find.query azjtwin
@@ -476,63 +419,14 @@ until tile.find.status 1 of 2 5000
 key escape
 expect responder terminal
 
-log === S45 cmd+shift+f in a browser: WebKit's find, same bar; escape gives the page back
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
-until tile.title focus page 10000
-until responder browser-page
-key cmd+shift+f
-expect key.last action:find
-expect responder browser-find
-expect responder.focused yes
-type azulejo
-until tile.find.status 1 of 3 5000
-key enter
-until tile.find.status 2 of 3 5000
-key shift+enter
-until tile.find.status 1 of 3 5000
-expect responder browser-find
-capture s45-find-browser 300
-wait 500
-key escape
-expect responder browser-page
-expect tile.find closed
-expect responder.focused yes
-
-log === S46 cmd+shift+f in a preview finds in the rendered page
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
-until responder preview-page 10000
-until tile.mode load 10000
-key cmd+shift+f
-expect key.last action:find
-expect responder preview-find
-type focus
-until tile.find.status 1 of 1 5000
-key escape
-expect responder preview-page
-expect tile.find closed
-expect responder.focused yes
-
-log === S47 cmd+shift+f in a files tile opens its filter
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DIR@/tree"}}}
-until responder files-tree 10000
-until tile.rows 4
-key cmd+shift+f
-expect key.last action:find
-expect responder files-filter
-type gam
-until tile.rows 1
-key escape
-until responder files-tree
-expect responder.focused yes
-
-# --- an open find bar gets the keyboard back when its tile does, in a tab of its own: T | V(B / P) ---
+# --- an open find bar gets the keyboard back when its tile does, in a tab of its own ---
 key cmd+shift+t
 until tab 4
 until responder terminal 10000
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}
 
-log === S48 cmd+k then escape over a terminal's open find bar: the keyboard goes back to the bar
+log === S37 cmd+k then escape over a terminal's open find bar: the keyboard goes back to the bar
 type echo azj''needle
 key enter
 sh @HERE@/pane-has.sh {herdr} {session} {pane} azjneedle
@@ -554,7 +448,7 @@ sh @HERE@/pane-has.sh --not {herdr} {session} {pane} azjneedleq
 key backspace
 expect tile.find.query azjneedle
 
-log === S49 a tab switch and back with a terminal's bar open: the bar gets the keyboard back
+log === S38 a tab switch and back with a terminal's bar open: the bar gets the keyboard back
 key ctrl+3
 expect tab 3
 until responder.focused yes
@@ -571,61 +465,7 @@ key escape
 expect tile.find closed
 expect responder terminal
 
-log === S50 a browser's bar gets the keyboard back after cmd+k and a tab switch
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@URL@"}}}
-until tile.title focus page 10000
-until responder browser-page
-key cmd+shift+f
-expect responder browser-find
-type azulejo
-until tile.find.status 1 of 3 5000
-key cmd+k
-expect responder palette
-key escape
-expect palette closed
-expect responder browser-find
-key ctrl+3
-expect tab 3
-key ctrl+4
-expect tab 4
-until responder browser-find 2000
-expect tile.find.query azulejo
-type x
-expect tile.find.query azulejox
-key backspace
-key escape
-expect responder browser-page
-expect tile.find closed
-
-log === S51 a preview's bar does the same; moving to another tile and back brings it back too
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DIR@/plan.md"}}}
-until responder preview-page 10000
-until tile.mode load 10000
-key cmd+shift+f
-expect responder preview-find
-type focus
-until tile.find.status 1 of 1 5000
-key cmd+k
-expect responder palette
-key escape
-expect responder preview-find
-key ctrl+3
-expect tab 3
-key ctrl+4
-expect tab 4
-until responder preview-find 2000
-key alt+k
-until responder browser-page 2000
-key alt+j
-until responder preview-find 2000
-type s
-expect tile.find.query focuss
-key backspace
-key escape
-expect responder preview-page
-expect tile.find closed
-
-log === S52 terminal keys reach the pane's program as bytes: shift+enter is CSI 13;2u under the kitty keyboard protocol (what Claude Code and fish ask for), enter stays \r, cmd+l types ctrl+l (send_text)
+log === S39 terminal keys reach the pane's program as bytes: shift+enter is CSI 13;2u under the kitty keyboard protocol (what Claude Code and fish ask for), enter stays \r, cmd+l types ctrl+l (send_text)
 key cmd+shift+t
 until terminal.phase attached 10000
 until responder terminal 5000

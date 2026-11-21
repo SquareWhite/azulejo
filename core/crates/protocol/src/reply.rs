@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use azulejo_model::{Frame, Session, TabId, Tile, TileId, WindowId, WorkspaceId};
 
-use crate::event::{LayoutState, PreviewContent, TabInfo, WorkspaceInfo};
+use crate::event::{LayoutState, TabInfo, WorkspaceInfo};
 
 // One reply per request, so an unboxed tile (with its header and pane
 // metadata) is fine.
@@ -43,9 +43,7 @@ pub enum Reply {
     },
     /// Where a terminal's view sits after `terminal.scroll`.
     Scroll(ScrollState),
-    /// A preview tile's content, from `preview.get`.
-    Preview(PreviewContent),
-    /// A folder of a files tile, from `files.list` or `files.expand`.
+    /// A folder of a files panel, from `files.list` or `files.expand`.
     Files(crate::files::FilesListing),
     /// Lines that matched `terminal.search`.
     Matches {

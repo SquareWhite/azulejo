@@ -1,6 +1,5 @@
 # The mockup's "agents" workspace, for
-# automation/mockup.sh. @FX@ is the fixture folder, @REPO@ this checkout,
-# @PORT@ the fixture web server.
+# automation/mockup.sh. @FX@ is the fixture folder, @REPO@ this checkout.
 
 name = "azulejo"
 
@@ -18,12 +17,14 @@ focus = true
 split = "vertical"
 sizes = [50, 50]
 [[tab.root.children.children]]
-url = "http://localhost:@PORT@/patterns/14"
+title = "notes"
+cwd = "@REPO@"
+command = "clear; cat @FX@/0009-pane-exit.md"
 [[tab.root.children.children]]
 split = "horizontal"
 sizes = [50, 50]
 children = [
-  { path = "@FX@/0009-pane-exit.md" },
+  { title = "server", cwd = "@REPO@", command = "clear; echo 'listening on :5173'" },
   { title = "zsh", cwd = "@REPO@", command = "clear; @FX@/just dogfood" },
 ]
 

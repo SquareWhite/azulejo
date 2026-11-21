@@ -1,6 +1,6 @@
 # Azulejo
 
-A tiling terminal workspace for macOS and Linux. Terminals, browsers, previews and a file browser share one keyboard-driven layout; terminal sessions live in [herdr](https://herdr.dev).
+A tiling terminal workspace for macOS and Linux: terminals share one keyboard-driven layout, with a file tree in the sidebar; terminal sessions live in [herdr](https://herdr.dev).
 
 ## Setup
 
@@ -21,7 +21,6 @@ just linux          # GTK4 shell (Linux only)
 | `core/crates/` | Rust core: `model`, `protocol`, `herdr`, `engine`, `api`, `ffi`, `cli` (`azj`) |
 | `apps/macos/` | Swift/AppKit shell; links the core through `ffi`'s C ABI |
 | `apps/linux/` | GTK4 shell in Rust; links the core directly |
-| `shared/webview/` | JS and CSS shared by both shells' webviews |
 | `clients/python/` | Python client, generated from the schema |
 | `schema/` | Generated JSON Schema for the socket API |
 

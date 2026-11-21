@@ -146,23 +146,10 @@ pub enum Action {
     FindClose,
     // Resize mode
     ResizeModeExit,
-    // Browser tiles
-    BrowserFocusAddress,
-    BrowserReload,
-    BrowserReloadFromOrigin,
-    BrowserBack,
-    BrowserForward,
-    BrowserStop,
-    BrowserZoomIn,
-    BrowserZoomOut,
-    BrowserZoomReset,
-    BrowserInspector,
-    // Preview tiles
-    PreviewToggleSource,
-    // Files tiles and the sidebar's Files view
+    // The sidebar's Files view
     FilesDown,
     FilesUp,
-    /// Opens a file (preview) or a folder, like a double-click.
+    /// Opens a file in the editor or a folder, like a double-click.
     FilesOpen,
     /// Expands a folder, or opens a file.
     FilesExpand,
@@ -296,17 +283,6 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("find_previous", FindPrevious),
         ("find_close", FindClose),
         ("resize_mode_exit", ResizeModeExit),
-        ("browser_focus_address", BrowserFocusAddress),
-        ("browser_reload", BrowserReload),
-        ("browser_reload_from_origin", BrowserReloadFromOrigin),
-        ("browser_back", BrowserBack),
-        ("browser_forward", BrowserForward),
-        ("browser_stop", BrowserStop),
-        ("browser_zoom_in", BrowserZoomIn),
-        ("browser_zoom_out", BrowserZoomOut),
-        ("browser_zoom_reset", BrowserZoomReset),
-        ("browser_inspector", BrowserInspector),
-        ("preview_toggle_source", PreviewToggleSource),
         ("files_down", FilesDown),
         ("files_up", FilesUp),
         ("files_open", FilesOpen),
@@ -457,17 +433,6 @@ impl Action {
             | PalettePageUp | PaletteComplete => KeyContext::Palette,
             FindNext | FindPrevious | FindClose => KeyContext::Find,
             ResizeModeExit => KeyContext::Resize,
-            BrowserFocusAddress
-            | BrowserReload
-            | BrowserReloadFromOrigin
-            | BrowserBack
-            | BrowserForward
-            | BrowserStop
-            | BrowserZoomIn
-            | BrowserZoomOut
-            | BrowserZoomReset
-            | BrowserInspector => KeyContext::Browser,
-            PreviewToggleSource => KeyContext::Preview,
             FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
             | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => {
                 KeyContext::Files
@@ -479,61 +444,18 @@ impl Action {
     pub fn target(self) -> Target {
         use Action::*;
         let method = match self {
-            ResizeMode
-            | ToggleUnread
-            | QuickOpen
-            | CommandPalette
-            | Goto
-            | Find
-            | OpenConfig
-            | ReloadConfig
-            | ToggleSidebar
-            | ToggleAgentsSidebar
-            | ToggleFilesSidebar
-            | SetTheme
-            | EnterPrefix
-            | Quit
-            | Hide
-            | HideOthers
-            | Minimize
-            | SendHerdrPrefix
-            | SelectVisibleItem
-            | TakeOver
-            | SendText(_)
-            | PaletteClose
-            | PaletteRun
-            | PaletteNext
-            | PalettePrevious
-            | PalettePageDown
-            | PalettePageUp
-            | PaletteComplete
-            | FindNext
-            | FindPrevious
-            | FindClose
-            | ResizeModeExit
-            | BrowserFocusAddress
-            | BrowserReload
-            | BrowserReloadFromOrigin
-            | BrowserBack
-            | BrowserForward
-            | BrowserStop
-            | BrowserZoomIn
-            | BrowserZoomOut
-            | BrowserZoomReset
-            | BrowserInspector
-            | FilesDown
-            | FilesUp
-            | FilesOpen
-            | FilesExpand
-            | FilesCollapse
-            | FilesOpenExternal
-            | FilesParent
-            | FilesQuickLook
-            | FilesFilter
-            | FilesLeave => return Target::Shell,
+            ResizeMode | ToggleUnread | QuickOpen | CommandPalette | Goto | Find | OpenConfig
+            | ReloadConfig | ToggleSidebar | ToggleAgentsSidebar | ToggleFilesSidebar
+            | SetTheme | EnterPrefix | Quit | Hide | HideOthers | Minimize | SendHerdrPrefix
+            | SelectVisibleItem | TakeOver | SendText(_) | PaletteClose | PaletteRun
+            | PaletteNext | PalettePrevious | PalettePageDown | PalettePageUp | PaletteComplete
+            | FindNext | FindPrevious | FindClose | ResizeModeExit | FilesDown | FilesUp
+            | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal | FilesParent
+            | FilesQuickLook | FilesFilter | FilesLeave => {
+                return Target::Shell;
+            }
             // The shell sends these for the tile (or sidebar panel) that has
             // the keyboard, so they carry no command of their own.
-            PreviewToggleSource => "preview.set_mode",
             FilesToggleHidden => "files.toggle_hidden",
             FocusTile(_) => "layout.focus",
             SwapTile(_) => "layout.swap",

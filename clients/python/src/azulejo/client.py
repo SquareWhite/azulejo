@@ -182,7 +182,7 @@ class Client(Methods):
     """A blocking connection. Not thread-safe: one call at a time.
 
     >>> with Client() as c:
-    ...     c.layout_split("right", content={"kind": "browser", "url": "http://localhost:3000"})
+    ...     c.layout_split("right", content={"kind": "terminal", "command": ["npm run dev"]})
     """
 
     def __init__(self, path: str | os.PathLike[str] | None = None, *, caller: bool = True, timeout: float = 30.0):

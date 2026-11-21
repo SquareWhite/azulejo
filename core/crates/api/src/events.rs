@@ -276,7 +276,7 @@ impl Scope {
             | Event::WindowUpdated { .. }
             | Event::WorkspacesReordered { .. }
             | Event::HerdrStatus { .. } => (None, vec![]),
-            // Everything else (`preview.updated`, `agent.state_changed`, events
+            // Everything else (`files.changed`, `agent.state_changed`, events
             // added later): read `workspace`, `tab` and `tile` off the data.
             _ => self.about(&json["data"]),
         };

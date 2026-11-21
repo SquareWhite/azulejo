@@ -1,12 +1,12 @@
-//! File browser tiles in a running core: list folders off the engine's
-//! thread, watch the folders each tile has open, and keep git status for
-//! decorations. Once a tile's root turns out to be in a work tree, the whole
-//! root is watched too (macOS), so an edit in a closed folder still updates
-//! that folder's badge.
+//! Files panels (`files.panel`, the sidebar's Files view) in a running core:
+//! list folders off the engine's thread, watch the folders each panel has
+//! open, and keep git status for decorations. Once a panel's root turns out
+//! to be in a work tree, the whole root is watched too (macOS), so an edit in
+//! a closed folder still updates that folder's badge.
 //!
-//! What a tile has open, and whether it shows hidden entries, lives here and
-//! isn't saved: after a relaunch a tile shows its root, and shells expand
-//! again what they remember.
+//! Panels live outside the session. What a panel has open, and whether it
+//! shows hidden entries, lives here and isn't saved: shells open their
+//! panels again after a relaunch and expand again what they remember.
 //!
 //! A files panel can show a remote herdr machine's files instead.
 //! Its folders are listed over the machine's SSH connection
@@ -23,15 +23,15 @@ use std::time::{Duration, Instant};
 
 use azulejo_files::{Change, DirWatcher, GitState, GitStatus};
 use azulejo_herdr::RemoteMachine;
-use azulejo_model::{Session, TileContent, TileId};
+use azulejo_model::TileId;
 use azulejo_protocol::{
     Command, Created, Error, ErrorCode, Event, FileEntry, FileGitState, FilesChanged, FilesGit,
     FilesListing, FilesOpen, FilesOpenTarget, FilesRevealed, Reply,
 };
 
+use crate::Outcome;
 use crate::driver::LogFn;
 use crate::remote_files::{self, RemoteDir, RunError};
-use crate::{Engine, Outcome};
 
 /// How often a remote panel lists its open folders again.
 pub(crate) const REMOTE_POLL: Duration = Duration::from_secs(3);
@@ -49,7 +49,7 @@ const REMOTE_CACHE: usize = 512;
 /// How long a folder must be quiet after a change before shells hear of it.
 pub(crate) const DEBOUNCE: Duration = Duration::from_millis(40);
 
-/// The least time between two `git status` runs for one tile. The whole
+/// The least time between two `git status` runs for one panel. The whole
 /// work tree is watched, so a build writing into an ignored `target/` would
 /// otherwise keep `git status` running back to back.
 const GIT_GAP: Duration = Duration::from_millis(500);
@@ -74,11 +74,6 @@ pub(crate) enum Delivery {
     /// Time for a remote panel (in its `generation`) to list its open
     /// folders again.
     Poll(TileId, u64),
-    /// A remote file was copied here for the preview tile, or wasn't.
-    Read {
-        remote: PathBuf,
-        result: Result<PathBuf, String>,
-    },
 }
 
 pub(crate) type Deliver = Arc<dyn Fn(Delivery) + Send + Sync>;
@@ -91,8 +86,8 @@ pub(crate) enum Handled {
     Later(Job),
 }
 
-struct TileState {
-    /// The root as the session stores it (to notice changes).
+struct PanelState {
+    /// The root as `files.panel` named it (to notice changes).
     configured: PathBuf,
     /// Resolved: what listings and events use.
     root: PathBuf,
@@ -108,7 +103,7 @@ struct TileState {
     remote: Option<RemoteState>,
 }
 
-impl TileState {
+impl PanelState {
     fn machine(&self) -> Option<&str> {
         self.remote.as_ref().map(|r| r.machine.as_str())
     }
@@ -136,31 +131,27 @@ pub(crate) struct Files {
     watcher: Option<DirWatcher<TileId>>,
     deliver: Deliver,
     log: LogFn,
-    tiles: HashMap<TileId, TileState>,
-    /// Files panels (`files.panel`): trees outside the layout, such as the
-    /// sidebar's Files view. They live in `tiles` too but not in the session,
-    /// so `sync` leaves them alone.
-    panels: HashSet<TileId>,
+    /// Files panels (`files.panel`) by id: trees outside the layout, such
+    /// as the sidebar's Files view.
+    tiles: HashMap<TileId, PanelState>,
     /// herdr's connected remote machines, by ID, for remote panels.
     machines: HashMap<String, RemoteMachine>,
     /// Remote listings by machine and folder, sorted, with when they came.
     cache: HashMap<(String, PathBuf), (Instant, Arc<RemoteDir>)>,
     /// Numbers remote fetches and panel generations.
     counter: u64,
-    /// Remote files copied here, to show in the preview tile.
-    opens: Vec<FilesOpen>,
 }
 
 /// What `files.open` from a remote panel turns into.
 pub(crate) enum RemoteOpen {
     /// A command for the engine, with a path it can use.
     Forward(FilesOpen),
-    /// Answered here (the copy for the preview runs off this thread).
+    /// Answered here (an error).
     Done(Box<Result<Outcome, Error>>),
 }
 
-/// Commands this module answers (the rest of `files.*` change the session
-/// and run in the engine).
+/// Commands this module answers (`files.open` changes the session and runs
+/// in the engine).
 pub(crate) fn is_runtime(command: &Command) -> bool {
     matches!(
         command,
@@ -193,7 +184,7 @@ impl Files {
             Ok(w) => Some(w),
             Err(e) => {
                 log(format!(
-                    "file watching unavailable ({e}); file tiles won't update live"
+                    "file watching unavailable ({e}); files panels won't update live"
                 ));
                 None
             }
@@ -203,17 +194,15 @@ impl Files {
             deliver,
             log,
             tiles: HashMap::new(),
-            panels: HashSet::new(),
             machines: HashMap::new(),
             cache: HashMap::new(),
             counter: 0,
-            opens: Vec::new(),
         }
     }
 
     /// Whether `tile` names a files panel rather than a tile.
     pub(crate) fn is_panel(&self, tile: Option<TileId>) -> bool {
-        tile.is_some_and(|t| self.panels.contains(&t))
+        tile.is_some_and(|t| self.tiles.contains_key(&t))
     }
 
     /// Whether `tile` names a files panel on a remote machine.
@@ -257,38 +246,6 @@ impl Files {
         events
     }
 
-    /// Remote files copied for the preview tile since the last call: the
-    /// driver shows them with `files.open`.
-    pub(crate) fn take_opens(&mut self) -> Vec<FilesOpen> {
-        std::mem::take(&mut self.opens)
-    }
-
-    /// Matches state to the session's files tiles: new tiles and new roots
-    /// start fresh (root open and watched), closed tiles stop watching.
-    pub(crate) fn sync(&mut self, session: &Session) {
-        let wanted: HashMap<TileId, PathBuf> = session
-            .tiles()
-            .filter_map(|(_, tile)| match &tile.content {
-                TileContent::Files { root } => Some((tile.id, configured_root(root.as_deref()))),
-                _ => None,
-            })
-            .collect();
-        let stale: Vec<TileId> = self
-            .tiles
-            .iter()
-            .filter(|(id, st)| !self.panels.contains(id) && wanted.get(id) != Some(&st.configured))
-            .map(|(id, _)| *id)
-            .collect();
-        for id in stale {
-            self.stop(id);
-        }
-        for (id, configured) in wanted {
-            if !self.tiles.contains_key(&id) {
-                self.start(id, configured);
-            }
-        }
-    }
-
     /// Starts showing `configured` for `id`: its root open and watched.
     fn start(&mut self, id: TileId, configured: PathBuf) {
         let root = configured
@@ -296,7 +253,7 @@ impl Files {
             .unwrap_or_else(|_| configured.clone());
         self.tiles.insert(
             id,
-            TileState {
+            PanelState {
                 configured,
                 root: root.clone(),
                 show_hidden: false,
@@ -336,7 +293,7 @@ impl Files {
         }
         self.tiles.insert(
             id,
-            TileState {
+            PanelState {
                 configured: root.clone(),
                 root: root.clone(),
                 show_hidden: false,
@@ -376,27 +333,30 @@ impl Files {
         }
     }
 
-    /// The files tile or panel a command is for: a panel by its id, else
-    /// the tile the engine resolves (the focused one when absent).
-    fn target(&self, engine: &Engine, tile: Option<TileId>) -> Result<TileId, Error> {
+    /// The panel a command is for.
+    fn target(&self, tile: Option<TileId>) -> Result<TileId, Error> {
         match tile {
-            Some(id) if self.panels.contains(&id) => Ok(id),
-            _ => Ok(engine.files_root(tile)?.0),
+            Some(id) if self.tiles.contains_key(&id) => Ok(id),
+            Some(id) => Err(not_ready(id)),
+            None => Err(Error::new(
+                ErrorCode::InvalidParams,
+                "name a files panel (`tile`); open one with files.panel",
+            )),
         }
     }
 
-    /// Runs a runtime `files.*` command for the tile `engine` resolves.
-    pub(crate) fn handle(&mut self, engine: &Engine, command: Command) -> Handled {
-        match self.handle_inner(engine, command) {
+    /// Runs a runtime `files.*` command.
+    pub(crate) fn handle(&mut self, command: Command) -> Handled {
+        match self.handle_inner(command) {
             Ok(h) => h,
             Err(e) => Handled::Done(Box::new(Err(e))),
         }
     }
 
-    fn handle_inner(&mut self, engine: &Engine, command: Command) -> Result<Handled, Error> {
+    fn handle_inner(&mut self, command: Command) -> Result<Handled, Error> {
         match command {
             Command::FilesList(p) => {
-                let tile = self.target(engine, p.tile)?;
+                let tile = self.target(p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
                 if self.is_remote_panel(Some(tile)) {
                     let listing = self.remote_listing(tile, dir)?;
@@ -405,7 +365,7 @@ impl Files {
                 Ok(Handled::Later(self.list_job(tile, dir)?))
             }
             Command::FilesExpand(p) => {
-                let tile = self.target(engine, p.tile)?;
+                let tile = self.target(p.tile)?;
                 let dir = self.resolve(tile, p.dir.as_deref())?;
                 if self.is_remote_panel(Some(tile)) {
                     self.watch(tile, &dir);
@@ -422,13 +382,13 @@ impl Files {
                 Ok(Handled::Later(self.list_job(tile, dir)?))
             }
             Command::FilesCollapse(p) => {
-                let tile = self.target(engine, p.tile)?;
+                let tile = self.target(p.tile)?;
                 let dir = self.resolve_lenient(tile, p.dir.as_deref())?;
                 self.collapse(tile, &dir);
                 Ok(done(Reply::Ok, Vec::new()))
             }
             Command::FilesReveal(p) => {
-                let tile = self.target(engine, p.tile)?;
+                let tile = self.target(p.tile)?;
                 let path = self.resolve(tile, Some(&p.path))?;
                 let st = self.state(tile)?;
                 let root = st.root.clone();
@@ -436,7 +396,7 @@ impl Files {
                     return Err(Error::new(
                         ErrorCode::InvalidParams,
                         format!(
-                            "{} isn't under the tile's root {}; use files.set_root",
+                            "{} isn't under the panel's root {}; point the panel there with files.panel",
                             path.display(),
                             root.display()
                         ),
@@ -460,7 +420,7 @@ impl Files {
                 Ok(done(Reply::Ok, vec![event]))
             }
             Command::FilesToggleHidden(p) => {
-                let tile = self.target(engine, p.tile)?;
+                let tile = self.target(p.tile)?;
                 let st = self.state_mut(tile)?;
                 st.show_hidden = p.show.unwrap_or(!st.show_hidden);
                 let dirs = st.expanded.iter().map(|d| display(d)).collect();
@@ -493,13 +453,11 @@ impl Files {
                     ));
                 }
                 let id = p.panel.unwrap_or_else(TileId::new);
-                let same = self.panels.contains(&id)
-                    && self.tiles.get(&id).is_some_and(|st| {
-                        st.configured == configured && st.machine() == machine.as_deref()
-                    });
+                let same = self.tiles.get(&id).is_some_and(|st| {
+                    st.configured == configured && st.machine() == machine.as_deref()
+                });
                 if !same {
                     self.stop(id);
-                    self.panels.insert(id);
                     match machine {
                         Some(machine) => self.start_remote(id, configured, machine),
                         None => self.start(id, configured),
@@ -512,9 +470,7 @@ impl Files {
                 Ok(done(Reply::Created(created), Vec::new()))
             }
             Command::FilesPanelClose(p) => {
-                if self.panels.remove(&p.panel) {
-                    self.stop(p.panel);
-                }
+                self.stop(p.panel);
                 Ok(done(Reply::Ok, Vec::new()))
             }
             other => Err(Error::new(
@@ -544,17 +500,6 @@ impl Files {
                 result,
             } => self.remote_done(tile, fetch, dirs, result),
             Delivery::Poll(tile, generation) => self.poll(tile, generation),
-            Delivery::Read { remote, result } => {
-                match result {
-                    Ok(local) => self.opens.push(FilesOpen {
-                        tile: None,
-                        path: display(&local),
-                        target: FilesOpenTarget::Preview,
-                    }),
-                    Err(why) => (self.log)(format!("can't preview {}: {why}", remote.display())),
-                }
-                Vec::new()
-            }
         }
     }
 
@@ -794,80 +739,34 @@ impl Files {
             .map(|e| e.dir)
     }
 
-    /// `files.open` from a remote panel. A terminal opens beside the
-    /// focused tile in the folder (on the focused workspace's machine); a
-    /// file is copied here off this thread, then shown in the preview tile
-    /// ([`Files::take_opens`]).
+    /// `files.open` from a remote panel: the editor or a terminal opens
+    /// beside the focused tile, on the focused workspace's machine, with
+    /// the path as the panel's listings know it.
     pub(crate) fn remote_open(&mut self, p: FilesOpen) -> RemoteOpen {
         let Some(panel) = p.tile else {
             return RemoteOpen::Forward(p);
         };
         let path = match self.resolve(panel, Some(&p.path)) {
             Ok(path) => path,
-            Err(e) => return answered(Err(e)),
+            Err(e) => return RemoteOpen::Done(Box::new(Err(e))),
         };
         let is_dir = self.remote_is_dir(panel, &path);
-        match p.target {
-            FilesOpenTarget::Terminal => {
-                let folder = match is_dir {
-                    Some(false) => path.parent().map_or(path.clone(), Path::to_path_buf),
-                    _ => path,
-                };
-                RemoteOpen::Forward(FilesOpen {
-                    tile: None,
-                    path: display(&folder),
-                    target: FilesOpenTarget::Terminal,
-                })
+        // A remote path can't be checked on this Mac: say here what it is.
+        let target = match (p.target, is_dir) {
+            (FilesOpenTarget::Editor, Some(true)) => FilesOpenTarget::Terminal,
+            (target, _) => target,
+        };
+        let path = match (target, is_dir) {
+            (FilesOpenTarget::Terminal, Some(false)) => {
+                path.parent().map_or(path.clone(), Path::to_path_buf)
             }
-            FilesOpenTarget::Preview => {
-                if is_dir == Some(true) {
-                    return answered(Err(Error::new(
-                        ErrorCode::InvalidParams,
-                        format!("{} is a folder", path.display()),
-                    )));
-                }
-                let Some(id) = self.tiles.get(&panel).and_then(TileState::machine) else {
-                    return answered(Err(not_ready(panel)));
-                };
-                let id = id.to_owned();
-                let Some(machine) = self.machines.get(&id) else {
-                    return answered(Err(Error::new(
-                        ErrorCode::Unavailable,
-                        "the machine isn't connected",
-                    )));
-                };
-                let command =
-                    machine.exec(remote_files::read_script(&path, remote_files::MAX_READ));
-                let label = machine.profile.label.clone();
-                let deliver = self.deliver.clone();
-                let spawned = std::thread::Builder::new()
-                    .name("azulejo-files-read".into())
-                    .spawn(move || {
-                        let never = AtomicBool::new(false);
-                        let result =
-                            match remote_files::run(&command, &never, remote_files::TIMEOUT) {
-                                Ok(bytes) if bytes.len() > remote_files::MAX_READ => Err(format!(
-                                    "it's over {} MiB",
-                                    remote_files::MAX_READ / 1024 / 1024
-                                )),
-                                Ok(bytes) => remote_files::save_copy(&id, &path, &bytes)
-                                    .map_err(|e| format!("can't save a copy: {e}")),
-                                Err(e) => Err(e.message(&label)),
-                            };
-                        deliver(Delivery::Read {
-                            remote: path,
-                            result,
-                        });
-                    });
-                answered(match spawned {
-                    Ok(_) => Ok(Outcome {
-                        reply: Reply::Ok,
-                        events: Vec::new(),
-                    }),
-                    Err(e) => Err(Error::new(ErrorCode::Internal, e.to_string())),
-                })
-            }
-        }
+            _ => path,
+        };
+        RemoteOpen::Forward(FilesOpen {
+            tile: None,
+            path: display(&path),
+            target,
+        })
     }
 
     fn changed(&mut self, tile: TileId, changes: Vec<(Change, Option<u64>)>) -> Vec<Event> {
@@ -1068,11 +967,11 @@ impl Files {
         }
     }
 
-    fn state(&self, tile: TileId) -> Result<&TileState, Error> {
+    fn state(&self, tile: TileId) -> Result<&PanelState, Error> {
         self.tiles.get(&tile).ok_or_else(|| not_ready(tile))
     }
 
-    fn state_mut(&mut self, tile: TileId) -> Result<&mut TileState, Error> {
+    fn state_mut(&mut self, tile: TileId) -> Result<&mut PanelState, Error> {
         self.tiles.get_mut(&tile).ok_or_else(|| not_ready(tile))
     }
 
@@ -1098,8 +997,8 @@ impl Files {
         Ok(joined.canonicalize().unwrap_or(joined))
     }
 
-    /// `path` made absolute against a files tile's or panel's root; `path`
-    /// unchanged when the core isn't showing `tile`.
+    /// `path` made absolute against a files panel's root; `path` unchanged
+    /// when the core isn't showing `tile`.
     pub(crate) fn absolute(&self, tile: TileId, path: &str) -> String {
         self.join(tile, Some(path))
             .map(|p| p.display().to_string())
@@ -1142,11 +1041,6 @@ fn done(reply: Reply, events: Vec<Event>) -> Handled {
     Handled::Done(Box::new(Ok(Outcome { reply, events })))
 }
 
-/// A remote panel's `files.open`, answered here.
-fn answered(result: Result<Outcome, Error>) -> RemoteOpen {
-    RemoteOpen::Done(Box::new(result))
-}
-
 /// `files.changed` for `dirs` of `tile`, unless there are none.
 fn changed_event(tile: TileId, mut dirs: Vec<PathBuf>) -> Option<Event> {
     if dirs.is_empty() {
@@ -1173,12 +1067,12 @@ fn sort_remote(listing: &mut RemoteDir) {
 fn not_ready(tile: TileId) -> Error {
     Error::new(
         ErrorCode::InvalidState,
-        "that isn't a files tile the core is showing",
+        "that isn't a files panel the core is showing",
     )
     .with_data(serde_json::json!({ "tile": tile }))
 }
 
-/// The folder a files tile shows: its root, or the home folder.
+/// The folder a files panel shows: its root, or the home folder.
 pub(crate) fn configured_root(root: Option<&str>) -> PathBuf {
     match root {
         Some(r) if !r.is_empty() => expand_home(r),

@@ -5,8 +5,8 @@
 #
 #   apps/macos/automation/restore.sh        (build first: just mac)
 #
-# Steps: build a session (6 terminals in a tall layout, a second tab with a
-# browser and a zoomed preview, sidebar collapsed) → quit + relaunch → kill -9 +
+# Steps: build a session (6 terminals in a tall layout, a second tab with two
+# terminals, one zoomed, sidebar collapsed) → quit + relaunch → kill -9 +
 # relaunch → kill every attach process + wake → stop + restart herdr → launch
 # with herdr stopped. Each step checks the session came back and times how
 # long until every terminal tile is attached again (target ≤ 2 s).
@@ -99,12 +99,10 @@ wait_attached 0 $target "(launch|new tile)" >/dev/null
 tiles=($(azj --json tile list | jq -r '.tiles[] | select(.kind=="terminal") | .id'))
 [[ ${#tiles[@]} -eq $target ]] || fail "expected $target terminals, have ${#tiles[@]}"
 first_tab="$(azj --json session get | jq -r '.session.windows[0].workspaces[0].active_tab')"
-plan="$dev/plan.md"
-printf '# Plan\n\n- [x] restore\n- [ ] wake\n' >"$plan"
-azj tab create --kind browser --url "http://127.0.0.1:9/restore-check" >/dev/null
-azj layout split-auto --kind preview --path "$plan" >/dev/null
-preview="$(azj --json tile list | jq -r '.tiles[] | select(.kind=="preview") | .id')"
-azj layout zoom --tile "$preview" --zoomed true >/dev/null
+azj tab create >/dev/null
+azj layout split-auto --kind terminal --cwd "$dev" >/dev/null
+zoomed="$(azj --json tile get | jq -r '.id')"
+azj layout zoom --tile "$zoomed" --zoomed true >/dev/null
 azj tab focus --tab "$first_tab" >/dev/null
 window="$(azj --json window list | jq -r '.windows[0].id')"
 azj window set-sidebar --window "$window" --visible false >/dev/null
@@ -114,7 +112,7 @@ sleep 1.5
 snapshot >"$out/before.json"
 terminal_ids >"$out/terms-before.txt"
 t0="$(tick "${tiles[0]}")"
-echo "   $target terminals, browser + zoomed preview in tab 2, sidebar collapsed, ticker at $t0"
+echo "   $target terminals, two more (one zoomed) in tab 2, sidebar collapsed, ticker at $t0"
 
 check_same() {
   local label=$1

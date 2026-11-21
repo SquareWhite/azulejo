@@ -1,19 +1,19 @@
 # Themes
 
-Azulejo's chrome, its terminals and its previews follow one theme. Four ship built in; you can add your own. Switching is live: save the config (or a theme file), pick one in ⌘K or the View menu, and the running app changes in one frame, with no restart and no terminal reattaching or resizing.
+Azulejo's chrome and its terminals follow one theme. Four ship built in; you can add your own. Switching is live: save the config (or a theme file), pick one in ⌘K or the View menu, and the running app changes in one frame, with no restart and no terminal reattaching or resizing.
 
 ## Built-in themes
 
-| Theme | Id | Light or dark | Terminal palette | Preview syntax |
-| --- | --- | --- | --- | --- |
-| Atom One Dark (default) | `atom-one-dark` | dark | Atom One Dark (background `#282c34`, the tile body) | One Dark |
-| Atom One Light | `atom-one-light` | light | Atom One Light (the one-light-syntax colours) | One Light |
-| macOS Dark | `macos-dark` | dark | Apple's system colours (Terminal's look, `#1e1e1e`) | GitHub dark |
-| macOS Light | `macos-light` | light | Apple's system colours, light | GitHub light |
+| Theme | Id | Light or dark | Terminal palette |
+| --- | --- | --- | --- |
+| Atom One Dark (default) | `atom-one-dark` | dark | Atom One Dark (background `#282c34`, the tile body) |
+| Atom One Light | `atom-one-light` | light | Atom One Light (the one-light-syntax colours) |
+| macOS Dark | `macos-dark` | dark | Apple's system colours (Terminal's look, `#1e1e1e`) |
+| macOS Light | `macos-light` | light | Apple's system colours, light |
 
 - **Atom One Dark** is the designer mockup's look and what Azulejo looked like before themes; nothing in it changed.
 - **Atom One Light** uses the official Atom One Light palette (one-light-ui and one-light-syntax): `#fafafa` bodies, `#eaeaeb` cards and strips, `#383a42` text. Its status, git, accent and terminal colours are the palette's hues made darker, so they read as well on its light surfaces as Atom One Dark's do on its dark ones ("Contrast" below).
-- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and browser strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and browser strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
+- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and find bar strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and find bar strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
 
 ## Picking a theme
 
@@ -105,10 +105,6 @@ dock_badge = true    # the default; false hides the count
 
 It applies live when you save the config.
 
-## Previews
-
-Rendered markdown, Source mode and code previews follow the theme: Azulejo sets the page's CSS variables (`--azj-bg`, `--azj-fg`, …, mapped from colour tokens in tokens.json `webview`) and its syntax colours (`html[data-azj-syntax]`: One Dark, One Light, GitHub dark or GitHub light, built in the core from scope tables) before the page draws, and again on a theme change. Browser tiles show web pages as the site draws them; only their chrome (toolbar, address field, notices) follows the theme.
-
 ## Your own themes
 
 A theme is a TOML file in a `themes` folder next to the config: `~/.config/azulejo/themes/<id>.toml`. The file name is the id (letters, digits, `-`, `_`, `.`; it can't reuse a built-in's id). Saving it applies it live, like the config.
@@ -118,7 +114,6 @@ A theme is a TOML file in a `themes` folder next to the config: `~/.config/azule
 name = "Dusk"                # shown in ⌘K and the menu; the id if missing
 inherits = "atom-one-dark"   # a built-in to start from
 appearance = "dark"          # light or dark; defaults to the inherited theme's
-syntax = "one-dark"          # one-dark, one-light, github-dark or github-light
 
 [color]                      # any colour token, camelCase or snake_case
 window = "#14161b"
@@ -142,22 +137,22 @@ theme = "dusk"
 
 - **Without `inherits`**, a theme starts from Atom One Dark, or Atom One Light with `appearance = "light"`.
 - **Colours** are `#rgb`, `#rrggbb` or `#rrggbbaa`. Tokens you don't set keep the inherited theme's values, system colours included (so a theme inheriting `macos-dark` still follows your accent where you didn't override it).
-- **Problems never stop the app.** An unknown key or token, a bad colour, a bad `syntax` or `appearance`: each is a warning in the config banner, pointing at the line, and that value keeps the inherited one. A file that isn't valid TOML is reported and the theme doesn't exist until it's fixed (a config naming it then keeps its previous theme on reload).
+- **Problems never stop the app.** An unknown key or token, a bad colour, a bad `appearance`: each is a warning in the config banner, pointing at the line, and that value keeps the inherited one. A file that isn't valid TOML is reported and the theme doesn't exist until it's fixed (a config naming it then keeps its previous theme on reload).
+- **Older theme files** still load: `syntax` and the colours of the browser and preview tiles that earlier builds had are ignored, and `browserChrome` / `browserField` set `findBar` / `findField`.
 
 ## Colour tokens
 
-Every theme sets every token below. In the macOS columns, a name is an `NSColor` (`@ 0.45`: with that alpha); its default value is in tokens.json (`hex`) for other platforms, previews and the contrast tests. Tokens that aren't colours (radii, spacing, type, opacities like `alpha.unfocusedDim`, SF Symbol sizes, motion) are shared by all themes.
+Every theme sets every token below. In the macOS columns, a name is an `NSColor` (`@ 0.45`: with that alpha); its default value is in tokens.json (`hex`) for other platforms and the contrast tests. Tokens that aren't colours (radii, spacing, type, opacities like `alpha.unfocusedDim`, SF Symbol sizes, motion) are shared by all themes.
 
 | Token | For | atom-one-dark | atom-one-light | macos-dark | macos-light |
 | --- | --- | --- | --- | --- | --- |
 | `window` | window background, gutters between tiles, toolbar row | `#1b1d23` | `#e1e1e3` | `#2a2a2a` | `#ececec` |
 | `sidebar` | sidebar card, tab bar, tile header strip | `#21252b` | `#eaeaeb` | windowBackgroundColor | `#f5f5f5` |
-| `tile` | tile body: terminal backdrop, browser, preview, files | `#282c34` | `#fafafa` | textBackgroundColor | textBackgroundColor |
+| `tile` | tile body: the terminal backdrop | `#282c34` | `#fafafa` | textBackgroundColor | textBackgroundColor |
 | `tileAlt` | secondary tile bodies | `#252930` | `#f5f5f6` | textBackgroundColor | textBackgroundColor |
-| `sunken` | browser chrome, code blocks, inset strips | `#202329` | `#ededee` | underPageBackgroundColor | `#f5f5f5` |
+| `sunken` | inset strips | `#202329` | `#ededee` | underPageBackgroundColor | `#f5f5f5` |
 | `control` | segmented tracks, search field, tab container | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
 | `selected` | selected sidebar row, selected palette row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | controlAccentColor @ 0.21 |
-| `selectedStrong` | strong selection grey: preview borders and table rules | `#3a3f4b` | `#d0d0d2` | unemphasizedSelectedContentBackgroundColor | unemphasizedSelectedContentBackgroundColor |
 | `border` | hairlines around cards, fields and toasts | `#ffffff14` | `#0000001a` | separatorColor | separatorColor |
 | `textPrimary` | names, titles, tile header titles | `#d7dae0` | `#383a42` | labelColor | labelColor |
 | `textSecondary` | tab labels, details, tile header icons | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
@@ -203,14 +198,9 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `header` | tile header strip (mockup: the focused claude tile; unfocused strips get there through the dim, #202329) | `#21252b` | `#eaeaeb` | `#242424` | `#f5f5f5` |
 | `headerHairline` | line under a tile's header strip | `#181a1f` | `#dbdbdc` | separatorColor | separatorColor |
 | `headerTabSelected` | the selected tile tab's fill in a Monocle tile's header strip | `#3a3f4b` | `#cbcbce` | `#3a3a3a` | `#d5d5d5` |
-| `browserChrome` | browser tile toolbar (back, forward, address, reload) | `#202329` | `#ededee` | `#242424` | `#f5f5f5` |
-| `browserField` | browser address pill | `#252930` | `#fafafa` | secondarySystemFill | textBackgroundColor |
-| `previewToggleTrack` | Preview \| Source track | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
-| `previewToggleSelected` | Preview \| Source selected segment | `#3a3f4b` | `#ffffff` | controlColor | controlColor |
-| `kindTerminal` | placeholder tile bodies before a tile kind's view exists | `#29303d` | `#29303d` | `#29303d` | `#29303d` |
-| `kindBrowser` | placeholder body, browser | `#21527a` | `#21527a` | `#21527a` | `#21527a` |
-| `kindPreview` | placeholder body, preview | `#5c4078` | `#5c4078` | `#5c4078` | `#5c4078` |
-| `kindFiles` | placeholder body, files | `#336145` | `#336145` | `#336145` | `#336145` |
+| `findBar` | a terminal's find bar (⌘⇧F) | `#202329` | `#ededee` | `#242424` | `#f5f5f5` |
+| `findField` | the find bar's query pill | `#252930` | `#fafafa` | secondarySystemFill | textBackgroundColor |
+| `kindTerminal` | placeholder tile body for a kind without a view | `#29303d` | `#29303d` | `#29303d` | `#29303d` |
 | `tabStrip` | the tab strip's pill container in the toolbar | `#24262c` | `#dfdfe1` | tertiarySystemFill | tertiarySystemFill |
 | `tabStripBorder` | hairline around the tab strip | `#2f3036` | `#cbcbce` | separatorColor | separatorColor |
 | `tabSelected` | the selected tab's fill | `#3a3f4b` | `#ffffff` | unemphasizedSelectedContentBackgroundColor | controlColor |
@@ -224,8 +214,6 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `searchBadge` | the search field's key badge (⌘K) | `#34363a` | `#eaeaeb` | secondarySystemFill | secondarySystemFill |
 | `searchBadgeText` | the search field's key badge text | `#abb2bf` | `#5c5f69` | labelColor @ 0.62 | labelColor @ 0.62 |
 | `titlebarIcon` | sidebar toggle next to the traffic lights | `#7f848e` | `#6b6d76` | secondaryLabelColor | secondaryLabelColor |
-| `noticeFill` | preview notices (a truncated file): fill | `#2e2a1a` | `#fff8c5` | systemYellow @ 0.14 | systemYellow @ 0.14 |
-| `noticeBorder` | preview notices: border | `#9e6a03` | `#c29607` | systemYellow @ 0.6 | `#c46a00` |
 
 ## Contrast
 
@@ -244,9 +232,9 @@ Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the sa
 
 ## Where it lives
 
-- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `syntax`, `sidebarMaterial`, `color` and `terminal`), `webview` (CSS variables). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell reads the same file through `azulejo-config`.
+- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `sidebarMaterial`, `color` and `terminal`). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell reads the same file through `azulejo-config`.
 - `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` and `app_icon` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
-- macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config and updates the previews. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
+- macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
 
 ## Tests
 
@@ -254,6 +242,6 @@ Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the sa
 - `python3 scripts/test_design_tokens.py` (in `just lint`): the generator's validation.
 - `scripts/theme-contrast` (in `just lint`): every built-in against `shared/design/contrast.json` ("Contrast").
 - `apps/macos/automation/e2e/contrast.sh`: the same check on the colours the app resolves, in the mockup's scene plus a workspace with an ANSI test card (all 16 colours, bold, dim, a selection, the hint overlay) and a repository with every file status, in every built-in; writes per-surface contact sheets (every theme side by side) to `.dev/e2e.out/contrast/sheets/`.
-- `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, the preview, ⌘K and the find bar in each capture. `--docs` also writes 1200 × 750 copies of the captures as `theme-<id>.png`, next to them in `.dev/thm.out/mockup/`.
+- `apps/macos/automation/themes.sh`: the mockup's scene switched through all four themes live (config file and ⌘K, with the preview and Esc), auto, a user theme and the Ghostty precedence, checking that no PTY resized and no terminal reattached, and sampling the sidebar, rail, tab strip, a header, a terminal, ⌘K and the find bar in each capture. `--docs` also writes 1200 × 750 copies of the captures as `theme-<id>.png`, next to them in `.dev/thm.out/mockup/`.
 - `AZJ_DEV_NAME=icn2 apps/macos/dev.sh --automation apps/macos/automation/dock-icon.azs`: `app_icon`'s three values and the default, live, with the app's own idea of the system appearance (`DockIcon.swift`).
 - `AZJ_ANIM_THEME=atom-one-light apps/macos/automation/anim.sh --slow`: layout motion in another theme (`outside.py` measures stray pixels against the window colour, so light themes count the same way).

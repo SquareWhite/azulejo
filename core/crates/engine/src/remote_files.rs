@@ -1,7 +1,7 @@
 //! A remote machine's files for the files panel: one shell
 //! command over the machine's shared SSH connection (the same `ssh -T …
 //! <target> -- <script>` and control socket the herdr bridge uses)
-//! lists one or more folders, or reads one file for the preview tile.
+//! lists one or more folders.
 //!
 //! Every run happens off the engine's thread, can be cancelled (the panel
 //! moved on) and gives up after [`TIMEOUT`], so a slow or unreachable host
@@ -19,9 +19,6 @@ use azulejo_herdr::{AttachCommand, SSH_FAILED, shell_quote};
 /// How long one remote command may take before it counts as failed. A new
 /// SSH connection may take up to `ConnectTimeout` (10 s) on its own.
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(15);
-
-/// The largest remote file the preview tile gets a copy of.
-pub(crate) const MAX_READ: usize = 8 * 1024 * 1024;
 
 /// Most entries one remote folder listing returns.
 pub(crate) const MAX_ENTRIES: usize = 20_000;
@@ -60,14 +57,6 @@ const LIST: &str = concat!(
     r#"printf '%s\t%s\0' "$t" "$f"; done; cd /; done"#,
 );
 
-/// Reads `$1`, at most `$2` bytes, failing with one line on stderr.
-const READ: &str = concat!(
-    r#"f=$1; if [ ! -e "$f" ]; then echo "no such file" >&2; exit 3; fi; "#,
-    r#"if [ -d "$f" ]; then echo "that's a folder" >&2; exit 3; fi; "#,
-    r#"if [ ! -r "$f" ]; then echo "permission denied" >&2; exit 3; fi; "#,
-    r#"head -c "$2" < "$f""#,
-);
-
 /// The remote command that lists `dirs`.
 pub(crate) fn list_script(dirs: &[PathBuf], max: usize) -> String {
     let mut s = format!("exec /bin/sh -c {} azj-ls {max}", shell_quote(LIST));
@@ -76,17 +65,6 @@ pub(crate) fn list_script(dirs: &[PathBuf], max: usize) -> String {
         s.push_str(&shell_quote(&d.to_string_lossy()));
     }
     s
-}
-
-/// The remote command that prints `path`, one byte past `max` at most (so a
-/// longer file shows as too large).
-pub(crate) fn read_script(path: &Path, max: usize) -> String {
-    format!(
-        "exec /bin/sh -c {} azj-cat {} {}",
-        shell_quote(READ),
-        shell_quote(&path.to_string_lossy()),
-        max + 1
-    )
 }
 
 /// A listing run's result: each folder's entries or why not, or why the
@@ -252,49 +230,6 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// Where the preview tile's copy of a remote file goes: a private folder
-/// under the temp dir, by machine, mirroring the remote path.
-pub(crate) fn local_copy(machine: &str, remote: &Path) -> PathBuf {
-    let machine: String = machine
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let remote = normalize(remote);
-    copies_dir()
-        .join(machine)
-        .join(remote.strip_prefix("/").unwrap_or(&remote))
-}
-
-fn copies_dir() -> PathBuf {
-    std::env::temp_dir().join("azulejo-remote")
-}
-
-/// Writes a remote file's bytes to its local copy (folders 0700).
-pub(crate) fn save_copy(machine: &str, remote: &Path, bytes: &[u8]) -> std::io::Result<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    let path = local_copy(machine, remote);
-    let top = copies_dir();
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&top)?;
-    std::fs::set_permissions(&top, std::fs::Permissions::from_mode(0o700))?;
-    if let Some(parent) = path.parent() {
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(parent)?;
-    }
-    std::fs::write(&path, bytes)?;
-    Ok(path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,25 +324,6 @@ mod tests {
         assert_eq!(got[1].1, Err("the listing was cut short".into()));
     }
 
-    #[test]
-    fn reads_files_up_to_a_limit() {
-        let tmp = tempfile::tempdir().unwrap();
-        let f = tmp.path().join("notes.md");
-        std::fs::write(&f, "hello world").unwrap();
-        assert_eq!(sh(&read_script(&f, 100)), b"hello world");
-        assert_eq!(sh(&read_script(&f, 4)), b"hello");
-        let out = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(read_script(tmp.path(), 100))
-            .output()
-            .unwrap();
-        assert_eq!(out.status.code(), Some(3));
-        assert_eq!(
-            String::from_utf8_lossy(&out.stderr).trim(),
-            "that's a folder"
-        );
-    }
-
     fn standin(dir: &Path) -> PathBuf {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/ssh-standin.sh");
         let dst = dir.join("ssh");
@@ -468,9 +384,5 @@ mod tests {
             PathBuf::from("/srv/x/y")
         );
         assert_eq!(normalize(Path::new("/..")), PathBuf::from("/"));
-        assert_eq!(
-            local_copy("ab/../cd", Path::new("/srv/../etc/x.md")),
-            copies_dir().join("ab____cd/etc/x.md")
-        );
     }
 }

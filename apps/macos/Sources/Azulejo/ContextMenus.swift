@@ -70,7 +70,7 @@ final class ContextMenuItem: NSMenuItem {
 }
 
 /// The right-click menus on workspace rows (sidebar, Agents view) and tile
-/// header strips (the browser merges these into its chrome's menu). Standard
+/// header strips. Standard
 /// NSMenus: native, following the system appearance. They never handle a
 /// right-click inside a terminal's body: libghostty and mouse-reporting apps
 /// own that.
@@ -117,9 +117,6 @@ enum ContextMenus {
             menu.addItem(.separator())
             if local {
                 menu.addItem(ContextMenuItem("Reveal Folder in Finder") { reveal(folder) })
-                menu.addItem(ContextMenuItem("Open Folder in Files Tile") {
-                    openFiles(folder, in: ws, app: app, controller: controller, chords: chords)
-                })
             }
             menu.addItem(ContextMenuItem("Copy Path") { copy(folder) })
         }
@@ -133,19 +130,6 @@ enum ContextMenus {
     /// The folder a workspace is about: its repository, else its cwd.
     static func folder(of ws: WorkspaceModel) -> String? {
         ws.repo ?? ws.git?.repo ?? ws.cwd
-    }
-
-    /// A files tile on `folder`, right of the workspace's focused tile (a
-    /// new tab when it has none), through `split_right` / `new_tab`.
-    private static func openFiles(_ folder: String, in ws: WorkspaceModel, app: AppController,
-                                  controller: WindowController, chords: [String: String]) {
-        app.send(["method": "workspace.focus", "params": ["workspace": ws.id]])
-        let content: [String: Any] = ["kind": "files", "root": folder]
-        if let tab = ws.tab {
-            app.perform(action: "split_right", target: .tile(tab.focused), extra: ["content": content], in: controller)
-        } else {
-            app.perform(action: "new_tab", target: .workspace(ws.id), extra: ["content": content], in: controller)
-        }
     }
 
     // MARK: Tabs
@@ -221,7 +205,7 @@ enum ContextMenus {
         return menu
     }
 
-    /// Items for any tile kind; the browser appends them to its chrome menu.
+    /// Items for any tile.
     static func tileItems(_ id: String, in controller: WindowController) -> [NSMenuItem] {
         guard let app, let session = app.session,
               let ws = session.windows.flatMap(\.workspaces).first(where: { $0.tabs.contains { $0.tile(id) != nil } }),
@@ -263,17 +247,9 @@ enum ContextMenus {
         return items
     }
 
-    /// What Reveal in Finder shows for a tile: a terminal's cwd, a preview's
-    /// file, a files tile's root, a browser's local file.
+    /// What Reveal in Finder shows for a tile: a terminal's cwd.
     static func revealPath(_ tile: TileModel) -> String? {
-        switch tile.kind {
-        case .terminal: return tile.cwd
-        case .preview: return tile.path
-        case .files: return tile.root
-        case .browser:
-            guard let url = tile.url.flatMap(URL.init(string:)), url.isFileURL else { return nil }
-            return url.path
-        }
+        tile.cwd
     }
 
     // MARK: Pieces
@@ -335,8 +311,7 @@ protocol ContextMenuProviding: AnyObject {
 // MARK: - Automation
 
 /// `menu workspace N` (the Nth sidebar row), `menu tab N` (the Nth tab in
-/// the top tab strip) and `menu tile` (the focused tile's header, or a
-/// browser's chrome) build the menu a right-click shows and log its items;
+/// the top tab strip) and `menu tile` (the focused tile's header) build the menu a right-click shows and log its items;
 /// `… invoke TITLE` then runs one through the menu itself (`PARENT/TITLE`
 /// for a submenu's item: `invoke Layout/Monocle`). `menu answer TEXT` (or `cancel`, `yes`, `no`) answers the
 /// next rename or confirmation. State: `menu.items` (titles, `[chord]`,

@@ -74,19 +74,13 @@ fn json_of(o: &Output) -> Value {
 }
 
 #[test]
-fn browser_split_example() {
+fn terminal_split_example() {
     let app = start();
     let out = azj(
         &app.socket,
         &[],
         &[
-            "tile",
-            "split",
-            "--right",
-            "--kind",
-            "browser",
-            "--url",
-            "http://localhost:3000",
+            "tile", "split", "--right", "--kind", "terminal", "--cwd", "/tmp",
         ],
     );
     assert!(out.status.success(), "{}", stderr(&out));
@@ -98,11 +92,11 @@ fn browser_split_example() {
         .to_owned();
 
     let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &tile]));
-    assert_eq!(info["kind"], "browser");
-    assert_eq!(info["url"], "http://localhost:3000");
+    assert_eq!(info["kind"], "terminal");
+    assert_eq!(info["cwd"], "/tmp");
 
     let list = stdout(&azj(&app.socket, &[], &["tile", "list"]));
-    assert!(list.contains("browser   http://localhost:3000"), "{list}");
+    assert!(list.contains("terminal  /tmp"), "{list}");
     assert_eq!(list.lines().count(), 2);
 }
 
@@ -210,13 +204,22 @@ fn azj_in(cwd: &Path, socket: &Path, env: &[(&str, &str)], args: &[&str]) -> Out
     cmd.output().unwrap()
 }
 
+/// `azj files open` from a terminal edits the file beside it: a new
+/// terminal to its right runs the editor, with the path made absolute
+/// against azj's own folder.
 #[test]
-fn preview_open_from_a_terminal_opens_the_plan_beside_it() {
+fn files_open_from_a_terminal_edits_the_file_beside_it() {
     let app = start();
     let work = app.dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
     // What azj sees as its working folder (/tmp is a symlink on macOS).
     let work = work.canonicalize().unwrap();
+    std::fs::write(
+        work.join("plan.md"),
+        "# plan
+",
+    )
+    .unwrap();
     let mut client = Client::connect(&app.socket).unwrap();
     let terminal = client.call("tile.list", None).unwrap()["tiles"][0]["id"]
         .as_str()
@@ -227,89 +230,19 @@ fn preview_open_from_a_terminal_opens_the_plan_beside_it() {
         &work,
         &app.socket,
         &[("AZULEJO_TILE_ID", &terminal)],
-        &["--json", "preview", "open", "--path", "plan.md"],
+        &["--json", "files", "open", "--path", "plan.md"],
     );
     let reply = json_of(&out);
     assert_eq!(reply["type"], "created");
-    let preview = reply["tile"].as_str().unwrap().to_owned();
-    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
-    assert_eq!(info["kind"], "preview");
-    assert_eq!(info["path"], work.join("plan.md").display().to_string());
+    let editor = reply["tile"].as_str().unwrap().to_owned();
+    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &editor]));
+    assert_eq!(info["kind"], "terminal");
+    let plan = work.join("plan.md").display().to_string();
+    assert_eq!(info["command"], json!(["vim", plan]), "{info}");
+    assert_eq!(info["cwd"], work.display().to_string(), "{info}");
     let layout = client.call("layout.get", None).unwrap();
     assert_eq!(layout["tree"]["a"]["id"], terminal.as_str());
-    assert_eq!(layout["tree"]["b"]["id"], preview.as_str());
-    assert_eq!(layout["focused"], terminal.as_str(), "focus stays put");
-
-    // Run against the preview tile itself, it shows the file there.
-    let out = azj_in(
-        &work,
-        &app.socket,
-        &[],
-        &[
-            "--json", "preview", "open", "--tile", &preview, "--path", "b.md",
-        ],
-    );
-    assert_eq!(json_of(&out)["type"], "ok");
-    let info = json_of(&azj(&app.socket, &[], &["--json", "tile", "get", &preview]));
-    assert_eq!(info["path"], work.join("b.md").display().to_string());
-    assert_eq!(
-        client.call("tile.list", None).unwrap()["tiles"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
-}
-
-#[test]
-fn files_open_paths_are_relative_to_the_tiles_root_not_azjs_folder() {
-    let app = start();
-    let root = app.dir.join("repo");
-    let elsewhere = app.dir.join("elsewhere");
-    std::fs::create_dir_all(&root).unwrap();
-    std::fs::create_dir_all(&elsewhere).unwrap();
-    std::fs::write(root.join("README.md"), "# hi\n").unwrap();
-    let files = json_of(&azj(
-        &app.socket,
-        &[],
-        &[
-            "--json",
-            "tile",
-            "split",
-            "--right",
-            "--kind",
-            "files",
-            "--root",
-            root.to_str().unwrap(),
-        ],
-    ))["tile"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-
-    let out = azj_in(
-        &elsewhere,
-        &app.socket,
-        &[],
-        &[
-            "--json",
-            "files",
-            "open",
-            "--tile",
-            &files,
-            "--path",
-            "README.md",
-            "--target",
-            "terminal",
-        ],
-    );
-    let terminal = json_of(&out)["tile"].as_str().unwrap().to_owned();
-    let info = json_of(&azj(
-        &app.socket,
-        &[],
-        &["--json", "tile", "get", &terminal],
-    ));
-    assert_eq!(info["cwd"], root.display().to_string(), "{info}");
+    assert_eq!(layout["tree"]["b"]["id"], editor.as_str());
 }
 
 #[test]
@@ -412,7 +345,7 @@ fn raw_call_and_help() {
     assert!(help.status.success());
     let text = stdout(&help);
     assert!(
-        text.contains("layout.split") && text.contains("--kind browser"),
+        text.contains("layout.split") && text.contains("--kind terminal"),
         "{text}"
     );
 
@@ -658,12 +591,12 @@ fn config_keys_and_defaults() {
     assert_eq!(quit["default"], json!(["cmd+q"]));
     assert_eq!(quit["current"], json!([]));
     assert_eq!(quit["source"], "user");
-    let back = row("browser_back", "browser");
-    assert_eq!(back["current"], json!(["cmd+bracketleft"]));
-    assert_eq!(back["source"], "default");
+    let external = row("files_open_external", "files");
+    assert_eq!(external["current"], json!(["cmd+down"]));
+    assert_eq!(external["source"], "default");
     assert_eq!(row("switch_tab", "global")["current"], json!(["ctrl+1..8"]));
     for context in [
-        "global", "terminal", "browser", "preview", "files", "palette", "find_bar", "resize",
+        "global", "terminal", "files", "palette", "find_bar", "resize",
     ] {
         assert!(keys.iter().any(|k| k["context"] == context), "{context}");
     }

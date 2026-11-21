@@ -2,10 +2,10 @@
 """Scripted layouts: one command opens a project's layout.
 
 A new tab in the tall layout: an editor terminal as master, then a test
-watcher, a dev server and a browser on the dev server down the stack.
+watcher, a dev server and its log down the stack.
 
     uv run examples/scripted_layout.py ~/code/app --tests "npm test -- --watch" \\
-        --server "npm run dev" --url http://localhost:3000
+        --server "npm run dev" --logs "tail -f log/dev.log"
 """
 
 import argparse
@@ -20,7 +20,7 @@ def main() -> None:
     p.add_argument("--editor", default="")
     p.add_argument("--tests", default="")
     p.add_argument("--server", default="")
-    p.add_argument("--url", default="http://localhost:3000")
+    p.add_argument("--logs", default="")
     args = p.parse_args()
     cwd = str(args.project.expanduser().resolve())
 
@@ -33,7 +33,7 @@ def main() -> None:
     # caller=False: lay out in the focused workspace, wherever this runs.
     with Client(caller=False) as c:
         tab = c.tab_create(name=args.project.name or "project", content=terminal(args.editor))
-        for content in (terminal(args.tests), terminal(args.server), {"kind": "browser", "url": args.url}):
+        for content in (terminal(args.tests), terminal(args.server), terminal(args.logs)):
             c.layout_split_auto(tab=tab["tab"], content=content)
         layout = c.layout_get()
         print(f"tab {tab['tab']}: {sum(1 for _ in leaves(layout['tree']))} tiles")

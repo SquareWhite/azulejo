@@ -21,7 +21,6 @@ azulejo-engine = { path = "core/crates/engine" }
 azulejo-api = { path = "core/crates/api" }
 azulejo-config = { path = "core/crates/config" }
 azulejo-daemon = { path = "core/crates/daemon" }
-azulejo-preview = { path = "core/crates/preview" }
 azulejo-files = { path = "core/crates/files" }
 azulejo-hints = { path = "core/crates/hints" }
 serde = { version = "1", features = ["derive"] }

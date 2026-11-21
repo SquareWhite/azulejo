@@ -2,12 +2,14 @@ import AppKit
 @preconcurrency import Quartz
 import UniformTypeIdentifiers
 
-/// A file browser tile: the core lists one folder at a time
+/// The sidebar's Files view: a file tree over a `files.panel`, which lives
+/// in the core outside the layout. The core lists one folder at a time
 /// (`files.expand`, gitignore-aware, folders first in natural order) and
 /// watches the folders that are open, so a 50k-file repository opens as fast
 /// as a small one. Changes arrive as `files.changed` (list those folders
 /// again), `files.revealed` (open folders down to a path and select it) and
-/// `files.git` (decorations).
+/// `files.git` (decorations). On a remote herdr machine the core lists over
+/// SSH and polls instead of watching.
 ///
 /// Listings never block the main thread: a home folder with thousands of
 /// entries, a network volume or a folder behind a permission prompt can
@@ -17,18 +19,23 @@ import UniformTypeIdentifiers
 /// than one already shown for that folder, is dropped.
 ///
 /// Keys while the tree has focus come from the keymap's `files` context
-/// (defaults: ↓↑ or j/k move, h/l close and open folders, Return opens a file
-/// in the tab's preview tile or toggles a folder, ⌘↓ opens in the default
-/// app, ⌘↑ goes up, Space toggles Quick Look, / filters, . shows hidden
-/// files). ← → are AppKit's outline keys. While the filter has the keyboard
-/// the context is `find_bar`: enter goes to the list, escape clears it.
+/// (defaults: ↓↑ or j/k move, h/l close and open folders, Return edits a file
+/// (`edit(_:)`) or toggles a folder, ⌘↓ opens in the default app, ⌘↑ goes
+/// up, Space toggles Quick Look, / filters, . shows hidden files, Esc hands
+/// the keyboard back to the tiles). ← → are AppKit's outline keys. While the
+/// filter has the keyboard the context is `find_bar`: enter goes to the
+/// list, escape clears it.
+///
+/// What acts on entries (`MARK: Actions`) goes through the core with the
+/// panel's id, so it works the same for local and remote panels.
 @MainActor
-final class FilesTileView: NSView, TileView, ThemeAware {
-    let tileID: String
-    let kind: TileKind = .files
+final class FilesPanelView: NSView, ThemeAware {
+    /// The `files.panel` this view shows.
+    let panelID: String
+    /// The folder the panel was pointed at (the listing's `root` is that,
+    /// resolved).
+    private(set) var configuredRoot: String
 
-    private var model: TileModel
-    private let header = FilesHeader()
     private let filter = NSSearchField()
     /// "Loading…", "Can't list this folder." or a remote folder's error,
     /// in a strip above the tree.
@@ -37,14 +44,12 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     private let outline = FilesOutlineView()
     private var filterHeight: NSLayoutConstraint!
     private var statusHeight: NSLayoutConstraint!
-    /// Shown as the sidebar's Files view (`files.panel`) rather than a tile:
-    /// no card of its own, and Esc hands the keyboard back to the tiles.
-    private(set) var isPanel = false
+    /// Esc (`files_leave`): the sidebar hands the keyboard back to the tiles.
     var onEscape: (() -> Void)?
-    /// The herdr machine whose files this panel shows; nil for
-    /// Local. Remote paths aren't on this Mac: Finder, the default app and
-    /// Quick Look don't apply, files open as a copy in the preview tile.
-    private(set) var machine: String?
+    /// The herdr machine whose files this panel shows; nil for Local.
+    /// Remote paths aren't on this Mac: Finder, the default app and Quick
+    /// Look don't apply; the editor and terminals open on the machine.
+    let machine: String?
     var isRemote: Bool { machine != nil }
 
     /// The root's node; its children are the outline's top level.
@@ -53,6 +58,8 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     private var nodes: [String: FileNode] = [:]
     private var git: [String: String] = [:]
     private var showHidden = false
+    /// The root had more entries than a listing returns.
+    private var truncated = false
     private var query = ""
     /// With a filter: each node's kept children (matches and folders holding
     /// one), by identity.
@@ -87,10 +94,9 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     static func install(core: Core, log: @escaping (String) -> Void) {
         Self.core = core
         Self.log = log
-        TileViews.register(.files) { tile in FilesTileView(tile) }
     }
 
-    /// Hands `files.*` events to the tile they're for; a substring check keeps
+    /// Hands `files.*` events to the panel they're for; a substring check keeps
     /// every other event cheap.
     static func route(_ json: String) {
         guard json.contains("\"files."),
@@ -115,18 +121,16 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     private static var live: [String: WeakFiles] = [:]
     private static var icons: [String: NSImage] = [:]
 
-    init(_ tile: TileModel) {
-        tileID = tile.id
-        model = tile
+    /// A view of panel `panel` (`files.panel`), showing `root` on herdr
+    /// machine `machine` (nil: Local).
+    init(panel: String, root: String, machine: String? = nil) {
+        panelID = panel
+        configuredRoot = root
+        self.machine = machine
         super.init(frame: .zero)
         wantsLayer = true
-        // Rectangular clip: the card (TileFrame) rounds the corners.
         layer?.masksToBounds = true
         Theme.track(self)
-
-        // The root and the buttons live in the tile's header strip (TileFrame).
-        header.onToggleHidden = { [weak self] in self?.toggleHidden() }
-        header.onFilter = { [weak self] in self?.showFilter() }
 
         filter.translatesAutoresizingMaskIntoConstraints = false
         filter.controlSize = .small
@@ -190,22 +194,12 @@ final class FilesTileView: NSView, TileView, ThemeAware {
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        Self.live[tileID] = WeakFiles(self)
+        Self.live[panelID] = WeakFiles(self)
         loadRoot()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    /// A files panel: the same tree for `panel`, a `files.panel` the core
-    /// shows outside the layout.
-    convenience init(panel: String, root: String, machine: String? = nil) {
-        self.init(TileModel(id: panel, kind: .files, root: root))
-        isPanel = true
-        self.machine = machine
-        layer?.cornerRadius = 0
-        layer?.backgroundColor = nil
-    }
 
     /// Opens (or re-roots) a files panel, on herdr machine `machine` when
     /// set, without waiting (the core checks `root` on disk); `then` gets
@@ -248,33 +242,25 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         Theme.reapply(self)
     }
 
-    /// The tile's body; in the sidebar (a panel) it sits on the card. Rows
-    /// draw their text with the tokens, so a redraw recolours them.
+    /// The panel sits on the sidebar card, with no background of its own.
+    /// Rows draw their text with the tokens, so a redraw recolours them.
     func applyTheme() {
-        layer?.backgroundColor = isPanel ? nil : Design.Color.tile.cgColor
+        layer?.backgroundColor = nil
     }
 
-    // MARK: TileView
+    // MARK: Lifecycle
 
-    func update(_ tile: TileModel) {
-        guard tile != model else { return }
-        let rootChanged = tile.root != model.root
-        model = tile
-        if rootChanged { loadRoot() }
+    /// The core pointed the panel at another folder (same id, same machine).
+    func setRoot(_ root: String) {
+        guard root != configuredRoot else { return }
+        configuredRoot = root
+        loadRoot()
     }
 
-    func setFocused(_ focused: Bool) {
-        guard focused, let window, TileFocus.canTake(in: window) else { return }
-        if window.firstResponder !== outline, window.firstResponder !== filter.currentEditor() {
-            window.makeFirstResponder(outline)
-        }
-        if outline.selectedRow < 0, outline.numberOfRows > 0 {
-            outline.selectRowIndexes([0], byExtendingSelection: false)
-        }
-    }
-
-    func tileWillClose() {
-        Self.live[tileID] = nil
+    /// Runs once before the view goes for good; the sidebar closes the
+    /// core's panel itself (`closePanel`).
+    func close() {
+        Self.live[panelID] = nil
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible,
            QLPreviewPanel.shared().dataSource === outline {
             QLPreviewPanel.shared().orderOut(nil)
@@ -285,7 +271,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
 
     // MARK: Loading
 
-    /// Lists the root again (a new tile, or a new root): the old tree goes
+    /// Lists the root again (a new panel, or a new root): the old tree goes
     /// at once and "Loading…" shows until the listing lands.
     private func loadRoot() {
         generation += 1
@@ -299,7 +285,6 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         git = [:]
         rebuildFilter()
         outline.reloadData()
-        header.setRoot(model.root, detail: "loading…")
         showStatus()
         let started = CACurrentMediaTime()
         list(dir: nil, method: "files.expand") { [weak self] listing in
@@ -307,7 +292,6 @@ final class FilesTileView: NSView, TileView, ThemeAware {
             self.loadingRoot = false
             guard let listing else {
                 self.rootFailed = true
-                self.header.setRoot(self.model.root, detail: "can't list")
                 self.showStatus()
                 return
             }
@@ -321,10 +305,9 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         nodes = [listing.dir: root]
         showHidden = listing.showHidden
         apply(listing, to: root)
+        truncated = listing.truncated
         rebuildFilter()
         outline.reloadData()
-        header.setRoot(listing.root, detail: listing.truncated ? "truncated" : nil)
-        header.setHidden(showHidden)
         if window?.firstResponder === outline, outline.selectedRow < 0, outline.numberOfRows > 0 {
             outline.selectRowIndexes([0], byExtendingSelection: false)
         }
@@ -335,7 +318,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
             firstRowsMs = (CACurrentMediaTime() - created) * 1000
             Self.log(String(
                 format: "files: %@ first rows %.1f ms (list %.1f ms, %d rows)",
-                Short.id(tileID), firstRowsMs ?? 0, listMs ?? 0, outline.numberOfRows))
+                Short.id(panelID), firstRowsMs ?? 0, listMs ?? 0, outline.numberOfRows))
         }
         if let (path, dirs) = pendingReveal {
             pendingReveal = nil
@@ -369,7 +352,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     /// when the core couldn't list it; never when the root changed since.
     private func list(dir: String?, method: String, then: @escaping @MainActor (Listing?) -> Void) {
         guard let core = Self.core else { return then(nil) }
-        var params: [String: Any] = ["tile": tileID]
+        var params: [String: Any] = ["tile": panelID]
         if let dir { params["dir"] = dir }
         requests += 1
         let request = requests
@@ -491,12 +474,11 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         outline.reloadData()
         restoreExpansion(root)
         if let selected, let node = nodes[selected] { select(node) }
-        header.setHidden(showHidden)
         showStatus()
         changesApplied += 1
         lastChangeAt = Date().timeIntervalSince1970 * 1000
         Self.log(String(format: "files: %@ change applied at %.0f (%@)",
-                        Short.id(tileID), lastChangeAt ?? 0, dirs.joined(separator: ", ")))
+                        Short.id(panelID), lastChangeAt ?? 0, dirs.joined(separator: ", ")))
     }
 
     /// After `reloadData`, open again the folders that were open.
@@ -567,29 +549,45 @@ final class FilesTileView: NSView, TileView, ThemeAware {
         outline.scrollRowToVisible(row)
     }
 
-    /// Return: folders open or close; files show in the tab's preview tile.
+    /// Return: folders open or close; files open in the editor.
     func activate(_ node: FileNode) {
         if node.dir {
             if outline.isItemExpanded(node) { outline.collapseItem(node) } else { outline.expandItem(node) }
         } else {
-            open(node, target: "preview")
+            edit(node)
         }
     }
 
-    func open(_ node: FileNode, target: String) {
+    /// Opens a file in the editor: a new terminal split beside the focused
+    /// tile runs it there (the core's `files.open`, target `editor`), on the
+    /// focused workspace's machine for a remote workspace. The core picks
+    /// the editor command.
+    func edit(_ node: FileNode) {
+        open(node, target: "editor")
+    }
+
+    /// A new terminal below the focused tile, in the folder (a file's
+    /// folder for a file).
+    func openTerminal(_ node: FileNode) {
+        open(node, target: "terminal")
+    }
+
+    /// `files.open` for `node` from this panel; the core makes the path
+    /// absolute against the panel's root and opens beside the focused tile.
+    private func open(_ node: FileNode, target: String) {
         guard let core = Self.core else { return }
         let result = core.execute([
             "method": "files.open",
-            "params": ["tile": tileID, "path": node.path, "target": target],
+            "params": ["tile": panelID, "path": node.path, "target": target],
         ])
         if case .failure(let error) = result { Self.log("files: open failed: \(error.message)") }
     }
 
-    /// A remote file has no local app to open it: it goes to the preview
-    /// tile instead, as a copy.
+    /// A remote file has no local app to open it: it opens in the editor on
+    /// its machine instead.
     func openInDefaultApp(_ node: FileNode) {
         if isRemote {
-            if !node.dir { open(node, target: "preview") }
+            if !node.dir { edit(node) }
             return
         }
         NSWorkspace.shared.open(URL(fileURLWithPath: node.path))
@@ -607,7 +605,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
     }
 
     func toggleHidden() {
-        _ = Self.core?.execute(["method": "files.toggle_hidden", "params": ["tile": tileID]])
+        _ = Self.core?.execute(["method": "files.toggle_hidden", "params": ["tile": panelID]])
     }
 
     func goToParent(of node: FileNode) {
@@ -690,7 +688,7 @@ final class FilesTileView: NSView, TileView, ThemeAware {
 
 // MARK: - Outline data source and delegate
 
-extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
+extension FilesPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         children(of: (item as? FileNode) ?? root).count
     }
@@ -725,7 +723,7 @@ extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
     func outlineViewItemDidCollapse(_ notification: Notification) {
         guard let node = notification.userInfo?["NSObject"] as? FileNode, query.isEmpty else { return }
         node.open = false
-        _ = Self.core?.execute(["method": "files.collapse", "params": ["tile": tileID, "dir": node.path]])
+        _ = Self.core?.execute(["method": "files.collapse", "params": ["tile": panelID, "dir": node.path]])
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -735,7 +733,7 @@ extension FilesTileView: NSOutlineViewDataSource, NSOutlineViewDelegate {
     }
 }
 
-extension FilesTileView: NSSearchFieldDelegate {
+extension FilesPanelView: NSSearchFieldDelegate {
     /// AppKit's fallbacks in the filter field. Enter and escape normally
     /// arrive as `find_bar` actions; when the router let them through, the
     /// user unbound them there, so they do nothing. Down always moves into
@@ -762,9 +760,10 @@ extension FilesTileView: NSSearchFieldDelegate {
 
 // MARK: - Automation
 
-extension FilesTileView: AutomatableTile {
-    /// `tile select <path>`, `tile activate`, `tile open-terminal`,
-    /// `tile filter <text>`, `tile clear-filter`.
+extension FilesPanelView {
+    /// `sidebar files select <path>`, `… activate`, `… open-terminal`,
+    /// `… filter <text>`, `… clear-filter`, `… reveal <path>` (relative to
+    /// the root, through the core's `files.reveal`).
     func automate(_ verb: String, _ arg: String) -> String? {
         switch verb {
         case "select":
@@ -776,43 +775,49 @@ extension FilesTileView: AutomatableTile {
             activate(node)
         case "open-terminal":
             guard let node = selectedNode else { return "nothing selected" }
-            open(node, target: "terminal")
+            openTerminal(node)
         case "filter":
             showFilter()
             filter.stringValue = arg
             filterChanged()
         case "clear-filter":
             clearFilter()
+        case "reveal":
+            let result = Self.core?.execute([
+                "method": "files.reveal", "params": ["tile": panelID, "path": arg],
+            ])
+            if case .failure(let error)? = result { return "reveal: \(error.message)" }
         default:
             return "unknown files verb \(verb)"
         }
         return nil
     }
 
+    /// Keys for `sidebar.files.*`.
     func automationState() -> [String: String] {
         var s: [String: String] = [
-            "tile.kind": "files",
-            "tile.root": root.path,
-            "tile.machine": machine ?? "local",
-            "tile.status": rootFailed ? "error: can't list" : root.error.map { "error: \($0)" }
+            "root": root.path,
+            "machine": machine ?? "local",
+            "status": rootFailed ? "error: can't list" : root.error.map { "error: \($0)" }
                 ?? (loadingRoot || root.loading ? "loading" : "ok"),
-            "tile.rows": "\(outline.numberOfRows)",
-            "tile.hidden": showHidden ? "shown" : "hidden",
-            "tile.changes": "\(changesApplied)",
-            "tile.revealed": "\(revealed)",
-            "tile.git": "\(git.count)",
-            "tile.first-rows-ms": firstRowsMs.map { String(format: "%.1f", $0) } ?? "-",
-            "tile.list-ms": listMs.map { String(format: "%.1f", $0) } ?? "-",
-            "tile.loading": loadingRoot ? "yes" : "no",
-            "tile.last-change-at": lastChangeAt.map { String(format: "%.0f", $0) } ?? "-",
+            "rows": "\(outline.numberOfRows)",
+            "hidden": showHidden ? "shown" : "hidden",
+            "truncated": truncated ? "yes" : "no",
+            "changes": "\(changesApplied)",
+            "revealed": "\(revealed)",
+            "git": "\(git.count)",
+            "first-rows-ms": firstRowsMs.map { String(format: "%.1f", $0) } ?? "-",
+            "list-ms": listMs.map { String(format: "%.1f", $0) } ?? "-",
+            "loading": loadingRoot ? "yes" : "no",
+            "last-change-at": lastChangeAt.map { String(format: "%.0f", $0) } ?? "-",
         ]
         if let node = selectedNode {
-            s["tile.selected"] = node.path.hasPrefix(root.path + "/")
+            s["selected"] = node.path.hasPrefix(root.path + "/")
                 ? String(node.path.dropFirst(root.path.count + 1)) : node.path
         } else {
-            s["tile.selected"] = "-"
+            s["selected"] = "-"
         }
-        s["tile.names"] = (0..<min(outline.numberOfRows, 12))
+        s["names"] = (0..<min(outline.numberOfRows, 12))
             .compactMap { (outline.item(atRow: $0) as? FileNode)?.name }
             .joined(separator: ",")
         return s
@@ -863,7 +868,7 @@ private struct Listing: Sendable {
     let showHidden: Bool
     let truncated: Bool
     let entries: [Entry]
-    /// Which request it answers (`FilesTileView.list`).
+    /// Which request it answers (`FilesPanelView.list`).
     let request: Int
     /// Remote folders: not listed yet, or why they can't be.
     let loading: Bool
@@ -907,8 +912,8 @@ private final class ListingBatch {
 }
 
 private struct WeakFiles {
-    weak var view: FilesTileView?
-    init(_ view: FilesTileView) { self.view = view }
+    weak var view: FilesPanelView?
+    init(_ view: FilesPanelView) { self.view = view }
 }
 
 // MARK: - Views
@@ -934,10 +939,10 @@ private final class FilesRowView: NSTableRowView {
 /// The tree: vim-ish keys, a context menu and Quick Look.
 @MainActor
 final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
-    weak var owner: FilesTileView?
+    weak var owner: FilesPanelView?
 
     // No keyDown override: the key router hands the `files` actions to the
-    // tile (FilesTileView.perform(keyAction:)); what it lets through is
+    // panel (FilesPanelView.perform(keyAction:)); what it lets through is
     // AppKit's (← → collapse and expand, type-select).
 
     /// Moves the selection by `delta` rows (NSTableView handles arrows in
@@ -961,8 +966,8 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
             item.representedObject = action
             menu.addItem(item)
         }
-        if !node.dir { add("Open in Preview") { owner.open(node, target: "preview") } }
-        add("Open Terminal Here") { owner.open(node, target: "terminal") }
+        if !node.dir { add("Open in Editor") { owner.edit(node) } }
+        add("Open Terminal Here") { owner.openTerminal(node) }
         // A remote path isn't on this Mac.
         if !owner.isRemote {
             add("Open in Default App") { owner.openInDefaultApp(node) }
@@ -1092,82 +1097,11 @@ private final class FileCell: NSTableCellView {
     }
 }
 
-/// Root path, the hidden-files toggle and the filter button.
-private final class FilesHeader: NSView {
-    var onToggleHidden: () -> Void = {}
-    var onFilter: () -> Void = {}
-    private let label = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
-    private let hiddenButton = NSButton()
-    private let find = NSButton()
+// MARK: - Find (⌘⇧F)
 
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        label.font = Design.Font.monoDetail
-        label.textColor = Design.Color.textSecondary
-        label.lineBreakMode = .byTruncatingHead
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        detail.font = Design.Font.caption
-        detail.textColor = Design.Color.textMuted
-        for (button, symbol, tip) in [
-            (hiddenButton, "eye.slash", "Show hidden and ignored files (.)"),
-            (find, "line.3.horizontal.decrease", "Filter (/)"),
-        ] {
-            button.bezelStyle = .accessoryBarAction
-            button.isBordered = false
-            button.controlSize = .small
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
-            button.toolTip = tip
-            button.target = self
-        }
-        hiddenButton.action = #selector(hiddenClicked)
-        find.action = #selector(findClicked)
-        // The root itself is the tile header's title and subtitle.
-        stack = NSStackView(views: [detail, find, hiddenButton])
-        stack.orientation = .horizontal
-        stack.spacing = 6
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    private var stack = NSStackView()
-
-    override var fittingSize: NSSize { stack.fittingSize }
-
-    func setRoot(_ path: String?, detail text: String?) {
-        label.stringValue = path.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "files"
-        label.toolTip = path
-        detail.stringValue = text ?? ""
-    }
-
-    func setHidden(_ shown: Bool) {
-        hiddenButton.image = NSImage(
-            systemSymbolName: shown ? "eye" : "eye.slash",
-            accessibilityDescription: shown ? "Hide hidden files" : "Show hidden files")
-    }
-
-    @objc private func hiddenClicked() { onToggleHidden() }
-    @objc private func findClicked() { onFilter() }
-}
-
-extension FilesTileView: TileHeaderAccessory {
-    var headerAccessory: NSView? { header }
-}
-
-// MARK: - Find (⌘F)
-
-/// The files tile has a filter already; ⌘F opens it, as / does.
-extension FilesTileView: Findable {
+/// The Files view has a filter already: the `find` action opens it while
+/// the view has the keyboard, as / does.
+extension FilesPanelView: Findable {
     func beginFind() -> String? {
         showFilter()
         filter.currentEditor()?.selectAll(nil)
@@ -1177,7 +1111,7 @@ extension FilesTileView: Findable {
 
 // MARK: - Keys
 
-extension FilesTileView: KeyScope {
+extension FilesPanelView: KeyScope {
     /// `files` while the list has the keyboard, `find_bar` while the filter
     /// does.
     var keyScope: String { isFiltering ? "find_bar" : "files" }
@@ -1220,7 +1154,6 @@ extension FilesTileView: KeyScope {
         case "files_filter": showFilter()
         case "files_toggle_hidden": toggleHidden()
         case "files_leave":
-            guard isPanel else { return false }
             onEscape?()
         default:
             return false

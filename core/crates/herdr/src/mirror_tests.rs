@@ -503,8 +503,8 @@ fn zoom_goes_on_last_and_off_when_not_wanted() {
 
 #[test]
 fn a_lone_pane_isnt_zoomed_and_thats_not_a_mismatch() {
-    // herdr refuses (`single_pane`): a Monocle tab with one terminal and a
-    // browser has nothing to zoom in herdr.
+    // herdr refuses (`single_pane`): a Monocle tab with one live terminal
+    // and an ended one has nothing to zoom in herdr.
     let sim = Sim::new(vec![("w1", p("w1:p1"))]);
     let mut t = target(Some("w1:t1"), p("w1:p1"));
     t.zoomed = Some("w1:p1".into());

@@ -35,7 +35,7 @@ def test_errors_carry_the_protocol_code(daemon):
 def test_unknown_params_are_refused(daemon):
     with Client() as c:
         with pytest.raises(ApiError) as e:
-            c.call("layout.split", {"direction": "right", "kind": "browser", "url": "http://x/"})
+            c.call("layout.split", {"direction": "right", "kind": "terminal"})
         assert e.value.code == "invalid_params"
         assert "`kind`" in e.value.message
         assert e.value.data == {"param": "kind"}
@@ -116,10 +116,3 @@ def test_examples_without_herdr(daemon, tmp_short):
     )
     assert r.returncode == 0, r.stderr
     assert "4 tiles" in r.stdout
-    r = subprocess.run(
-        [sys.executable, str(examples / "plan_review.py"), str(tmp_short / "plan.md")],
-        capture_output=True, text=True, timeout=60,
-    )
-    assert r.returncode == 0, r.stderr
-    assert "preview open:" in r.stdout
-    assert "4/4 done" in r.stdout

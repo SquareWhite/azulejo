@@ -23,8 +23,7 @@ In a Monocle tab with more than one tile, the strip shows the stack as tabs
 title, last folder and agent status. A click focuses the tile, a right-click
 opens its menu, and a drag reorders the stack (`layout.move_order`). Below
 `headerTabMinWidth` each, the strip keeps the tabs that fit, always including
-the selected one, plus a "+N" menu for the rest. A browser tile, which has no
-strip, gets one above its toolbar for the tabs.
+the selected one, plus a "+N" menu for the rest.
 
 Scripts use `tile tabs click N|drag N M|more N` and the `tile.tabs*` and
 `tile.header.*` keys. Checked by `e2e/mtabs.sh`.
@@ -61,8 +60,10 @@ workspaces by state.
 
 - **Agents**: one group per herdr machine (with a connection dot), workspace
   rows with a status icon, name and git branch.
-- **Files**: the files tile's tree on the focused workspace's repository or
-  cwd. Return opens a file beside the focused tile; Esc gives the keyboard
+- **Files**: a file tree (`FilesPanelView`, over the core's `files.panel`)
+  on the focused workspace's repository or cwd, on its machine for a remote
+  workspace. Return opens a file in the editor: `vim` in a new terminal split
+  beside the focused tile (the core's `files.open`). Esc gives the keyboard
   back. Refreshes don't steal the keyboard (`KeepsKeyboard`).
 
 Each view has its own key: ⌘A (`toggle_agents_sidebar`, in terminals and the
@@ -79,8 +80,7 @@ on release, one for every window, and kept across launches (user defaults,
 default 230 pt back. Scripts use `sidebar width drag W` and `sidebar width
 double`; checked by `e2e/sbwidth.sh`.
 
-Folder listings never block the main thread: files tiles and the Files view
-list through `Core.executeAsync`, show "Loading…" until rows land, and drop
+Folder listings never block the main thread: the Files view lists through `Core.executeAsync`, show "Loading…" until rows land, and drop
 listings for a root that has since changed. `files-slow.sh` checks this with
 every listing held back 2.5 s.
 
@@ -106,7 +106,7 @@ keeps its own right-click.
 - **Tabs**: Rename…, Layout ▸, New Tab, Move Left / Right, Close Tab, Close
   Other Tabs.
 - **Workspace rows**: Rename…, New Tab, Mark All as Read, folder items
-  (Reveal, Open in Files Tile, Copy Path), Close Workspace.
+  (Reveal, Copy Path), Close Workspace.
 - **Tile headers**: Split Right / Down, Zoom, Rename…, Mark as Unread, Copy
   Title, Copy Working Directory, Reveal in Finder, Close Tile, Kill Pane….
 

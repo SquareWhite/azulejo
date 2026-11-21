@@ -1,5 +1,5 @@
 # Scripted layouts: one command opens an editor, a test
-# watcher, the dev server and a browser on it. Copy this to your project as
+# watcher, the dev server and its log. Copy this to your project as
 # `.azulejo.toml` and run `azj layout apply` there.
 
 name = "shop"            # workspace name; defaults to the folder's name
@@ -21,4 +21,6 @@ cwd = "web"
 command = "npm run dev"
 
 [[tile]]
-url = "http://localhost:3000"
+title = "logs"
+cwd = "web"
+command = "tail -f log/dev.log"

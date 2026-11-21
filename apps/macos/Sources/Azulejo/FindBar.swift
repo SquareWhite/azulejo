@@ -1,5 +1,4 @@
 import AppKit
-import WebKit
 
 /// A tile that answers ⌘F (the `find` action).
 @MainActor
@@ -7,7 +6,7 @@ protocol Findable: AnyObject {
     /// Opens the tile's find bar (or its own filter) with the keyboard in it.
     /// Returns a message to flash when the tile has nothing to search.
     func beginFind() -> String?
-    /// The tile's find bar, if it has one (files tiles filter instead).
+    /// The tile's find bar, if it has one.
     var findBar: FindBar? { get }
 }
 
@@ -30,7 +29,7 @@ extension Findable {
 /// tile gets it back into the bar when it's focused again (TileFocus).
 @MainActor
 final class FindBar: NSView, KeyScope, ThemeAware {
-    static let height = Design.Space.browserChromeHeight
+    static let height = Design.Space.findBarHeight
 
     /// The query changed (every edit; the finder debounces).
     var onChange: ((String) -> Void)?
@@ -234,7 +233,7 @@ final class FindBar: NSView, KeyScope, ThemeAware {
             previous.frame = NSRect(x: next.frame.minX - gap - button, y: y, width: button, height: button)
             right = previous.frame.minX - gap
         }
-        let fieldH = Design.Space.browserFieldHeight
+        let fieldH = Design.Space.findFieldHeight
         let pillRight = showClose || showSteps ? right + gap - 8 : w - margin
         pill.frame = NSRect(x: margin, y: (h - fieldH) / 2, width: max(0, pillRight - margin), height: fieldH)
         hairline.frame = NSRect(x: 0, y: h - Design.Border.hairline, width: w, height: Design.Border.hairline)
@@ -256,8 +255,8 @@ final class FindBar: NSView, KeyScope, ThemeAware {
     }
 
     func applyTheme() {
-        layer?.backgroundColor = Design.Color.browserChrome.cgColor
-        pill.layer?.backgroundColor = Design.Color.browserField.cgColor
+        layer?.backgroundColor = Design.Color.findBar.cgColor
+        pill.layer?.backgroundColor = Design.Color.findField.cgColor
         hairline.layer?.backgroundColor = Design.Color.headerHairline.cgColor
     }
 
@@ -466,139 +465,6 @@ final class TerminalFinder {
             "tile.find.scroll": "\(lastOffset)",
             "tile.find.revealed": lastOffset > 0 ? "yes" : "no",
             "tile.find.highlights": "\(highlights)",
-        ]
-    }
-}
-
-// MARK: - Browser and preview: WebKit's find
-
-/// Finds text in a web view for its tile's find bar, with
-/// `WKWebView.find(_:configuration:)`: WebKit selects the match and scrolls
-/// to it. WebKit doesn't count matches, so "m" comes from the page's
-/// visible text (`innerText`), counted the same case-insensitive way; "n"
-/// follows the steps from the first match.
-@MainActor
-final class WebFinder {
-    private let webView: () -> WKWebView?
-    let bar = FindBar()
-    private var total = 0
-    private var current = 0
-    private var pending: DispatchWorkItem?
-    /// Bumped per search, so a late answer for an old query is dropped.
-    private var generation = 0
-
-    init(webView: @escaping () -> WKWebView?) {
-        self.webView = webView
-        bar.onChange = { [weak self] query in self?.queryChanged(query) }
-        bar.onStep = { [weak self] forward in self?.step(forward: forward) }
-        bar.onClose = { [weak self] in self?.close() }
-    }
-
-    var onClosed: (() -> Void)?
-
-    func open() {
-        let reopening = bar.isOpen
-        bar.open()
-        if !reopening, !bar.query.isEmpty { search(bar.query) }
-    }
-
-    func close() {
-        pending?.cancel()
-        generation += 1
-        bar.hide()
-        clearSelection()
-        onClosed?()
-    }
-
-    private func queryChanged(_ query: String) {
-        pending?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.search(query) }
-        pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-    }
-
-    private func search(_ query: String) {
-        pending = nil
-        generation += 1
-        let mine = generation
-        guard let webView = webView(), !query.isEmpty else {
-            total = 0
-            bar.setStatus("", found: false)
-            clearSelection()
-            return
-        }
-        // Start from the top of the page: drop the selection a previous find
-        // left, then count.
-        let script = """
-            (function (q) {
-              const s = window.getSelection(); if (s) s.removeAllRanges();
-              const t = (document.body ? document.body.innerText : '').toLowerCase();
-              let n = 0, i = 0;
-              while ((i = t.indexOf(q, i)) !== -1) { n++; i += q.length; }
-              return n;
-            })(\(Self.jsString(query.lowercased())))
-            """
-        webView.evaluateJavaScript(script) { [weak self] value, _ in
-            MainActor.assumeIsolated {
-                guard let self, mine == self.generation else { return }
-                self.total = (value as? NSNumber)?.intValue ?? 0
-                self.current = 0
-                self.find(forward: true, first: true)
-            }
-        }
-    }
-
-    private func step(forward: Bool) {
-        guard total > 0 else { return }
-        find(forward: forward)
-    }
-
-    /// WebKit finds from the selection; `first` is the find right after a
-    /// new query, from the top.
-    private func find(forward: Bool, first: Bool = false) {
-        guard let webView = webView() else { return }
-        let config = WKFindConfiguration()
-        config.backwards = !forward
-        config.caseSensitive = false
-        config.wraps = true
-        let mine = generation
-        webView.find(bar.query, configuration: config) { [weak self] result in
-            MainActor.assumeIsolated {
-                guard let self, mine == self.generation else { return }
-                guard result.matchFound else {
-                    self.bar.setStatus("No matches", found: false)
-                    return
-                }
-                // Found, but not in the visible text we counted (rare).
-                guard self.total > 0 else { return self.bar.setStatus("Found", found: true) }
-                let n = self.total
-                if first {
-                    self.current = 1
-                } else if forward {
-                    self.current = self.current % n + 1
-                } else {
-                    self.current = (self.current + n - 2) % n + 1
-                }
-                self.bar.setStatus("\(self.current) of \(n)", found: true)
-            }
-        }
-    }
-
-    private func clearSelection() {
-        webView()?.evaluateJavaScript("window.getSelection() && window.getSelection().removeAllRanges()")
-    }
-
-    private static func jsString(_ text: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: [text])) ?? Data("[\"\"]".utf8)
-        return String(decoding: data.dropFirst().dropLast(), as: UTF8.self)
-    }
-
-    func automationState() -> [String: String] {
-        [
-            "tile.find": bar.isOpen ? "open" : "closed",
-            "tile.find.query": bar.query.isEmpty ? "-" : bar.query,
-            "tile.find.status": bar.status.isEmpty ? "-" : bar.status,
-            "tile.find.controls": bar.shownControls,
         ]
     }
 }

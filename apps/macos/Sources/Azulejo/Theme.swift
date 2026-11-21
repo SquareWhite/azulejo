@@ -18,7 +18,7 @@ import AppKit
 //   match), calls every tracked `applyTheme()` and redraws every view, all
 //   in one Core Animation transaction with actions off: one frame, no
 //   flicker, no implicit fades. Then `Theme.didChange` tells the rest
-//   (terminal palettes, webviews, menus).
+//   (terminal palettes, menus).
 // `scripts/check-theme-colours` (just lint) fails on a `.cgColor` outside
 // an `applyTheme()` without a `// theme:` note saying how it stays current.
 
@@ -69,8 +69,6 @@ struct ThemeSpec: Equatable, Sendable {
     var id: String
     var name: String
     var appearance: ThemeAppearance
-    /// Preview syntax colours (`html[data-azj-syntax]`).
-    var syntax: String
     /// NSVisualEffectView material for the sidebar card, or nil: a flat card.
     var sidebarMaterial: String?
     var colors: [String: ThemeColor]
@@ -172,15 +170,6 @@ enum Theme {
         let lb = luminance(back)
         if contrast(luminance(solid(text, over: back)), lb) >= 4.5 { return text }
         return contrast(0, lb) >= contrast(1, lb) ? .black : .white
-    }
-
-    /// `#rrggbb` or `rgba(…)` for CSS.
-    nonisolated static func css(_ color: NSColor) -> String {
-        let c = resolved(color)
-        let r = Int((c.redComponent * 255).rounded()), g = Int((c.greenComponent * 255).rounded())
-        let b = Int((c.blueComponent * 255).rounded())
-        if c.alphaComponent >= 0.999 { return String(format: "#%02x%02x%02x", r, g, b) }
-        return String(format: "rgba(%d, %d, %d, %.3f)", r, g, b, c.alphaComponent)
     }
 
     // MARK: Views
@@ -369,7 +358,6 @@ enum Theme {
         let palette = (term["palette"] as? [String] ?? []).compactMap(parseHex)
         return ThemeSpec(
             id: id, name: name, appearance: appearance,
-            syntax: json["syntax"] as? String ?? base.syntax,
             sidebarMaterial: json["sidebar_material"] as? String,
             colors: colors,
             terminal: TerminalSpec(
@@ -393,31 +381,5 @@ enum Theme {
         case 8: return v
         default: return nil
         }
-    }
-}
-
-// MARK: - Webviews
-
-extension Theme {
-    /// A script that sets the theme's CSS variables and syntax on a page
-    /// (`shared/webview/preview.css` reads `--azj-*`; the core's syntax CSS
-    /// keys on `data-azj-syntax`).
-    static var webviewScript: String {
-        var vars: [String] = []
-        for (name, token) in Design.Webview.variables {
-            let color = Theme.token(token)
-            vars.append("\"--azj-\(name)\":\"\(css(color))\"")
-        }
-        // Inline code sits on no fill, as in the mockup.
-        vars.append("\"--azj-code-bg\":\"transparent\"")
-        let scheme = current.appearance.rawValue
-        return """
-        (function(){var r=document.documentElement;if(!r)return;\
-        r.setAttribute("data-azj-syntax","\(current.syntax)");\
-        r.setAttribute("data-azj-theme","\(current.id)");\
-        r.style.colorScheme="\(scheme)";\
-        var v={\(vars.joined(separator: ","))};\
-        for(var k in v){r.style.setProperty(k,v[k]);}})();
-        """
     }
 }

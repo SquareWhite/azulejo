@@ -830,37 +830,48 @@ fn tab_kind(s: &Session) -> LayoutKind {
     tab_layout(s).kind
 }
 
-/// Monocle with a browser beside the terminals: focusing the browser keeps
-/// Monocle, and herdr keeps showing a terminal. Only an unzoom made in herdr
-/// ends Monocle.
+/// Monocle with an ended terminal (no pane in herdr) beside the live ones:
+/// focusing it keeps Monocle, and herdr keeps showing a live terminal. Only
+/// an unzoom made in herdr ends Monocle.
 #[test]
 #[ignore = "needs herdr; run with `just test-herdr`"]
-fn monocle_with_a_browser_stays_monocle() {
+fn monocle_with_an_ended_terminal_stays_monocle() {
     let herdr = TempHerdr::start();
     let dir = tempfile::tempdir().unwrap();
     let core = core(&herdr, &dir.path().join("state.json"), LayoutKind::Tile);
     let s = wait_session(&core, "first pane", |s| all_bound(s, 1));
     let a = terminals(&s)[0].0;
-    let browser = core
+    // A terminal whose command exits at once, kept once it ends.
+    let mut content = TileContent::terminal();
+    if let TileContent::Terminal {
+        command, on_exit, ..
+    } = &mut content
+    {
+        *command = Some(vec!["exit".into()]);
+        *on_exit = Some(azulejo_model::OnExit::Keep);
+    }
+    let ended = core
         .execute(Command::LayoutSplit(LayoutSplit {
             tile: None,
             direction: Direction::Right,
-            content: Some(TileContent::Browser {
-                url: None,
-                page_title: None,
-            }),
+            content: Some(content),
         }))
         .unwrap();
-    let azulejo_protocol::Reply::Created(created) = browser.reply else {
+    let azulejo_protocol::Reply::Created(created) = ended.reply else {
         panic!()
     };
     let b = created.tile.unwrap();
+    wait_session(&core, "the second terminal ends", |s| {
+        s.tiles().any(|(_, t)| {
+            t.id == b && matches!(t.content, TileContent::Terminal { ended: true, .. })
+        })
+    });
     core.execute(Command::LayoutSet(LayoutSetKind {
         tab: None,
         kind: LayoutKind::Monocle,
     }))
     .unwrap();
-    // One terminal and a browser: back and forth, Monocle stays.
+    // One live terminal and an ended one: back and forth, Monocle stays.
     for tile in [a, b, a, b] {
         core.execute(Command::TileFocus(TileTarget { tile: Some(tile) }))
             .unwrap();
@@ -868,8 +879,8 @@ fn monocle_with_a_browser_stays_monocle() {
         assert_eq!(tab_kind(&core.session().unwrap()), LayoutKind::Monocle);
     }
 
-    // A second terminal: focusing the browser keeps herdr on the terminal
-    // focused last, zoomed.
+    // A second live terminal: focusing the ended one keeps herdr on the
+    // terminal focused last, zoomed.
     core.execute(Command::TileFocus(TileTarget { tile: Some(a) }))
         .unwrap();
     let c = split(&core, Direction::Right);

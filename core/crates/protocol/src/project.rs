@@ -57,11 +57,10 @@ pub struct LayoutExport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandEntry {
     /// Stable id: the keymap action name (`split_right`, `switch_tab_3`), or
-    /// the method name for commands no key is bound to (`browser.open`).
+    /// the method name for commands no key is bound to (`workspace.set_repo`).
     pub id: String,
     pub title: String,
-    /// `tile`, `layout`, `tab`, `workspace`, `window`, `terminal`, `browser`,
-    /// `preview` or `app`.
+    /// `tile`, `layout`, `tab`, `workspace`, `window`, `terminal` or `app`.
     pub category: String,
     /// The protocol method it sends, if any; `None` for shell-only actions
     /// (palette, sidebar, find…).
@@ -86,7 +85,7 @@ pub struct CommandEntry {
     /// Not supported yet; shown greyed out.
     #[serde(default)]
     pub planned: bool,
-    /// The only context the action works in (`browser`, `files`, `palette`,
+    /// The only context the action works in (`terminal`, `files`, `palette`,
     /// `find`, `resize`…); `None` when it works anywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
@@ -98,7 +97,7 @@ pub struct KeyBinding {
     /// The config name (`split_right`, `switch_tab`).
     pub action: String,
     /// `global`, `prefix` (after the prefix key), or the context section it
-    /// sits in: `terminal`, `browser`, `preview`, `files`, `palette`, `find`
+    /// sits in: `terminal`, `files`, `palette`, `find`
     /// or `resize`.
     pub context: String,
     pub title: String,

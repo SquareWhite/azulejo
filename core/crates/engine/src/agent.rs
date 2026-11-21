@@ -318,14 +318,4 @@ mod tests {
         assert!(!update(&mut fresh, None, AgentStatus::Unknown, 1));
         assert_eq!(fresh.agent, None);
     }
-
-    #[test]
-    fn only_terminals_have_agents() {
-        let mut t = Tile::new(TileContent::Browser {
-            url: None,
-            page_title: None,
-        });
-        assert!(!set(&mut t, AgentStatus::Blocked, 1));
-        assert_eq!(t.agent, None);
-    }
 }

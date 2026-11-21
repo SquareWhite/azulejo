@@ -252,9 +252,6 @@ fn tile_detail(tile: &Value) -> String {
             }
             parts.join("  ")
         }
-        Some("browser") => field("url").unwrap_or("").to_owned(),
-        Some("preview") => field("path").unwrap_or("").to_owned(),
-        Some("files") => field("root").unwrap_or("").to_owned(),
         _ => String::new(),
     }
 }
@@ -414,11 +411,6 @@ pub fn event_line(message: &Value) -> String {
             push("previous", &data["previous"]);
             push("agent", &data["agent"]);
         }
-        "preview.updated" => {
-            push("tile", &data["tile"]);
-            push("kind", &data["kind"]);
-            push("path", &data["path"]);
-        }
         _ => {
             for (key, v) in data.as_object().into_iter().flatten() {
                 match v {
@@ -479,14 +471,14 @@ mod tests {
     #[test]
     fn tiles_show_what_they_hold() {
         let text = human(&json!({"type": "tiles", "tiles": [
-            {"id": "tile_1", "kind": "browser", "url": "http://localhost:3000", "focused": true,
-             "window": "win_1", "workspace": "ws_1", "tab": "tab_1"},
+            {"id": "tile_1", "kind": "terminal", "cwd": "/src/shop", "command": ["npm run dev"],
+             "focused": true, "window": "win_1", "workspace": "ws_1", "tab": "tab_1"},
             {"id": "tile_2", "kind": "terminal", "herdr": {"pane_id": "w1:p2", "terminal_id": "t"},
              "focused": false, "window": "win_1", "workspace": "ws_1", "tab": "tab_1"}
         ]}));
         assert_eq!(
             text,
-            "* tile_1  browser   http://localhost:3000\n  tile_2  terminal  herdr w1:p2\n"
+            "* tile_1  terminal  npm run dev  /src/shop\n  tile_2  terminal  herdr w1:p2\n"
         );
     }
 

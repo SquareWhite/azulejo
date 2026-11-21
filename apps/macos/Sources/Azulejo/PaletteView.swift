@@ -22,9 +22,6 @@ struct PaletteItem {
             case .tile(let kind):
                 switch kind {
                 case .terminal: return "Terminal"
-                case .browser: return "Browser"
-                case .preview: return "Preview"
-                case .files: return "Files"
                 }
             }
         }

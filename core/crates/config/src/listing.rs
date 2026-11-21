@@ -288,7 +288,7 @@ pub fn keys_template(platform: Platform) -> String {
 #
 # Every key binding, commented out with its default. Uncomment a line and
 # change it to rebind: it replaces that action's default chords in its
-# section. \"\" or \"none\" unbinds. A context section ([keys.{p}.browser], …)
+# section. \"\" or \"none\" unbinds. A context section ([keys.{p}.files], …)
 # wins over [keys.{p}] while that context has the keyboard. `azj config keys`
 # shows what's in effect; docs/keybindings.md has the reference.
 #
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn listing_covers_every_action_and_marks_user_overrides() {
         let config = Config::from_toml(
-            "[keys.macos.browser]\nbrowser_back = \"alt+left\"\n[keys]\ngoto = \"cmd+p\"\nquit = \"\"\n",
+            "[keys.macos.files]\nfiles_open_external = \"alt+down\"\n[keys]\ngoto = \"cmd+p\"\nquit = \"\"\n",
             None,
             Platform::Macos,
         );
@@ -479,9 +479,9 @@ mod tests {
         for (name, _) in names() {
             assert!(list.iter().any(|k| k.action == name), "{name} missing");
         }
-        let back = row(&list, "browser_back", "browser");
-        assert_eq!(back.default, ["cmd+bracketleft"]);
-        assert_eq!(back.current, ["alt+left"]);
+        let back = row(&list, "files_open_external", "files");
+        assert_eq!(back.default, ["cmd+down"]);
+        assert_eq!(back.current, ["alt+down"]);
         assert_eq!(back.source, "user");
         let goto = row(&list, "goto", "global");
         assert!(goto.default.is_empty());
@@ -583,7 +583,7 @@ mod tests {
     fn reference_lists_both_platforms() {
         let md = reference_markdown();
         assert!(
-            md.contains("| `browser_back` | browser | `cmd+bracketleft` | `alt+left` |"),
+            md.contains("| `files_open_external` | files | `cmd+down` | `alt+down` |"),
             "{md}"
         );
         assert!(md.contains("| `toggle_agents_sidebar` | terminal | `cmd+a` | `super+a` |"));

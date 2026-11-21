@@ -64,9 +64,13 @@ fn sample_commands() -> Vec<Command> {
         Command::TabCreate(TabCreate {
             workspace: None,
             name: Some("dev".into()),
-            content: Some(TileContent::Browser {
-                url: Some("http://localhost:3000".into()),
-                page_title: None,
+            content: Some(TileContent::Terminal {
+                cwd: Some("/src/shop".into()),
+                command: Some(vec!["npm run dev".into()]),
+                env: Default::default(),
+                herdr: None,
+                ended: false,
+                on_exit: Some(OnExit::Keep),
             }),
         }),
         Command::TabClose(TabTarget { tab: Some(tab) }),
@@ -94,9 +98,7 @@ fn sample_commands() -> Vec<Command> {
         Command::LayoutSplit(LayoutSplit {
             tile: None,
             direction: Direction::Right,
-            content: Some(TileContent::Preview {
-                path: Some("plan.md".into()),
-            }),
+            content: Some(TileContent::terminal()),
         }),
         Command::LayoutFocus(LayoutFocus {
             direction: Direction::Up,
@@ -211,24 +213,6 @@ fn sample_commands() -> Vec<Command> {
             tile: Some(tile),
             title: Some("server".into()),
         }),
-        Command::BrowserOpen(BrowserOpen {
-            tile: None,
-            url: "http://localhost:3000".into(),
-        }),
-        Command::BrowserState(BrowserState {
-            tile: Some(tile),
-            url: Some("http://localhost:3000/docs".into()),
-            page_title: Some("Docs".into()),
-        }),
-        Command::PreviewOpen(PreviewOpen {
-            tile: Some(tile),
-            path: "plan.md".into(),
-        }),
-        Command::PreviewGet(TileTarget { tile: Some(tile) }),
-        Command::PreviewSetMode(PreviewSetMode {
-            tile: Some(tile),
-            mode: Some(PreviewMode::Source),
-        }),
         Command::FilesList(FilesDir {
             tile: Some(tile),
             dir: None,
@@ -240,10 +224,6 @@ fn sample_commands() -> Vec<Command> {
         Command::FilesCollapse(FilesDir {
             tile: Some(tile),
             dir: Some("/src/shop/src".into()),
-        }),
-        Command::FilesSetRoot(FilesSetRoot {
-            tile: Some(tile),
-            root: "~/src/shop".into(),
         }),
         Command::FilesReveal(FilesReveal {
             tile: None,
@@ -257,6 +237,11 @@ fn sample_commands() -> Vec<Command> {
             tile: Some(tile),
             path: "README.md".into(),
             target: FilesOpenTarget::Terminal,
+        }),
+        Command::FilesOpen(FilesOpen {
+            tile: None,
+            path: "/src/shop/README.md".into(),
+            target: FilesOpenTarget::Editor,
         }),
         Command::FilesPanel(FilesPanel {
             panel: None,
@@ -298,19 +283,6 @@ fn sample_commands() -> Vec<Command> {
         Command::ConfigDefaults,
         Command::MachinesList,
     ]
-}
-
-fn sample_preview(tile: TileId) -> PreviewContent {
-    PreviewContent {
-        tile,
-        path: "/src/plan.md".into(),
-        kind: PreviewKind::Markdown,
-        html: Some("<!doctype html><main id=\"azj-content\"></main>".into()),
-        language: None,
-        truncated: false,
-        mode: PreviewMode::Source,
-        revision: 3,
-    }
 }
 
 fn sample_events() -> Vec<Event> {
@@ -428,7 +400,6 @@ fn sample_events() -> Vec<Event> {
             tab: Some(tab),
             tile: Some(tile.id),
         }),
-        Event::PreviewUpdated(sample_preview(tile.id)),
         Event::FilesChanged(FilesChanged {
             tile: tile.id,
             dirs: vec!["/src/shop".into(), "/src/shop/src".into()],
@@ -516,9 +487,7 @@ fn every_event_round_trips() {
 
 #[test]
 fn replies_round_trip() {
-    let tile = Tile::new(TileContent::Files {
-        root: Some(".".into()),
-    });
+    let tile = Tile::new(TileContent::terminal());
     let replies = vec![
         Reply::Ok,
         Reply::Pong { api_version: 1 },
@@ -671,12 +640,6 @@ fn replies_round_trip() {
             scroll: None,
         },
         Reply::Subscribed { subscription: 1 },
-        Reply::Preview(sample_preview(tile.id)),
-        Reply::Preview(PreviewContent {
-            kind: PreviewKind::Pdf,
-            html: None,
-            ..sample_preview(tile.id)
-        }),
         Reply::LayoutFile {
             toml: "[[tile]]\n".into(),
             path: None,
@@ -754,10 +717,11 @@ fn replies_round_trip() {
 
 #[test]
 fn tile_info_is_flat() {
-    let tile = Tile::new(TileContent::Browser {
-        url: Some("http://localhost".into()),
-        page_title: None,
-    });
+    let mut content = TileContent::terminal();
+    if let TileContent::Terminal { cwd, .. } = &mut content {
+        *cwd = Some("/src/shop".into());
+    }
+    let tile = Tile::new(content);
     let info = TileInfo {
         window: WindowId::new(),
         workspace: WorkspaceId::new(),
@@ -766,9 +730,9 @@ fn tile_info_is_flat() {
         tile: tile.clone(),
     };
     let value = serde_json::to_value(&info).unwrap();
-    assert_eq!(value["kind"], "browser");
+    assert_eq!(value["kind"], "terminal");
     assert_eq!(value["id"], tile.id.to_string());
-    assert_eq!(value["url"], "http://localhost");
+    assert_eq!(value["cwd"], "/src/shop");
 }
 
 #[test]

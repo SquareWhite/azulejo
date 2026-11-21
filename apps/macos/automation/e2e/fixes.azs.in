@@ -1,9 +1,9 @@
 # N1–N6 (e2e 11-04): the features the Nov 3 fixes added, and the places where
 # several fixes meet: the find bar (⇧⌘F) under motion, a herdr restart, ⌘K and a
-# tab switch; `azj preview open` from a terminal; error wording in the HUD;
+# tab switch; `azj files open` from a terminal; error wording in the HUD;
 # agent state in the header (a status icon by default, the badge on
 # request); tab overflow; the config banner row.
-# fixes.sh fills @FX@ (fixtures), @AZJ@, @OUT@, @HD@ (e2e/hd) and @SITE@.
+# fixes.sh fills @FX@ (fixtures), @AZJ@, @OUT@ and @HD@ (e2e/hd).
 log N fixes suite
 delivery direct
 seen-visible off
@@ -109,68 +109,18 @@ expect tile.find.controls count,steps,close
 key escape
 expect responder terminal
 
-# ------------------------------------------------- tab 2 (manual): previews
+# ------------------------------------------- tab 2 (manual): files open
 key ctrl+2
 until tab 2 2000
 core {"method":"layout.set","params":{"kind":"manual"}}
 wait 500
 
-log === N2 azj preview open from a terminal: twice, then a missing file
-core {"method":"terminal.send_text","params":{"text":"cd @FX@; @AZJ@ preview open --path plan.md > @OUT@/open1.out 2>&1; echo exit=$status >> @OUT@/open1.out; @AZJ@ preview open --path main.rs > @OUT@/open2.out 2>&1; echo exit=$status >> @OUT@/open2.out; @AZJ@ preview open --path nope.md > @OUT@/open3.out 2>&1; echo exit=$status >> @OUT@/open3.out\n"}}
-wait 3500
+log === N2 azj files open from a terminal: each file opens in the editor beside it
+core {"method":"terminal.send_text","params":{"text":"cd @FX@; @AZJ@ files open --path plan.md > @OUT@/open1.out 2>&1; echo exit=$status >> @OUT@/open1.out; @AZJ@ files open --path main.rs > @OUT@/open2.out 2>&1; echo exit=$status >> @OUT@/open2.out; @AZJ@ files open --path nope.md > @OUT@/open3.out 2>&1; echo exit=$status >> @OUT@/open3.out\n"}}
+until tiles 4 8000
+wait 1500
 remember tiles
-remember focus
-expect focus 1
-shot n2-preview-open-twice
-
-log === N1e cmd+shift+f in a preview's Source mode
-# Each open lands right beside the terminal: nope.md | main.rs | plan.md.
-key alt+l
-key alt+l
-key alt+l
-until tile.kind preview 3000
-remember tile.path
-tile mode source
-until tile.source source 3000
-wait 500
-key cmd+shift+f
-expect key.last action:find
-expect responder preview-find
-type step
-until tile.find.status 1 of 1 5000
-capture n1e-find-source 300
-wait 500
-key escape
-expect tile.find closed
-expect responder preview-page
-
-log === N1f cmd+shift+f in a Quick Look preview says find isn't available
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@FX@/shot.png"}}}
-until tile.mode native-image 5000
-wait 800
-key cmd+shift+f
-expect key.last action:find
-expect tile.find closed
-capture n1f-find-quicklook 120
-wait 800
-
-log === N1g cmd+shift+f on a failed browser page: banner and bar together
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
-until tile.kind browser 5000
-wait 2000
-core {"method":"browser.open","params":{"url":"https://example.invalid/failed/page"}}
-wait 2500
-remember tile.banner
-remember tile.address
-key cmd+shift+f
-expect responder browser-find
-type example
-wait 1000
-remember tile.find.status
-capture n1g-find-failed-page 0
-wait 300
-key escape
-expect responder browser-page
+shot n2-files-open
 
 # ----------------------------------------------------- tab 3: HUD error wording
 key cmd+shift+t

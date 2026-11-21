@@ -43,7 +43,7 @@ fn serves_commands_over_the_socket() {
     let created = client
         .call(
             "layout.split",
-            Some(json!({"direction": "right", "content": {"kind": "browser", "url": "http://localhost:3000"}})),
+            Some(json!({"direction": "right", "content": {"kind": "terminal", "cwd": "/tmp"}})),
         )
         .unwrap();
     let tile = created["tile"].as_str().unwrap().to_owned();
@@ -51,8 +51,8 @@ fn serves_commands_over_the_socket() {
     let info = client
         .call("tile.get", Some(json!({"tile": tile})))
         .unwrap();
-    assert_eq!(info["kind"], "browser");
-    assert_eq!(info["url"], "http://localhost:3000");
+    assert_eq!(info["kind"], "terminal");
+    assert_eq!(info["cwd"], "/tmp");
     assert_eq!(info["focused"], true);
 
     let version = client.call("core.version", None).unwrap();

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Theme contrast, end to end (docs/themes.md, "Contrast"): the mockup's scene
 # (mockup.sh's fixtures) plus a "colours" workspace (a terminal printing all
-# 16 ANSI colours with bold, dim and a selection, a files tile on a git repo
-# with every status, a dimmed terminal), shown in every built-in theme on its
+# 16 ANSI colours with bold, dim and a selection, git status of a repo with
+# every status, a dimmed terminal; the sidebar's Files view on that repo), shown in every built-in theme on its
 # own dev instance (AZJ_DEV_NAME=e2e-ctr). Never changes the Mac's appearance.
 #
 #   apps/macos/automation/e2e/contrast.sh [--keep] [--themes "id id…"]
@@ -94,7 +94,7 @@ focus = true
 split = "vertical"
 sizes = [55, 45]
 children = [
-  { root = "$ctr/repo" },
+  { title = "repo", cwd = "$ctr/repo", command = "git status --short" },
   { title = "shell", cwd = "$ctr", command = "sh $ctr/colours.sh" },
 ]
 TOML

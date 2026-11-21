@@ -8,11 +8,14 @@ fn terminal() -> Tile {
     Tile::new(TileContent::terminal())
 }
 
-fn browser() -> Tile {
-    Tile::new(TileContent::Browser {
-        url: None,
-        page_title: None,
-    })
+/// A tile herdr has no pane for: a terminal whose process ended and that
+/// stays (`on_exit = "keep"`).
+fn ended() -> Tile {
+    let mut t = terminal();
+    if let TileContent::Terminal { ended, .. } = &mut t.content {
+        *ended = true;
+    }
+    t
 }
 
 /// Binds `tile` to pane `pane` in herdr tab `tab` on Local.
@@ -62,8 +65,8 @@ fn export(tab: &str, root: herdr::LayoutNode) -> herdr::TabLayout {
 }
 
 #[test]
-fn a_browser_gives_its_space_to_its_neighbour() {
-    let (mut s, tab, [a, b, _]) = manual_tab(browser());
+fn an_ended_terminal_gives_its_space_to_its_neighbour() {
+    let (mut s, tab, [a, b, _]) = manual_tab(ended());
     // The old mapping: a herdr tab each.
     bind(&mut s, a, "w1:p1", "w1:t1");
     bind(&mut s, b, "w1:p2", "w1:t2");
@@ -145,8 +148,8 @@ fn a_new_terminal_splits_off_the_pane_beside_it() {
     let spec = split_for(&s, c).unwrap();
     assert_eq!((spec.tile, spec.pane), (b, None));
     assert_eq!(spec.direction, herdr::SplitDirection::Down);
-    // A browser beside it: the nearest terminal is across the root split.
-    let (mut s, _, [a, b, _]) = manual_tab(browser());
+    // An ended terminal beside it: the nearest terminal is across the root split.
+    let (mut s, _, [a, b, _]) = manual_tab(ended());
     bind(&mut s, a, "w1:p1", "w1:t1");
     let spec = split_for(&s, b).unwrap();
     assert_eq!((spec.tile, spec.pane.as_deref()), (a, Some("w1:p1")));
@@ -196,8 +199,8 @@ fn mirrored(c: Tile) -> (Session, TabId, [TileId; 3]) {
 
 #[test]
 fn a_ratio_moved_in_herdr_moves_the_matching_split() {
-    let (mut s, tab, [_, b, c]) = mirrored(browser());
-    // herdr has A | B (the browser isn't there); the TUI drags to 0.7.
+    let (mut s, tab, [_, b, c]) = mirrored(ended());
+    // herdr has A | B (the ended terminal isn't there); the TUI drags to 0.7.
     assert!(absorb(
         &mut s,
         &None,
@@ -210,7 +213,7 @@ fn a_ratio_moved_in_herdr_moves_the_matching_split() {
         panic!("still split");
     };
     assert!((ratio - 0.7).abs() < 1e-9);
-    // The browser's own split is untouched.
+    // The ended terminal's own split is untouched.
     assert!(matches!(inner.as_ref(), Node::Split { ratio, .. } if (ratio - 0.5).abs() < 1e-9));
     assert!(inner.contains(b) && inner.contains(c));
     // The same again: nothing changes.
@@ -231,8 +234,8 @@ fn panes_swapped_in_herdr_swap_their_tiles() {
 }
 
 #[test]
-fn another_shape_from_herdr_replaces_the_tree_and_keeps_browsers() {
-    let (mut s, tab, [a, b, c]) = mirrored(browser());
+fn another_shape_from_herdr_replaces_the_tree_and_keeps_ended_terminals() {
+    let (mut s, tab, [a, b, c]) = mirrored(ended());
     // In herdr: A over B.
     assert!(absorb(
         &mut s,
@@ -242,7 +245,7 @@ fn another_shape_from_herdr_replaces_the_tree_and_keeps_browsers() {
     let root = &s.tab(tab).unwrap().root;
     let tiles = root.tiles();
     assert_eq!(tiles.len(), 3);
-    assert!(tiles.contains(&c), "the browser is back beside B");
+    assert!(tiles.contains(&c), "the ended terminal is back beside B");
     assert!(matches!(
         root,
         Node::Split {
@@ -430,9 +433,9 @@ fn zoom_counts_only_with_the_same_panes() {
     assert_eq!(judge(&before, &split, None), Pulled::Membership);
 }
 
-/// A Monocle tab with one terminal and a browser, or two terminals and a
-/// browser, focused on the browser.
-fn monocle_with_browser(terminals: usize) -> (Session, TabId, Vec<TileId>, TileId) {
+/// A Monocle tab with one or two live terminals and an ended one, focused
+/// on the ended one.
+fn monocle_with_ended(terminals: usize) -> (Session, TabId, Vec<TileId>, TileId) {
     let mut s = Session::new();
     s.prefs.default = LayoutKind::Tile;
     let (_, ws) = s.create_window("main", None);
@@ -448,7 +451,7 @@ fn monocle_with_browser(terminals: usize) -> (Session, TabId, Vec<TileId>, TileI
     for (i, t) in terms.iter().enumerate() {
         bind(&mut s, *t, &format!("w1:p{}", i + 1), "w1:t1");
     }
-    let b = browser();
+    let b = ended();
     let bid = b.id;
     s.split(aid, Direction::Right, b).unwrap();
     s.set_layout(tab, LayoutKind::Monocle).unwrap();
@@ -458,19 +461,19 @@ fn monocle_with_browser(terminals: usize) -> (Session, TabId, Vec<TileId>, TileI
 }
 
 #[test]
-fn monocle_on_a_browser_keeps_herdr_on_the_terminal_focused_last() {
-    let (mut s, tab, terms, browser) = monocle_with_browser(2);
+fn monocle_on_an_ended_terminal_keeps_herdr_on_the_terminal_focused_last() {
+    let (mut s, tab, terms, ended) = monocle_with_ended(2);
     let t = &targets(&s, &None)[&tab];
     assert_eq!(t.zoomed, Some("w1:p2".into()), "the terminal focused last");
-    // herdr shows that pane, zoomed: nothing to absorb, the browser keeps
-    // focus and Monocle stays.
+    // herdr shows that pane, zoomed: nothing to absorb, the ended terminal
+    // keeps focus and Monocle stays.
     let mut l = export("w1:t1", t.root.clone());
     l.zoomed = true;
     l.focused_pane_id = Some("w1:p2".into());
     assert!(!absorb(&mut s, &None, &l));
     let tab_now = s.tab(tab).unwrap();
     assert_eq!(tab_now.layout.kind, LayoutKind::Monocle);
-    assert_eq!(tab_now.focused, browser);
+    assert_eq!(tab_now.focused, ended);
     // Zoomed onto the other terminal in the TUI: that one comes to the top.
     l.focused_pane_id = Some("w1:p1".into());
     assert!(absorb(&mut s, &None, &l));
@@ -478,8 +481,8 @@ fn monocle_on_a_browser_keeps_herdr_on_the_terminal_focused_last() {
 }
 
 #[test]
-fn monocle_with_one_terminal_and_a_browser_has_nothing_to_zoom() {
-    let (mut s, tab, _, _) = monocle_with_browser(1);
+fn monocle_with_one_terminal_and_an_ended_one_has_nothing_to_zoom() {
+    let (mut s, tab, _, _) = monocle_with_ended(1);
     let t = &targets(&s, &None)[&tab];
     assert_eq!(t.zoomed, None, "herdr doesn't zoom a tab's only pane");
     // herdr reports it unzoomed: that isn't leaving Monocle.
@@ -501,14 +504,14 @@ fn as_herdr(s: &Session, tab: TabId) -> herdr::LayoutNode {
 }
 
 #[test]
-fn a_tab_follows_herdrs_arrangement_and_keeps_its_browser() {
-    let (mut s, tab, [_, b, c]) = mirrored(browser());
-    // Azulejo: A | (B / browser). herdr: B over A.
+fn a_tab_follows_herdrs_arrangement_and_keeps_its_ended_terminal() {
+    let (mut s, tab, [_, b, c]) = mirrored(ended());
+    // Azulejo: A | (B / ended). herdr: B over A.
     let theirs = down(0.4, p("w1:p2"), p("w1:p1"));
     assert!(follow(&mut s, &None, tab, &export("w1:t1", theirs.clone())));
     assert!(herdr::same_tree(&as_herdr(&s, tab), &theirs, 1e-9));
     let root = &s.tab(tab).unwrap().root;
-    assert!(root.contains(c), "the browser stays");
+    assert!(root.contains(c), "the ended terminal stays");
     // Beside B, as before.
     assert!(
         matches!(root, Node::Split { a, .. } if a.contains(b) && a.contains(c)),

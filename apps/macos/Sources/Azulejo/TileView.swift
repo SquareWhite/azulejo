@@ -1,17 +1,17 @@
 import AppKit
 
-/// What a tile kind implements to live in a `TileContainerView`. Terminal
-/// (1.7), browser (1.8) and preview (1.9) tiles each provide one; until then
-/// every kind gets a `PlaceholderTileView`.
+/// What a tile kind implements to live in a `TileContainerView`. Terminals
+/// are the only kind (`TerminalTileView`); a kind without a view gets a
+/// `PlaceholderTileView`.
 ///
 /// Lifecycle: the container makes one view per tile ID and keeps it across
-/// layout changes, so a terminal's surface or a browser's page survive splits,
-/// swaps and moves. It only ever sets the view's frame; it never recreates the
+/// layout changes, so a terminal's surface survives splits, swaps and
+/// moves. It only ever sets the view's frame; it never recreates the
 /// view for a layout change.
 ///
 /// 1. `TileViews.make` creates the view with the tile's first model.
 /// 2. `update(_:)` runs whenever the core reports new state for the tile
-///    (title, URL, path, herdr binding, `ended`). Cheap and idempotent:
+///    (title, herdr binding, `ended`). Cheap and idempotent:
 ///    compare with what you have.
 /// 3. `setFocused(_:)` runs when the tile gains or loses focus in the core.
 ///    Focused tiles should take first responder (`window?.makeFirstResponder`)
@@ -21,7 +21,7 @@ import AppKit
 ///
 /// Keys: the window's key router sees every keyDown first and only lets
 /// unbound chords through, so a tile's `keyDown` gets plain typing. A tile can
-/// report a different kind of context (e.g. a browser's address bar has focus)
+/// report a different kind of context (e.g. its find bar has the keyboard)
 /// via `keyContext`.
 @MainActor
 protocol TileView: NSView {
@@ -59,8 +59,8 @@ enum TileViews {
     }
 }
 
-/// Stand-in for tile kinds that haven't landed yet: a coloured panel naming
-/// the tile. Takes first responder when focused so the key router's context
+/// Stand-in for a tile kind without a view: a coloured panel naming the
+/// tile. Takes first responder when focused so the key router's context
 /// and the Edit menu behave as they will with real tiles.
 @MainActor
 final class PlaceholderTileView: NSView, TileView, ThemeAware {
@@ -116,18 +116,12 @@ final class PlaceholderTileView: NSView, TileView, ThemeAware {
     private func refresh() {
         var lines = ["\(kind.rawValue) · \(Short.id(tileID))"]
         if let title = model.title, !title.isEmpty { lines.append(title) }
-        switch kind {
-        case .terminal:
-            if model.ended == true {
-                lines.append("session ended")
-            } else if let herdr = model.herdr {
-                lines.append("herdr \(herdr.paneId)")
-            } else {
-                lines.append("no herdr pane")
-            }
-        case .browser: if let url = model.url { lines.append(url) }
-        case .preview: if let path = model.path { lines.append(path) }
-        case .files: if let root = model.root { lines.append(root) }
+        if model.ended == true {
+            lines.append("session ended")
+        } else if let herdr = model.herdr {
+            lines.append("herdr \(herdr.paneId)")
+        } else {
+            lines.append("no herdr pane")
         }
         label.stringValue = lines.joined(separator: "\n")
     }

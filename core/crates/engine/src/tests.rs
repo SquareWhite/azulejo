@@ -192,43 +192,6 @@ fn closing_a_bound_terminal_carries_its_pane_and_kill_flag() {
 }
 
 #[test]
-fn bind_rejects_non_terminals() {
-    let mut engine = Engine::new();
-    let created = engine
-        .execute(Command::TabCreate(TabCreate {
-            workspace: None,
-            name: Some("web".into()),
-            content: Some(TileContent::Browser {
-                url: Some("http://localhost:3000".into()),
-                page_title: None,
-            }),
-        }))
-        .unwrap();
-    assert_eq!(
-        names(&created.events),
-        [
-            "tab.created",
-            "tile.created",
-            "layout.changed",
-            "focus.changed"
-        ]
-    );
-    let browser = engine.session().focused_tile().unwrap();
-    let err = engine
-        .execute(Command::TerminalBind(TerminalBind {
-            tile: browser,
-            herdr: HerdrRef {
-                pane_id: "p".into(),
-                terminal_id: "t".into(),
-                tab_id: "t1".into(),
-                machine: None,
-            },
-        }))
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidState);
-}
-
-#[test]
 fn workspaces_and_tabs_report_structure_changes() {
     let mut engine = Engine::new();
     let ws = engine
@@ -522,10 +485,7 @@ fn lists_report_structure_and_focus() {
         .execute(Command::TabCreate(TabCreate {
             workspace: Some(web),
             name: None,
-            content: Some(TileContent::Browser {
-                url: None,
-                page_title: None,
-            }),
+            content: Some(TileContent::terminal()),
         }))
         .unwrap();
 
@@ -582,7 +542,7 @@ fn lists_report_structure_and_focus() {
 }
 
 #[test]
-fn rename_and_open_update_tiles() {
+fn rename_updates_tiles() {
     let mut engine = Engine::new();
     let term = engine.session().focused_tile().unwrap();
     let out = engine
@@ -601,155 +561,6 @@ fn rename_and_open_update_tiles() {
         }))
         .unwrap();
     assert_eq!(engine.session().tile(term).unwrap().title, None);
-
-    let err = engine
-        .execute(Command::BrowserOpen(BrowserOpen {
-            tile: None,
-            url: "http://localhost:3000".into(),
-        }))
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidState);
-    assert!(
-        err.message.contains("terminal tile, not a browser"),
-        "{err}"
-    );
-
-    let split = |engine: &mut Engine, content| {
-        let Reply::Created(c) = engine
-            .execute(Command::LayoutSplit(LayoutSplit {
-                tile: None,
-                direction: Direction::Right,
-                content: Some(content),
-            }))
-            .unwrap()
-            .reply
-        else {
-            panic!()
-        };
-        c.tile.unwrap()
-    };
-    let browser = split(
-        &mut engine,
-        TileContent::Browser {
-            url: None,
-            page_title: None,
-        },
-    );
-    let out = engine
-        .execute(Command::BrowserOpen(BrowserOpen {
-            tile: Some(browser),
-            url: "http://localhost:3000".into(),
-        }))
-        .unwrap();
-    assert!(out.events.iter().any(|e| matches!(
-        e,
-        Event::TileUpdated { tile, .. }
-            if tile.content == TileContent::Browser { url: Some("http://localhost:3000".into()), page_title: None }
-    )));
-
-    // The shell reports navigation: URL and page title change, and no
-    // separate load is asked for (that's browser.open's job).
-    engine
-        .execute(Command::BrowserState(BrowserState {
-            tile: Some(browser),
-            url: Some("http://localhost:3000/docs".into()),
-            page_title: Some("Docs".into()),
-        }))
-        .unwrap();
-    let state = |engine: &Engine| {
-        engine
-            .session()
-            .tile(browser)
-            .map(|t| t.content.clone())
-            .unwrap()
-    };
-    assert_eq!(
-        state(&engine),
-        TileContent::Browser {
-            url: Some("http://localhost:3000/docs".into()),
-            page_title: Some("Docs".into()),
-        }
-    );
-    // A title-only report keeps the URL; an empty title clears it.
-    engine
-        .execute(Command::BrowserState(BrowserState {
-            tile: Some(browser),
-            url: None,
-            page_title: Some(String::new()),
-        }))
-        .unwrap();
-    assert_eq!(
-        state(&engine),
-        TileContent::Browser {
-            url: Some("http://localhost:3000/docs".into()),
-            page_title: None,
-        }
-    );
-
-    let preview = split(&mut engine, TileContent::Preview { path: None });
-    engine
-        .execute(Command::PreviewOpen(PreviewOpen {
-            tile: None,
-            path: "/tmp/plan.md".into(),
-        }))
-        .unwrap();
-    assert_eq!(
-        engine.session().tile(preview).unwrap().content,
-        TileContent::Preview {
-            path: Some("/tmp/plan.md".into())
-        }
-    );
-    // Another kind of tile gets a new preview beside it.
-    let outcome = engine
-        .execute(Command::PreviewOpen(PreviewOpen {
-            tile: Some(browser),
-            path: "/tmp/plan.md".into(),
-        }))
-        .unwrap();
-    assert!(matches!(outcome.reply, Reply::Created(Created { tile: Some(t), .. }) if t != preview));
-}
-
-#[test]
-fn preview_open_from_a_terminal_opens_a_preview_to_its_right_and_keeps_focus() {
-    let mut engine = Engine::new();
-    let terminal = engine.session().focused_tile().unwrap();
-    let outcome = engine
-        .execute(Command::PreviewOpen(PreviewOpen {
-            tile: Some(terminal),
-            path: "/work/plan.md".into(),
-        }))
-        .unwrap();
-    let Reply::Created(Created {
-        tile: Some(preview),
-        ..
-    }) = outcome.reply
-    else {
-        panic!("expected created, got {:?}", outcome.reply);
-    };
-    let s = engine.session();
-    assert_eq!(
-        s.tile(preview).unwrap().content,
-        TileContent::Preview {
-            path: Some("/work/plan.md".into())
-        }
-    );
-    assert_eq!(s.focused_tile(), Some(terminal));
-    let tab = s.tab(s.focus().tab.unwrap()).unwrap();
-    assert_eq!(tab.root.tiles(), vec![terminal, preview]);
-    assert!(!names(&outcome.events).contains(&"focus.changed".to_owned()));
-
-    // Focus elsewhere stays there too: naming another tile doesn't pull
-    // focus to it.
-    split(&mut engine, Direction::Down);
-    let focused = engine.session().focused_tile().unwrap();
-    engine
-        .execute(Command::PreviewOpen(PreviewOpen {
-            tile: Some(terminal),
-            path: "/work/other.md".into(),
-        }))
-        .unwrap();
-    assert_eq!(engine.session().focused_tile(), Some(focused));
-    assert_eq!(engine.session().check_invariants(), Ok(()));
 }
 
 #[test]

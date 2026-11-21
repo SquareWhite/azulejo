@@ -1,14 +1,14 @@
 import AppKit
 
-/// A view with keymap actions of its own: a tile kind's keys (browser chrome,
-/// the files list, preview, terminal) or a field's (find bars, the files
-/// filter). The key router finds the nearest one around the first responder,
-/// resolves the chord in its context, and hands it the actions that only
-/// work there (`browser_back`, `files_down`, `find_next`…). Nothing here
+/// A view with keymap actions of its own: a terminal's keys, the sidebar's
+/// files list, or a field's (find bars, the files filter). The key router
+/// finds the nearest one around the first responder, resolves the chord in
+/// its context, and hands it the actions that only work there
+/// (`files_down`, `find_next`…). Nothing here
 /// matches chords itself, so every one of those keys comes from the keymap.
 @MainActor
 protocol KeyScope: NSView {
-    /// The keymap context while this view has the keyboard: `"browser"`,
+    /// The keymap context while this view has the keyboard: `"terminal"`,
     /// `"files"`, `"find_bar"`… (`[keys.<platform>.<context>]`).
     var keyScope: String { get }
     /// Runs a context-only keymap action. `event` is the keyDown when it came

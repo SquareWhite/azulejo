@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Live rebinding of every keymap context (docs/keybindings.md), in
 # process on its own dev instance (AZJ_DEV_NAME=rebind by default). One key in
-# each of palette, find_bar, resize, browser, preview and files moves to a new
-# chord through the instance's config file, and the terminal gets a send_text
+# each of palette, find_bar, resize and files moves to a new chord through
+# the instance's config file, and the terminal gets a send_text
 # line and loses its cmd+l one: the new chord works without a
 # restart, the old one doesn't, "" and "none" unbind, and putting the old
 # file back restores the defaults. Also checks that `azj config keys` shows the
@@ -18,10 +18,11 @@ dev="$root/.dev/$AZJ_DEV_NAME"
 out="$dev/out/rebind"
 sock="$dev/run/azulejo.sock"
 fixtures="$(mktemp -d "${TMPDIR:-/tmp}/azj-rebind.XXXXXX")"
-port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+# Resolved (/var is a link to /private/var), as the Files view shows it.
+fixtures="$(cd "$fixtures" && pwd -P)"
 
 cleanup() {
-  kill "${server:-}" "${watchdog:-}" 2>/dev/null || true
+  kill "${watchdog:-}" 2>/dev/null || true
   rm -rf "$fixtures"
   [[ "${1:-}" == "--keep" ]] || "$root/apps/macos/dev.sh" --reset >/dev/null
 }
@@ -32,11 +33,11 @@ cargo build -q -p azulejo-cli --manifest-path "$root/Cargo.toml"
 azj=(env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID -u HERDR_ENV
   -u AZULEJO_TILE_ID -u AZULEJO_WORKSPACE_ID "AZULEJO_SOCKET=$sock" "$root/target/debug/azj" --no-caller)
 
-mkdir -p "$fixtures/site" "$fixtures/tree/sub"
-printf '<!doctype html><title>rebind page</title><p>keys</p>\n' >"$fixtures/site/index.html"
-printf '# Plan\n\nRebind every context.\n' >"$fixtures/plan.md"
+# A small git repo for the sidebar's Files view.
+mkdir -p "$fixtures/tree/sub"
 for f in alpha.txt beta.txt gamma.txt; do echo "$f" >"$fixtures/tree/$f"; done
 echo inner >"$fixtures/tree/sub/inner.txt"
+git -C "$fixtures/tree" init -q
 # One key per context, plus an unbind with "none" and one with "".
 cat >"$fixtures/rebind.toml" <<'TOML'
 
@@ -54,12 +55,6 @@ find_close = "ctrl+g"
 resize_tile_right = "d"
 resize_mode_exit = "q"
 
-[keys.macos.browser]
-browser_focus_address = "cmd+e"
-
-[keys.macos.preview]
-preview_toggle_source = "cmd+shift+u"
-
 [keys.macos.files]
 files_down = "n"
 files_toggle_hidden = ""
@@ -69,13 +64,9 @@ files_toggle_hidden = ""
 "cmd+l" = { send_text = "" }
 TOML
 
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$fixtures/site" >/dev/null 2>&1 &
-server=$!
-for _ in $(seq 50); do curl -fs "http://127.0.0.1:$port/" >/dev/null && break; sleep 0.1; done
-
 "$root/apps/macos/dev.sh" --reset >/dev/null
 mkdir -p "$out"
-sed -e "s|@URL@|http://127.0.0.1:$port/|g" -e "s|@DIR@|$fixtures|g" -e "s|@AZJ@|${azj[*]}|g" \
+sed -e "s|@DIR@|$fixtures|g" -e "s|@AZJ@|${azj[*]}|g" \
   "$here/rebind.azs.in" >"$fixtures/rebind.azs"
 
 # A hung run must not wait forever: stop the app after 4 minutes.
@@ -97,8 +88,6 @@ checks = {
     ("palette_previous", "palette"): (["up", "ctrl+p", "ctrl+k"], []),
     ("find_close", "find_bar"): (["escape"], ["ctrl+g"]),
     ("resize_mode_exit", "resize"): (["escape", "enter"], ["q"]),
-    ("browser_focus_address", "browser"): (["cmd+l"], ["cmd+e"]),
-    ("preview_toggle_source", "preview"): (["alt+cmd+u"], ["cmd+shift+u"]),
     ("files_down", "files"): (["j", "down"], ["n"]),
     ("files_toggle_hidden", "files"): (["period"], []),
     ("quick_open", "global"): (["cmd+k"], ["cmd+j"]),
@@ -106,7 +95,7 @@ checks = {
 for (action, context), (default, current) in checks.items():
     r = row(action, context)
     assert (r["default"], r["current"], r["source"]) == (default, current, "user"), r
-assert row("browser_back", "browser")["source"] == "default"
+assert row("files_open_external", "files")["source"] == "default"
 # send_text: one row per chord, with the text.
 texts = {(k["default"] or k["current"])[0]: k for k in keys if k["action"] == "send_text"}
 newline, clear = texts["shift+enter"], texts["cmd+l"]

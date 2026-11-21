@@ -14,7 +14,8 @@
 //! [[tile]]
 //! command = ["cargo", "watch", "-x", "test"]
 //! [[tile]]
-//! url = "http://localhost:3000"        # kind inferred: browser
+//! cwd = "web"
+//! command = "npm run dev"
 //! ```
 //!
 //! Applying only builds the model; terminal tiles get herdr panes (and their
@@ -180,6 +181,7 @@ enum SplitAxis {
 #[serde(rename_all = "lowercase")]
 enum Kind {
     Terminal,
+    /// Kinds older builds had: read only to refuse them clearly.
     Browser,
     Preview,
     Files,
@@ -196,8 +198,7 @@ struct NodeSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     children: Vec<NodeSpec>,
 
-    /// Inferred when absent: `url` → browser, `path` → preview, `root` →
-    /// files, else terminal.
+    /// `terminal`, the only kind; may be left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<Kind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -213,12 +214,14 @@ struct NodeSpec {
     /// `"close"` or `"keep"`: overrides `[terminal] on_exit` for this tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     on_exit: Option<OnExit>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    #[serde(default, rename = "root", skip_serializing_if = "Option::is_none")]
-    files_root: Option<String>,
+    /// `url`, `path` and `root` made browser, preview and files tiles in
+    /// older builds: read only to refuse them clearly.
+    #[serde(default, skip_serializing)]
+    url: Option<toml::Value>,
+    #[serde(default, skip_serializing)]
+    path: Option<toml::Value>,
+    #[serde(default, rename = "root", skip_serializing)]
+    files_root: Option<toml::Value>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -521,81 +524,48 @@ fn build_node(
     if !spec.children.is_empty() || spec.sizes.is_some() {
         return Err(format!("{at}: `children` and `sizes` need `split`"));
     }
-    let kind = spec.kind.unwrap_or(if spec.url.is_some() {
-        Kind::Browser
-    } else if spec.path.is_some() {
-        Kind::Preview
-    } else if spec.files_root.is_some() {
-        Kind::Files
-    } else {
-        Kind::Terminal
-    });
-    let only = |what: &str, set: bool, kind_name: &str| {
-        if set {
-            Err(format!("{at}: `{what}` only applies to {kind_name} tiles"))
-        } else {
-            Ok(())
-        }
+    let removed = match spec.kind {
+        Some(Kind::Browser) => Some("browser"),
+        Some(Kind::Preview) => Some("preview"),
+        Some(Kind::Files) => Some("files"),
+        _ if spec.url.is_some() => Some("browser"),
+        _ if spec.path.is_some() => Some("preview"),
+        _ if spec.files_root.is_some() => Some("files"),
+        _ => None,
     };
-    if kind != Kind::Terminal {
-        only("command", spec.command.is_some(), "terminal")?;
-        only("cwd", spec.cwd.is_some(), "terminal")?;
-        only("env", !spec.env.is_empty(), "terminal")?;
-        only("on_exit", spec.on_exit.is_some(), "terminal")?;
+    if let Some(kind) = removed {
+        return Err(format!(
+            "{at}: Azulejo no longer has {kind} tiles; every tile is a terminal"
+        ));
     }
-    if kind != Kind::Browser {
-        only("url", spec.url.is_some(), "browser")?;
-    }
-    if kind != Kind::Preview {
-        only("path", spec.path.is_some(), "preview")?;
-    }
-    if kind != Kind::Files {
-        only("root", spec.files_root.is_some(), "files")?;
-    }
-    let content = match kind {
-        Kind::Terminal => {
-            for key in spec.env.keys() {
-                if key.is_empty() || key.contains('=') || key.starts_with("AZULEJO_") {
-                    return Err(format!(
-                        "{at}: `env.{key}` isn't allowed (empty, has `=`, or reserved AZULEJO_*)"
-                    ));
-                }
-            }
-            let command = match spec.command {
-                None => None,
-                Some(CommandSpec::Line(line)) if line.trim().is_empty() => {
-                    return Err(format!("{at}: `command` is empty"));
-                }
-                Some(CommandSpec::Line(line)) => Some(vec![line]),
-                Some(CommandSpec::Argv(argv)) if argv.is_empty() => {
-                    return Err(format!("{at}: `command` is empty"));
-                }
-                // One word as an argv still needs quoting: a lone element
-                // is sent as a shell line.
-                Some(CommandSpec::Argv(argv)) if argv.len() == 1 => {
-                    Some(vec![shell_quote(&argv[0])])
-                }
-                Some(CommandSpec::Argv(argv)) => Some(argv),
-            };
-            TileContent::Terminal {
-                cwd: resolve(ctx.base_dir, spec.cwd.as_deref()).or_else(|| ctx.cwd.clone()),
-                command,
-                env: spec.env,
-                herdr: None,
-                ended: false,
-                on_exit: spec.on_exit,
-            }
+    for key in spec.env.keys() {
+        if key.is_empty() || key.contains('=') || key.starts_with("AZULEJO_") {
+            return Err(format!(
+                "{at}: `env.{key}` isn't allowed (empty, has `=`, or reserved AZULEJO_*)"
+            ));
         }
-        Kind::Browser => TileContent::Browser {
-            url: spec.url.filter(|u| !u.trim().is_empty()),
-            page_title: None,
-        },
-        Kind::Preview => TileContent::Preview {
-            path: resolve(ctx.base_dir, spec.path.as_deref()),
-        },
-        Kind::Files => TileContent::Files {
-            root: resolve(ctx.base_dir, spec.files_root.as_deref()).or_else(|| ctx.cwd.clone()),
-        },
+    }
+    let command = match spec.command {
+        None => None,
+        Some(CommandSpec::Line(line)) if line.trim().is_empty() => {
+            return Err(format!("{at}: `command` is empty"));
+        }
+        Some(CommandSpec::Line(line)) => Some(vec![line]),
+        Some(CommandSpec::Argv(argv)) if argv.is_empty() => {
+            return Err(format!("{at}: `command` is empty"));
+        }
+        // One word as an argv still needs quoting: a lone element
+        // is sent as a shell line.
+        Some(CommandSpec::Argv(argv)) if argv.len() == 1 => Some(vec![shell_quote(&argv[0])]),
+        Some(CommandSpec::Argv(argv)) => Some(argv),
+    };
+    let content = TileContent::Terminal {
+        cwd: resolve(ctx.base_dir, spec.cwd.as_deref()).or_else(|| ctx.cwd.clone()),
+        command,
+        env: spec.env,
+        herdr: None,
+        ended: false,
+        on_exit: spec.on_exit,
     };
     let mut tile = Tile::new(content);
     tile.title = spec.title.filter(|t| !t.trim().is_empty());
@@ -848,55 +818,33 @@ fn export_tab(tab: &Tab, base: Option<&Path>, ws_cwd: Option<&str>) -> TabSpec {
             focus: many && tab.focused == id,
             ..NodeSpec::default()
         };
-        match &t.content {
-            TileContent::Terminal {
-                cwd,
-                command,
-                env,
-                on_exit,
-                ..
-            } => {
-                spec.kind = Some(Kind::Terminal);
-                // The workspace cwd is the default; only say so when different.
-                spec.cwd = cwd
-                    .as_deref()
-                    .filter(|c| Some(*c) != ws_cwd)
-                    .map(|c| relative(base, c));
-                spec.command = command.as_ref().map(|c| match c.as_slice() {
-                    [line] => CommandSpec::Line(line.clone()),
-                    argv => CommandSpec::Argv(argv.to_vec()),
-                });
-                spec.env = env.clone();
-                spec.on_exit = *on_exit;
-                if spec.command.is_some()
-                    || spec.cwd.is_some()
-                    || !spec.env.is_empty()
-                    || spec.on_exit.is_some()
-                {
-                    // Kind inference covers terminals; keep files short.
-                    spec.kind = None;
-                }
-            }
-            TileContent::Browser { url, .. } => {
-                spec.kind = Some(Kind::Browser);
-                spec.url = url.clone();
-                if spec.url.is_some() {
-                    spec.kind = None;
-                }
-            }
-            TileContent::Preview { path } => {
-                spec.kind = Some(Kind::Preview);
-                spec.path = path.as_deref().map(|p| relative(base, p));
-                if spec.path.is_some() {
-                    spec.kind = None;
-                }
-            }
-            TileContent::Files { root } => {
-                spec.kind = Some(Kind::Files);
-                spec.files_root = root.as_deref().map(|r| relative(base, r));
-                if spec.files_root.is_some() {
-                    spec.kind = None;
-                }
+        if let TileContent::Terminal {
+            cwd,
+            command,
+            env,
+            on_exit,
+            ..
+        } = &t.content
+        {
+            spec.kind = Some(Kind::Terminal);
+            // The workspace cwd is the default; only say so when different.
+            spec.cwd = cwd
+                .as_deref()
+                .filter(|c| Some(*c) != ws_cwd)
+                .map(|c| relative(base, c));
+            spec.command = command.as_ref().map(|c| match c.as_slice() {
+                [line] => CommandSpec::Line(line.clone()),
+                argv => CommandSpec::Argv(argv.to_vec()),
+            });
+            spec.env = env.clone();
+            spec.on_exit = *on_exit;
+            if spec.command.is_some()
+                || spec.cwd.is_some()
+                || !spec.env.is_empty()
+                || spec.on_exit.is_some()
+            {
+                // Kind inference covers terminals; keep files short.
+                spec.kind = None;
             }
         }
         spec

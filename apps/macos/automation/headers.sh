@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tile headers and workspace branches (2.14, 2.15) check, in-process, on its
 # own dev instance (AZJ_DEV_NAME=hdr): terminal header follows cwd and the
-# running command, the sidebar follows a branch switch in the tile, and a
-# preview's Preview | Source choice survives a relaunch. The fixture repository
-# lives in a temp folder that is removed afterwards.
+# running command, and the sidebar follows a branch switch in the tile. The
+# fixture repository lives in a temp folder that is removed afterwards.
 #   apps/macos/automation/headers.sh [--keep]   (--keep: leave the dev instance)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -39,6 +38,4 @@ watchdog=$!
 
 "$root/apps/macos/dev.sh" --automation "$fixtures/headers.azs" --out "$out"
 [[ "$(cat "$out/result")" == ok ]] || { echo "headers: $(cat "$out/result")"; exit 1; }
-"$root/apps/macos/dev.sh" --automation "$here/headers-relaunch.azs" --out "$out/relaunch"
-[[ "$(cat "$out/relaunch/result")" == ok ]] || { echo "headers relaunch: $(cat "$out/relaunch/result")"; exit 1; }
 echo "headers: ok ($out)"

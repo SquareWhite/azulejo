@@ -277,7 +277,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_params_are_refused_by_name() {
         let r = call(
-            r#"{"jsonrpc":"2.0","id":1,"method":"layout.split","params":{"direction":"right","kind":"browser","url":"http://x/"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"layout.split","params":{"direction":"right","kind":"terminal"}}"#,
         )
         .await
         .unwrap();
@@ -288,7 +288,7 @@ mod tests {
             "{r}"
         );
         let r = call(
-            r#"{"jsonrpc":"2.0","id":2,"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","path":"/x"}}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","path":"/x"}}}"#,
         )
         .await
         .unwrap();

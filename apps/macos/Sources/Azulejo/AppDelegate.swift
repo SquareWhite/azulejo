@@ -44,12 +44,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         ContextMenus.app = self
         keys.install()
         workspaceHints.install()
-        BrowserTileView.register(app: self)
         // The theme before any view or terminal exists (docs/themes.md).
         Theme.log = { [weak self] in self?.log($0) }
         loadTheme()
-        PreviewTileView.install(core: core, log: { [weak self] in self?.log($0) })
-        FilesTileView.install(core: core, log: { [weak self] in self?.log($0) })
+        FilesPanelView.install(core: core, log: { [weak self] in self?.log($0) })
         TerminalTileView.install(core: core, log: { [weak self] in self?.log($0) })
         // A drop that moves files into a terminal's folder says how it went.
         TerminalTileView.notice = { [weak self] window, text, kind in
@@ -78,8 +76,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             if json.contains("\"herdr.status\"") || json.contains("\"machine.status\"") {
                 self?.refresh()
             }
-            PreviewTileView.route(json)
-            FilesTileView.route(json)
+            FilesPanelView.route(json)
             TerminalTileView.route(json)
             if json.contains("\"config.reloaded\""), let core = self?.core {
                 Motion.load(core.animation())
@@ -410,12 +407,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Runs a resolved keymap action (`azj_core_key` / `azj_core_action` JSON).
     /// `target` is the workspace or tile a right-click menu was opened on;
     /// without one, actions act on what's focused, as from the keyboard.
-    /// `extra` adds params to the command (a files tile's content for "Open
-    /// Folder in Files Tile").
-    func perform(_ outcome: [String: Any], in controller: WindowController, target: ActionTarget? = nil,
-                 extra: [String: Any] = [:]) {
+    func perform(_ outcome: [String: Any], in controller: WindowController, target: ActionTarget? = nil) {
         if var command = outcome["command"] as? [String: Any] {
-            if target != nil || !extra.isEmpty {
+            if target != nil {
                 var params = command["params"] as? [String: Any] ?? [:]
                 switch target {
                 case .workspace(let id)?: params["workspace"] = id
@@ -423,7 +417,6 @@ final class AppController: NSObject, NSApplicationDelegate {
                 case .tab(let id)?: params["tab"] = id
                 case nil: break
                 }
-                params.merge(extra) { $1 }
                 command["params"] = params
             }
             if command["method"] as? String == "workspace.close" {
@@ -529,8 +522,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "select_visible_item": controller.selectVisibleTerminalItem()
         case "find":
             // The sidebar's Files view's filter while it has the keyboard,
-            // else the focused tile's find bar (terminal, browser, preview)
-            // or filter (files).
+            // else the focused terminal's find bar.
             let around = KeyScopes.around(controller.window) as? Findable
             guard let findable = around ?? (controller.tiles.focusedView as? TileFrame)?.content as? Findable else {
                 return controller.flash("nothing to find in here")
@@ -546,7 +538,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "hide_others": NSApp.hideOtherApplications(nil)
         case "minimize": controller.window.performMiniaturize(nil)
         default:
-            // Context-only actions (browser_back, files_toggle_hidden…) from a
+            // Context-only actions (files_toggle_hidden, find_next…) from a
             // menu or quick open: the focused tile runs them, if it can.
             if outcome["context"] is String {
                 if KeyScopes.focusedTile(in: controller)?.perform(keyAction: name, event: nil) != true {
@@ -560,7 +552,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Runs an action by config name (menus). `target`: see `perform(_:in:target:)`.
     func perform(action name: String, index: Int? = nil, target: ActionTarget? = nil,
-                 extra: [String: Any] = [:], in controller: WindowController? = nil) {
+                 in controller: WindowController? = nil) {
         guard let controller = controller ?? focusedController else { return }
         var request: [String: Any] = ["action": name]
         if let index { request["index"] = index }
@@ -568,7 +560,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard outcome["outcome"] as? String == "action" else {
             return controller.flash("unknown action \(name)")
         }
-        perform(outcome, in: controller, target: target, extra: extra)
+        perform(outcome, in: controller, target: target)
     }
 
     /// `close_workspace` (⌥⌘W): closes the workspace, and the core closes its

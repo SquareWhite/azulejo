@@ -124,7 +124,6 @@ SHEETS = {
     "selection": ("selection", (240, 44, 700, 420), 700),
     "hints": ("hints", (240, 44, 700, 420), 700),
     "files": ("files", (0, 0, 250, 900), 250),
-    "files-tile": ("colours", (900, 44, 540, 470), 540),
 }
 sheets = out / "sheets"
 sheets.mkdir(exist_ok=True)

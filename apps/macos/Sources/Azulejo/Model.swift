@@ -111,7 +111,6 @@ struct TabModel: Decodable, Equatable {
         if let name, !name.isEmpty { return name }
         let tile = tile(focused)
         if let title = tile?.title, !title.isEmpty { return title }
-        if let page = tile?.pageTitle, !page.isEmpty { return page }
         return tile?.kind.rawValue ?? "tab"
     }
 }
@@ -203,8 +202,10 @@ struct LayoutParamsModel: Decodable, Equatable {
     }
 }
 
+/// What a tile shows. Terminals are the only kind; older builds' browser,
+/// preview and files tiles are dropped by the core when it loads them.
 enum TileKind: String, Decodable, CaseIterable {
-    case terminal, browser, preview, files
+    case terminal
 }
 
 struct HerdrRefModel: Decodable, Equatable {
@@ -250,27 +251,15 @@ struct TileModel: Decodable, Equatable {
     var ended: Bool?
     /// Live pane metadata, distinct from the terminal's launch directory.
     var pane: PaneMetaModel?
-    // browser
-    var url: String?
-    var pageTitle: String?
-    // preview
-    var path: String?
-    // files
-    var root: String?
     /// Terminal tiles: the agent herdr reports in the pane.
     var agent: AgentModel?
     /// What the header strip shows, worked out by the core.
     var header: TileHeaderModel?
-    /// Preview tiles: `rendered` (default) or `source`.
-    var previewMode: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, cwd, command, herdr, ended, url, path, root, agent, header, pane
-        case pageTitle = "page_title"
-        case previewMode = "preview_mode"
+        case id, kind, title, cwd, command, herdr, ended, agent, header, pane
     }
 
-    var showsSource: Bool { previewMode == "source" }
     var terminalCwd: String? { pane?.cwd ?? cwd }
 
     /// Needs a look: the agent became blocked or finished and nobody has seen it.

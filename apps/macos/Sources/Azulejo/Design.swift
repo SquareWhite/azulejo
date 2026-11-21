@@ -16,18 +16,16 @@ enum Design {
         static let window = Theme.token("window")
         /// sidebar card, tab bar, tile header strip
         static let sidebar = Theme.token("sidebar")
-        /// tile body: terminal backdrop, browser, preview, files
+        /// tile body: the terminal backdrop
         static let tile = Theme.token("tile")
         /// secondary tile bodies
         static let tileAlt = Theme.token("tileAlt")
-        /// browser chrome, code blocks, inset strips
+        /// inset strips
         static let sunken = Theme.token("sunken")
         /// segmented tracks, search field, tab container
         static let control = Theme.token("control")
         /// selected sidebar row, selected palette row
         static let selected = Theme.token("selected")
-        /// strong selection grey: preview borders and table rules
-        static let selectedStrong = Theme.token("selectedStrong")
         /// hairlines around cards, fields and toasts
         static let border = Theme.token("border")
         /// names, titles, tile header titles
@@ -118,22 +116,12 @@ enum Design {
         static let headerHairline = Theme.token("headerHairline")
         /// the selected tile tab's fill in a Monocle tile's header strip (its stack as tabs)
         static let headerTabSelected = Theme.token("headerTabSelected")
-        /// browser tile toolbar (back, forward, address, reload)
-        static let browserChrome = Theme.token("browserChrome")
-        /// browser address pill
-        static let browserField = Theme.token("browserField")
-        /// Preview | Source track
-        static let previewToggleTrack = Theme.token("previewToggleTrack")
-        /// Preview | Source selected segment
-        static let previewToggleSelected = Theme.token("previewToggleSelected")
-        /// placeholder tile bodies before a tile kind's view exists
+        /// a terminal's find bar (⌘⇧F)
+        static let findBar = Theme.token("findBar")
+        /// the find bar's query pill
+        static let findField = Theme.token("findField")
+        /// placeholder tile body for a kind without a view
         static let kindTerminal = Theme.token("kindTerminal")
-        /// placeholder body, browser
-        static let kindBrowser = Theme.token("kindBrowser")
-        /// placeholder body, preview
-        static let kindPreview = Theme.token("kindPreview")
-        /// placeholder body, files
-        static let kindFiles = Theme.token("kindFiles")
         /// the tab strip's pill container in the toolbar
         static let tabStrip = Theme.token("tabStrip")
         /// hairline around the tab strip
@@ -160,10 +148,6 @@ enum Design {
         static let searchBadgeText = Theme.token("searchBadgeText")
         /// sidebar toggle next to the traffic lights
         static let titlebarIcon = Theme.token("titlebarIcon")
-        /// preview notices (a truncated file): fill
-        static let noticeFill = Theme.token("noticeFill")
-        /// preview notices: border
-        static let noticeBorder = Theme.token("noticeBorder")
     }
 
     /// The built-in themes (tokens.json `themes`), in order. The core sends
@@ -179,7 +163,6 @@ enum Design {
             "sunken",
             "control",
             "selected",
-            "selectedStrong",
             "border",
             "textPrimary",
             "textSecondary",
@@ -225,14 +208,9 @@ enum Design {
             "header",
             "headerHairline",
             "headerTabSelected",
-            "browserChrome",
-            "browserField",
-            "previewToggleTrack",
-            "previewToggleSelected",
+            "findBar",
+            "findField",
             "kindTerminal",
-            "kindBrowser",
-            "kindPreview",
-            "kindFiles",
             "tabStrip",
             "tabStripBorder",
             "tabSelected",
@@ -246,13 +224,11 @@ enum Design {
             "searchBadge",
             "searchBadgeText",
             "titlebarIcon",
-            "noticeFill",
-            "noticeBorder",
         ]
         static let builtIn: [ThemeSpec] = [
             ThemeSpec(
                 id: "atom-one-dark", name: "Atom One Dark", appearance: .dark,
-                syntax: "one-dark", sidebarMaterial: nil,
+                sidebarMaterial: nil,
                 colors: [
                     "window": .rgba(0x1b1d23ff),
                     "sidebar": .rgba(0x21252bff),
@@ -261,7 +237,6 @@ enum Design {
                     "sunken": .rgba(0x202329ff),
                     "control": .rgba(0x2c3036ff),
                     "selected": .rgba(0x35393eff),
-                    "selectedStrong": .rgba(0x3a3f4bff),
                     "border": .rgba(0xffffff14),
                     "textPrimary": .rgba(0xd7dae0ff),
                     "textSecondary": .rgba(0x9da5b4ff),
@@ -307,14 +282,9 @@ enum Design {
                     "header": .rgba(0x21252bff),
                     "headerHairline": .rgba(0x181a1fff),
                     "headerTabSelected": .rgba(0x3a3f4bff),
-                    "browserChrome": .rgba(0x202329ff),
-                    "browserField": .rgba(0x252930ff),
-                    "previewToggleTrack": .rgba(0x2c3036ff),
-                    "previewToggleSelected": .rgba(0x3a3f4bff),
+                    "findBar": .rgba(0x202329ff),
+                    "findField": .rgba(0x252930ff),
                     "kindTerminal": .rgba(0x29303dff),
-                    "kindBrowser": .rgba(0x21527aff),
-                    "kindPreview": .rgba(0x5c4078ff),
-                    "kindFiles": .rgba(0x336145ff),
                     "tabStrip": .rgba(0x24262cff),
                     "tabStripBorder": .rgba(0x2f3036ff),
                     "tabSelected": .rgba(0x3a3f4bff),
@@ -328,8 +298,6 @@ enum Design {
                     "searchBadge": .rgba(0x34363aff),
                     "searchBadgeText": .rgba(0xabb2bfff),
                     "titlebarIcon": .rgba(0x7f848eff),
-                    "noticeFill": .rgba(0x2e2a1aff),
-                    "noticeBorder": .rgba(0x9e6a03ff),
                 ],
                 terminal: TerminalSpec(
                     background: 0x282c34ff, foreground: 0xabb2bfff,
@@ -338,7 +306,7 @@ enum Design {
                     palette: [0x21252bff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff, 0x767676ff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff])),
             ThemeSpec(
                 id: "atom-one-light", name: "Atom One Light", appearance: .light,
-                syntax: "one-light", sidebarMaterial: nil,
+                sidebarMaterial: nil,
                 colors: [
                     "window": .rgba(0xe1e1e3ff),
                     "sidebar": .rgba(0xeaeaebff),
@@ -347,7 +315,6 @@ enum Design {
                     "sunken": .rgba(0xededeeff),
                     "control": .rgba(0xdfdfe1ff),
                     "selected": .rgba(0xcbcbceff),
-                    "selectedStrong": .rgba(0xd0d0d2ff),
                     "border": .rgba(0x0000001a),
                     "textPrimary": .rgba(0x383a42ff),
                     "textSecondary": .rgba(0x5c5f69ff),
@@ -393,14 +360,9 @@ enum Design {
                     "header": .rgba(0xeaeaebff),
                     "headerHairline": .rgba(0xdbdbdcff),
                     "headerTabSelected": .rgba(0xcbcbceff),
-                    "browserChrome": .rgba(0xededeeff),
-                    "browserField": .rgba(0xfafafaff),
-                    "previewToggleTrack": .rgba(0xdfdfe1ff),
-                    "previewToggleSelected": .rgba(0xffffffff),
+                    "findBar": .rgba(0xededeeff),
+                    "findField": .rgba(0xfafafaff),
                     "kindTerminal": .rgba(0x29303dff),
-                    "kindBrowser": .rgba(0x21527aff),
-                    "kindPreview": .rgba(0x5c4078ff),
-                    "kindFiles": .rgba(0x336145ff),
                     "tabStrip": .rgba(0xdfdfe1ff),
                     "tabStripBorder": .rgba(0xcbcbceff),
                     "tabSelected": .rgba(0xffffffff),
@@ -414,8 +376,6 @@ enum Design {
                     "searchBadge": .rgba(0xeaeaebff),
                     "searchBadgeText": .rgba(0x5c5f69ff),
                     "titlebarIcon": .rgba(0x6b6d76ff),
-                    "noticeFill": .rgba(0xfff8c5ff),
-                    "noticeBorder": .rgba(0xc29607ff),
                 ],
                 terminal: TerminalSpec(
                     background: 0xfafafaff, foreground: 0x383a42ff,
@@ -424,7 +384,7 @@ enum Design {
                     palette: [0x383a42ff, 0xc93d33ff, 0x186219ff, 0x8f6300ff, 0x2e63ddff, 0xa626a4ff, 0x0172a3ff, 0xa0a1a7ff, 0x696c77ff, 0xc93d33ff, 0x186219ff, 0x8f6300ff, 0x2e63ddff, 0xa626a4ff, 0x0172a3ff, 0xfafafaff])),
             ThemeSpec(
                 id: "macos-dark", name: "macOS Dark", appearance: .dark,
-                syntax: "github-dark", sidebarMaterial: "sidebar",
+                sidebarMaterial: "sidebar",
                 colors: [
                     "window": .rgba(0x2a2a2aff),
                     "sidebar": .system("windowBackgroundColor", alpha: nil, fallback: 0x1e1e1eff),
@@ -433,7 +393,6 @@ enum Design {
                     "sunken": .system("underPageBackgroundColor", alpha: nil, fallback: 0x282828ff),
                     "control": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
                     "selected": .system("controlAccentColor", alpha: 0.26, fallback: 0x007aff42),
-                    "selectedStrong": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0x464646ff),
                     "border": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
                     "textPrimary": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
                     "textSecondary": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
@@ -479,14 +438,9 @@ enum Design {
                     "header": .rgba(0x242424ff),
                     "headerHairline": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
                     "headerTabSelected": .rgba(0x3a3a3aff),
-                    "browserChrome": .rgba(0x242424ff),
-                    "browserField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
-                    "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
-                    "previewToggleSelected": .system("controlColor", alpha: nil, fallback: 0xffffff3f),
+                    "findBar": .rgba(0x242424ff),
+                    "findField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
                     "kindTerminal": .rgba(0x29303dff),
-                    "kindBrowser": .rgba(0x21527aff),
-                    "kindPreview": .rgba(0x5c4078ff),
-                    "kindFiles": .rgba(0x336145ff),
                     "tabStrip": .system("tertiarySystemFill", alpha: nil, fallback: 0xffffff0c),
                     "tabStripBorder": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
                     "tabSelected": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0x464646ff),
@@ -500,8 +454,6 @@ enum Design {
                     "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
                     "searchBadgeText": .system("labelColor", alpha: 0.62, fallback: 0xffffff9e),
                     "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
-                    "noticeFill": .system("systemYellow", alpha: 0.14, fallback: 0xffd60024),
-                    "noticeBorder": .system("systemYellow", alpha: 0.6, fallback: 0xffd60099),
                 ],
                 terminal: TerminalSpec(
                     background: 0x1e1e1eff, foreground: 0xffffffff,
@@ -510,7 +462,7 @@ enum Design {
                     palette: [0x1a1a1aff, 0xe0473dff, 0x26a439ff, 0xcdac08ff, 0x3d8ef0ff, 0xb06ad9ff, 0x479ec2ff, 0x98989dff, 0x7c7c7cff, 0xff453aff, 0x32d74bff, 0xffd60aff, 0x0a84ffff, 0xbf5af2ff, 0x76d6ffff, 0xffffffff])),
             ThemeSpec(
                 id: "macos-light", name: "macOS Light", appearance: .light,
-                syntax: "github-light", sidebarMaterial: "sidebar",
+                sidebarMaterial: "sidebar",
                 colors: [
                     "window": .rgba(0xecececff),
                     "sidebar": .rgba(0xf5f5f5ff),
@@ -519,7 +471,6 @@ enum Design {
                     "sunken": .rgba(0xf5f5f5ff),
                     "control": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
                     "selected": .system("controlAccentColor", alpha: 0.21, fallback: 0x007aff36),
-                    "selectedStrong": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0xdcdcdcff),
                     "border": .system("separatorColor", alpha: nil, fallback: 0x00000019),
                     "textPrimary": .system("labelColor", alpha: nil, fallback: 0x000000d8),
                     "textSecondary": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
@@ -565,14 +516,9 @@ enum Design {
                     "header": .rgba(0xf5f5f5ff),
                     "headerHairline": .system("separatorColor", alpha: nil, fallback: 0x00000019),
                     "headerTabSelected": .rgba(0xd5d5d5ff),
-                    "browserChrome": .rgba(0xf5f5f5ff),
-                    "browserField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
-                    "previewToggleTrack": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
-                    "previewToggleSelected": .system("controlColor", alpha: nil, fallback: 0xffffffff),
+                    "findBar": .rgba(0xf5f5f5ff),
+                    "findField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
                     "kindTerminal": .rgba(0x29303dff),
-                    "kindBrowser": .rgba(0x21527aff),
-                    "kindPreview": .rgba(0x5c4078ff),
-                    "kindFiles": .rgba(0x336145ff),
                     "tabStrip": .system("tertiarySystemFill", alpha: nil, fallback: 0x0000000c),
                     "tabStripBorder": .system("separatorColor", alpha: nil, fallback: 0x00000019),
                     "tabSelected": .system("controlColor", alpha: nil, fallback: 0xffffffff),
@@ -586,30 +532,12 @@ enum Design {
                     "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
                     "searchBadgeText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
                     "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0x0000007f),
-                    "noticeFill": .system("systemYellow", alpha: 0.14, fallback: 0xffcc0024),
-                    "noticeBorder": .rgba(0xc46a00ff),
                 ],
                 terminal: TerminalSpec(
                     background: 0xffffffff, foreground: 0x000000ff,
                     cursor: 0x6e6e73ff, cursorText: 0xffffffff,
                     selectionBackground: 0xb3d7ffff, selectionForeground: 0x000000ff,
                     palette: [0x1a1a1aff, 0xcc372eff, 0x1d7a2cff, 0x8a6d00ff, 0x0869cbff, 0x9647bfff, 0x1c6f91ff, 0x98989dff, 0x464646ff, 0xff453aff, 0x1d7a2cff, 0x8a6d00ff, 0x0062d1ff, 0x9a3fc9ff, 0x1c6f91ff, 0xffffffff])),
-        ]
-    }
-
-    /// CSS variables the shell sets on webview pages: `--azj-<name>` gets the token.
-    enum Webview {
-        static let variables: [(name: String, token: String)] = [
-            ("bg", "tileAlt"),
-            ("fg", "textSecondary"),
-            ("heading", "textPrimary"),
-            ("muted", "textMuted"),
-            ("border", "selectedStrong"),
-            ("subtle", "sunken"),
-            ("link", "accentText"),
-            ("code", "error"),
-            ("notice-bg", "noticeFill"),
-            ("notice-border", "noticeBorder"),
         ]
     }
 
@@ -708,7 +636,6 @@ enum Design {
         static let bannerFill: CGFloat = 0.16
         static let bannerMix: CGFloat = 0.75
         static let bannerBorder: CGFloat = 0.5
-        static let browserBanner: CGFloat = 0.95
         static let paletteShadow: CGFloat = 0.35
         static let dragShadow: CGFloat = 0.3
         static let dropSlot: CGFloat = 0.12
@@ -720,8 +647,8 @@ enum Design {
         static let gutter: CGFloat = 8
         static let tileInset: CGFloat = 0
         static let tileContentPad: CGFloat = 8
-        static let browserChromeHeight: CGFloat = 36
-        static let browserFieldHeight: CGFloat = 24
+        static let findBarHeight: CGFloat = 36
+        static let findFieldHeight: CGFloat = 24
         static let cardPadding: CGFloat = 10
         static let headerHeight: CGFloat = 28
         static let headerTitleX: CGFloat = 29
@@ -781,11 +708,8 @@ enum Design {
         static let dropZoneInset: CGFloat = 12
         static let dropZoneGap: CGFloat = 8
         static let dropZoneLabelGap: CGFloat = 3
-        static let headerTitleMin: CGFloat = 72
         static let badgeInset: CGFloat = 6
         static let findFieldMin: CGFloat = 60
-        static let browserBannerHeight: CGFloat = 30
-        static let browserBannerButtonMin: CGFloat = 240
     }
 
     /// SF Symbol point sizes.
@@ -923,8 +847,6 @@ enum Design {
     /// SF Symbols for tile kinds and quick-open rows.
     enum Icon {
         static let terminal = "terminal"
-        static let browser = "globe"
-        static let preview = "doc.text"
         static let files = "folder"
         static let command = "command"
         static let workspace = "square.stack.3d.up"

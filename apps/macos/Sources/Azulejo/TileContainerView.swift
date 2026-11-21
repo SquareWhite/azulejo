@@ -3,7 +3,7 @@ import QuartzCore
 
 /// Lays out the active tab's tiles from the core's tree. Keeps one view per
 /// tile for every tab in the window, so switching tabs or rearranging tiles
-/// never recreates a tile (a terminal keeps its surface, a browser its page).
+/// never recreates a tile (a terminal keeps its surface).
 ///
 /// Layout changes animate (`Motion`): each tile jumps to its final frame
 /// at the start — one PTY resize per terminal, hidden under its snapshot

@@ -88,17 +88,11 @@ a development and test tool (`just e2e`).
 
 `apps/macos/Resources/Azulejo.entitlements` is deliberately empty:
 
-- WKWebView's JavaScript JIT runs in WebKit's own WebContent process, which
-  carries its own entitlements.
 - libghostty's runtime Metal shader compilation goes through the system Metal
   compiler service.
 - Everything is statically linked, so library validation stays on.
-- The app isn't sandboxed. It spawns herdr, previews arbitrary files and
-  serves a Unix socket, and none of that fits the App Sandbox.
-
-If browser tiles ever need a camera or microphone (`getUserMedia`), add
-`com.apple.security.device.camera` and `com.apple.security.device.audio-input`,
-plus the matching `NS…UsageDescription` strings.
+- The app isn't sandboxed. It spawns herdr, lists arbitrary folders in its
+  Files view and serves a Unix socket, and none of that fits the App Sandbox.
 
 ## Notarise
 

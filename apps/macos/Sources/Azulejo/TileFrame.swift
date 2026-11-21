@@ -1,34 +1,5 @@
 import AppKit
 
-/// A tile view that puts controls in its header strip: the preview
-/// tile's Preview | Source toggle, the files tile's filter button.
-@MainActor
-protocol TileHeaderAccessory {
-    var headerAccessory: NSView? { get }
-}
-
-/// A header accessory that shows extra controls while the pointer is over the
-/// header strip (the preview tile's Open and Reveal).
-@MainActor
-protocol HeaderHoverAware {
-    func headerHover(_ inside: Bool)
-}
-
-/// A tile view whose own toolbar is its top strip (the browser's chrome):
-/// the frame hides its header strip for it.
-@MainActor
-protocol TileOwnsChrome {}
-
-/// A tile view with strips across its top that are chrome, not content (an
-/// open find bar, the browser's toolbar): mid-motion they ride the top of
-/// the visible rect with the header, rather than being cut off with the
-/// content when it sticks to the bottom edge. Tiles that are `Findable`
-/// get their open find bar without this.
-@MainActor
-protocol RidesClipTop {
-    var clipTopStrips: [NSView] { get }
-}
-
 /// Every tile in the container: a card with a header strip (kind icon,
 /// bold title, muted subtitle — what the core's `tile.header` says) above the
 /// tile's own view.
@@ -46,20 +17,10 @@ class TileFrame: NSView, TileView, ThemeAware {
     var kind: TileKind { content.kind }
     var keyContext: String { content.keyContext }
 
-    /// Tiles with their own chrome (the browser): no header strip, except
-    /// for the tabs in a Monocle stack.
-    private let ownsChrome: Bool
-    private var headerShown: Bool { !ownsChrome || header.showsTabs }
-
     /// The tab's Monocle stack as tabs in the header strip, or nil for the
-    /// title (`TileHeaderView.setStack`). A tile with its own chrome (the
-    /// browser) gets the strip for the tabs, its toolbar under it.
+    /// title (`TileHeaderView.setStack`).
     func setStack(_ stack: TileStack?, animated: Bool) {
-        let shown = headerShown
         header.setStack(stack, animated: animated)
-        guard shown != headerShown else { return }
-        header.isHidden = !headerShown
-        setFrameSize(frame.size)
     }
     /// Margin round a terminal's text (`Design.Space.tileContentPad`); other
     /// kinds fill the card edge to edge.
@@ -84,14 +45,9 @@ class TileFrame: NSView, TileView, ThemeAware {
     init(_ content: any TileView) {
         self.content = content
         header = TileHeaderView(kind: content.kind)
-        ownsChrome = content is TileOwnsChrome
         pad = content.kind == .terminal ? Design.Space.tileContentPad : 0
         super.init(frame: .zero)
         wantsLayer = true
-        if let accessory = (content as? TileHeaderAccessory)?.headerAccessory {
-            header.setAccessory(accessory)
-        }
-        header.isHidden = ownsChrome
         header.menuProvider = { [weak self] in self?.contextMenu() }
         // The header stays above the content, so a terminal's 1:1 motion
         // snapshot (crop style) can't cover it mid-motion; the dim and then
@@ -121,7 +77,7 @@ class TileFrame: NSView, TileView, ThemeAware {
     /// a terminal's margin (at the sides and bottom, half of it under the
     /// header).
     func contentFrame(for size: NSSize) -> NSRect {
-        let h = headerShown ? min(Self.headerHeight, max(size.height, 0)) : 0
+        let h = min(Self.headerHeight, max(size.height, 0))
         let body = max(size.height - h, 0)
         let p = min(pad, size.width / 4, body / 4)
         return NSRect(x: p, y: p, width: max(size.width - 2 * p, 0), height: max(body - p - p / 2, 0))
@@ -129,7 +85,7 @@ class TileFrame: NSView, TileView, ThemeAware {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let h = headerShown ? min(Self.headerHeight, max(newSize.height, 0)) : 0
+        let h = min(Self.headerHeight, max(newSize.height, 0))
         header.frame = NSRect(x: 0, y: newSize.height - h, width: newSize.width, height: h)
         content.frame = contentFrame(for: newSize)
         // Same coordinates as this view's bounds, so the caps and the dim
@@ -228,17 +184,15 @@ class TileFrame: NSView, TileView, ThemeAware {
         stripsInMotion = []
     }
 
-    /// The content's chrome strips (an open find bar, the browser's toolbar).
+    /// The content's chrome strips (an open find bar).
     private var clipTopStrips: [NSView] {
-        if let own = content as? RidesClipTop { return own.clipTopStrips }
         guard let bar = (content as? Findable)?.findBar, bar.isOpen, bar.superview != nil else { return [] }
         return [bar]
     }
 
     private var stripsInMotion: [NSView] = []
 
-    /// Find bars and the browser's toolbar keep to the top of the visible
-    /// rect, under the header, as the header does: each moves by as much
+    /// Find bars keep to the top of the visible rect, under the header, as the header does: each moves by as much
     /// as the clip's top edge is off its resting place. Vertically only,
     /// so a find bar stays over the columns it searches.
     private func animateStrips(from: CGRect, to: CGRect, duration: CFTimeInterval, holdAtEnd: Bool) {
@@ -361,8 +315,7 @@ class TileFrame: NSView, TileView, ThemeAware {
 }
 
 /// Right-click on the header strip: the tile's menu (Split, Zoom, Rename,
-/// Copy, Reveal, Close, Kill). A tile with its own chrome (the browser)
-/// merges these into its chrome's menu. The terminal's body keeps its own
+/// Copy, Reveal, Close, Kill). The terminal's body keeps its own
 /// right-click (libghostty, mouse-reporting apps).
 extension TileFrame: ContextMenuProviding {
     func contextMenu() -> NSMenu? {
@@ -371,13 +324,9 @@ extension TileFrame: ContextMenuProviding {
         return ContextMenus.tileMenu(tileID, in: controller)
     }
 
-    /// Where the menu opens, in window coordinates: the header strip, or the
-    /// top of a tile that draws its own chrome.
+    /// Where the menu opens, in window coordinates: the header strip.
     var menuAnchor: NSRect {
-        let strip = header.isHidden
-            ? NSRect(x: 0, y: bounds.height - Self.headerHeight, width: bounds.width, height: Self.headerHeight)
-            : header.frame
-        return convert(strip, to: nil)
+        convert(header.frame, to: nil)
     }
 }
 
@@ -441,15 +390,14 @@ extension TileFrame: AutomatableTile {
 }
 
 /// The strip across the top of a tile: icon, bold title, " — " and a muted
-/// subtitle (a path keeps its last folder), then the tile's own controls. Centred
-/// like the mockup's terminal tiles; left-aligned when the tile puts controls
-/// on the right (preview, files); a hairline underneath. Every strip is drawn
+/// subtitle (a path keeps its last folder). Centred like the mockup's
+/// terminal tiles; a hairline underneath. Every strip is drawn
 /// the same: the focused tile's is set apart by the dim over the others
 /// (`TileFrame.setDim`), which turns the mockup's focused strip colour into
 /// its unfocused one.
 ///
-/// Title content: what the strip shows between its left edge and its
-/// controls is one of three things (`contentKind`):
+/// Title content: what the strip shows between its left edge and the
+/// badge is one of three things (`contentKind`):
 /// - `title`: icon, title and subtitle, as above (the agent's status icon or
 ///   badge at the right end);
 /// - `tabs`: in a Monocle tab with more than one tile, the stack as tabs
@@ -465,7 +413,6 @@ final class TileHeaderView: NSView, ThemeAware {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let hairline = CALayer()
-    private var accessory: NSView?
     private(set) var titleText = ""
     private(set) var subtitleText = ""
 
@@ -494,8 +441,8 @@ final class TileHeaderView: NSView, ThemeAware {
 
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 
-    /// Title and icon centred in the strip (no controls on the right, no tabs).
-    var centred: Bool { accessory == nil && !showsTabs }
+    /// Title and icon centred in the strip (no tabs).
+    var centred: Bool { !showsTabs }
 
     // MARK: Title content
 
@@ -544,8 +491,8 @@ final class TileHeaderView: NSView, ThemeAware {
 
     /// Temporarily replaces the title content (the title, or the tabs in
     /// Monocle) with `view`, laid out in `contentRect` at every layout; nil
-    /// puts back what was there. The strip's controls on the right and its
-    /// status icon or badge stay as they are. For ⌘S's key legend, which
+    /// puts back what was there. The strip's status icon or badge stays as
+    /// it is. For ⌘S's key legend, which
     /// stands in for the title while hints are open.
     var overrideContent: NSView? {
         didSet {
@@ -615,14 +562,6 @@ final class TileHeaderView: NSView, ThemeAware {
     private func shownOpacity(_ view: NSView?) -> Float {
         guard let view, !view.isHidden, let layer = view.layer else { return 0 }
         return (layer.presentation() ?? layer).opacity
-    }
-
-    func setAccessory(_ view: NSView) {
-        accessory?.removeFromSuperview()
-        accessory = view
-        view.translatesAutoresizingMaskIntoConstraints = true
-        addSubview(view)
-        needsLayout = true
     }
 
     /// Shows the core's header for `tile`, or a fallback before it has one.
@@ -732,25 +671,11 @@ final class TileHeaderView: NSView, ThemeAware {
                                  width: size.width, height: size.height)
             trailingInset = size.width + inset
         }
-        var right = bounds.width - margin - trailingInset
-        if let accessory {
-            // The tile's controls show whole or not at all: below
-            // `headerTitleMin` of room for the title they hide (Preview |
-            // Source, the files buttons), never clipped to "Prev".
-            let size = accessory.fittingSize
-            let titleRoom = right - size.width - spacing - margin - iconSize - spacing
-            accessory.isHidden = titleRoom < Design.Space.headerTitleMin
-            if !accessory.isHidden {
-                accessory.frame = NSRect(x: right - size.width, y: (h - size.height) / 2,
-                                         width: size.width, height: size.height)
-                right -= size.width + spacing
-            }
-        }
+        let right = bounds.width - margin - trailingInset
         if let tabs = tileTabs {
             // The tabs span the strip, inset as a tab sits in it.
             let inset = Design.Space.headerTabPadding
-            var end = bounds.width - inset
-            if let accessory, !accessory.isHidden { end = accessory.frame.minX - spacing }
+            let end = bounds.width - inset
             tabs.frame = NSRect(x: inset, y: 0, width: max(0, end - inset), height: h)
             if showsTabs { contentRect = tabs.frame }
         }
@@ -769,10 +694,10 @@ final class TileHeaderView: NSView, ThemeAware {
         let natural = labelNatural
         let labelHeight = ceil(natural.height)
         let labelWidth = min(ceil(natural.width) + 4, room)
-        // Centred over the whole strip unless controls sit on the right; kept
-        // clear of anything over the strip's right end.
+        // Centred over the whole strip, kept clear of anything over its right
+        // end.
         let group = iconSize + spacing + labelWidth
-        let left = accessory != nil ? margin : max(margin, min((bounds.width - group) / 2, right - group))
+        let left = max(margin, min((bounds.width - group) / 2, right - group))
         icon.frame = NSRect(x: left, y: (h - iconSize) / 2, width: iconSize, height: iconSize)
         label.frame = NSRect(x: left + iconSize + spacing, y: (h - labelHeight) / 2,
                              width: labelWidth, height: labelHeight)
@@ -787,30 +712,6 @@ final class TileHeaderView: NSView, ThemeAware {
         Theme.reapply(self)
     }
 
-    // MARK: Hover
-
-    private var tracking: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        guard accessory is HeaderHoverAware else { return }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) { hover(true) }
-    override func mouseExited(with event: NSEvent) { hover(false) }
-
-    /// Shows or hides the accessory's hover controls.
-    func hover(_ inside: Bool) {
-        guard let aware = accessory as? HeaderHoverAware else { return }
-        aware.headerHover(inside)
-        needsLayout = true
-    }
-
     func applyTheme() {
         layer?.backgroundColor = Design.Color.header.cgColor
         hairline.backgroundColor = Design.Color.headerHairline.cgColor
@@ -821,94 +722,6 @@ final class TileHeaderView: NSView, ThemeAware {
     private static func symbol(_ kind: TileKind) -> String { Design.Icon.for(kind) }
 }
 
-/// A small two-way segmented pill (the mockup's Preview | Source): a track
-/// with the selected segment filled.
-@MainActor
-final class PillToggle: NSView, ThemeAware {
-    var onChange: (Int) -> Void = { _ in }
-    var selectedSegment = 0 { didSet { if selectedSegment != oldValue { restyle() } } }
-    private let buttons: [NSButton]
-    private let fill = CALayer()
-
-    init(labels: [String]) {
-        buttons = labels.map { NSButton(title: $0, target: nil, action: nil) }
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = Design.Radius.pill
-        fill.cornerRadius = Design.Radius.pill - 2
-        layer?.addSublayer(fill)
-        for (i, button) in buttons.enumerated() {
-            button.isBordered = false
-            button.tag = i
-            button.target = self
-            button.action = #selector(clicked(_:))
-            addSubview(button)
-        }
-        Theme.track(self)
-    }
-
-    func applyTheme() { restyle() }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    private static let height: CGFloat = 20, inset: CGFloat = 2, padding: CGFloat = 8
-
-    private func width(_ button: NSButton) -> CGFloat {
-        ceil((button.title as NSString).size(withAttributes: [.font: Design.Font.caption]).width) + 2 * Self.padding
-    }
-
-    override var fittingSize: NSSize {
-        NSSize(width: buttons.map(width).reduce(0, +) + 2 * Self.inset, height: Self.height)
-    }
-
-    override var intrinsicContentSize: NSSize { fittingSize }
-
-    override func layout() {
-        super.layout()
-        var x = Self.inset
-        let h = bounds.height - 2 * Self.inset
-        for button in buttons {
-            let w = width(button)
-            button.frame = NSRect(x: x, y: Self.inset, width: w, height: h)
-            x += w
-        }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if buttons.indices.contains(selectedSegment) { fill.frame = buttons[selectedSegment].frame }
-        CATransaction.commit()
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        Theme.reapply(self)
-    }
-
-    /// Also this view's applyTheme().
-    private func restyle() {
-        for (i, button) in buttons.enumerated() {
-            button.attributedTitle = NSAttributedString(string: button.title, attributes: [
-                .font: Design.Font.caption,
-                .foregroundColor: i == selectedSegment ? Design.Color.textPrimary : Design.Color.textMuted,
-            ])
-        }
-        // theme: restyle() is applyTheme().
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            layer?.backgroundColor = Design.Color.previewToggleTrack.cgColor
-            fill.backgroundColor = Design.Color.previewToggleSelected.cgColor
-            CATransaction.commit()
-        }
-        needsLayout = true
-    }
-
-    @objc private func clicked(_ sender: NSButton) {
-        guard sender.tag != selectedSegment else { return }
-        selectedSegment = sender.tag
-        onChange(sender.tag)
-    }
-}
 
 /// The top of a tile card: the focus dim and the corner caps. Never takes
 /// clicks, and doesn't clip, so the caps can follow a crop clip that

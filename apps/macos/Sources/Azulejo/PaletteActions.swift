@@ -120,9 +120,9 @@ extension AppController {
                 item.enabled = false
                 item.note = "needs a tile"
             } else if let context, let kind = focused?.kind.rawValue, kind != context {
-                // A tile kind's own keys (browser_back, files_down…).
+                // A context's own keys (files_down…).
                 item.enabled = false
-                item.note = "\(context) tiles"
+                item.note = context == "files" ? "Files view only" : "\(context) tiles"
             }
             if id == "toggle_unread" {
                 // Says what it'll do to the focused tile; agent tiles only.
@@ -139,7 +139,7 @@ extension AppController {
         return items
     }
 
-    /// Prefills for two-step commands: the current name, URL or path.
+    /// Prefills for two-step commands: the current name.
     private func initialInput(for id: String, prompt: String?, controller: WindowController) -> String? {
         guard prompt != nil, let ws = session?.window(controller.windowID)?.workspace else { return nil }
         let tile = ws.tab.flatMap { $0.tile($0.focused) }
@@ -147,8 +147,6 @@ extension AppController {
         case "rename_workspace": return ws.name
         case "rename_tab": return ws.tab?.name
         case "rename_tile": return tile?.title
-        case "browser.open": return tile?.kind == .browser ? tile?.url : nil
-        case "preview.open": return tile?.kind == .preview ? tile?.path : nil
         default: return nil
         }
     }
@@ -185,8 +183,6 @@ extension AppController {
                 params["index"] = n - 1
             case "path":
                 params["path"] = absolutePath(value, controller: controller)
-            case "url":
-                params["url"] = value
             case "kind":
                 // "Three Column" and "three-column" both mean three_column.
                 params["kind"] = value.lowercased()
@@ -246,7 +242,7 @@ extension AppController {
                         items.append(PaletteItem(
                             id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),
                             detail: "\(where1)" + (doing.map { "\($0) · " } ?? "") + "in \(ws.name)",
-                            searchExtra: [tile.cwd, tile.url, tile.path, tile.root, tile.agent?.name,
+                            searchExtra: [tile.cwd, tile.agent?.name,
                                           tile.command?.joined(separator: " "), tile.header?.title,
                                           doing, host]
                                 .compactMap { $0 }.joined(separator: " "),
@@ -276,21 +272,13 @@ extension AppController {
         return machines.first(where: { $0.id == id })?.label ?? "machine \(id.prefix(8))"
     }
 
-    /// The best name for a tile: its title, page title, agent, cwd, URL or path.
+    /// The best name for a tile: its title, agent, command or cwd.
     static func tileTitle(_ tile: TileModel) -> String {
-        for candidate in [tile.title, tile.pageTitle] {
-            if let c = candidate, !c.isEmpty { return c }
-        }
-        switch tile.kind {
-        case .terminal:
-            if let name = tile.agent?.name, !name.isEmpty { return name }
-            if let cmd = tile.command, !cmd.isEmpty { return cmd.joined(separator: " ") }
-            if let cwd = tile.cwd { return (cwd as NSString).abbreviatingWithTildeInPath }
-            return "terminal"
-        case .browser: return tile.url ?? "browser"
-        case .preview: return tile.path.map { ($0 as NSString).lastPathComponent } ?? "preview"
-        case .files: return tile.root.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "files"
-        }
+        if let title = tile.title, !title.isEmpty { return title }
+        if let name = tile.agent?.name, !name.isEmpty { return name }
+        if let cmd = tile.command, !cmd.isEmpty { return cmd.joined(separator: " ") }
+        if let cwd = tile.cwd { return (cwd as NSString).abbreviatingWithTildeInPath }
+        return "terminal"
     }
 
     private func runGoto(_ item: PaletteItem) {

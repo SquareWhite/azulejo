@@ -99,8 +99,7 @@ uses.
 External keyboard remappers can intercept shortcuts before Azulejo sees them.
 If you use Hammerspoon or Karabiner, scope conflicting rules to exclude
 Azulejo's bundle ID, `dev.azulejo.Azulejo`. A global window-movement rule can
-take `alt+shift+hjkl`, and terminal-only remaps can break `cmd+l` in browser
-tiles. Adjust your rules, or override Azulejo's shortcuts under
+take `alt+shift+hjkl`. Adjust your rules, or override Azulejo's shortcuts under
 `[keys.macos]` ([keybindings](keybindings.md)).
 
 ### Terminal font and colours
@@ -150,12 +149,8 @@ badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
   [terminal]
   select_on_drag = ["omp", "htop"]
   ```
-- Browser and preview tiles also come from `azj`:
-
-  ```sh
-  azj tile split --right --kind browser --url http://localhost:3000
-  azj tile split --down --kind preview --path plan.md
-  ```
+- `azj files open --path plan.md` from a terminal edits the file beside it
+  (`vim` in a new terminal), as Return does in the sidebar's Files view.
 
 - Config lives in `~/.config/azulejo/config.toml`. Saving the file applies
   it; problems show in a banner over the tiles, and the previous config stays
@@ -201,7 +196,6 @@ few things need a person at the Mac:
 - Sleep and wake: close the lid for a minute with several terminal tiles
   open; they should reattach within 2 s.
 - Sharing a pane with the herdr TUI.
-- The Web Inspector from a browser tile.
 - `scripts/latency/run-os-input.sh`: keystroke latency through the real input
   path, against standalone Ghostty.app. It posts real keystrokes for several
   minutes, so only run it when nobody needs the Mac

@@ -138,58 +138,6 @@
       ],
       "type": "string"
     },
-    "BrowserOpen": {
-      "properties": {
-        "tile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TileId"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A browser tile; defaults to the focused tile."
-        },
-        "url": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "url"
-      ],
-      "type": "object"
-    },
-    "BrowserState": {
-      "properties": {
-        "page_title": {
-          "description": "The page's `<title>`; absent or empty clears it.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TileId"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A browser tile; defaults to the focused tile."
-        },
-        "url": {
-          "description": "The page's current URL; absent leaves it unchanged.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
     "Command": {
       "description": "A request to the core.",
       "oneOf": [
@@ -669,92 +617,7 @@
           "type": "object"
         },
         {
-          "description": "Points a browser tile at `url`; the shell loads it on `tile.updated`.",
-          "properties": {
-            "method": {
-              "const": "browser.open",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/BrowserOpen"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "The shell reports where a browser tile's page is now (after a link,\na redirect, back or forward) and its `<title>`, so `tile.get` and\nrestore see the live page. Unlike `browser.open` it asks for no load.",
-          "properties": {
-            "method": {
-              "const": "browser.state",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/BrowserState"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Shows `path` in a preview tile. When `tile` is a preview tile it\nshows the file and replies `ok`. Any other tile (say, the terminal\n`azj` runs in) gets a new preview tile to its right, and the reply is\n`created` with it; focus stays where it was.",
-          "properties": {
-            "method": {
-              "const": "preview.open",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/PreviewOpen"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "A preview tile's rendered content; replies `preview`. Shells call it\nwhen they create a preview view; later changes arrive as\n`preview.updated` events.",
-          "properties": {
-            "method": {
-              "const": "preview.get",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/TileTarget"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Shows a preview tile's file rendered or as highlighted source;\nwithout `mode` it toggles. Saved per tile.",
-          "properties": {
-            "method": {
-              "const": "preview.set_mode",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/PreviewSetMode"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Lists one folder of a files tile (its root when `dir` is absent);\nreplies `files`. Doesn't watch it: see `files.expand`.",
+          "description": "Lists one folder of a files panel (its root when `dir` is absent);\nreplies `files`. Doesn't watch it: see `files.expand`.",
           "properties": {
             "method": {
               "const": "files.list",
@@ -805,23 +668,6 @@
           "type": "object"
         },
         {
-          "description": "Points a files tile at another folder.",
-          "properties": {
-            "method": {
-              "const": "files.set_root",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/$defs/FilesSetRoot"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
           "description": "Opens the folders down to `path` and asks shells to select it\n(`files.revealed`).",
           "properties": {
             "method": {
@@ -856,7 +702,7 @@
           "type": "object"
         },
         {
-          "description": "Opens a path from a files tile in a preview tile (the tab's first one,\nor a new one to the right) or in a new terminal below it; replies\n`created` with the tile.",
+          "description": "Opens a path from a files panel beside the focused tile: a file in\nthe editor (a new terminal running it, to the right) or a folder in a\nnew terminal below; replies `created` with the tile.",
           "properties": {
             "method": {
               "const": "files.open",
@@ -1475,7 +1321,7 @@
           ]
         },
         "category": {
-          "description": "`tile`, `layout`, `tab`, `workspace`, `window`, `terminal`, `browser`,\n`preview` or `app`.",
+          "description": "`tile`, `layout`, `tab`, `workspace`, `window`, `terminal` or `app`.",
           "type": "string"
         },
         "chords": {
@@ -1486,14 +1332,14 @@
           "type": "array"
         },
         "context": {
-          "description": "The only context the action works in (`browser`, `files`, `palette`,\n`find`, `resize`…); `None` when it works anywhere.",
+          "description": "The only context the action works in (`terminal`, `files`, `palette`,\n`find`, `resize`…); `None` when it works anywhere.",
           "type": [
             "string",
             "null"
           ]
         },
         "id": {
-          "description": "Stable id: the keymap action name (`split_right`, `switch_tab_3`), or\nthe method name for commands no key is bound to (`browser.open`).",
+          "description": "Stable id: the keymap action name (`split_right`, `switch_tab_3`), or\nthe method name for commands no key is bound to (`workspace.set_repo`).",
           "type": "string"
         },
         "index": {
@@ -2247,24 +2093,7 @@
           "type": "object"
         },
         {
-          "description": "A preview tile's file was (re)rendered: on open, on restore and after\nevery change on disk. Not saved; `preview.get` returns the latest.",
-          "properties": {
-            "data": {
-              "$ref": "#/$defs/PreviewContent"
-            },
-            "event": {
-              "const": "preview.updated",
-              "type": "string"
-            }
-          },
-          "required": [
-            "event",
-            "data"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Folders a files tile has open changed on disk, or hidden entries were\ntoggled: list them again. Not saved.",
+          "description": "Folders a files panel has open changed on disk, or hidden entries were\ntoggled: list them again. Not saved.",
           "properties": {
             "data": {
               "$ref": "#/$defs/FilesChanged"
@@ -2298,7 +2127,7 @@
           "type": "object"
         },
         {
-          "description": "Git status for a files tile's work tree, after it opens and after\nchanges. Not saved.",
+          "description": "Git status for a files panel's work tree, after it opens and after\nchanges. Not saved.",
           "properties": {
             "data": {
               "$ref": "#/$defs/FilesGit"
@@ -2471,7 +2300,7 @@
               "type": "null"
             }
           ],
-          "description": "Only events about this tile: its own `tile.*`, `preview.updated` and\n`agent.state_changed` events, layout changes of its tab, and focus\nchanges to or from it."
+          "description": "Only events about this tile: its own `tile.*` and\n`agent.state_changed` events, layout changes of its tab, and focus\nchanges to or from it."
         },
         "workspace": {
           "anyOf": [
@@ -2578,10 +2407,10 @@
       "type": "object"
     },
     "FilesDir": {
-      "description": "A folder of a files tile.",
+      "description": "A folder of a files panel.",
       "properties": {
         "dir": {
-          "description": "Absolute, or relative to the tile's root; the root when absent.",
+          "description": "Absolute, or relative to the panel's root; the root when absent.",
           "type": [
             "string",
             "null"
@@ -2596,13 +2425,13 @@
               "type": "null"
             }
           ],
-          "description": "A files tile; defaults to the focused tile."
+          "description": "The panel's id (`files.panel`)."
         }
       },
       "type": "object"
     },
     "FilesGit": {
-      "description": "Payload of `files.git`: the git state of every changed path in the\ntile's work tree (and the folders above them). Replaces the previous one.",
+      "description": "Payload of `files.git`: the git state of every changed path in the\npanel's work tree (and the folders above them). Replaces the previous one.",
       "properties": {
         "paths": {
           "additionalProperties": {
@@ -2657,7 +2486,7 @@
           ]
         },
         "root": {
-          "description": "The tile's root, absolute and resolved (symlinks followed).",
+          "description": "The panel's root, absolute and resolved (symlinks followed).",
           "type": "string"
         },
         "show_hidden": {
@@ -2683,12 +2512,12 @@
     "FilesOpen": {
       "properties": {
         "path": {
-          "description": "Absolute, or relative to the tile's root.",
+          "description": "Absolute, or relative to the panel's root.",
           "type": "string"
         },
         "target": {
           "$ref": "#/$defs/FilesOpenTarget",
-          "default": "preview"
+          "default": "editor"
         },
         "tile": {
           "anyOf": [
@@ -2699,7 +2528,7 @@
               "type": "null"
             }
           ],
-          "description": "The files tile the path comes from; defaults to the focused tile. A\nfiles panel (`files.panel`) works too: the path then opens beside the\nfocused tile. Any other tile is used as the anchor when `path` is\nabsolute."
+          "description": "The files panel (`files.panel`) the path comes from: the path opens\nbeside the focused tile. Any tile works as the anchor instead when\n`path` is absolute; the focused tile when absent."
         }
       },
       "required": [
@@ -2711,19 +2540,19 @@
       "description": "Where `files.open` shows a path.",
       "oneOf": [
         {
-          "const": "preview",
-          "description": "The tab's first preview tile shows it; without one, a new preview tile\nopens to the right of the files tile. Focus stays in the files tile.",
+          "const": "editor",
+          "description": "A file opens in the editor: a new terminal tile to the right of the\nanchor, in the file's folder, runs the editor on it (`vim <path>`).\nIt takes focus. A folder opens a terminal there instead, as\n`terminal` does. `preview`, from builds that had preview tiles, means\nthis too.",
           "type": "string"
         },
         {
           "const": "terminal",
-          "description": "A new terminal tile below the files tile, in the folder (a file's\nfolder for a file). It takes focus.",
+          "description": "A new terminal tile below the anchor, in the folder (a file's folder\nfor a file). It takes focus.",
           "type": "string"
         }
       ]
     },
     "FilesPanel": {
-      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,\nwith its id as `tile`, and its events carry that id.\n\nWith `machine`, the panel shows that herdr machine's files:\nthe core lists folders over the machine's SSH connection, off its\nthread. A folder it hasn't listed yet comes back empty with `loading`,\nand `files.changed` names the folder once its listing is in (or failed,\nwith `error`). Open folders are listed again every few seconds; nothing\nis watched. `files.open` shows a copy of a remote file in the preview\ntile and opens terminals on the machine.",
+      "description": "A files panel: a file tree outside the layout (the sidebar's Files view).\nIt answers `files.list`, `files.expand`, `files.collapse`,\n`files.reveal`, `files.toggle_hidden` and `files.open` with its id as\n`tile`, and its events carry that id.\n\nWith `machine`, the panel shows that herdr machine's files:\nthe core lists folders over the machine's SSH connection, off its\nthread. A folder it hasn't listed yet comes back empty with `loading`,\nand `files.changed` names the folder once its listing is in (or failed,\nwith `error`). Open folders are listed again every few seconds; nothing\nis watched. `files.open` opens the editor and terminals on the focused\nworkspace's machine.",
       "properties": {
         "machine": {
           "description": "A herdr machine's ID (`machines.list`) whose files to show; Local\nwhen absent or `local`.",
@@ -2767,7 +2596,7 @@
     "FilesReveal": {
       "properties": {
         "path": {
-          "description": "A file or folder under the tile's root: absolute, or relative to the\ntile's root.",
+          "description": "A file or folder under the panel's root: absolute, or relative to\nthe panel's root.",
           "type": "string"
         },
         "tile": {
@@ -2808,28 +2637,6 @@
         "tile",
         "path",
         "dirs"
-      ],
-      "type": "object"
-    },
-    "FilesSetRoot": {
-      "properties": {
-        "root": {
-          "description": "The folder to show; `~` expands to the home folder.",
-          "type": "string"
-        },
-        "tile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TileId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "root"
       ],
       "type": "object"
     },
@@ -3031,7 +2838,7 @@
           "type": "string"
         },
         "context": {
-          "description": "`global`, `prefix` (after the prefix key), or the context section it\nsits in: `terminal`, `browser`, `preview`, `files`, `palette`, `find`\nor `resize`.",
+          "description": "`global`, `prefix` (after the prefix key), or the context section it\nsits in: `terminal`, `files`, `palette`, `find`\nor `resize`.",
           "type": "string"
         },
         "current": {
@@ -3873,150 +3680,6 @@
       ],
       "type": "object"
     },
-    "PreviewContent": {
-      "description": "A rendered preview, from `preview.updated` or `preview.get`.",
-      "properties": {
-        "html": {
-          "description": "A complete HTML document for the tile's webview; absent for native\nkinds. When the tile already shows `path`, pass it to\n`azulejoPreview.swap(html)` (shared/webview/preview.js) to keep the\nscroll position.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "$ref": "#/$defs/PreviewKind"
-        },
-        "language": {
-          "description": "Syntax name for `code`, e.g. `Rust`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mode": {
-          "$ref": "#/$defs/PreviewMode",
-          "description": "Rendered, or the file's source highlighted as code."
-        },
-        "path": {
-          "type": "string"
-        },
-        "revision": {
-          "description": "Counts renders of this tile in this run, so a shell can drop stale\nupdates.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tile": {
-          "$ref": "#/$defs/TileId"
-        },
-        "truncated": {
-          "default": false,
-          "description": "Only the start of a very large file was rendered.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "tile",
-        "path",
-        "kind",
-        "revision"
-      ],
-      "type": "object"
-    },
-    "PreviewKind": {
-      "description": "What a preview tile shows.",
-      "oneOf": [
-        {
-          "enum": [
-            "markdown",
-            "code",
-            "text",
-            "video",
-            "audio",
-            "pdf",
-            "directory",
-            "missing",
-            "unreadable"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "image",
-          "description": "Native kinds: the shell shows `path` with QuickLook (macOS) or GTK\n(Linux); there's no `html`.",
-          "type": "string"
-        },
-        {
-          "const": "binary",
-          "description": "The rest get an explanatory `html` page.",
-          "type": "string"
-        }
-      ]
-    },
-    "PreviewMode": {
-      "description": "How a preview tile shows its file.",
-      "oneOf": [
-        {
-          "const": "rendered",
-          "description": "Rendered: markdown as a document, images as images.",
-          "type": "string"
-        },
-        {
-          "const": "source",
-          "description": "The file's text, highlighted as code (markdown included).",
-          "type": "string"
-        }
-      ]
-    },
-    "PreviewOpen": {
-      "properties": {
-        "path": {
-          "description": "The file to show. `azj` makes a relative path absolute against its\nown working folder.",
-          "type": "string"
-        },
-        "tile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TileId"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The preview tile to show `path` in, or the tile to open a new preview\nbeside; defaults to the focused tile."
-        }
-      },
-      "required": [
-        "path"
-      ],
-      "type": "object"
-    },
-    "PreviewSetMode": {
-      "properties": {
-        "mode": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PreviewMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Absent toggles between rendered and source."
-        },
-        "tile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TileId"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "A preview tile; defaults to the focused tile."
-        }
-      },
-      "type": "object"
-    },
     "ReadSource": {
       "description": "What `terminal.read` returns.",
       "oneOf": [
@@ -4261,22 +3924,8 @@
           "type": "object"
         },
         {
-          "$ref": "#/$defs/PreviewContent",
-          "description": "A preview tile's content, from `preview.get`.",
-          "properties": {
-            "type": {
-              "const": "preview",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        },
-        {
           "$ref": "#/$defs/FilesListing",
-          "description": "A folder of a files tile, from `files.list` or `files.expand`.",
+          "description": "A folder of a files panel, from `files.list` or `files.expand`.",
           "properties": {
             "type": {
               "const": "files",
@@ -5134,67 +4783,6 @@
             "kind"
           ],
           "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "browser",
-              "type": "string"
-            },
-            "page_title": {
-              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "preview",
-              "type": "string"
-            },
-            "path": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "files",
-              "type": "string"
-            },
-            "root": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
         }
       ],
       "properties": {
@@ -5233,10 +4821,6 @@
             }
           ],
           "description": "Terminal tiles only: title, cwd and command herdr reports for the pane."
-        },
-        "preview_mode": {
-          "$ref": "#/$defs/PreviewMode",
-          "description": "Preview tiles only: rendered or source. Saved per tile."
         },
         "title": {
           "type": [
@@ -5334,67 +4918,6 @@
             "kind"
           ],
           "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "browser",
-              "type": "string"
-            },
-            "page_title": {
-              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "preview",
-              "type": "string"
-            },
-            "path": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "files",
-              "type": "string"
-            },
-            "root": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
         }
       ]
     },
@@ -5484,67 +5007,6 @@
             "kind"
           ],
           "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "browser",
-              "type": "string"
-            },
-            "page_title": {
-              "description": "The loaded page's `<title>`, as the shell last reported it\n(`browser.state`). Separate from the tile's own `title`, which is\nthe user's name for the tile.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "url": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "preview",
-              "type": "string"
-            },
-            "path": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kind": {
-              "const": "files",
-              "type": "string"
-            },
-            "root": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "kind"
-          ],
-          "type": "object"
         }
       ],
       "properties": {
@@ -5587,10 +5049,6 @@
             }
           ],
           "description": "Terminal tiles only: title, cwd and command herdr reports for the pane."
-        },
-        "preview_mode": {
-          "$ref": "#/$defs/PreviewMode",
-          "description": "Preview tiles only: rendered or source. Saved per tile."
         },
         "tab": {
           "$ref": "#/$defs/TabId"
@@ -6294,15 +5752,9 @@
     "tile.seen",
     "tile.mark_unread",
     "tile.rename",
-    "browser.open",
-    "browser.state",
-    "preview.open",
-    "preview.get",
-    "preview.set_mode",
     "files.list",
     "files.expand",
     "files.collapse",
-    "files.set_root",
     "files.reveal",
     "files.toggle_hidden",
     "files.open",

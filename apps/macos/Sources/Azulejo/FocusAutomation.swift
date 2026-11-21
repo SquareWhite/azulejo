@@ -1,10 +1,8 @@
 import AppKit
-import Quartz
-import WebKit
 
 /// How AppKit hands on a keyDown the key router didn't consume, for runs where
 /// the window isn't key (automation in the background, where `NSApp` would
-/// drop the event): the window's key equivalents (a browser tile's ⌘L), then
+/// drop the event): the window's key equivalents, then
 /// the main menu (⌘C / ⌘V reach the first responder through the Edit menu),
 /// then the first responder's `keyDown`.
 @MainActor
@@ -77,9 +75,9 @@ enum KeyDelivery {
 ///                         tile (`takeover`, `respawn`, `retry`, `close`)
 ///
 /// Keys: `responder` (what holds first responder: `terminal`, `terminal-ro`,
-/// `terminal-tile`, `browser-page`, `browser-address`, `preview-page`,
-/// `preview-native`, `files-tree`, `files-filter`, `<kind>-find` (a find
-/// bar), `palette`, `window`, or `<kind>:<class>`), `responder.tile` (short id of the tile holding it, `-`),
+/// `terminal-tile`, `<kind>-find` (a find bar), `palette`, `window`,
+/// `chrome:<class>` (outside the tiles, e.g. the sidebar's Files tree), or
+/// `<kind>:<class>`), `responder.tile` (short id of the tile holding it, `-`),
 /// `responder.focused` (`yes` when that tile is the focused one),
 /// `key.last` (the router's verdict on the last keyDown: `action:<name>`,
 /// `passed`, `composing`, `palette`, `palette-field`…), `ime.marked`,
@@ -194,10 +192,7 @@ enum FocusAutomation {
         }
         var frame: TileFrame?
         var cursor: NSView? = start
-        var inWeb = false, inQuickLook = false
         while let v = cursor {
-            if v is WKWebView { inWeb = true }
-            if v is QLPreviewView { inQuickLook = true }
             if let f = v as? TileFrame { frame = f; break }
             cursor = v.superview
         }
@@ -210,13 +205,7 @@ enum FocusAutomation {
         case is FindField: label = "\(kind)-find"
         case let surface as TerminalSurfaceView: label = surface.readOnly ? "terminal-ro" : "terminal"
         case is TerminalTileView: label = "terminal-tile"
-        case is NSOutlineView: label = "files-tree"
-        case is NSSearchField where frame.kind == .files: label = "files-filter"
-        case is NSTextField where frame.kind == .browser: label = "browser-address"
-        default:
-            if inWeb { label = "\(kind)-page" }
-            else if inQuickLook { label = "preview-native" }
-            else { label = "\(kind):\(type(of: start))" }
+        default: label = "\(kind):\(type(of: start))"
         }
         return (label, frame.tileID)
     }

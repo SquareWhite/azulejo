@@ -8,8 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use azulejo_model::{
-    Direction, Frame, HerdrRef, LayoutKind, PreviewMode, TabId, TileContent, TileId, WindowId,
-    WorkspaceId,
+    Direction, Frame, HerdrRef, LayoutKind, TabId, TileContent, TileId, WindowId, WorkspaceId,
 };
 
 use crate::error::{Error, ErrorCode};
@@ -127,33 +126,8 @@ pub enum Command {
     #[serde(rename = "tile.rename")]
     TileRename(TileRename),
 
-    // ----- browser and preview tiles -----
-    /// Points a browser tile at `url`; the shell loads it on `tile.updated`.
-    #[serde(rename = "browser.open")]
-    BrowserOpen(BrowserOpen),
-    /// The shell reports where a browser tile's page is now (after a link,
-    /// a redirect, back or forward) and its `<title>`, so `tile.get` and
-    /// restore see the live page. Unlike `browser.open` it asks for no load.
-    #[serde(rename = "browser.state")]
-    BrowserState(BrowserState),
-    /// Shows `path` in a preview tile. When `tile` is a preview tile it
-    /// shows the file and replies `ok`. Any other tile (say, the terminal
-    /// `azj` runs in) gets a new preview tile to its right, and the reply is
-    /// `created` with it; focus stays where it was.
-    #[serde(rename = "preview.open")]
-    PreviewOpen(PreviewOpen),
-    /// A preview tile's rendered content; replies `preview`. Shells call it
-    /// when they create a preview view; later changes arrive as
-    /// `preview.updated` events.
-    #[serde(rename = "preview.get")]
-    PreviewGet(TileTarget),
-    /// Shows a preview tile's file rendered or as highlighted source;
-    /// without `mode` it toggles. Saved per tile.
-    #[serde(rename = "preview.set_mode")]
-    PreviewSetMode(PreviewSetMode),
-
-    // ----- file browser tiles -----
-    /// Lists one folder of a files tile (its root when `dir` is absent);
+    // ----- files panels -----
+    /// Lists one folder of a files panel (its root when `dir` is absent);
     /// replies `files`. Doesn't watch it: see `files.expand`.
     #[serde(rename = "files.list")]
     FilesList(crate::files::FilesDir),
@@ -164,9 +138,6 @@ pub enum Command {
     /// Stops watching a folder and the folders open below it.
     #[serde(rename = "files.collapse")]
     FilesCollapse(crate::files::FilesDir),
-    /// Points a files tile at another folder.
-    #[serde(rename = "files.set_root")]
-    FilesSetRoot(crate::files::FilesSetRoot),
     /// Opens the folders down to `path` and asks shells to select it
     /// (`files.revealed`).
     #[serde(rename = "files.reveal")]
@@ -175,9 +146,9 @@ pub enum Command {
     /// absent. Shells list their open folders again on `files.changed`.
     #[serde(rename = "files.toggle_hidden")]
     FilesToggleHidden(crate::files::FilesToggleHidden),
-    /// Opens a path from a files tile in a preview tile (the tab's first one,
-    /// or a new one to the right) or in a new terminal below it; replies
-    /// `created` with the tile.
+    /// Opens a path from a files panel beside the focused tile: a file in
+    /// the editor (a new terminal running it, to the right) or a folder in a
+    /// new terminal below; replies `created` with the tile.
     #[serde(rename = "files.open")]
     FilesOpen(crate::files::FilesOpen),
     /// Opens a files panel on `root` (or points an existing one there);
@@ -364,15 +335,9 @@ pub const METHODS: &[&str] = &[
     "tile.seen",
     "tile.mark_unread",
     "tile.rename",
-    "browser.open",
-    "browser.state",
-    "preview.open",
-    "preview.get",
-    "preview.set_mode",
     "files.list",
     "files.expand",
     "files.collapse",
-    "files.set_root",
     "files.reveal",
     "files.toggle_hidden",
     "files.open",
@@ -836,48 +801,6 @@ pub struct TileRename {
     /// `null` or absent clears the title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct BrowserOpen {
-    /// A browser tile; defaults to the focused tile.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<TileId>,
-    pub url: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct BrowserState {
-    /// A browser tile; defaults to the focused tile.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<TileId>,
-    /// The page's current URL; absent leaves it unchanged.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// The page's `<title>`; absent or empty clears it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub page_title: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PreviewSetMode {
-    /// A preview tile; defaults to the focused tile.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<TileId>,
-    /// Absent toggles between rendered and source.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<PreviewMode>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PreviewOpen {
-    /// The preview tile to show `path` in, or the tile to open a new preview
-    /// beside; defaults to the focused tile.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<TileId>,
-    /// The file to show. `azj` makes a relative path absolute against its
-    /// own working folder.
-    pub path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

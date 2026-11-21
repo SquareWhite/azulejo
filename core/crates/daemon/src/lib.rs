@@ -769,7 +769,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("azj-daemon-keys-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
-        std::fs::write(&path, "[keys.macos.browser]\nbrowser_back = \"alt+left\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "[keys.macos.files]\nfiles_open_external = \"alt+down\"\n",
+        )
+        .unwrap();
         let app = App::start(Options {
             config_path: Some(path.clone()),
             platform: Platform::Macos,
@@ -792,10 +796,13 @@ mod tests {
         };
         assert_eq!(platform, "macos");
         assert_eq!(listed.as_deref(), Some(path.display().to_string().as_str()));
-        let back = keys.iter().find(|k| k.action == "browser_back").unwrap();
+        let external = keys
+            .iter()
+            .find(|k| k.action == "files_open_external")
+            .unwrap();
         assert_eq!(
-            (back.current.clone(), back.source.as_str()),
-            (vec!["alt+left".to_owned()], "user")
+            (external.current.clone(), external.source.as_str()),
+            (vec!["alt+down".to_owned()], "user")
         );
         let reply = app
             .core()
@@ -805,9 +812,9 @@ mod tests {
         let azulejo_protocol::Reply::Text { text } = reply else {
             panic!("{reply:?}")
         };
-        assert!(text.contains("[keys.macos.browser]"), "{text}");
+        assert!(text.contains("[keys.macos.files]"), "{text}");
         assert!(
-            text.contains("# browser_back = \"cmd+bracketleft\""),
+            text.contains("# files_open_external = \"cmd+down\""),
             "{text}"
         );
         app.shutdown();

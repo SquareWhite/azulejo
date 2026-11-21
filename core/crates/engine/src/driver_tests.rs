@@ -689,7 +689,7 @@ fn a_closed_herdr_workspace_takes_its_tiles_and_binding() {
     let core = Core::start_with_herdr(opts(None), fake.clone());
     split(&core);
     wait_until(&core, |s| terminals(s).len() == 2 && all_bound(s));
-    // A second workspace with a browser and a terminal, so the first can go.
+    // A second workspace with a terminal, so the first can go.
     let created = core
         .execute(Command::WorkspaceCreate(
             azulejo_protocol::WorkspaceCreate {
@@ -1463,26 +1463,6 @@ fn terminal_io_errors() {
     core.set_on_exit(OnExit::Keep);
     let (tile, pane) = focused_pane(&core);
 
-    // Not a terminal.
-    let browser = match core
-        .execute(Command::LayoutSplit(LayoutSplit {
-            tile: None,
-            direction: Direction::Down,
-            content: Some(TileContent::Browser {
-                url: None,
-                page_title: None,
-            }),
-        }))
-        .unwrap()
-        .reply
-    {
-        Reply::Created(c) => c.tile.unwrap(),
-        other => panic!("{other:?}"),
-    };
-    let err = reply(&core, read(Some(browser))).unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidState);
-    assert!(err.message.contains("browser tile"), "{err}");
-
     // Unknown tile.
     assert_eq!(
         reply(&core, read(Some(TileId::new()))).unwrap_err().code,
@@ -1771,27 +1751,6 @@ fn respawn_needs_herdr_and_a_terminal() {
     )
     .unwrap_err();
     assert_eq!(err.code, azulejo_protocol::ErrorCode::Unavailable);
-
-    let mut engine = Engine::new();
-    let browser = engine
-        .execute(Command::LayoutSplit(LayoutSplit {
-            tile: None,
-            direction: Direction::Right,
-            content: Some(TileContent::Browser {
-                url: None,
-                page_title: None,
-            }),
-        }))
-        .unwrap();
-    let azulejo_protocol::Reply::Created(c) = browser.reply else {
-        panic!()
-    };
-    let err = engine
-        .execute(Command::TerminalRespawn(azulejo_protocol::TileTarget {
-            tile: c.tile,
-        }))
-        .unwrap_err();
-    assert_eq!(err.code, azulejo_protocol::ErrorCode::InvalidState);
 }
 
 #[test]

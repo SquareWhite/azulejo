@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# File browser tile (2.5) check, in-process, on its own dev instance
+# The sidebar's Files view, in-process, on its own dev instance
 # (AZJ_DEV_NAME=files by default): opens a synthetic 50k-file git repo,
 # expands folders by key, follows live changes, hidden/ignored, filter,
-# reveal, open-in-preview and git decorations. Prints the measured numbers.
+# reveal, open-in-editor and git decorations. Prints the measured numbers.
 # Fixtures live in a temp folder that is removed afterwards.
 #   apps/macos/automation/files.sh [--keep]
 set -euo pipefail

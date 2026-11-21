@@ -4,8 +4,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use azulejo_model::{
-    Focus, Frame, GitInfo, LayoutKind, LayoutParams, Node, Placement, PreviewMode, Tab, TabId,
-    Tile, TileId, WindowId, WorkspaceId,
+    Focus, Frame, GitInfo, LayoutKind, LayoutParams, Node, Placement, Tab, TabId, Tile, TileId,
+    WindowId, WorkspaceId,
 };
 
 /// Something that changed in the core.
@@ -109,12 +109,7 @@ pub enum Event {
     #[serde(rename = "focus.changed")]
     FocusChanged(Focus),
 
-    /// A preview tile's file was (re)rendered: on open, on restore and after
-    /// every change on disk. Not saved; `preview.get` returns the latest.
-    #[serde(rename = "preview.updated")]
-    PreviewUpdated(PreviewContent),
-
-    /// Folders a files tile has open changed on disk, or hidden entries were
+    /// Folders a files panel has open changed on disk, or hidden entries were
     /// toggled: list them again. Not saved.
     #[serde(rename = "files.changed")]
     FilesChanged(crate::files::FilesChanged),
@@ -122,7 +117,7 @@ pub enum Event {
     /// and select it. Not saved.
     #[serde(rename = "files.revealed")]
     FilesRevealed(crate::files::FilesRevealed),
-    /// Git status for a files tile's work tree, after it opens and after
+    /// Git status for a files panel's work tree, after it opens and after
     /// changes. Not saved.
     #[serde(rename = "files.git")]
     FilesGit(crate::files::FilesGit),
@@ -188,52 +183,6 @@ pub struct AgentStateChange {
     /// The agent herdr detected, e.g. `claude` or `codex`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
-}
-
-/// What a preview tile shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PreviewKind {
-    Markdown,
-    Code,
-    Text,
-    /// Native kinds: the shell shows `path` with QuickLook (macOS) or GTK
-    /// (Linux); there's no `html`.
-    Image,
-    Video,
-    Audio,
-    Pdf,
-    /// The rest get an explanatory `html` page.
-    Binary,
-    Directory,
-    Missing,
-    Unreadable,
-}
-
-/// A rendered preview, from `preview.updated` or `preview.get`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct PreviewContent {
-    pub tile: TileId,
-    pub path: String,
-    pub kind: PreviewKind,
-    /// A complete HTML document for the tile's webview; absent for native
-    /// kinds. When the tile already shows `path`, pass it to
-    /// `azulejoPreview.swap(html)` (shared/webview/preview.js) to keep the
-    /// scroll position.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub html: Option<String>,
-    /// Syntax name for `code`, e.g. `Rust`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-    /// Only the start of a very large file was rendered.
-    #[serde(default)]
-    pub truncated: bool,
-    /// Rendered, or the file's source highlighted as code.
-    #[serde(default, skip_serializing_if = "PreviewMode::is_rendered")]
-    pub mode: PreviewMode,
-    /// Counts renders of this tile in this run, so a shell can drop stale
-    /// updates.
-    pub revision: u64,
 }
 
 /// A tab's layout, as `layout.changed` and `layout.get` report it.

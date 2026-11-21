@@ -15,20 +15,6 @@ pub const INDEXED_ENTRIES: u8 = 9;
 const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
     // (method, title, category, prompt, needs_tile)
     (
-        "browser.open",
-        "Open URL in browser tile",
-        "browser",
-        Some("url"),
-        true,
-    ),
-    (
-        "preview.open",
-        "Preview file in this tile",
-        "preview",
-        Some("path"),
-        true,
-    ),
-    (
         "workspace.set_repo",
         "Set workspace repository folder…",
         "workspace",
@@ -37,23 +23,9 @@ const METHOD_ENTRIES: &[(&str, &str, &str, Option<&str>, bool)] = &[
     ),
     (
         "files.open",
-        "Open path from file browser…",
+        "Edit file in a new terminal…",
         "files",
         Some("path"),
-        true,
-    ),
-    (
-        "files.reveal",
-        "Reveal path in file browser…",
-        "files",
-        Some("path"),
-        true,
-    ),
-    (
-        "files.set_root",
-        "Set file browser root…",
-        "files",
-        Some("root"),
         true,
     ),
     (
@@ -119,12 +91,12 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "tile.seen",
     // The shell's `toggle_unread` action (menus, ⌘K) sends it.
     "tile.mark_unread",
-    "browser.state",
-    "preview.get",
-    // The files tile lists and watches folders as the user opens them.
+    // The sidebar's Files view lists and watches folders as the user opens
+    // them, and reveals paths in its panel.
     "files.list",
     "files.expand",
     "files.collapse",
+    "files.reveal",
     // The sidebar's Files view opens and closes its panel.
     "files.panel",
     "files.panel_close",
@@ -345,17 +317,6 @@ pub(crate) fn title(action: Action) -> String {
         FindPrevious => "Find: previous match".into(),
         FindClose => "Find: close the bar".into(),
         ResizeModeExit => "Resize mode: done".into(),
-        BrowserFocusAddress => "Browser: edit the address".into(),
-        BrowserReload => "Browser: reload".into(),
-        BrowserReloadFromOrigin => "Browser: reload from origin".into(),
-        BrowserBack => "Browser: back".into(),
-        BrowserForward => "Browser: forward".into(),
-        BrowserStop => "Browser: stop loading".into(),
-        BrowserZoomIn => "Browser: zoom in".into(),
-        BrowserZoomOut => "Browser: zoom out".into(),
-        BrowserZoomReset => "Browser: actual size".into(),
-        BrowserInspector => "Browser: Web Inspector".into(),
-        PreviewToggleSource => "Preview: toggle Preview | Source".into(),
         FilesDown => "Files: next row".into(),
         FilesUp => "Files: previous row".into(),
         FilesOpen => "Files: open".into(),
@@ -395,17 +356,6 @@ fn category(action: Action) -> &'static str {
         | PalettePageUp | PaletteComplete => "palette",
         FindNext | FindPrevious | FindClose => "find",
         ResizeModeExit => "tile",
-        BrowserFocusAddress
-        | BrowserReload
-        | BrowserReloadFromOrigin
-        | BrowserBack
-        | BrowserForward
-        | BrowserStop
-        | BrowserZoomIn
-        | BrowserZoomOut
-        | BrowserZoomReset
-        | BrowserInspector => "browser",
-        PreviewToggleSource => "preview",
         FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
         | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => "files",
     }
@@ -436,17 +386,6 @@ fn needs_tile(action: Action) -> bool {
             | SelectVisibleItem
             | TakeOver
             | SendText(_)
-            | BrowserFocusAddress
-            | BrowserReload
-            | BrowserReloadFromOrigin
-            | BrowserBack
-            | BrowserForward
-            | BrowserStop
-            | BrowserZoomIn
-            | BrowserZoomOut
-            | BrowserZoomReset
-            | BrowserInspector
-            | PreviewToggleSource
             | FilesDown
             | FilesUp
             | FilesOpen

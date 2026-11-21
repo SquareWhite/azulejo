@@ -1,8 +1,9 @@
-//! File browser tiles: params, listings and events.
+//! Files panels: params, listings and events.
 //!
-//! A files tile lists one folder at a time. Shells ask for a folder's entries
-//! with `files.expand` when the user opens it, which also starts watching it;
-//! `files.changed` then names folders to list again.
+//! A files panel (`files.panel`, the sidebar's Files view) lists one folder
+//! at a time. Shells ask for a folder's entries with `files.expand` when the
+//! user opens it, which also starts watching it; `files.changed` then names
+//! folders to list again.
 
 use std::collections::BTreeMap;
 
@@ -11,31 +12,23 @@ use serde::{Deserialize, Serialize};
 
 use azulejo_model::TileId;
 
-/// A folder of a files tile.
+/// A folder of a files panel.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesDir {
-    /// A files tile; defaults to the focused tile.
+    /// The panel's id (`files.panel`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
-    /// Absolute, or relative to the tile's root; the root when absent.
+    /// Absolute, or relative to the panel's root; the root when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct FilesSetRoot {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<TileId>,
-    /// The folder to show; `~` expands to the home folder.
-    pub root: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesReveal {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
-    /// A file or folder under the tile's root: absolute, or relative to the
-    /// tile's root.
+    /// A file or folder under the panel's root: absolute, or relative to
+    /// the panel's root.
     pub path: String,
 }
 
@@ -53,24 +46,27 @@ pub struct FilesToggleHidden {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FilesOpenTarget {
-    /// The tab's first preview tile shows it; without one, a new preview tile
-    /// opens to the right of the files tile. Focus stays in the files tile.
+    /// A file opens in the editor: a new terminal tile to the right of the
+    /// anchor, in the file's folder, runs the editor on it (`vim <path>`).
+    /// It takes focus. A folder opens a terminal there instead, as
+    /// `terminal` does. `preview`, from builds that had preview tiles, means
+    /// this too.
     #[default]
-    Preview,
-    /// A new terminal tile below the files tile, in the folder (a file's
-    /// folder for a file). It takes focus.
+    #[serde(alias = "preview")]
+    Editor,
+    /// A new terminal tile below the anchor, in the folder (a file's folder
+    /// for a file). It takes focus.
     Terminal,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesOpen {
-    /// The files tile the path comes from; defaults to the focused tile. A
-    /// files panel (`files.panel`) works too: the path then opens beside the
-    /// focused tile. Any other tile is used as the anchor when `path` is
-    /// absolute.
+    /// The files panel (`files.panel`) the path comes from: the path opens
+    /// beside the focused tile. Any tile works as the anchor instead when
+    /// `path` is absolute; the focused tile when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile: Option<TileId>,
-    /// Absolute, or relative to the tile's root.
+    /// Absolute, or relative to the panel's root.
     pub path: String,
     #[serde(default)]
     pub target: FilesOpenTarget,
@@ -78,16 +74,16 @@ pub struct FilesOpen {
 
 /// A files panel: a file tree outside the layout (the sidebar's Files view).
 /// It answers `files.list`, `files.expand`, `files.collapse`,
-/// `files.reveal`, `files.toggle_hidden` and `files.open` like a files tile,
-/// with its id as `tile`, and its events carry that id.
+/// `files.reveal`, `files.toggle_hidden` and `files.open` with its id as
+/// `tile`, and its events carry that id.
 ///
 /// With `machine`, the panel shows that herdr machine's files:
 /// the core lists folders over the machine's SSH connection, off its
 /// thread. A folder it hasn't listed yet comes back empty with `loading`,
 /// and `files.changed` names the folder once its listing is in (or failed,
 /// with `error`). Open folders are listed again every few seconds; nothing
-/// is watched. `files.open` shows a copy of a remote file in the preview
-/// tile and opens terminals on the machine.
+/// is watched. `files.open` opens the editor and terminals on the focused
+/// workspace's machine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesPanel {
     /// The panel to point at `root`; a new panel when absent.
@@ -144,7 +140,7 @@ pub struct FileEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesListing {
     pub tile: TileId,
-    /// The tile's root, absolute and resolved (symlinks followed).
+    /// The panel's root, absolute and resolved (symlinks followed).
     pub root: String,
     /// The listed folder, absolute and resolved.
     pub dir: String,
@@ -186,7 +182,7 @@ pub struct FilesRevealed {
 }
 
 /// Payload of `files.git`: the git state of every changed path in the
-/// tile's work tree (and the folders above them). Replaces the previous one.
+/// panel's work tree (and the folders above them). Replaces the previous one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FilesGit {
     pub tile: TileId,

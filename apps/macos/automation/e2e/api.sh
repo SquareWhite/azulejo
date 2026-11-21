@@ -88,10 +88,10 @@ say "B10 an azj script builds a two-workspace layout"
 w1="$(azj --json workspace create --name e2e-one | jq -r '.workspace')"
 azj tab create --workspace "$w1" >/dev/null
 azj layout split-auto >/dev/null; azj layout split-auto >/dev/null
-azj layout split --direction right --content browser --url http://127.0.0.1:9/ >/dev/null
+azj layout split --direction right --content terminal --cwd "$fx" >/dev/null
 w2="$(azj --json workspace create --name e2e-two | jq -r '.workspace')"
 azj tab create --workspace "$w2" >/dev/null
-azj layout split --direction right --content preview --path "$fx/plan.md" >/dev/null
+azj layout split --direction right --content terminal --command "echo e2e-two" >/dev/null
 sleep 1
 azj --json session get >"$out/session-two-ws.json"
 check "workspace e2e-one has 4 tiles, e2e-two has 2" python3 - "$out/session-two-ws.json" <<'PY'
@@ -103,9 +103,10 @@ print(count(ws["e2e-one"]), count(ws["e2e-two"]))
 assert count(ws["e2e-one"]) == 4 and count(ws["e2e-two"]) == 2
 PY
 
-say "B7 files: open a terminal at a path"
+say "B7 files: open a terminal or the editor at a path"
 azj workspace focus --workspace "$w1" >/dev/null
-ft="$(azj --json layout split --direction right --content files --root "$fx/azulejo" | jq -r '.tile')"
+# A files panel, as the sidebar's Files view opens one.
+ft="$(azj --json files panel --root "$fx/azulejo" | jq -r '.tile')"
 sleep 1
 mkdir -p "$fx/azulejo/src"
 nt="$(azj --json files open --tile "$ft" --path "$fx/azulejo/src" --target terminal | jq -r '.tile')"
@@ -117,9 +118,15 @@ assert t['kind']=='terminal' and str(t.get('pane',{}).get('cwd','')).endswith('a
 nt2="$(azj --json files open --tile "$ft" --path README.md --target terminal | jq -r '.tile')"
 sleep 2.5
 azj --json tile get --tile "$nt2" >"$out/files-terminal-file.json"
-check "azj files open --path README.md (relative to the tile root, as documented) opens a terminal in its folder" python3 -c "
+check "azj files open --path README.md (relative to the panel's root, as documented) opens a terminal in its folder" python3 -c "
 import json; t=json.load(open('$out/files-terminal-file.json')); print(t.get('kind'), t.get('cwd'), t.get('pane'))
 assert t['kind']=='terminal' and str(t.get('pane',{}).get('cwd','')).endswith('/azulejo')"
+ed="$(azj --json files open --tile "$ft" --path README.md | jq -r '.tile')"
+azj --json tile get --tile "$ed" >"$out/files-editor.json"
+check "azj files open on a file runs the editor on it in a new terminal" python3 -c "
+import json; t=json.load(open('$out/files-editor.json')); print(t.get('kind'), t.get('command'))
+assert t['kind']=='terminal' and t['command'][0]=='vim' and t['command'][1].endswith('azulejo/README.md')"
+azj files panel-close --panel "$ft" >/dev/null
 
 say "B14 layout apply / export"
 mkdir -p "$fx/web"
@@ -155,7 +162,7 @@ focus = true
 [[tile]]
 title = "right"
 [[tile]]
-path = "plan.md"
+title = "fourth"
 TOML
 azj --json layout apply --path "$fx/three.toml" >"$out/apply-three.json"
 sleep 1.5
@@ -165,7 +172,7 @@ check "three_column round-trips through export" python3 - "$fx/three-export.toml
 import sys, tomllib
 d = tomllib.loads(open(sys.argv[1]).read())
 t = (d.get("tab") or [d])[0]
-print(t.get("layout"), [x.get("title") or x.get("path") for x in t.get("tile", [])])
+print(t.get("layout"), [x.get("title") for x in t.get("tile", [])])
 assert t.get("layout") == "three_column" and len(t.get("tile", [])) == 4
 PY
 azj --json layout apply --path "$fx/three-export.toml" >"$out/apply-three-again.json"
@@ -202,8 +209,8 @@ check "python sync client create/read/close" grep -q "^sync ok" "$out/python.txt
 check "python async client create/read/close" grep -q "^async ok" "$out/python.txt"
 
 say "API: unknown params are refused"
-azj call layout.split '{"direction":"right","kind":"browser","url":"http://x/"}' >"$out/unknown-params.txt" 2>&1 || true
+azj call layout.split '{"direction":"right","kind":"terminal"}' >"$out/unknown-params.txt" 2>&1 || true
 cat "$out/unknown-params.txt"
-check "layout.split with top-level kind/url is invalid_params naming the field" grep -q "invalid_params.*kind" "$out/unknown-params.txt"
+check "layout.split with a top-level kind is invalid_params naming the field" grep -q "invalid_params.*kind" "$out/unknown-params.txt"
 stop_app
 grep -c PASS "$checks" | sed 's/^/passed: /'; ! grep -q FAIL "$checks"

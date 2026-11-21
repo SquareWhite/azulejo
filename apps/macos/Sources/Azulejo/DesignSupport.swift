@@ -9,9 +9,6 @@ extension Design.Icon {
     static func `for`(_ kind: TileKind) -> String {
         switch kind {
         case .terminal: terminal
-        case .browser: browser
-        case .preview: preview
-        case .files: files
         }
     }
 }
@@ -21,9 +18,6 @@ extension Design.Color {
     static func placeholder(_ kind: TileKind) -> NSColor {
         switch kind {
         case .terminal: kindTerminal
-        case .browser: kindBrowser
-        case .preview: kindPreview
-        case .files: kindFiles
         }
     }
 }

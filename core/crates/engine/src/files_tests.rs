@@ -1,4 +1,4 @@
-//! Files tiles in a running core, against real temp folders.
+//! Files panels in a running core, against real temp folders.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use azulejo_protocol::{
     Command, Direction, ErrorCode, Event, FilesDir, FilesListing, FilesOpen, FilesOpenTarget,
-    FilesPanel, FilesPanelClose, FilesReveal, FilesSetRoot, FilesToggleHidden, LayoutSplit, Reply,
-    TileContent, TileId,
+    FilesPanel, FilesPanelClose, FilesReveal, FilesToggleHidden, LayoutSplit, Reply, TileContent,
+    TileId,
 };
 
 use crate::{Core, CoreOptions};
@@ -19,22 +19,6 @@ fn core() -> Core {
         api_socket: String::new(),
         log: Arc::new(|_| {}),
     })
-}
-
-fn split_files(core: &Core, root: &Path) -> TileId {
-    let outcome = core
-        .execute(Command::LayoutSplit(LayoutSplit {
-            tile: None,
-            direction: Direction::Right,
-            content: Some(TileContent::Files {
-                root: Some(root.display().to_string()),
-            }),
-        }))
-        .unwrap();
-    match outcome.reply {
-        Reply::Created(c) => c.tile.unwrap(),
-        other => panic!("unexpected {other:?}"),
-    }
 }
 
 fn expand(core: &Core, tile: TileId, dir: Option<&str>) -> FilesListing {
@@ -101,7 +85,7 @@ fn tree() -> (tempfile::TempDir, PathBuf) {
 fn lists_root_and_folders_lazily() {
     let (_t, root) = tree();
     let core = core();
-    let tile = split_files(&core, &root);
+    let tile = open_panel(&core, None, &root);
     let l = expand(&core, tile, None);
     assert_eq!(l.root, root.display().to_string());
     assert_eq!(l.dir, l.root);
@@ -130,7 +114,7 @@ fn changes_in_open_folders_arrive_quickly_and_only_once() {
     let (_t, root) = tree();
     let core = core();
     let events = core.subscribe();
-    let tile = split_files(&core, &root);
+    let tile = open_panel(&core, None, &root);
     expand(&core, tile, None);
     expand(&core, tile, Some("src"));
     // Let FSEvents' replay of the setup pass.
@@ -204,7 +188,7 @@ fn toggle_hidden_relists_open_folders() {
     let (_t, root) = tree();
     let core = core();
     let events = core.subscribe();
-    let tile = split_files(&core, &root);
+    let tile = open_panel(&core, None, &root);
     assert!(!names(&expand(&core, tile, None)).contains(&".env".to_owned()));
     core.execute(Command::FilesToggleHidden(FilesToggleHidden {
         tile: Some(tile),
@@ -230,7 +214,7 @@ fn reveal_opens_the_folders_down_to_a_path() {
     let (_t, root) = tree();
     let core = core();
     let events = core.subscribe();
-    let tile = split_files(&core, &root);
+    let tile = open_panel(&core, None, &root);
     let out = core
         .execute(Command::FilesReveal(FilesReveal {
             tile: Some(tile),
@@ -276,14 +260,24 @@ fn reveal_opens_the_folders_down_to_a_path() {
     assert_eq!(err.code, ErrorCode::InvalidParams);
 }
 
+/// A tile's content by id.
+fn content(s: &azulejo_protocol::Session, id: TileId) -> TileContent {
+    s.tiles()
+        .find(|(_, t)| t.id == id)
+        .unwrap()
+        .1
+        .content
+        .clone()
+}
+
 #[test]
-fn open_reuses_the_tabs_preview_tile_and_terminals_start_in_the_folder() {
+fn files_open_in_the_editor_beside_the_focused_tile_and_folders_in_a_terminal() {
     let (_t, root) = tree();
     let core = core();
-    let tile = split_files(&core, &root);
+    let panel = open_panel(&core, None, &root);
     let open = |path: &str, target| match core
         .execute(Command::FilesOpen(FilesOpen {
-            tile: Some(tile),
+            tile: Some(panel),
             path: path.into(),
             target,
         }))
@@ -293,60 +287,54 @@ fn open_reuses_the_tabs_preview_tile_and_terminals_start_in_the_folder() {
         Reply::Created(c) => c.tile.unwrap(),
         other => panic!("unexpected {other:?}"),
     };
-    let preview = open("README.md", FilesOpenTarget::Preview);
+    let focused = core.session().unwrap().focused_tile().unwrap();
+    let editor = open("README.md", FilesOpenTarget::Editor);
     let session = core.session().unwrap();
     assert_eq!(
         session.focused_tile(),
-        Some(tile),
-        "focus stays in the files tile"
+        Some(editor),
+        "the editor takes focus"
     );
-    let content = |s: &azulejo_protocol::Session, id| {
-        s.tiles()
-            .find(|(_, t)| t.id == id)
-            .unwrap()
-            .1
-            .content
-            .clone()
-    };
+    let readme = root.join("README.md").display().to_string();
+    assert!(
+        matches!(
+            content(&session, editor),
+            TileContent::Terminal { cwd: Some(cwd), command: Some(command), .. }
+                if cwd == root.display().to_string() && command == ["vim", readme.as_str()]
+        ),
+        "{:?}",
+        content(&session, editor)
+    );
+    // To the right of the tile that had focus.
+    let tab = session.focus().tab.unwrap();
     assert_eq!(
-        content(&session, preview),
-        TileContent::Preview {
-            path: Some(root.join("README.md").display().to_string())
-        }
+        session.tab(tab).unwrap().root.tiles(),
+        vec![focused, editor]
     );
-    let again = open("src/main.rs", FilesOpenTarget::Preview);
-    assert_eq!(again, preview, "reuses the tab's preview tile");
 
+    // A folder opens a terminal there instead, as the terminal target does.
+    let folder = open("src", FilesOpenTarget::Editor);
     let term = open("src/main.rs", FilesOpenTarget::Terminal);
     let session = core.session().unwrap();
     assert_eq!(session.focused_tile(), Some(term));
-    match content(&session, term) {
-        TileContent::Terminal { cwd, .. } => {
-            assert_eq!(cwd, Some(root.join("src").display().to_string()))
-        }
-        other => panic!("unexpected {other:?}"),
+    for id in [folder, term] {
+        assert!(
+            matches!(
+                content(&session, id),
+                TileContent::Terminal { cwd: Some(cwd), command: None, .. }
+                    if cwd == root.join("src").display().to_string()
+            ),
+            "{:?}",
+            content(&session, id)
+        );
     }
-}
 
-#[test]
-fn set_root_points_the_tile_elsewhere() {
-    let (_t, root) = tree();
-    let core = core();
-    let tile = split_files(&core, &root);
-    core.execute(Command::FilesSetRoot(FilesSetRoot {
-        tile: Some(tile),
-        root: root.join("src").display().to_string(),
+    // `preview`, from older shells, means the editor.
+    let old: azulejo_protocol::FilesOpen = serde_json::from_value(serde_json::json!({
+        "tile": panel, "path": "README.md", "target": "preview"
     }))
     .unwrap();
-    let l = expand(&core, tile, None);
-    assert_eq!(names(&l), ["deep/", "main.rs"]);
-    let err = core
-        .execute(Command::FilesSetRoot(FilesSetRoot {
-            tile: Some(tile),
-            root: root.join("README.md").display().to_string(),
-        }))
-        .unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidParams);
+    assert_eq!(old.target, FilesOpenTarget::Editor);
 }
 
 #[test]
@@ -384,7 +372,7 @@ fn git_status_decorates_entries() {
     ]);
     let core = core();
     let events = core.subscribe();
-    let tile = split_files(&core, &root);
+    let tile = open_panel(&core, None, &root);
     expand(&core, tile, None);
     // The first status (clean) comes once the tile's watches are up; an
     // edit before then could land between that read and the watches.
@@ -415,35 +403,6 @@ fn git_status_decorates_entries() {
         src_entry.git,
         Some(azulejo_protocol::FileGitState::Modified)
     );
-}
-
-#[test]
-fn closing_the_tile_stops_its_watches() {
-    let (_t, root) = tree();
-    let core = core();
-    let events = core.subscribe();
-    let tile = split_files(&core, &root);
-    expand(&core, tile, None);
-    core.execute(Command::TileClose(azulejo_protocol::TileClose {
-        tile: Some(tile),
-        kill: false,
-    }))
-    .unwrap();
-    std::thread::sleep(Duration::from_millis(200));
-    while events.try_recv().is_ok() {}
-    fs::write(root.join("after.txt"), "").unwrap();
-    assert!(
-        next(&events, Duration::from_millis(300), |e| changed_dirs(
-            e, tile
-        )
-        .is_some())
-        .is_none()
-    );
-    let err = expand_err(&core, tile);
-    assert!(matches!(
-        err.code,
-        ErrorCode::NotFound | ErrorCode::InvalidState
-    ));
 }
 
 fn open_panel(core: &Core, panel: Option<TileId>, root: &Path) -> TileId {
@@ -488,7 +447,7 @@ fn a_panel_lists_watches_and_opens_outside_the_layout() {
         vec![root.join("src").display().to_string()]
     );
 
-    // A panel survives session changes that drop files tiles.
+    // A panel survives session changes.
     let focused = core.session().unwrap().focused_tile().unwrap();
     core.execute(Command::LayoutSplit(LayoutSplit {
         tile: None,
@@ -498,13 +457,14 @@ fn a_panel_lists_watches_and_opens_outside_the_layout() {
     .unwrap();
     assert_eq!(names(&expand(&core, panel, None)), ["src/", "README.md"]);
 
-    // Opening a file shows it beside the focused tile, which keeps focus.
+    // Opening a file edits it beside the focused tile; a relative path is
+    // relative to the panel's root.
     let focused_now = core.session().unwrap().focused_tile().unwrap();
-    let preview = match core
+    let editor = match core
         .execute(Command::FilesOpen(FilesOpen {
             tile: Some(panel),
-            path: root.join("README.md").display().to_string(),
-            target: FilesOpenTarget::Preview,
+            path: "src/main.rs".into(),
+            target: FilesOpenTarget::Editor,
         }))
         .unwrap()
         .reply
@@ -513,31 +473,18 @@ fn a_panel_lists_watches_and_opens_outside_the_layout() {
         other => panic!("unexpected {other:?}"),
     };
     let session = core.session().unwrap();
-    assert_ne!(preview, focused);
-    assert_eq!(session.focused_tile(), Some(focused_now));
-    assert!(session.tiles().any(|(_, t)| t.id == preview
-        && t.content
-            == TileContent::Preview {
-                path: Some(root.join("README.md").display().to_string())
-            }));
-
-    // A relative path is relative to the panel's root, as for a tile.
-    core.execute(Command::FilesOpen(FilesOpen {
-        tile: Some(panel),
-        path: "src/main.rs".into(),
-        target: FilesOpenTarget::Preview,
-    }))
-    .unwrap();
-    let session = core.session().unwrap();
-    let shown = session
-        .tiles()
-        .find(|(_, t)| t.id == preview)
-        .map(|(_, t)| t.content.clone());
-    let Some(TileContent::Preview { path: Some(shown) }) = shown else {
-        panic!("unexpected {shown:?}");
+    assert_ne!(editor, focused);
+    assert_ne!(editor, focused_now);
+    let TileContent::Terminal {
+        command: Some(command),
+        ..
+    } = content(&session, editor)
+    else {
+        panic!("unexpected {:?}", content(&session, editor));
     };
+    assert_eq!(command[0], "vim");
     assert_eq!(
-        std::path::Path::new(&shown).canonicalize().unwrap(),
+        std::path::Path::new(&command[1]).canonicalize().unwrap(),
         root.join("src/main.rs").canonicalize().unwrap()
     );
 
@@ -748,37 +695,24 @@ fn a_remote_panel_lists_over_ssh_polls_and_opens() {
         "{terminal:?}"
     );
 
-    // A file shows in the preview tile as a local copy, once it's here.
-    fs::write(root.join("README.md"), "# remote readme\n").unwrap();
-    let reply = core
+    // A file opens in the editor, with its path on the machine.
+    let outcome = core
         .execute(Command::FilesOpen(FilesOpen {
             tile: Some(panel),
             path: root.join("README.md").display().to_string(),
-            target: FilesOpenTarget::Preview,
+            target: FilesOpenTarget::Editor,
         }))
-        .unwrap()
-        .reply;
-    assert_eq!(reply, Reply::Ok);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let copy = loop {
-        let session = core.session().unwrap();
-        let shown = session.tiles().find_map(|(_, t)| match &t.content {
-            TileContent::Preview { path: Some(p) } if p.ends_with("proj/README.md") => {
-                Some(PathBuf::from(p))
-            }
-            _ => None,
-        });
-        if let Some(p) = shown {
-            break p;
-        }
-        assert!(Instant::now() < deadline, "no preview of the remote file");
-        std::thread::sleep(Duration::from_millis(50));
+        .unwrap();
+    let Reply::Created(created) = outcome.reply else {
+        panic!("unexpected {:?}", outcome.reply);
     };
-    let copies = std::env::temp_dir().join("azulejo-remote").join(MACHINE);
-    assert_ne!(copy, root.join("README.md"));
-    assert!(copy.starts_with(&copies), "{}", copy.display());
-    assert_eq!(fs::read_to_string(&copy).unwrap(), "# remote readme\n");
-    let _ = fs::remove_dir_all(&copies);
+    let session = core.session().unwrap();
+    let readme = root.join("README.md").display().to_string();
+    let editor = content(&session, created.tile.unwrap());
+    assert!(
+        matches!(&editor, TileContent::Terminal { command: Some(c), .. } if *c == ["vim", readme.as_str()]),
+        "{editor:?}"
+    );
 
     // Cutting the link: the open folders keep their listing and say why.
     while events.try_recv().is_ok() {}

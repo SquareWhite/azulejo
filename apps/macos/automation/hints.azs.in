@@ -1039,9 +1039,11 @@ expect key.last passed
 key cmd+shift+s
 expect hints.state choosing
 key escape
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"about:blank"}}}
-until tile.kind browser
+# In the find bar the tile's context is off, so the terminal binding is too.
+key cmd+shift+f
+expect key.last action:find
 key cmd+shift+s
 expect hints.state closed
 expect key.last passed
+key escape
 quit

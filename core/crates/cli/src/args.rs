@@ -3,9 +3,9 @@
 //! Beyond plain `--name value` for each param, a few shortcuts keep common
 //! commands short:
 //! - an enum value is a flag of its own: `--right` for `--direction right`;
-//! - a tagged union's tag and fields are flags too: `--kind browser --url …`,
-//!   or just `--browser --url …`, or just `--url …` when only one variant has
-//!   a `url`;
+//! - a tagged union's tag and fields are flags too: `--kind terminal --cwd …`,
+//!   or just `--terminal --cwd …`, or just `--cwd …` when only one variant has
+//!   a `cwd`;
 //! - a struct's fields are flags: `--pane-id … --terminal-id …`;
 //! - IDs and the one remaining required param can be positional:
 //!   `azj tile get tile_…`, `azj terminal send-text 'ls'`.
@@ -97,7 +97,7 @@ pub fn parse_params(spec: &MethodSpec, args: &[String]) -> Result<Map<String, Va
             continue;
         }
 
-        // 2. A union's tag, e.g. `--kind browser`.
+        // 2. A union's tag, e.g. `--kind terminal`.
         let tagged = |pred: &dyn Fn(&str, &[Variant]) -> bool| -> Vec<&Param> {
             spec.params
                 .iter()
@@ -167,7 +167,7 @@ pub fn parse_params(spec: &MethodSpec, args: &[String]) -> Result<Map<String, Va
             continue;
         }
 
-        // 5. An enum value or union variant as a flag, e.g. `--right`, `--browser`.
+        // 5. An enum value or union variant as a flag, e.g. `--right`, `--terminal`.
         if inline.is_none() {
             let enums: Vec<&Param> = spec
                 .params
@@ -477,33 +477,27 @@ mod tests {
     const TILE: &str = "tile_01JBX3K6Z8V9W0Q1R2S3T4V5W6";
 
     #[test]
-    fn browser_split_example() {
+    fn terminal_split_example() {
         let p = parse(
             "layout.split",
-            &[
-                "--right",
-                "--kind",
-                "browser",
-                "--url",
-                "http://localhost:3000",
-            ],
+            &["--right", "--kind", "terminal", "--cwd", "/src/shop"],
         )
         .unwrap();
         assert_eq!(
             p,
-            json!({"direction": "right", "content": {"kind": "browser", "url": "http://localhost:3000"}})
+            json!({"direction": "right", "content": {"kind": "terminal", "cwd": "/src/shop"}})
         );
     }
 
     #[test]
     fn union_shortcuts() {
-        let want = json!({"direction": "down", "content": {"kind": "browser", "url": "x"}});
+        let want = json!({"direction": "down", "content": {"kind": "terminal", "cwd": "x"}});
         assert_eq!(
-            parse("layout.split", &["--down", "--browser", "--url", "x"]).unwrap(),
+            parse("layout.split", &["--down", "--terminal", "--cwd", "x"]).unwrap(),
             want
         );
         assert_eq!(
-            parse("layout.split", &["--down", "--url", "x"]).unwrap(),
+            parse("layout.split", &["--down", "--cwd", "x"]).unwrap(),
             want
         );
         assert_eq!(
@@ -512,7 +506,7 @@ mod tests {
                 &[
                     "--direction=down",
                     "--content",
-                    r#"{"kind":"browser","url":"x"}"#
+                    r#"{"kind":"terminal","cwd":"x"}"#
                 ]
             )
             .unwrap(),
@@ -539,7 +533,7 @@ mod tests {
             &["--right", "--kind", "terminal", "--url", "x"],
         )
         .unwrap_err();
-        assert!(err.contains("doesn't apply"), "{err}");
+        assert!(err.contains("unknown option --url"), "{err}");
     }
 
     #[test]

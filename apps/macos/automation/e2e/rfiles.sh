@@ -2,7 +2,7 @@
 # Remote files panel (rfiles.azs.in), dev instance e2e-rfile. The
 # "remote" machine is a second throwaway herdr session reached only through
 # the ssh stand-in (scripts/ssh-standin.sh): the panel lists its files over
-# that "SSH", follows the remote shell's cd, opens folders and a preview,
+# that "SSH", follows the remote shell's cd, opens folders and the editor,
 # and shows the error while the link is cut. Nothing connects to a real
 # machine.
 set -euo pipefail

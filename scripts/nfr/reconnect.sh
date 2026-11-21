@@ -2,7 +2,7 @@
 # herdr reconnect NFR (≤ 2 s), the two slow steps of restore.sh repeated:
 # herdr server restart → every terminal reattached, and a launch that has to
 # start herdr → every terminal attached. Same session as restore.sh: 6
-# terminals in a tall layout, a browser and a zoomed preview in a second tab.
+# terminals in a tall layout, two more (one zoomed) in a second tab.
 # Each run records the load average, since other work on the Mac moves these.
 #
 #   scripts/nfr/reconnect.sh [runs]            debug build (just mac first)
@@ -63,13 +63,11 @@ wait_ping
 wait_tiles 1
 for _ in 1 2 3 4 5; do azj layout split-auto >/dev/null; done
 wait_attached 0 $target "(launch|new tile)"
-plan="$dev/plan.md"
-printf '# Plan\n\n- [x] reconnect\n' >"$plan"
 first_tab="$(azj --json session get | jq -r '.session.windows[0].workspaces[0].active_tab')"
-azj tab create --kind browser --url "http://127.0.0.1:9/reconnect" >/dev/null
-azj layout split-auto --kind preview --path "$plan" >/dev/null
-preview="$(azj --json tile list | jq -r '.tiles[] | select(.kind=="preview") | .id')"
-azj layout zoom --tile "$preview" --zoomed true >/dev/null
+azj tab create >/dev/null
+azj layout split-auto --kind terminal --cwd "$dev" >/dev/null
+zoomed="$(azj --json tile get | jq -r '.id')"
+azj layout zoom --tile "$zoomed" --zoomed true >/dev/null
 azj tab focus --tab "$first_tab" >/dev/null
 sleep 1.5
 

@@ -23,7 +23,7 @@ mod transfer;
 
 pub use azulejo_model::{
     Axis, Direction, Focus, Frame, GitInfo, HerdrRef, InsertAt, LayoutKind, LayoutParams,
-    LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, PreviewMode, Rect, Session,
+    LayoutPrefs, Node, OnExit, Orientation, PaneMeta, Placement, REMOVED_KINDS, Rect, Session,
     SidebarState, TabId, ThreeColumnParams, Tile, TileContent, TileHeader, TileId, TileKind,
     TileParams, WindowId, WorkspaceId,
 };

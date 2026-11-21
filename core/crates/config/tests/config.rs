@@ -230,9 +230,8 @@ fn stateless_actions_build_commands() {
                 | NextTab
                 | PreviousTab
                 | CloseWindow
-                // The shell sends these for whichever tile or panel has the
+                // The shell sends this for the files panel that has the
                 // keyboard.
-                | PreviewToggleSource
                 | FilesToggleHidden
         ) || a.target() == Target::Shell
     };
@@ -509,16 +508,14 @@ fn select_on_drag_lists_programs_and_defaults_to_omp() {
 #[test]
 fn cmd_a_opens_the_agents_sidebar_only_in_terminals_and_the_files_list() {
     let config = Config::defaults(MAC);
-    for tile in [Some(TileKind::Terminal), Some(TileKind::Files)] {
+    for scope in [Some(KeyContext::Terminal), Some(KeyContext::Files)] {
         assert_eq!(
-            resolve(&config, "cmd+a", tile),
+            resolve_in(&config, "cmd+a", scope),
             Some(Action::ToggleAgentsSidebar),
-            "{tile:?}"
+            "{scope:?}"
         );
     }
-    for tile in [None, Some(TileKind::Browser), Some(TileKind::Preview)] {
-        assert_eq!(resolve(&config, "cmd+a", tile), None, "{tile:?}");
-    }
+    assert_eq!(resolve(&config, "cmd+a", None), None);
     // Fields keep select-all: find bars, the files filter, quick open.
     for scope in [KeyContext::Find, KeyContext::Palette] {
         assert_eq!(
@@ -540,7 +537,7 @@ fn cmd_a_opens_the_agents_sidebar_only_in_terminals_and_the_files_list() {
             "{scope:?}"
         );
     }
-    for scope in [None, Some(KeyContext::Browser), Some(KeyContext::Find)] {
+    for scope in [None, Some(KeyContext::Find)] {
         assert!(
             linux
                 .keymap
@@ -557,22 +554,16 @@ fn cmd_a_opens_the_agents_sidebar_only_in_terminals_and_the_files_list() {
 fn cmd_f_opens_the_files_sidebar_and_find_moved_to_cmd_shift_f() {
     let mac = Config::defaults(MAC);
     assert!(mac.diagnostics.is_empty(), "{:#?}", mac.diagnostics);
-    for tile in [
-        None,
-        Some(TileKind::Terminal),
-        Some(TileKind::Browser),
-        Some(TileKind::Preview),
-        Some(TileKind::Files),
-    ] {
+    for scope in [None, Some(KeyContext::Terminal), Some(KeyContext::Files)] {
         assert_eq!(
-            resolve(&mac, "cmd+f", tile),
+            resolve_in(&mac, "cmd+f", scope),
             Some(Action::ToggleFilesSidebar),
-            "{tile:?}"
+            "{scope:?}"
         );
         assert_eq!(
-            resolve(&mac, "cmd+shift+f", tile),
+            resolve_in(&mac, "cmd+shift+f", scope),
             Some(Action::Find),
-            "{tile:?}"
+            "{scope:?}"
         );
     }
     assert!(
@@ -606,7 +597,7 @@ fn context_sections_override_and_can_unbind() {
         r#"
 [keys]
 find = "cmd+e"
-[keys.browser]
+[keys.files]
 find = "cmd+shift+e"
 [keys.terminal]
 find = ""
@@ -615,15 +606,15 @@ find = ""
     );
     assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
     assert_eq!(resolve(&config, "cmd+e", None), Some(Action::Find));
-    assert_eq!(resolve(&config, "cmd+e", Some(TileKind::Browser)), None);
+    assert_eq!(resolve_in(&config, "cmd+e", Some(KeyContext::Files)), None);
     assert_eq!(
-        resolve(&config, "cmd+shift+e", Some(TileKind::Browser)),
+        resolve_in(&config, "cmd+shift+e", Some(KeyContext::Files)),
         Some(Action::Find)
     );
     assert_eq!(resolve(&config, "cmd+e", Some(TileKind::Terminal)), None);
     // Other bindings still apply in a context.
     assert_eq!(
-        resolve(&config, "alt+h", Some(TileKind::Browser)),
+        resolve_in(&config, "alt+h", Some(KeyContext::Files)),
         Some(Action::FocusTile(Direction::Left))
     );
 }
@@ -661,26 +652,20 @@ fn mode_and_tile_contexts_resolve_their_defaults() {
         );
         assert_eq!(at("escape", Resize), Some(Action::ResizeModeExit));
         assert_eq!(at("alt+h", Resize), None, "global chords don't apply");
-        // Tile-local actions only resolve in their tile kind.
-        let back = match platform {
-            Platform::Macos => "cmd+[",
-            Platform::Linux => "alt+left",
+        // Context-only actions only resolve in their context.
+        let external = match platform {
+            Platform::Macos => "cmd+down",
+            Platform::Linux => "alt+down",
         };
-        assert_eq!(at(back, Browser), Some(Action::BrowserBack));
-        assert_eq!(resolve_in(&config, back, None), None);
-        assert_eq!(at(back, Terminal), None);
+        assert_eq!(at(external, Files), Some(Action::FilesOpenExternal));
+        assert_eq!(resolve_in(&config, external, None), None);
+        assert_eq!(at(external, Terminal), None);
         assert_eq!(at("j", Files), Some(Action::FilesDown));
         assert_eq!(at("space", Files), Some(Action::FilesQuickLook));
         assert_eq!(at("j", Terminal), None);
         assert_eq!(resolve_in(&config, "j", None), None);
         assert_eq!(at("ctrl+b", Terminal), Some(Action::SendHerdrPrefix));
         assert_eq!(resolve_in(&config, "ctrl+b", None), None);
-        assert!(
-            !config
-                .keymap
-                .chords_for(Action::PreviewToggleSource, Some(Preview))
-                .is_empty()
-        );
     }
     let mac = Config::defaults(MAC);
     assert_eq!(resolve(&mac, "cmd+q", None), Some(Action::Quit));
@@ -692,19 +677,19 @@ fn mode_and_tile_contexts_resolve_their_defaults() {
 #[test]
 fn context_bindings_beat_global_ones_with_a_warning() {
     let config = user(
-        "[keys]\ncycle_tile_previous = \"cmd+[\"\ngoto = \"ctrl+j\"\n",
+        "[keys]\ncycle_tile_previous = \"cmd+down\"\ngoto = \"ctrl+j\"\n",
         MAC,
     );
     assert_eq!(
-        resolve(&config, "cmd+[", None),
+        resolve(&config, "cmd+down", None),
         Some(Action::CycleTilePrevious)
     );
     assert_eq!(
-        resolve(&config, "cmd+[", Some(TileKind::Browser)),
-        Some(Action::BrowserBack)
+        resolve_in(&config, "cmd+down", Some(KeyContext::Files)),
+        Some(Action::FilesOpenExternal)
     );
     assert_eq!(
-        resolve(&config, "cmd+[", Some(TileKind::Terminal)),
+        resolve(&config, "cmd+down", Some(TileKind::Terminal)),
         Some(Action::CycleTilePrevious)
     );
     assert_eq!(
@@ -716,9 +701,9 @@ fn context_bindings_beat_global_ones_with_a_warning() {
     // Plus the usual one about ctrl+j in terminals.
     assert_eq!(w.len(), 3, "{w:#?}");
     assert!(
-        w.iter().any(|m| m.contains("cmd+bracketleft")
-            && m.contains("in browser tiles")
-            && m.contains("`browser_back` wins")),
+        w.iter().any(|m| m.contains("cmd+down")
+            && m.contains("in the sidebar's Files view")
+            && m.contains("`files_open_external` wins")),
         "{w:#?}"
     );
     assert!(
@@ -754,14 +739,17 @@ fn context_bindings_beat_global_ones_with_a_warning() {
 
 #[test]
 fn context_only_actions_land_in_their_context() {
-    let config = user("[keys]\nbrowser_back = \"alt+left\"\n", MAC);
+    let config = user("[keys]\nfiles_open_external = \"alt+down\"\n", MAC);
     assert!(config.diagnostics.is_empty(), "{:#?}", config.diagnostics);
     assert_eq!(
-        resolve(&config, "alt+left", Some(TileKind::Browser)),
-        Some(Action::BrowserBack)
+        resolve_in(&config, "alt+down", Some(KeyContext::Files)),
+        Some(Action::FilesOpenExternal)
     );
-    assert_eq!(resolve(&config, "alt+left", None), None);
-    assert_eq!(resolve(&config, "cmd+[", Some(TileKind::Browser)), None);
+    assert_eq!(resolve(&config, "alt+down", None), None);
+    assert_eq!(
+        resolve_in(&config, "cmd+down", Some(KeyContext::Files)),
+        None
+    );
 
     // In another context, or after the prefix, they'd never fire: warned
     // about and ignored.
@@ -781,6 +769,27 @@ fn context_only_actions_land_in_their_context() {
     );
 }
 
+/// Bindings for the browser and preview tiles older builds had: warnings,
+/// never errors, and everything else in the file still applies.
+#[test]
+fn bindings_for_removed_tiles_only_warn() {
+    let config = user(
+        r#"
+[keys]
+browser_back = "alt+left"
+goto = "cmd+p"
+[keys.macos.browser]
+browser_reload = "cmd+r"
+[keys.macos.preview]
+preview_toggle_source = "cmd+shift+u"
+"#,
+        MAC,
+    );
+    assert!(!config.has_errors(), "{:#?}", config.diagnostics);
+    assert!(!warnings(&config).is_empty());
+    assert_eq!(resolve(&config, "cmd+p", None), Some(Action::Goto));
+}
+
 // ----- send_text -----
 
 fn text_at(config: &Config, c: &str) -> Option<&'static str> {
@@ -788,17 +797,14 @@ fn text_at(config: &Config, c: &str) -> Option<&'static str> {
 }
 
 /// cmd+l types ctrl+l in terminals (kitty's cmd+l clears; under herdr only
-/// the shell can), and stays the address bar in browsers. shift+enter is no
+/// the shell can), and nothing elsewhere. shift+enter is no
 /// text by default: it reaches apps as a key (CSI 13;2u under the kitty
 /// keyboard protocol).
 #[test]
 fn send_text_defaults() {
     let mac = Config::defaults(MAC);
     assert_eq!(text_at(&mac, "cmd+l"), Some("\u{c}"));
-    assert_eq!(
-        resolve(&mac, "cmd+l", Some(TileKind::Browser)),
-        Some(Action::BrowserFocusAddress)
-    );
+    assert_eq!(resolve_in(&mac, "cmd+l", Some(KeyContext::Files)), None);
     assert_eq!(resolve(&mac, "cmd+l", None), None);
     assert_eq!(resolve(&mac, "shift+enter", Some(TileKind::Terminal)), None);
     let linux = Config::defaults(LINUX);
@@ -883,7 +889,7 @@ fn send_text_takes_toml_escapes() {
 fn send_text_mistakes_are_reported() {
     let config = user(
         r#"
-[keys.macos.browser]
+[keys.macos.files]
 "cmd+l" = { send_text = "x" }
 [keys.macos.terminal]
 "shift+enter" = "\n"
@@ -916,15 +922,12 @@ fn send_text_mistakes_are_reported() {
         w.iter().any(|m| m.contains("unexpected table `cmd+bogus`")),
         "{w:#?}"
     );
-    // Nothing took effect; the browser keeps its address bar.
+    // Nothing took effect.
     let config_mac = Config::defaults(MAC);
     for c in ["shift+enter", "ctrl+j"] {
         assert_eq!(text_at(&config, c), text_at(&config_mac, c));
     }
-    assert_eq!(
-        resolve(&config, "cmd+l", Some(TileKind::Browser)),
-        Some(Action::BrowserFocusAddress)
-    );
+    assert_eq!(resolve_in(&config, "cmd+l", Some(KeyContext::Files)), None);
 }
 
 /// A text on a chord a terminal action already has: the usual clash
@@ -999,11 +1002,8 @@ resize_mode_exit = "q"
 zoom_tile = "z"
 [keys.macos.files]
 files_down = "n"
-[keys.macos.browser]
-browser_reload = "none"
-browser_back = "alt+left"
-[keys.macos.preview]
-preview_toggle_source = "cmd+shift+u"
+files_quick_look = "none"
+files_open_external = "alt+down"
 [keys.macos.terminal]
 send_herdr_prefix = ""
 "#,
@@ -1023,14 +1023,9 @@ send_herdr_prefix = ""
     assert_eq!(at("h", Resize), Some(Action::ResizeTile(Direction::Left)));
     assert_eq!(at("n", Files), Some(Action::FilesDown));
     assert_eq!(at("j", Files), None);
-    assert_eq!(at("cmd+r", Browser), None);
-    assert_eq!(at("alt+left", Browser), Some(Action::BrowserBack));
-    assert_eq!(at("cmd+bracketleft", Browser), None);
-    assert_eq!(
-        at("cmd+shift+u", Preview),
-        Some(Action::PreviewToggleSource)
-    );
-    assert_eq!(at("alt+cmd+u", Preview), None);
+    assert_eq!(at("space", Files), None);
+    assert_eq!(at("alt+down", Files), Some(Action::FilesOpenExternal));
+    assert_eq!(at("cmd+down", Files), None);
     assert_eq!(
         at("ctrl+b", Terminal),
         None,
@@ -1250,11 +1245,11 @@ fn shadowing_ctrl_b_and_control_keys_in_terminals_warns() {
     assert!(w.iter().any(|m| m.contains("ctrl+y") && m.contains("find")));
 
     // Fine outside terminals.
-    let browser_only = user("[keys.browser]\nfind = \"ctrl+k\"\n", MAC);
+    let files_only = user("[keys.files]\nfind = \"ctrl+k\"\n", MAC);
     assert!(
-        browser_only.diagnostics.is_empty(),
+        files_only.diagnostics.is_empty(),
         "{:#?}",
-        browser_only.diagnostics
+        files_only.diagnostics
     );
 }
 
@@ -1599,7 +1594,7 @@ proptest! {
     #[test]
     fn arbitrary_configs_never_panic(
         entries in proptest::collection::vec(
-            (prop_oneof![Just(""), Just("macos."), Just("linux."), Just("terminal."), Just("browser."), Just("macos.palette."), Just("resize.")],
+            (prop_oneof![Just(""), Just("macos."), Just("linux."), Just("terminal."), Just("files."), Just("macos.palette."), Just("resize.")],
              action_name(), chord_text()),
             0..8,
         ),
@@ -1750,17 +1745,15 @@ fn dynamic_layout_chords_resolve() {
             resolve(&config, "alt+shift+backslash", None),
             Some(Action::CycleLayoutPrevious)
         );
-        // In every tile kind alike: no context binds them.
-        for kind in [TileKind::Browser, TileKind::Preview, TileKind::Files] {
-            assert_eq!(
-                resolve(&config, "alt+]", Some(kind)),
-                Some(Action::CycleLayoutNext)
-            );
-            assert_eq!(
-                resolve(&config, "alt+[", Some(kind)),
-                Some(Action::CycleLayoutPrevious)
-            );
-        }
+        // In the files view alike: no context binds them.
+        assert_eq!(
+            resolve_in(&config, "alt+]", Some(KeyContext::Files)),
+            Some(Action::CycleLayoutNext)
+        );
+        assert_eq!(
+            resolve_in(&config, "alt+[", Some(KeyContext::Files)),
+            Some(Action::CycleLayoutPrevious)
+        );
         assert_eq!(resolve(&config, "alt+o", None), Some(Action::RotateLayout));
         // Next/previous tile lost their chords (palette and prefix mode).
         let bound = |a: Action| config.keymap.chords_for(a, None);

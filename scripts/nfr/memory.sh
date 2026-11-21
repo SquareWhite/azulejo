@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Memory, one window with 4 attached terminal tiles (idle shells),
-# browser tiles excluded (target < 150 MB). Reports the app's phys_footprint
-# (what Activity Monitor calls Memory), plus separately: the attach children,
-# azj-observe helpers, the herdr server, and with a browser + preview tile
-# added, the app and the new WebKit processes.
+# Memory, one window with 4 attached terminal tiles (idle shells)
+# (target < 150 MB). Reports the app's phys_footprint (what Activity Monitor
+# calls Memory), plus separately: the attach children, azj-observe helpers
+# and the herdr server.
 #
 #   scripts/nfr/memory.sh                      debug build
 #   NFR_APP=target/release-mac/Azulejo.app scripts/nfr/memory.sh
@@ -31,10 +30,8 @@ fp_settled() { # pid → median of 5 samples, 2 s apart
   python3 -c "import statistics,sys; v=[float(x) for x in sys.argv[1:]]; print('%.1f (min %.1f, max %.1f)' % (statistics.median(v), min(v), max(v)))" "${v[@]}"
 }
 descendants() { local p c; for p in "$@"; do for c in $(pgrep -P "$p" || true); do echo "$c"; descendants "$c"; done; done; }
-webkit() { pgrep -f 'com.apple.WebKit.(WebContent|Networking|GPU)' | sort; }
 
 herdr_fresh
-webkit >"$out/webkit-before.txt"
 launch
 wait_ping
 wait_tiles 1
@@ -55,19 +52,4 @@ echo "attach chain (${#kids[@]} procs, ${#attach[@]} attach)  $(fp "${kids[@]}")
 echo "azj-observe helpers (${#observe[@]})      $( ((${#observe[@]})) && fp "${observe[@]}" || echo 0) MB"
 echo "herdr server (pid $herdr_pid)  $(fp "$herdr_pid") MB"
 
-# A browser on a local page and a markdown preview.
-site="$out/site"; mkdir -p "$site"
-printf '<!doctype html><title>nfr</title><h1>NFR page</h1><p>%s</p>\n' "$(printf 'lorem ipsum %.0s' $(seq 200))" >"$site/index.html"
-(cd "$site" && exec python3 -m http.server 8767 --bind 127.0.0.1 >/dev/null 2>&1) &
-srv=$!
-trap 'kill $srv 2>/dev/null || true' EXIT
-printf '# Plan\n\n- [x] memory\n\n```rust\nfn main() {}\n```\n' >"$dev/plan.md"
-sleep 0.5
-azj layout split-auto --kind browser --url "http://127.0.0.1:8767/" >/dev/null
-azj layout split-auto --kind preview --path "$dev/plan.md" >/dev/null
-sleep 5
-new_webkit=($(comm -13 "$out/webkit-before.txt" <(webkit)))
-say "+ browser + preview ($build)"
-echo "app (pid $pid)                 $(fp_settled "$pid") MB"
-echo "new WebKit processes (${#new_webkit[@]})     $( ((${#new_webkit[@]})) && fp "${new_webkit[@]}" || echo 0) MB"
 stop

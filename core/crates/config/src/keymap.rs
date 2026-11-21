@@ -9,7 +9,7 @@
 //! `"none"` unbinds it. Context sections (`[keys.terminal]`,
 //! `[keys.macos.palette]`, …) replace an action's chords only in that context,
 //! and win over the global bindings there. Actions that only work in one
-//! context (`palette_next`, `browser_back`) go to that context wherever
+//! context (`palette_next`, `files_open`) go to that context wherever
 //! they're written.
 //!
 //! `send_text` lines turn that round: the chord is the key and the value says
@@ -46,10 +46,8 @@ pub enum PrefixState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum KeyContext {
     Terminal,
-    Browser,
-    Preview,
-    /// Files tiles and the sidebar's Files view, while the list has the
-    /// keyboard (its filter field is `Find`).
+    /// The sidebar's Files view, while the list has the keyboard (its
+    /// filter field is `Find`).
     Files,
     /// Quick open (the ⌘K menu).
     Palette,
@@ -60,10 +58,8 @@ pub enum KeyContext {
 }
 
 impl KeyContext {
-    pub const ALL: [KeyContext; 7] = [
+    pub const ALL: [KeyContext; 5] = [
         KeyContext::Terminal,
-        KeyContext::Browser,
-        KeyContext::Preview,
         KeyContext::Files,
         KeyContext::Palette,
         KeyContext::Find,
@@ -74,8 +70,6 @@ impl KeyContext {
     pub fn name(self) -> &'static str {
         match self {
             KeyContext::Terminal => "terminal",
-            KeyContext::Browser => "browser",
-            KeyContext::Preview => "preview",
             KeyContext::Files => "files",
             KeyContext::Palette => "palette",
             KeyContext::Find => "find_bar",
@@ -91,20 +85,15 @@ impl KeyContext {
     pub fn tile(self) -> Option<TileKind> {
         match self {
             KeyContext::Terminal => Some(TileKind::Terminal),
-            KeyContext::Browser => Some(TileKind::Browser),
-            KeyContext::Preview => Some(TileKind::Preview),
-            KeyContext::Files => Some(TileKind::Files),
             _ => None,
         }
     }
 
-    /// "in browser tiles", for messages.
+    /// "in terminal tiles", for messages.
     pub fn describe(self) -> &'static str {
         match self {
             KeyContext::Terminal => "in terminal tiles",
-            KeyContext::Browser => "in browser tiles",
-            KeyContext::Preview => "in preview tiles",
-            KeyContext::Files => "in files tiles and the sidebar's Files view",
+            KeyContext::Files => "in the sidebar's Files view",
             KeyContext::Palette => "in quick open",
             KeyContext::Find => "in find bars",
             KeyContext::Resize => "in resize mode",
@@ -122,9 +111,8 @@ impl From<TileKind> for KeyContext {
     fn from(kind: TileKind) -> Self {
         match kind {
             TileKind::Terminal => KeyContext::Terminal,
-            TileKind::Browser => KeyContext::Browser,
-            TileKind::Preview => KeyContext::Preview,
-            TileKind::Files => KeyContext::Files,
+            // Kinds a newer model may add have no context of their own.
+            _ => KeyContext::Terminal,
         }
     }
 }

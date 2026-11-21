@@ -3,8 +3,7 @@
 # instance (AZJ_DEV_NAME=mock), with captures kept under .dev/.
 # Local workspaces are small fixture repos; "build-server" and "dev-server" are
 # throwaway local herdr sessions reached through the ssh stand-in
-# (scripts/ssh-standin.sh) — nothing connects to a real machine. The browser
-# tile shows a static fixture page served from a temp folder.
+# (scripts/ssh-standin.sh) — nothing connects to a real machine.
 #   apps/macos/automation/mockup.sh [--keep]   (--keep: leave the instance)
 # Other scripts build on the scene (themes.sh): AZJ_MOCKUP_CONFIG is TOML
 # appended to the instance's config.toml, AZJ_MOCKUP_TAIL a file of
@@ -38,7 +37,7 @@ stop_remotes() {
   for s in "$remote_b" "$remote_t"; do "$herdr" session delete "$s" >/dev/null 2>&1 || true; done
 }
 cleanup() {
-  kill "${watchdog:-}" "${watcher:-}" "${server:-}" 2>/dev/null || true
+  kill "${watchdog:-}" "${watcher:-}" 2>/dev/null || true
   rm -rf "$fx"
   [[ "$keep" == "--keep" ]] && return
   "$root/apps/macos/dev.sh" --reset >/dev/null 2>&1 || true
@@ -69,18 +68,12 @@ repo sample-project audit/critical-path-review
 repo sample-dashboard dev
 repo config main
 
-# The browser tile's page: a static fixture on a local port.
-mkdir -p "$fx/site/patterns/14"
-cp "$here/mockup/pattern.html" "$fx/site/patterns/14/index.html"
 cp "$here/mockup/0009-pane-exit.md" "$here/mockup/claude.txt" "$fx/"
 cp "$here/mockup/just" "$fx/just"
-port="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')"
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$fx/site" >/dev/null 2>&1 &
-server=$!
 
 # The terminals' working folder, which their headers and prompts show:
 # AZJ_MOCKUP_CWD overrides it (the main checkout, when run from another one).
-sed -e "s|@FX@|$fx|g" -e "s|@REPO@|${AZJ_MOCKUP_CWD:-$root}|g" -e "s|@PORT@|$port|g" \
+sed -e "s|@FX@|$fx|g" -e "s|@REPO@|${AZJ_MOCKUP_CWD:-$root}|g" \
   "$here/mockup/scene.toml.in" >"$fx/scene.toml"
 
 # The two "remote" machines: throwaway herdr sessions with one workspace each.

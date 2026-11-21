@@ -1,6 +1,6 @@
-# Visual polish captures for the e2e findings (V3–V6, V8, V9, V11), in-process.
-# polish.sh fills @FX@ (temp fixtures), @DEEP@ (a deep folder in it), @HOME@
-# (a long folder under the home folder) and @SITE@ (a local test page).
+# Visual polish captures for the e2e findings (V3–V6, V8, V9), in-process.
+# polish.sh fills @FX@ (temp fixtures), @DEEP@ (a deep folder in it) and
+# @HOME@ (a long folder under the home folder).
 log polish
 delivery direct
 seen-visible off
@@ -15,8 +15,8 @@ core {"method":"layout.set","params":{"kind":"manual"}}
 core {"method":"terminal.send_text","params":{"text":"cd @DEEP@; @FX@/right.sh\n"}}
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@HOME@"}}}
 until tiles 2 5000
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"preview","path":"@DEEP@/plan.md"}}}
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"files","root":"@DEEP@"}}}
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"terminal","cwd":"@DEEP@"}}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DEEP@"}}}
 until tiles 4 5000
 wait 3000
 sh {herdr} --session {session} pane report-agent {pane:1} --source polish --agent claude --state working
@@ -58,32 +58,18 @@ capture 03-placeholder-b 600
 wait 2500
 anim duration 200
 
-# --- V11 / V6: a failed load, then every kind at the minimum window ---
+# --- V6: four terminals at the minimum window ---
 key cmd+shift+t
 until tabs 3 3000
 core {"method":"layout.set","params":{"kind":"manual"}}
 wait 1000
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
-core {"method":"layout.split","params":{"direction":"down","content":{"kind":"files","root":"@DEEP@"}}}
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@DEEP@/plan.md"}}}
+core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DEEP@"}}}
+core {"method":"layout.split","params":{"direction":"down","content":{"kind":"terminal","cwd":"@HOME@"}}}
+core {"method":"layout.split","params":{"direction":"right"}}
 wait 2500
-key alt+h
-key alt+k
-wait 300
-core {"method":"browser.open","params":{"url":"https://example.invalid/path/to/page"}}
-wait 2500
-remember tile.url
-remember tile.address
-remember tile.banner
-# V11: the tile says what failed, no lock for a host that never answered,
-# and the banner has its own row over the page.
-until tile.reported_title example.invalid 3000
-expect tile.address_icon globe
-remember tile.page_top
-shot 04-browser-failed
 window-size 480 320
 wait 1200
-shot 05-min-size-kinds
+shot 05-min-size-terminals
 window-size 1440 900
 wait 600
 

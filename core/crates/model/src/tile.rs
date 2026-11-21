@@ -7,15 +7,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::TileId;
 
-/// The kind of content a tile shows.
+/// The kind of content a tile shows. Terminals are the only kind; the enum
+/// (and the `kind` tag on the wire) leaves room for others. Older builds had
+/// browser, preview and files tiles: saved state drops them on load
+/// ([`REMOVED_KINDS`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TileKind {
     Terminal,
-    Browser,
-    Preview,
-    Files,
 }
+
+/// Tile kinds earlier builds had and this one doesn't: a saved session
+/// naming one loads without those tiles, and a layout file naming one is
+/// refused with a clear error.
+pub const REMOVED_KINDS: &[&str] = &["browser", "preview", "files"];
 
 /// What happens to a terminal tile when the process in its pane exits
 /// (`exit`, ctrl+d, a finished command). Config `[terminal] on_exit`; a tile
@@ -65,6 +71,7 @@ impl HerdrRef {
 /// A tile's content and its kind-specific state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TileContent {
     Terminal {
         /// Working directory for a new pane.
@@ -91,32 +98,12 @@ pub enum TileContent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         on_exit: Option<OnExit>,
     },
-    Browser {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        url: Option<String>,
-        /// The loaded page's `<title>`, as the shell last reported it
-        /// (`browser.state`). Separate from the tile's own `title`, which is
-        /// the user's name for the tile.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        page_title: Option<String>,
-    },
-    Preview {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        path: Option<String>,
-    },
-    Files {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        root: Option<String>,
-    },
 }
 
 impl TileContent {
     pub fn kind(&self) -> TileKind {
         match self {
             TileContent::Terminal { .. } => TileKind::Terminal,
-            TileContent::Browser { .. } => TileKind::Browser,
-            TileContent::Preview { .. } => TileKind::Preview,
-            TileContent::Files { .. } => TileKind::Files,
         }
     }
 
@@ -211,23 +198,6 @@ pub struct TileHeader {
     pub subtitle: Option<String>,
 }
 
-/// How a preview tile shows its file.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum PreviewMode {
-    /// Rendered: markdown as a document, images as images.
-    #[default]
-    Rendered,
-    /// The file's text, highlighted as code (markdown included).
-    Source,
-}
-
-impl PreviewMode {
-    pub fn is_rendered(&self) -> bool {
-        *self == PreviewMode::Rendered
-    }
-}
-
 /// One tile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Tile {
@@ -242,9 +212,6 @@ pub struct Tile {
     /// Terminal tiles only: title, cwd and command herdr reports for the pane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pane: Option<PaneMeta>,
-    /// Preview tiles only: rendered or source. Saved per tile.
-    #[serde(default, skip_serializing_if = "PreviewMode::is_rendered")]
-    pub preview_mode: PreviewMode,
     /// What the header strip shows; the core keeps it current.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub header: Option<TileHeader>,
@@ -258,7 +225,6 @@ impl Tile {
             content,
             agent: None,
             pane: None,
-            preview_mode: PreviewMode::Rendered,
             header: None,
         }
     }
@@ -269,9 +235,6 @@ impl Tile {
     /// - Terminal: the agent herdr detected, else the shell; then the command
     ///   running in the foreground, else the working directory. A name the
     ///   user gave the tile replaces the title.
-    /// - Browser: the page's title, else its host; then the host.
-    /// - Preview: the file's name; then its folder.
-    /// - Files: the root folder's name; then its path.
     pub fn compute_header(&self, home: Option<&str>) -> TileHeader {
         let tilde = |p: &str| tilde(p, home);
         let named = self.title.clone().filter(|t| !t.is_empty());
@@ -302,36 +265,6 @@ impl Tile {
                     subtitle,
                 }
             }
-            TileContent::Browser { url, page_title } => {
-                let host = url.as_deref().and_then(host_of);
-                let page = page_title.clone().filter(|t| !t.trim().is_empty());
-                TileHeader {
-                    title: named
-                        .or(page)
-                        .or_else(|| host.clone())
-                        .unwrap_or_else(|| "browser".into()),
-                    subtitle: host,
-                }
-            }
-            TileContent::Preview { path } => {
-                let (name, folder) = split_path(path.as_deref());
-                TileHeader {
-                    title: named.or(name).unwrap_or_else(|| "preview".into()),
-                    subtitle: folder.as_deref().map(tilde),
-                }
-            }
-            TileContent::Files { root } => {
-                let root = root.clone().filter(|r| !r.is_empty());
-                let shown = root.as_deref().map(tilde).unwrap_or_else(|| "~".into());
-                let name = match root.as_deref() {
-                    Some(r) => split_path(Some(r)).0.unwrap_or_else(|| r.to_owned()),
-                    None => "home".into(),
-                };
-                TileHeader {
-                    title: named.unwrap_or(name),
-                    subtitle: Some(shown),
-                }
-            }
         }
     }
 
@@ -359,36 +292,6 @@ pub fn tilde(path: &str, home: Option<&str>) -> String {
     match path.strip_prefix(home) {
         Some(rest) if rest.starts_with('/') => format!("~{rest}"),
         _ => path.to_owned(),
-    }
-}
-
-/// A URL's host (and port), e.g. `localhost:5173`; `None` for URLs without
-/// one (`about:blank`, `file:` URLs).
-fn host_of(url: &str) -> Option<String> {
-    let rest = url.split_once("://")?.1;
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host = authority.rsplit('@').next().unwrap_or("");
-    (!host.is_empty()).then(|| host.to_owned())
-}
-
-/// A path's last component and the folder holding it.
-fn split_path(path: Option<&str>) -> (Option<String>, Option<String>) {
-    let Some(path) = path
-        .map(|p| p.trim_end_matches('/'))
-        .filter(|p| !p.is_empty())
-    else {
-        return (None, None);
-    };
-    match path.rsplit_once('/') {
-        Some((folder, name)) => (
-            Some(name.to_owned()),
-            Some(if folder.is_empty() {
-                "/".into()
-            } else {
-                folder.to_owned()
-            }),
-        ),
-        None => (Some(path.to_owned()), None),
     }
 }
 
@@ -458,42 +361,6 @@ mod header_tests {
         let h = t.compute_header(HOME);
         assert_eq!(h.title, "terminal");
         assert_eq!(h.subtitle, None);
-    }
-
-    #[test]
-    fn browser_preview_and_files() {
-        let b = Tile::new(TileContent::Browser {
-            url: Some("http://localhost:5173/patterns/14".into()),
-            page_title: Some("Pattern 14".into()),
-        });
-        let h = b.compute_header(HOME);
-        assert_eq!(
-            (h.title.as_str(), h.subtitle.as_deref()),
-            ("Pattern 14", Some("localhost:5173"))
-        );
-        let blank = Tile::new(TileContent::Browser {
-            url: None,
-            page_title: None,
-        });
-        assert_eq!(blank.compute_header(HOME).title, "browser");
-
-        let p = Tile::new(TileContent::Preview {
-            path: Some("/Users/example/code/docs/adr/0009.md".into()),
-        });
-        let h = p.compute_header(HOME);
-        assert_eq!(
-            (h.title.as_str(), h.subtitle.as_deref()),
-            ("0009.md", Some("~/code/docs/adr"))
-        );
-
-        let f = Tile::new(TileContent::Files {
-            root: Some("/Users/example/code".into()),
-        });
-        let h = f.compute_header(HOME);
-        assert_eq!(
-            (h.title.as_str(), h.subtitle.as_deref()),
-            ("code", Some("~/code"))
-        );
     }
 
     #[test]

@@ -33,10 +33,28 @@ fn flags_for(p: &Param) -> Vec<String> {
             // The last variant, with all its fields, to exercise field flags.
             let (name, fields) = variants.last().expect("unions have variants");
             let mut v = vec![format!("--{}", dashed(tag)), name.clone()];
-            v.extend(fields.iter().flat_map(flags_for));
+            v.extend(fields.iter().flat_map(variant_flags));
             v
         }
         Ty::Json => vec![flag, "{}".into()],
+    }
+}
+
+/// Flags for a union variant's field: an object field (a terminal's
+/// `herdr`) takes JSON, since its own fields aren't flags there.
+fn variant_flags(p: &Param) -> Vec<String> {
+    match &p.ty {
+        Ty::Object(fields) => {
+            let object: serde_json::Map<String, Value> = fields
+                .iter()
+                .map(|f| (f.name.clone(), json!("text")))
+                .collect();
+            vec![
+                format!("--{}", dashed(&p.name)),
+                Value::Object(object).to_string(),
+            ]
+        }
+        _ => flags_for(p),
     }
 }
 

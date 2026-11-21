@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Slow folders never freeze the app: every folder listing is held back
 # (AZJ_FILES_LIST_DELAY_MS, standing in for a network volume or a permission
-# prompt) while a files tile and the sidebar's Files view open a 20k-entry
-# folder holding a git repo. The script keeps running meanwhile (each step
-# needs the main thread), the tile shows "Loading…", the rows arrive, and a
-# listing for a root that changed since is dropped. In-process, on its own
+# prompt) while the sidebar's Files view opens a 20k-entry folder holding a
+# git repo. The script keeps running meanwhile (each step needs the main
+# thread), the view shows "Loading…", the rows arrive, and a listing for a
+# root that changed since is dropped. In-process, on its own
 # dev instance (AZJ_DEV_NAME=fslow by default); fixtures live in a temp
 # folder that is removed afterwards.
 #   apps/macos/automation/files-slow.sh [--keep]
@@ -42,10 +42,14 @@ open(os.path.join(root, "repo", ".gitignore"), "w").write("*.log\n")
 open(os.path.join(root, "repo", "debug.log"), "w").close()
 PY
 git_quiet -C "$big/repo" init && git_quiet -C "$big/repo" add -A && git_quiet -C "$big/repo" commit -qm init
+# The Files view follows the workspace's repository: big and small are
+# repos (nothing committed) so `workspace.set_repo` can point it there.
+git_quiet -C "$big" init
 
 small="$fixtures/small"
 mkdir -p "$small"
 : >"$small/a.txt"; : >"$small/b.txt"
+git_quiet -C "$small" init
 
 "$root/apps/macos/dev.sh" --reset >/dev/null
 mkdir -p "$out"

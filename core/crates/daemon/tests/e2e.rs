@@ -2,7 +2,7 @@
 //! throwaway named session. Ignored by default; run with `just e2e`, which
 //! builds `azj` first. Never touches the user's default herdr session.
 //!
-//! Builds a tall layout with terminal and browser tiles through `azj`, kills
+//! Builds a tall layout of terminal tiles through `azj`, kills
 //! the daemon with SIGKILL, restarts it, and checks the session comes back
 //! identical with every terminal tile on the same herdr pane.
 
@@ -249,16 +249,10 @@ fn layout_and_panes_survive_a_hard_kill() {
     world.azj(&["layout", "promote"]);
     world.azj(&["layout", "rotate"]);
     world.azj(&[
-        "tile",
-        "split",
-        "--right",
-        "--kind",
-        "browser",
-        "--url",
-        "http://localhost:3000",
+        "tile", "split", "--right", "--kind", "terminal", "--cwd", "/tmp",
     ]);
 
-    let before = wait_bound(&world, 5);
+    let before = wait_bound(&world, 6);
     let panes_before = world.herdr_panes();
     let mut ours: Vec<String> = terminals(&before)
         .into_iter()
@@ -270,10 +264,7 @@ fn layout_and_panes_survive_a_hard_kill() {
         .as_array()
         .unwrap()
         .len();
-    assert_eq!(
-        tiles, 5,
-        "4 tall terminals + 1 browser in the e2e workspace"
-    );
+    assert_eq!(tiles, 5, "5 terminals in the e2e workspace");
 
     // Let the debounced save land, then pull the plug.
     std::thread::sleep(Duration::from_millis(750));
@@ -282,7 +273,7 @@ fn layout_and_panes_survive_a_hard_kill() {
     assert!(world.socket.exists(), "a killed daemon leaves its socket");
 
     world.start_daemon();
-    let after = wait_bound(&world, 5);
+    let after = wait_bound(&world, 6);
     assert_eq!(
         structural(after),
         structural(before),

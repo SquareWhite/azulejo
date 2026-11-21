@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Key and focus suite, in-process on its own dev instance
 # (AZJ_DEV_NAME=focus): which action each chord resolves to and where first
-# responder ends up, across terminal, browser, preview and files tiles, the
-# ⌘K menu, layouts, tabs, workspaces, herdr changes, take-over and input
+# responder ends up, across terminals, the sidebar's Files view, the ⌘K
+# menu, layouts, tabs, workspaces, herdr changes, take-over and input
 # methods. No OS input; terminal copy and paste use a private pasteboard.
 #
 #   apps/macos/automation/focus/focus.sh [--keep]   (--keep: leave the dev instance)
@@ -16,37 +16,26 @@ root="$(cd "$here/../../../.." && pwd)"
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-focus}"
 out="$root/.dev/$AZJ_DEV_NAME/out/focus"
 fixtures="$(mktemp -d "${TMPDIR:-/tmp}/azj-focus.XXXXXX")"
-port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+# Resolved (/var is a link to /private/var), as the Files view shows it.
+fixtures="$(cd "$fixtures" && pwd -P)"
 
 cleanup() {
-  kill "${server:-}" "${watchdog:-}" 2>/dev/null || true
+  kill "${watchdog:-}" 2>/dev/null || true
   rm -rf "$fixtures"
   [[ "${1:-}" == "--keep" ]] || "$root/apps/macos/dev.sh" --reset >/dev/null
 }
 trap 'cleanup "${KEEP:-}"' EXIT
 [[ "${1:-}" == "--keep" ]] && KEEP=--keep
 
-# A page with a text input, a markdown file to preview, a small tree to browse.
-mkdir -p "$fixtures/site" "$fixtures/tree/sub"
-cat >"$fixtures/site/index.html" <<'HTML'
-<!doctype html><title>focus page</title>
-<input id="q" autocomplete="off"><p id="out"></p>
-<p id="words">azulejo tiles, azulejo walls, azulejo floors</p>
-<script>document.getElementById('q').addEventListener('keydown', e => {
-  document.getElementById('out').textContent += e.key + ',';
-});</script>
-HTML
-printf '# Plan\n\nKeys and focus.\n' >"$fixtures/plan.md"
+# A small git repo for the sidebar's Files view.
+mkdir -p "$fixtures/tree/sub"
 for f in alpha.txt beta.txt gamma.txt; do echo "$f" >"$fixtures/tree/$f"; done
 echo inner >"$fixtures/tree/sub/inner.txt"
-
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$fixtures/site" >/dev/null 2>&1 &
-server=$!
-for _ in $(seq 50); do curl -fs "http://127.0.0.1:$port/" >/dev/null && break; sleep 0.1; done
+git -C "$fixtures/tree" init -q
 
 "$root/apps/macos/dev.sh" --reset >/dev/null
 mkdir -p "$out"
-sed -e "s|@URL@|http://127.0.0.1:$port/|g" -e "s|@DIR@|$fixtures|g" -e "s|@HERE@|$here|g" \
+sed -e "s|@DIR@|$fixtures|g" -e "s|@HERE@|$here|g" \
   "$here/focus.azs.in" >"$fixtures/focus.azs"
 
 # A hung run must not wait forever: stop the app after 5 minutes.

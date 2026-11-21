@@ -10,8 +10,8 @@
 #
 # Checks: every switch leaves every PTY its size and every terminal attached
 # (themes.azs.in); then, in the app's own render of each theme, the sidebar,
-# tab strip, the focused tile's header, its terminal, the preview page, the
-# ⌘K menu and the find bar each show the new theme's colour (from
+# tab strip, the focused tile's header, its terminal, the ⌘K menu and the
+# find bar each show the new theme's colour (from
 # shared/design/tokens.json) and not the previous theme's; going back to
 # atom-one-dark gives the first capture's pixels again.
 # Output: .dev/thm.out/mockup/. With --docs, also 1200 × 750 copies of the
@@ -96,7 +96,6 @@ TABSTRIP = (507, 22, 14, 18)       # the strip's pill, between "release" and "+"
 GUTTER = (600, 15, 400, 30)        # the window colour, between the tabs and the search field
 HEADER = (260, 54, 160, 22)        # the focused claude tile's strip, left of its title
 TERMINAL = (640, 700, 200, 140)    # the claude terminal, below its last line
-PREVIEW = (890, 815, 230, 60)      # the preview page, below its text
 
 themes = [("t1", "atom-one-dark"), ("t2", "atom-one-light"), ("t3", "macos-dark"), ("t4", "macos-light")]
 seen = {}
@@ -116,7 +115,6 @@ for tag, theme in themes:
         "tab strip": (mode(img, TABSTRIP), solid(theme, "tabStrip")),
         "header": (mode(img, HEADER), solid(theme, "header", "tile")),
         "terminal": (mode(img, TERMINAL), term_bg),
-        "preview": (mode(img, PREVIEW), dim(theme, solid(theme, "tileAlt", "tile"))),
     }
     r = regions(f"{tag}-{theme}-palette")
     if "palette" in r:
@@ -127,7 +125,7 @@ for tag, theme in themes:
     r = regions(f"{tag}-{theme}-find")
     if "find" in r:
         x, y, w, h = r["find"]
-        samples["find bar"] = (mode(find, (x + w - 60, y + 3, 50, h - 6)), solid(theme, "browserChrome", "tile"))
+        samples["find bar"] = (mode(find, (x + w - 60, y + 3, 50, h - 6)), solid(theme, "findBar", "tile"))
     else:
         failures.append(f"{theme}: the find bar's frame wasn't logged")
     print(f"{theme}:")
@@ -183,7 +181,7 @@ first, again = out / "t1-atom-one-dark-app.png", out / "t5-atom-one-dark-again-a
 if first.exists() and again.exists():
     a, b = Image.open(first).convert("RGB"), Image.open(again).convert("RGB")
     for name, box in [("sidebar", SIDEBAR), ("tab strip", TABSTRIP), ("header", HEADER),
-                      ("terminal", TERMINAL), ("preview", PREVIEW)]:
+                      ("terminal", TERMINAL)]:
         if mode(a, box) != mode(b, box):
             failures.append(f"atom-one-dark again {name}: #{bytes(mode(b, box)).hex()} ≠ #{bytes(mode(a, box)).hex()}")
 

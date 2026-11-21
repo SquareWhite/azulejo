@@ -447,7 +447,7 @@ fn action_json(action: Action) -> Value {
         "index": action.index(),
         "method": method,
         "command": command,
-        // Set for actions that only work in one context (`browser_back`):
+        // Set for actions that only work in one context (`files_down`):
         // the shell hands those to the view that has the keyboard.
         "context": action.context().map(|c| c.name()),
         // `send_text`: what to type into the pane.
@@ -492,7 +492,7 @@ pub unsafe extern "C" fn azj_core_action(
 /// The keymap as JSON, for menus, badges and the palette:
 /// `{"platform":"macos","prefix":"cmd+b"|null,"bindings":
 /// [{"action":"split_right","index":null,"chord":"ctrl+cmd+v"},…],
-/// "contexts":{"browser":[…],…}}`. `bindings` are the global ones;
+/// "contexts":{"files":[…],…}}`. `bindings` are the global ones;
 /// `contexts` has every binding that applies in each context (globals
 /// included, unless the context overrides them). Chords use the same syntax
 /// `azj_core_key` takes. Free with `azj_string_free`.
@@ -599,7 +599,7 @@ pub unsafe extern "C" fn azj_core_terminal(core: *const AzjCore) -> *mut c_char 
 /// "ghostty_sets_colors":false,"tile_agent_badge":false,"app_icon":"light"|"dark"|"auto",
 /// "dock_badge":true,
 /// "themes":[{"id","name","appearance",
-/// "syntax","sidebar_material","builtin","path","inherits","colors":{token:
+/// "sidebar_material","builtin","path","inherits","colors":{token:
 /// "#rrggbb[aa]" | {"system","alpha"?,"hex"}},"terminal":{"background",…,
 /// "palette":[16],"ghostty":"<config lines>"}},…]}`. `terminal_colors` is
 /// resolved: the setting, else "ghostty" when the user's Ghostty config
@@ -931,13 +931,16 @@ mod tests {
             assert_eq!(tab["index"], 3);
             assert_eq!(tab["command"], Value::Null);
 
-            // cmd+a opens the Agents sidebar only in terminal tiles.
+            // cmd+a opens the Agents sidebar in terminals and the files
+            // list, and is select-all elsewhere (a find bar).
             if cfg!(target_os = "macos") {
                 let term = key(c"{\"chord\":\"cmd+a\",\"tile\":\"terminal\"}");
                 assert_eq!(term["action"], "toggle_agents_sidebar");
                 assert_eq!(term["method"], Value::Null);
-                let browser = key(c"{\"chord\":\"cmd+a\",\"tile\":\"browser\"}");
-                assert_eq!(browser["outcome"], "unhandled");
+                let files = key(c"{\"chord\":\"cmd+a\",\"context\":\"files\"}");
+                assert_eq!(files["action"], "toggle_agents_sidebar");
+                let find = key(c"{\"chord\":\"cmd+a\",\"context\":\"find_bar\"}");
+                assert_eq!(find["outcome"], "unhandled");
                 // send_text: the text to type rides along.
                 let clear = key(c"{\"chord\":\"cmd+l\",\"context\":\"terminal\"}");
                 assert_eq!(clear["action"], "send_text");
@@ -986,11 +989,11 @@ mod tests {
             assert_eq!(action(c"{\"action\":\"nope\"}")["outcome"], "error");
 
             let keymap = take(azj_core_keymap(core));
-            let browser = keymap["contexts"]["browser"].as_array().unwrap();
+            let files = keymap["contexts"]["files"].as_array().unwrap();
             assert!(
-                browser
+                files
                     .iter()
-                    .any(|b| b["action"] == "browser_reload" && b["index"] == Value::Null)
+                    .any(|b| b["action"] == "files_down" && b["index"] == Value::Null)
             );
             assert!(
                 keymap["contexts"]["resize"]

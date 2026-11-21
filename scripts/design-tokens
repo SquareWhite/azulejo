@@ -9,7 +9,7 @@ skipped. Standard library only, deterministic output.
 
 Colours live per theme (themes.<id>.color); validate() checks that every
 theme sets every token in colorTokens, with a valid value, plus its
-appearance, syntax, sidebar material and terminal palette.
+appearance, sidebar material and terminal palette.
 scripts/test_design_tokens.py tests this file.
 """
 
@@ -28,8 +28,6 @@ WEIGHTS = {"light", "regular", "medium", "semibold", "bold"}
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*$")
 THEME_ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 APPEARANCES = {"light", "dark"}
-# Must match azulejo-config's theme::SYNTAXES and azulejo-preview's syntax::NAMES.
-SYNTAXES = {"one-dark", "one-light", "github-dark", "github-light"}
 # NSVisualEffectView.Material names a theme may give its sidebar card.
 MATERIALS = {"sidebar", "menu", "popover", "headerView", "windowBackground", "underWindowBackground",
              "contentBackground", "titlebar", "hudWindow"}
@@ -76,11 +74,6 @@ def number(value: object, where: str) -> str:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         fail(f"{where}: expected a number, got {value!r}")
     return f"{value:g}"
-
-
-def entries_any(section: dict) -> list[tuple[str, object]]:
-    """Like entries(), without the camelCase rule (CSS variable names)."""
-    return [(k, v) for k, v in section.items() if not k.startswith("_")]
 
 
 def swift_string(value: object) -> str:
@@ -140,8 +133,6 @@ def validate(tokens: dict) -> list[str]:
             errors.append(f"{where}: needs a name")
         if theme.get("appearance") not in APPEARANCES:
             errors.append(f"{where}: appearance must be light or dark")
-        if theme.get("syntax") not in SYNTAXES:
-            errors.append(f"{where}: syntax must be one of {sorted(SYNTAXES)}")
         material = theme.get("sidebarMaterial")
         if material is not None and material not in MATERIALS:
             errors.append(f"{where}: sidebarMaterial {material!r} isn't a known material")
@@ -171,9 +162,6 @@ def validate(tokens: dict) -> list[str]:
         if not isinstance(palette, list) or len(palette) != 16 or not all(
                 isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette):
             errors.append(f"{where}.terminal.palette: needs 16 #rrggbb colours")
-    for name, token in entries_any(tokens.get("webview", {})):
-        if token not in names:
-            errors.append(f"webview.{name}: {token!r} isn't a colour token")
     return errors
 
 
@@ -220,7 +208,7 @@ def generate(tokens: dict) -> str:
         material = theme.get("sidebarMaterial")
         add("            ThemeSpec(")
         add(f'                id: "{tid}", name: "{theme["name"]}", appearance: .{theme["appearance"]},')
-        add(f'                syntax: "{theme["syntax"]}", sidebarMaterial: {swift_string(material)},')
+        add(f'                sidebarMaterial: {swift_string(material)},')
         add("                colors: [")
         for name in tokens_doc:
             add(f'                    "{name}": {swift_color(theme["color"][name], f"themes.{tid}.color.{name}")},')
@@ -235,16 +223,6 @@ def generate(tokens: dict) -> str:
             f"selectionForeground: {opt('selectionForeground')},")
         palette = ", ".join(rgba(c, f"themes.{tid}.terminal.palette") for c in term["palette"])
         add(f"                    palette: [{palette}])),")
-    add("        ]")
-    add("    }")
-    add("")
-
-    # Webview variables
-    add("    /// CSS variables the shell sets on webview pages: `--azj-<name>` gets the token.")
-    add("    enum Webview {")
-    add("        static let variables: [(name: String, token: String)] = [")
-    for name, token in entries_any(tokens["webview"]):
-        add(f'            ("{name}", "{token}"),')
     add("        ]")
     add("    }")
     add("")
@@ -364,7 +342,7 @@ def main() -> None:
         tokens = json.loads(TOKENS.read_text())
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
-    for section in ("colorTokens", "themes", "webview", "radius", "border", "alpha", "space", "symbol",
+    for section in ("colorTokens", "themes", "radius", "border", "alpha", "space", "symbol",
                     "font", "status", "icon", "motion"):
         if section not in tokens:
             fail(f"missing section {section!r}")

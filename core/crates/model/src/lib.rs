@@ -22,6 +22,6 @@ pub use session::{
     TilePath, Window, Workspace,
 };
 pub use tile::{
-    AgentInfo, AgentStatus, HerdrRef, OnExit, PaneMeta, PreviewMode, Tile, TileContent, TileHeader,
-    TileKind, tilde,
+    AgentInfo, AgentStatus, HerdrRef, OnExit, PaneMeta, REMOVED_KINDS, Tile, TileContent,
+    TileHeader, TileKind, tilde,
 };

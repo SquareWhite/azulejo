@@ -1,6 +1,5 @@
 # B2: every [keys.macos] default chord through the key router, checking the
-# router's verdict (key.last) and the layout it leaves. Rendered by chords.sh
-# (@PLAN@ → a markdown file, @SITE@ → the local browser fixture).
+# router's verdict (key.last) and the layout it leaves. Run by chords.sh.
 log B2 chords
 delivery direct
 until terminal.phase attached 10000
@@ -205,51 +204,22 @@ key escape
 key cmd+a
 expect sidebar.mode agents
 expect sidebar visible
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"browser","url":"@SITE@"}}}
-until tile.kind browser 3000
-wait 1500
+# In a terminal's find bar cmd+a selects the query, and alt+] / alt+[
+# still switch layouts: the router sees them before the field.
+key cmd+shift+f
+expect key.last action:find
 key cmd+a
 expect key.last passed
+expect key.context find_bar
 expect sidebar visible
-# alt+] / alt+[ switch layouts in a browser tile too, as alt+\ does: the
-# router sees them before the page, and only cmd+[ / cmd+] are its own
 key alt+]
 expect key.last action:cycle_layout_next
 expect kind three_column
 key alt+[
 expect key.last action:cycle_layout_previous
 expect kind tile
-key cmd+l
-expect key.last action:browser_focus_address
-key alt+]
-expect key.last action:cycle_layout_next
-expect kind three_column
-key alt+[
-expect kind tile
 key escape
-core {"method":"layout.split","params":{"direction":"right","content":{"kind":"preview","path":"@PLAN@"}}}
-until tile.kind preview 3000
-wait 1000
-key cmd+a
-expect key.last passed
-expect sidebar visible
-key alt+]
-expect key.last action:cycle_layout_next
-expect kind three_column
-key alt+[
-expect kind tile
-key cmd+shift+f
-key alt+]
-expect key.last action:cycle_layout_next
-expect key.context find_bar
-expect kind three_column
-key alt+[
-expect kind tile
-key escape
-key alt+w
-until tiles 5 3000
-key alt+w
-until tiles 4 3000
+expect tiles 4
 # --- ctrl+b reaches the PTY (doubled by send_herdr_prefix), the attach client stays ---
 key alt+h
 remember resizes
