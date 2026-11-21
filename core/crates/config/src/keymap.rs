@@ -863,6 +863,13 @@ impl Keymap {
 
         // Direct bindings, per context.
         let merged = merge(platform, layers, |l| &l.entries);
+        // The bundled keymap's own bindings, by context: a clash it has on
+        // purpose doesn't warn (below).
+        let bundled: HashSet<(Option<KeyContext>, Chord, Action)> =
+            merge(platform, &layers[..layers.len().min(1)], |l| &l.entries)
+                .into_iter()
+                .flat_map(|((ctx, _), e)| e.bindings.into_iter().map(move |(c, a)| (ctx, c, a)))
+                .collect();
         let mut maps = HashMap::new();
         let mut slot_maps: Vec<(Option<KeyContext>, HashMap<Chord, Slot>)> = Vec::new();
         let mut reported: HashSet<(Chord, Action, Action)> = HashSet::new();
@@ -887,7 +894,17 @@ impl Keymap {
                 // Global clashes show up in every context; report them once.
                 let relevant =
                     context.is_none() || dup.winner.context_specific || dup.loser.context_specific;
-                if relevant && reported.insert((dup.chord, dup.winner.action, dup.loser.action)) {
+                // The bundled keymap gives a context its own meaning for a
+                // global chord on purpose (⌘N makes a file in the Files
+                // view); only clashes the user's config brings in warn.
+                let intended = dup.winner.context_specific
+                    && !dup.loser.context_specific
+                    && bundled.contains(&(context, dup.chord, dup.winner.action))
+                    && bundled.contains(&(None, dup.chord, dup.loser.action));
+                if relevant
+                    && !intended
+                    && reported.insert((dup.chord, dup.winner.action, dup.loser.action))
+                {
                     let at = if dup.winner.origin.layer >= dup.loser.origin.layer {
                         &dup.winner.origin
                     } else {

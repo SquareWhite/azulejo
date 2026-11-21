@@ -458,6 +458,98 @@ fn a_terminal_closes_when_its_shell_exits_unless_kept() {
 }
 
 #[test]
+fn the_files_view_takes_finder_chords_for_its_own_operations() {
+    let config = Config::defaults(MAC);
+    let files = Some(KeyContext::Files);
+    for (c, action) in [
+        ("cmd+n", Action::FilesNewFile),
+        ("cmd+shift+n", Action::FilesNewFolder),
+        ("cmd+backspace", Action::FilesDelete),
+        ("cmd+c", Action::FilesCopy),
+        ("cmd+v", Action::FilesPaste),
+    ] {
+        assert_eq!(resolve_in(&config, c, files), Some(action), "{c}");
+    }
+    // ⌘N still opens a window everywhere else, and the bundled keymap's
+    // own shadowing doesn't warn.
+    assert_eq!(resolve_in(&config, "cmd+n", None), Some(Action::NewWindow));
+    assert_eq!(
+        resolve_in(&config, "cmd+n", Some(KeyContext::Terminal)),
+        Some(Action::NewWindow)
+    );
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+    // A clash the user brings in still does.
+    let config = user("[keys.macos.files]\nfiles_quick_look = \"cmd+t\"\n", MAC);
+    assert!(
+        warnings(&config)
+            .iter()
+            .any(|w| w.contains("files_quick_look") && w.contains("new_workspace")),
+        "{:?}",
+        config.diagnostics
+    );
+}
+
+#[test]
+fn the_files_view_opens_a_folder_in_the_editor_with_cmd_shift_o() {
+    let files = Some(KeyContext::Files);
+    let config = Config::defaults(MAC);
+    assert_eq!(
+        resolve_in(&config, "cmd+shift+o", files),
+        Some(Action::FilesOpenFolderInEditor)
+    );
+    // Nothing else had the chord: it's the Files view's alone.
+    assert_eq!(resolve_in(&config, "cmd+shift+o", None), None);
+    assert_eq!(
+        resolve_in(&config, "cmd+shift+o", Some(KeyContext::Terminal)),
+        None
+    );
+    let config = Config::defaults(LINUX);
+    assert_eq!(
+        resolve_in(&config, "ctrl+shift+o", files),
+        Some(Action::FilesOpenFolderInEditor)
+    );
+    // A context action written globally still lands in its context.
+    let config = user("[keys]\nfiles_open_folder_in_editor = \"cmd+e\"\n", MAC);
+    assert_eq!(
+        resolve_in(&config, "cmd+e", files),
+        Some(Action::FilesOpenFolderInEditor)
+    );
+    assert_eq!(resolve_in(&config, "cmd+shift+o", files), None);
+}
+
+#[test]
+fn files_open_in_vim_unless_the_editor_says_otherwise() {
+    let defaults = Config::defaults(MAC).editor;
+    assert_eq!(defaults.command, "vim");
+    assert_eq!(defaults.app, "");
+
+    let config = user("[editor]\ncommand = \" nvim -p \"\napp = \"Zed\"\n", MAC);
+    assert_eq!(config.editor.command, "nvim -p");
+    assert_eq!(config.editor.app, "Zed");
+    assert!(config.diagnostics.is_empty(), "{:?}", config.diagnostics);
+
+    for (bad, key) in [
+        ("command = \"\"", "editor.command"),
+        ("command = \"vim\\nrm\"", "editor.command"),
+        ("command = [\"vim\"]", "editor.command"),
+        ("app = true", "editor.app"),
+    ] {
+        let config = user(&format!("[editor]\n{bad}\n"), MAC);
+        assert_eq!(
+            config.editor, defaults,
+            "{bad}: a bad value keeps the default"
+        );
+        assert!(
+            errors(&config).iter().any(|e| e.contains(key)),
+            "{bad}: {:?}",
+            config.diagnostics
+        );
+    }
+    let config = user("[editor]\nwait = true\n", MAC);
+    assert!(warnings(&config).iter().any(|w| w.contains("editor.wait")));
+}
+
+#[test]
 fn select_on_drag_lists_programs_and_defaults_to_omp() {
     assert_eq!(Config::defaults(MAC).terminal.select_on_drag, ["omp"]);
     assert_eq!(user("", LINUX).terminal.select_on_drag, ["omp"]);

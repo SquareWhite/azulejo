@@ -81,18 +81,24 @@ until sidebar.files.names src,main.rs,README.md 3000
 sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agent claude --state working
 wait 600
 expect sidebar.files.keyboard yes
-# Return opens a file beside the focused tile; the keyboard stays in the tree.
+# Return opens the file in the editor: a new terminal beside the focused
+# tile runs `[editor] command` on it and takes focus, keyboard included.
 remember tiles
 key j
 expect sidebar.files.selected src/main.rs
 key return
 until tiles 2 3000
-expect sidebar.files.keyboard yes
-expect focus 1
+until focus 2 3000
+until sidebar.files.editor command:vim @DIR@/azulejo/src/main.rs 3000
+until sidebar.files.keyboard no 3000
 shot 03-opened
-# Esc hands the keyboard back to the focused tile.
+# The tree takes the keyboard back; Esc hands it to the focused tile.
+sidebar focus
+expect sidebar.files.keyboard yes
+expect sidebar.files.selected src/main.rs
 key esc
 expect sidebar.files.keyboard no
+expect focus 2
 
 # Another workspace: the tree follows its repository.
 action switch_workspace 2

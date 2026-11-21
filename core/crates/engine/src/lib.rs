@@ -7,6 +7,7 @@ pub mod adopt;
 pub mod agent;
 mod diff;
 mod driver;
+mod file_ops;
 mod files;
 pub mod layout_file;
 pub mod link;
@@ -64,6 +65,8 @@ pub struct Engine {
     /// order of the sidebar's machine groups, which each window's
     /// workspaces keep ([`Session::group_workspaces`]).
     machine_order: Vec<String>,
+    /// The terminal editor a file opens in (`[editor] command`).
+    editor: String,
 }
 
 /// How many closed-here herdr panes `Session::detached_herdr` remembers.
@@ -93,6 +96,7 @@ impl Engine {
             fresh_tab: Some(tab),
             sidebar_collapsed: SidebarState::Rail,
             machine_order: Vec::new(),
+            editor: DEFAULT_EDITOR.to_owned(),
         }
     }
 
@@ -113,7 +117,20 @@ impl Engine {
             closed_reported: Vec::new(),
             sidebar_collapsed: SidebarState::Rail,
             machine_order: Vec::new(),
+            editor: DEFAULT_EDITOR.to_owned(),
         }
+    }
+
+    /// Sets the terminal editor files open in (`[editor] command`): a
+    /// command such as `vim` or `nvim -p`, run with the file's path after
+    /// it. Blank means `vim`.
+    pub fn set_editor(&mut self, command: String) {
+        let command = command.trim();
+        self.editor = if command.is_empty() {
+            DEFAULT_EDITOR.to_owned()
+        } else {
+            command.to_owned()
+        };
     }
 
     /// Applies `[sidebar] collapsed`: what collapsing a sidebar gives (a
@@ -217,6 +234,7 @@ impl Engine {
 
     fn apply(&mut self, command: Command) -> Result<Reply, Error> {
         let collapsed = self.sidebar_collapsed;
+        let editor = self.editor.as_str();
         let s = &mut self.session;
         let focus = s.focus();
         let nothing = || Error::from(ModelError::NothingFocused);
@@ -427,7 +445,7 @@ impl Engine {
                 s.tile_mut(id)?.title = p.title.filter(|t| !t.is_empty());
                 Reply::Ok
             }
-            Command::FilesOpen(p) => Reply::Created(files_open(s, p)?),
+            Command::FilesOpen(p) => Reply::Created(files_open(s, p, editor)?),
             // Listing and watching touch the disk; `Core` answers these.
             Command::FilesList(_)
             | Command::FilesExpand(_)
@@ -611,10 +629,13 @@ impl Engine {
                 ));
             }
             // Copying files takes time, and machines are links `Core` holds.
-            Command::FilesTransfer(_) => {
+            Command::FilesTransfer(_)
+            | Command::FilesCreate(_)
+            | Command::FilesDelete(_)
+            | Command::FilesSshUrl(_) => {
                 return Err(Error::new(
                     ErrorCode::Unavailable,
-                    "file transfers need a running core",
+                    "file operations need a running core",
                 ));
             }
             // Machines are links `Core` holds.
@@ -671,10 +692,16 @@ impl Engine {
 /// without one). A file opens in the editor, a new terminal to the right
 /// in the file's folder ([`editor_command`]); a folder, or any path with the
 /// `terminal` target, opens a new terminal below, in the folder (a file's
-/// folder for a file). The new tile takes focus. In a remote workspace the
-/// path is on its machine, where the terminal runs: the driver has already
-/// worked out what a remote panel's path is.
-fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created, Error> {
+/// folder for a file). The `editor_folder` target opens the folder (a
+/// file's folder for a file) in the editor, to the right, in that folder.
+/// The new tile takes focus. In a remote workspace the path is on its
+/// machine, where the terminal runs: the driver has already worked out
+/// what a remote panel's path is.
+fn files_open(
+    s: &mut Session,
+    p: azulejo_protocol::FilesOpen,
+    editor: &str,
+) -> Result<Created, Error> {
     use azulejo_model::Direction;
     use azulejo_protocol::FilesOpenTarget;
     use std::path::{Path, PathBuf};
@@ -708,8 +735,13 @@ fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created
         Tile::new(content)
     };
     let (tile, direction) = match p.target {
+        FilesOpenTarget::EditorFolder => {
+            let dir = if folder { path } else { folder_of(&path) };
+            let command = editor_command(editor, &dir);
+            (terminal(dir, Some(command)), Direction::Right)
+        }
         FilesOpenTarget::Editor if !(path.is_dir() && !remote) => (
-            terminal(folder_of(&path), Some(editor_command(&path))),
+            terminal(folder_of(&path), Some(editor_command(editor, &path))),
             Direction::Right,
         ),
         _ => {
@@ -725,10 +757,27 @@ fn files_open(s: &mut Session, p: azulejo_protocol::FilesOpen) -> Result<Created
     })
 }
 
-/// The command a terminal runs to edit `path`: `vim <path>`, sent as an
-/// argv (quoted for the pane's shell).
-pub(crate) fn editor_command(path: &std::path::Path) -> Vec<String> {
-    vec!["vim".to_owned(), path.display().to_string()]
+/// The editor files open in until `[editor] command` says otherwise.
+pub const DEFAULT_EDITOR: &str = "vim";
+
+/// The command a terminal runs to edit `path` with `editor` (`[editor]
+/// command`). A plain program name (`vim`, `hx`) goes as an argv, quoted
+/// for the pane's shell; anything with arguments or shell syntax (`nvim
+/// -p`, `code --wait`) is typed as a line with the path, quoted, after it.
+pub(crate) fn editor_command(editor: &str, path: &std::path::Path) -> Vec<String> {
+    let editor = match editor.trim() {
+        "" => DEFAULT_EDITOR,
+        e => e,
+    };
+    let path = path.display().to_string();
+    let plain = editor
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | '+'));
+    if plain {
+        vec![editor.to_owned(), path]
+    } else {
+        vec![format!("{editor} {}", azulejo_herdr::shell_quote(&path))]
+    }
 }
 
 fn wrong_kind(id: TileId, content: &TileContent, want: &str) -> Error {

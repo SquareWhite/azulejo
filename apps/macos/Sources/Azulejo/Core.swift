@@ -174,6 +174,12 @@ final class Core {
         return take(azj_core_terminal(handle)) ?? [:]
     }
 
+    /// `[editor]` settings (`azj_core_editor`); follows config reloads.
+    func editor() -> [String: Any] {
+        if freed { return [:] }
+        return take(azj_core_editor(handle)) ?? [:]
+    }
+
     /// `[hints]` settings (`azj_core_hints`); follows config reloads.
     func hints() -> [String: Any] {
         if freed { return [:] }

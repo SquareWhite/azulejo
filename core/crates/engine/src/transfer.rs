@@ -59,16 +59,8 @@ impl Transfer {
         p: FilesTransfer,
         machines: &HashMap<String, RemoteMachine>,
     ) -> Result<Self, Error> {
-        let place = |id: Option<String>| match id.as_deref() {
-            None | Some(LOCAL_MACHINE) => Ok(Place::Local),
-            // Shells show the message as is, so it names no ID.
-            Some(id) => machines.get(id).cloned().map(Place::Remote).ok_or_else(|| {
-                Error::new(ErrorCode::Unavailable, "the machine isn't connected")
-                    .with_data(serde_json::json!({ "machine": id }))
-            }),
-        };
-        let from = place(p.from)?;
-        let to = place(p.to)?;
+        let from = place(p.from.as_deref(), machines)?;
+        let to = place(p.to.as_deref(), machines)?;
         if matches!((&from, &to), (Place::Remote(_), Place::Remote(_))) {
             return Err(Error::new(
                 ErrorCode::Unsupported,
@@ -89,6 +81,32 @@ impl Transfer {
             to,
             mode: p.mode,
         })
+    }
+}
+
+/// Where machine `id` (`machines.list` ID; Local when absent or `local`) is,
+/// among the ones the core can reach over SSH.
+pub(crate) fn place(
+    id: Option<&str>,
+    machines: &HashMap<String, RemoteMachine>,
+) -> Result<Place, Error> {
+    match id {
+        None | Some(LOCAL_MACHINE) => Ok(Place::Local),
+        // Shells show the message as is, so it names no ID.
+        Some(id) => machines.get(id).cloned().map(Place::Remote).ok_or_else(|| {
+            Error::new(ErrorCode::Unavailable, "the machine isn't connected")
+                .with_data(serde_json::json!({ "machine": id }))
+        }),
+    }
+}
+
+impl Place {
+    /// The machine's ID; `None` for Local.
+    pub(crate) fn machine(&self) -> Option<&str> {
+        match self {
+            Place::Local => None,
+            Place::Remote(m) => Some(m.profile.id.as_str()),
+        }
     }
 }
 
@@ -174,7 +192,7 @@ fn file_name(path: &Path) -> Result<&OsStr, String> {
         .ok_or_else(|| format!("{} has no name", path.display()))
 }
 
-fn io_why(e: &io::Error) -> String {
+pub(crate) fn io_why(e: &io::Error) -> String {
     match e.kind() {
         io::ErrorKind::NotFound => "no such file or folder".into(),
         io::ErrorKind::PermissionDenied => "permission denied".into(),
@@ -215,7 +233,7 @@ fn local_folder(folder: &Path) -> Result<PathBuf, Error> {
 
 /// `src` with its folder resolved and its own name kept (a symlink stays the
 /// link, not what it points to).
-fn resolved_source(src: &Path) -> Result<PathBuf, String> {
+pub(crate) fn resolved_source(src: &Path) -> Result<PathBuf, String> {
     let name = file_name(src)?;
     let parent = src.parent().unwrap_or(Path::new("/"));
     let parent =
@@ -269,7 +287,7 @@ fn unclaim(path: &Path) {
     }
 }
 
-fn move_local(src: &Path, folder: &Path) -> Result<PathBuf, String> {
+pub(crate) fn move_local(src: &Path, folder: &Path) -> Result<PathBuf, String> {
     let src = resolved_source(src)?;
     if src.parent() == Some(folder) {
         // Already there: nothing to do (Finder does nothing either).

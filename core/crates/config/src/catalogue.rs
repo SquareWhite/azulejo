@@ -102,6 +102,11 @@ pub const INTERNAL_METHODS: &[&str] = &[
     "files.panel_close",
     // Drops on a terminal (its folder) move or copy files there.
     "files.transfer",
+    // The sidebar's Files view makes and deletes entries (its menu and keys).
+    "files.create",
+    "files.delete",
+    // The sidebar's Files view opens a remote file in Zed with it.
+    "files.ssh_url",
     "layout.get",
     // Dragging a divider sends it; from the keyboard, layout.resize does.
     "layout.set_ratio",
@@ -323,11 +328,17 @@ pub(crate) fn title(action: Action) -> String {
         FilesExpand => "Files: expand folder or open file".into(),
         FilesCollapse => "Files: collapse folder or go to parent".into(),
         FilesOpenExternal => "Files: open in default app".into(),
+        FilesOpenFolderInEditor => "Files: open the folder in the editor".into(),
         FilesParent => "Files: go to parent folder".into(),
         FilesQuickLook => "Files: Quick Look".into(),
         FilesFilter => "Files: filter".into(),
         FilesToggleHidden => "Files: show or hide hidden files".into(),
         FilesLeave => "Files: back to the tiles (sidebar)".into(),
+        FilesNewFile => "Files: new file".into(),
+        FilesNewFolder => "Files: new folder".into(),
+        FilesDelete => "Files: move to the Trash (delete on a remote machine)".into(),
+        FilesCopy => "Files: copy the selected files".into(),
+        FilesPaste => "Files: paste files into the folder".into(),
     }
 }
 
@@ -356,8 +367,23 @@ fn category(action: Action) -> &'static str {
         | PalettePageUp | PaletteComplete => "palette",
         FindNext | FindPrevious | FindClose => "find",
         ResizeModeExit => "tile",
-        FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
-        | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => "files",
+        FilesDown
+        | FilesUp
+        | FilesOpen
+        | FilesExpand
+        | FilesCollapse
+        | FilesOpenExternal
+        | FilesOpenFolderInEditor
+        | FilesParent
+        | FilesQuickLook
+        | FilesFilter
+        | FilesToggleHidden
+        | FilesLeave
+        | FilesNewFile
+        | FilesNewFolder
+        | FilesDelete
+        | FilesCopy
+        | FilesPaste => "files",
     }
 }
 
@@ -392,10 +418,16 @@ fn needs_tile(action: Action) -> bool {
             | FilesExpand
             | FilesCollapse
             | FilesOpenExternal
+            | FilesOpenFolderInEditor
             | FilesParent
             | FilesQuickLook
             | FilesFilter
             | FilesToggleHidden
+            | FilesNewFile
+            | FilesNewFolder
+            | FilesDelete
+            | FilesCopy
+            | FilesPaste
     )
 }
 

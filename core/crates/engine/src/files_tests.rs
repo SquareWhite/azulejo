@@ -329,6 +329,34 @@ fn files_open_in_the_editor_beside_the_focused_tile_and_folders_in_a_terminal() 
         );
     }
 
+    // A folder opens in the editor, in that folder; a file means its folder.
+    let src = root.join("src").display().to_string();
+    for path in ["src", "src/main.rs"] {
+        let id = open(path, FilesOpenTarget::EditorFolder);
+        let session = core.session().unwrap();
+        assert_eq!(session.focused_tile(), Some(id), "{path} takes focus");
+        assert!(
+            matches!(
+                content(&session, id),
+                TileContent::Terminal { cwd: Some(cwd), command: Some(command), .. }
+                    if *cwd == src && command == ["vim", src.as_str()]
+            ),
+            "{path}: {:?}",
+            content(&session, id)
+        );
+    }
+    // The root, by its absolute path.
+    let id = open(&root.display().to_string(), FilesOpenTarget::EditorFolder);
+    let top = root.display().to_string();
+    assert!(
+        matches!(
+            content(&core.session().unwrap(), id),
+            TileContent::Terminal { cwd: Some(cwd), command: Some(command), .. }
+                if *cwd == top && command == ["vim", top.as_str()]
+        ),
+        "the root opens in the editor"
+    );
+
     // `preview`, from older shells, means the editor.
     let old: azulejo_protocol::FilesOpen = serde_json::from_value(serde_json::json!({
         "tile": panel, "path": "README.md", "target": "preview"
@@ -714,6 +742,27 @@ fn a_remote_panel_lists_over_ssh_polls_and_opens() {
         "{editor:?}"
     );
 
+    // A remote folder opens in the editor there, in that folder; a file
+    // means its folder.
+    for path in ["src", "src/main.rs"] {
+        let outcome = core
+            .execute(Command::FilesOpen(FilesOpen {
+                tile: Some(panel),
+                path: path.into(),
+                target: FilesOpenTarget::EditorFolder,
+            }))
+            .unwrap();
+        let Reply::Created(created) = outcome.reply else {
+            panic!("unexpected {:?}", outcome.reply);
+        };
+        let editor = content(&core.session().unwrap(), created.tile.unwrap());
+        assert!(
+            matches!(&editor, TileContent::Terminal { cwd: Some(cwd), command: Some(c), .. }
+                if *cwd == src_dir && *c == ["vim", src_dir.as_str()]),
+            "{path}: {editor:?}"
+        );
+    }
+
     // Cutting the link: the open folders keep their listing and say why.
     while events.try_recv().is_ok() {}
     fs::write(t.path().join("standin.fail"), "").unwrap();
@@ -795,4 +844,121 @@ fn moving_a_remote_panel_on_cancels_what_it_was_listing() {
     // Only the new root's listing reached the panel.
     assert_eq!(seen, vec![src.display().to_string()]);
     assert_eq!(names(&expand(&core, panel, None)), ["deep/", "main.rs"]);
+}
+
+#[test]
+fn a_remote_panel_lists_again_at_once_after_making_deleting_or_uploading() {
+    use azulejo_protocol::{FileKind, FilesCreate, FilesDelete, FilesTransfer, TransferMode};
+
+    let (t, root) = tree();
+    let core = core();
+    let events = core.subscribe();
+    core.set_machine_files(MACHINE.into(), Some(standin_machine(t.path(), None)));
+    let panel = open_remote(&core, None, &root, MACHINE);
+    expand_remote(&core, &events, panel, &root);
+    expand_remote(&core, &events, panel, &root.join("src"));
+
+    // Each change shows without waiting for a poll (every 3 s).
+    let quick = Duration::from_millis(2500);
+    let wait_for = |dir: &Path, what: &str| {
+        assert!(changed_for(&events, panel, dir, quick), "{what}");
+    };
+
+    while events.try_recv().is_ok() {}
+    let reply = core
+        .execute(Command::FilesCreate(FilesCreate {
+            tile: Some(panel),
+            path: "src/new.rs".into(),
+            kind: FileKind::File,
+            machine: None,
+        }))
+        .unwrap()
+        .reply;
+    let made = root.join("src/new.rs").display().to_string();
+    assert_eq!(reply, Reply::FileCreated { path: made });
+    wait_for(
+        &root.join("src"),
+        "files.changed for src after files.create",
+    );
+    assert_eq!(
+        names(&expand(&core, panel, Some("src"))),
+        ["deep/", "main.rs", "new.rs"]
+    );
+
+    while events.try_recv().is_ok() {}
+    core.execute(Command::FilesDelete(FilesDelete {
+        tile: Some(panel),
+        paths: vec!["src/main.rs".into()],
+        machine: None,
+    }))
+    .unwrap();
+    wait_for(
+        &root.join("src"),
+        "files.changed for src after files.delete",
+    );
+    assert_eq!(
+        names(&expand(&core, panel, Some("src"))),
+        ["deep/", "new.rs"]
+    );
+
+    while events.try_recv().is_ok() {}
+    let local = t.path().canonicalize().unwrap().join("upload.txt");
+    fs::write(&local, "up").unwrap();
+    core.execute(Command::FilesTransfer(FilesTransfer {
+        sources: vec![local.display().to_string()],
+        from: None,
+        folder: root.display().to_string(),
+        to: Some(MACHINE.into()),
+        mode: TransferMode::Copy,
+    }))
+    .unwrap();
+    wait_for(&root, "files.changed for the root after an upload");
+    assert_eq!(
+        names(&expand(&core, panel, None)),
+        ["src/", "README.md", "upload.txt"]
+    );
+
+    // Outside the panel's root, or the root itself: refused.
+    let err = core
+        .execute(Command::FilesDelete(FilesDelete {
+            tile: Some(panel),
+            paths: vec![root.display().to_string()],
+            machine: None,
+        }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidParams);
+    assert!(root.exists());
+    core.execute(Command::FilesPanelClose(FilesPanelClose { panel }))
+        .unwrap();
+}
+
+#[test]
+fn files_open_in_the_configured_editor() {
+    let (_t, root) = tree();
+    let core = core();
+    let panel = open_panel(&core, None, &root);
+    let open = |path: &str| {
+        let outcome = core
+            .execute(Command::FilesOpen(FilesOpen {
+                tile: Some(panel),
+                path: path.into(),
+                target: FilesOpenTarget::Editor,
+            }))
+            .unwrap();
+        let Reply::Created(created) = outcome.reply else {
+            panic!("unexpected {:?}", outcome.reply);
+        };
+        match content(&core.session().unwrap(), created.tile.unwrap()) {
+            TileContent::Terminal { command, .. } => command.unwrap_or_default(),
+            other => panic!("{other:?}"),
+        }
+    };
+    let readme = root.join("README.md").display().to_string();
+    assert_eq!(open("README.md"), ["vim", readme.as_str()]);
+    core.set_editor("hx".into());
+    assert_eq!(open("README.md"), ["hx", readme.as_str()]);
+    core.set_editor("nvim -p".into());
+    assert_eq!(open("README.md"), [format!("nvim -p {readme}")]);
+    core.set_editor(String::new());
+    assert_eq!(open("README.md"), ["vim", readme.as_str()]);
 }

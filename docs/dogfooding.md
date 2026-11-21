@@ -151,6 +151,29 @@ badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
   ```
 - `azj files open --path plan.md` from a terminal edits the file beside it
   (`vim` in a new terminal), as Return does in the sidebar's Files view.
+  Pick another editor, or a Mac app:
+
+  ```toml
+  [editor]
+  command = "nvim -p"   # in a new pane, on the file's machine
+  app = "Zed"           # Local files; with Zed, remote ones too (over SSH)
+  ```
+
+  With `app = "Zed"` (or Zed Preview), a remote workspace's files open in
+  Zed's own SSH remoting, as `zed://ssh/<target>/<path>`. Zed connects with
+  the machine's SSH target as herdr saved it and reads `~/.ssh/config`
+  itself. Zed opens the file on its own: a Zed window already showing that
+  host's project picks it up. Other apps, and a `[herdr] ssh` wrapper that
+  Zed's SSH can't follow, fall back to `command`.
+
+  Folders open too: Open Folder in Editor in the Files view's right-click
+  menu (on a folder, or on empty space for the root), or ⌘⇧O (a file's
+  folder when a file is selected). The app gets the folder (Zed opens it as
+  a project, a remote one over SSH); otherwise `command <folder>` runs in a
+  new pane in that folder, where vim and nvim show their file browser.
+- The Files view makes, deletes, copies and pastes files: ⌘N, ⌘⇧N, ⌘⌫
+  (to the Trash; a remote machine's after a yes), ⌘C, ⌘V, or its right-click
+  menu. Drag files in from Finder and out to Finder or a terminal.
 
 - Config lives in `~/.config/azulejo/config.toml`. Saving the file applies
   it; problems show in a banner over the tiles, and the previous config stays

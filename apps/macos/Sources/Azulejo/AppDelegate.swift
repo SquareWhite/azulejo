@@ -58,9 +58,22 @@ final class AppController: NSObject, NSApplicationDelegate {
             case .failed: controller.flash(text, seconds: 5)
             }
         }
+        // The Files view's operations say how they went the same way.
+        FilesPanelView.notice = TerminalTileView.notice
+        FilesPanelView.tileCommand = { [weak self] id in
+            for window in self?.session?.windows ?? [] {
+                for ws in window.workspaces {
+                    for tab in ws.tabs {
+                        if let tile = tab.tile(id) { return tile.command?.joined(separator: " ") }
+                    }
+                }
+            }
+            return nil
+        }
         Motion.load(core.animation())
         TerminalHints.apply(core.hints())
         TileModel.applyTerminalSettings(core.terminal())
+        EditorApp.apply(core.editor())
         Motion.log = { [weak self] in self?.log($0) }
         Perf.installRunLoopObservers()
         core.onEvent = { [weak self] json in
@@ -82,6 +95,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 Motion.load(core.animation())
                 TerminalHints.apply(core.hints())
                 TileModel.applyTerminalSettings(core.terminal())
+                EditorApp.apply(core.editor())
                 // A saved theme, a theme file, or Ghostty's colours.
                 self?.loadTheme()
             }

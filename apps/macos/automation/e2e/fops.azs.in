@@ -1,0 +1,269 @@
+# File operations in the sidebar's Files view, Local. fops.sh fills @FX@
+# (fixtures, resolved: proj/ is the tree, outside/ what's pasted and
+# dropped in, trash/ where deletes go: AZJ_TRASH_DIR).
+log fops
+delivery direct
+seen-visible off
+until terminal.phase attached 10000
+clip clear
+core {"method":"workspace.set_repo","params":{"path":"@FX@/proj"}}
+sidebar mode files
+# Everything below changes files: stop unless the view is on the fixtures.
+require sidebar.files.root @FX@/proj 10000
+require sidebar.files.names docs,src,clash.txt,README.md 5000
+sidebar focus
+sidebar files select src
+sidebar files activate
+until sidebar.files.names docs,src,a.rs,clash.txt,README.md 5000
+
+log === F01 the right-click menu: on a file, on a folder, on empty space
+menu files README.md
+expect menu.items Open in Editor [enter]|Open Terminal Here|Open in Default App [cmd+down]|Reveal in Finder|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Copy [cmd+c]|Paste [cmd+v] (off)|Copy Path|-|Move to Trash [cmd+backspace]|-|Show or Hide Hidden Files [period]
+expect sidebar.files.selected README.md
+theme preview atom-one-dark
+menu shot 01-menu-file-dark
+theme preview atom-one-light
+menu shot 01-menu-file-light
+theme preview none
+menu files src
+expect menu.items Open Folder in Editor [cmd+shift+o]|Open Terminal Here|Open in Default App [cmd+down]|Reveal in Finder|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Copy [cmd+c]|Paste [cmd+v] (off)|Copy Path|-|Move to Trash [cmd+backspace]|-|Show or Hide Hidden Files [period]
+menu files
+expect menu.items Open Folder in Editor [cmd+shift+o]|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Paste [cmd+v] (off)|-|Show or Hide Hidden Files [period]
+
+log === F02 New File from a file's menu: a name field in its folder; Return makes it and selects it
+menu files src/a.rs invoke New File…
+until sidebar.files.draft file 2000
+expect sidebar.files.draft.in src
+until sidebar.files.draft.focused yes 2000
+expect sidebar.files.names docs,src,[new],a.rs,clash.txt,README.md
+# Typed through the key router: l, i and b must reach the field, not the tree.
+type lib.rs
+wait 200
+theme preview atom-one-dark
+shot 02-name-field-dark
+theme preview atom-one-light
+shot 02-name-field-light
+theme preview none
+key enter
+until sidebar.files.draft none 5000
+until sidebar.files.selected src/lib.rs 5000
+expect sidebar.files.op Made the file lib.rs
+sh test -f @FX@/proj/src/lib.rs && test ! -s @FX@/proj/src/lib.rs
+
+log === F03 New Folder (⌘⇧N) with a root file selected: in the root, above the folders
+sidebar files select README.md
+key cmd+shift+n
+until sidebar.files.draft folder 2000
+expect sidebar.files.draft.in .
+expect sidebar.files.names [new],docs,src,a.rs,lib.rs,clash.txt,README.md
+until sidebar.files.draft.focused yes 2000
+type notes
+key enter
+until sidebar.files.selected notes 5000
+sh test -d @FX@/proj/notes
+
+log === F04 a name that's taken, exactly or by case: refused, nothing replaced
+sidebar files select README.md
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+type clash.txt
+key enter
+expect sidebar.files.draft file
+expect sidebar.files.op.state failed
+expect sidebar.files.op “clash.txt” is already there
+until sidebar.files.draft.focused yes 2000
+sidebar files name CLASH.txt
+key enter
+until sidebar.files.op.state failed 5000
+expect sidebar.files.op Couldn't make CLASH.txt: CLASH.txt is already there
+expect sidebar.files.draft file
+sh grep -qx old @FX@/proj/clash.txt
+key escape
+until sidebar.files.draft none 2000
+expect sidebar.files.keyboard yes
+
+log === F05 a name with a slash is refused; Esc makes nothing
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+sidebar files name a/b
+key enter
+expect sidebar.files.op A name can't contain “/”
+sidebar files cancel
+expect sidebar.files.draft none
+sh test ! -e @FX@/proj/a
+
+log === F05b leaving the field: a good name is made, a bad one goes; the keyboard stays where it went
+sidebar files select src/a.rs
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+sidebar files name away.txt
+sidebar focus
+until sidebar.files.draft none 5000
+until sidebar.files.op Made the file away.txt 5000
+sh test -f @FX@/proj/src/away.txt
+expect sidebar.files.keyboard yes
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+sidebar files name x/y
+sidebar focus
+until sidebar.files.draft none 5000
+expect sidebar.files.op A name can't contain “/”
+expect sidebar.files.keyboard yes
+
+log === F06 Move to Trash (⌘⌫): one, then several; the next row is selected
+sidebar files select clash.txt
+key cmd+backspace
+until sidebar.files.op Moved clash.txt to the Trash 5000
+until sidebar.files.names docs,notes,src,a.rs,away.txt,lib.rs,README.md 5000
+sh test -f @FX@/trash/clash.txt && test ! -e @FX@/proj/clash.txt
+until sidebar.files.selected README.md 3000
+sidebar files select-many notes|docs
+expect sidebar.files.selection docs|notes
+menu files docs invoke Move to Trash
+until sidebar.files.op Moved 2 items to the Trash 5000
+until sidebar.files.names src,a.rs,away.txt,lib.rs,README.md 5000
+sh test -d @FX@/trash/notes && test -d @FX@/trash/docs
+
+log === F07 Copy (⌘C) puts the files on the pasteboard; Paste (⌘V) copies them into the folder
+sidebar files select README.md
+key cmd+c
+expect sidebar.files.pasteboard README.md
+expect sidebar.files.op Copied README.md
+sidebar files select src/a.rs
+key cmd+v
+until sidebar.files.op.state done 5000
+until sidebar.files.selected src/README.md 5000
+sh grep -q proj @FX@/proj/src/README.md && test -f @FX@/proj/README.md
+key cmd+v
+until sidebar.files.selected src/README 2.md 5000
+
+log === F08 files copied elsewhere paste in; the originals stay
+sidebar files clip-files @FX@/outside/in.txt|@FX@/outside/dir
+sidebar files select README.md
+key cmd+v
+until sidebar.files.op Copied 2 items to @FX@/proj 5000
+sh test -f @FX@/proj/in.txt && test -f @FX@/proj/dir/inner.md && test -f @FX@/outside/in.txt
+
+log === F09 drops from outside: the same volume moves, ⌥ copies, ⌘ moves; a file row means its folder
+sidebar files drop-hover on src files @FX@/outside/drag.txt
+expect sidebar.files.drop-target src
+expect sidebar.files.drop-op move
+sidebar files drop-hover on src/a.rs files @FX@/outside/drag.txt
+expect sidebar.files.drop-target src
+sidebar files drop-hover files @FX@/outside/drag.txt
+expect sidebar.files.drop-target .
+sidebar files drop on src files @FX@/outside/drag.txt
+expect sidebar.files.drop-op move
+until sidebar.files.selected src/drag.txt 5000
+sh test -f @FX@/proj/src/drag.txt && test ! -e @FX@/outside/drag.txt
+sidebar files drop copy files @FX@/outside/keep.txt
+expect sidebar.files.drop-op copy
+until sidebar.files.selected keep.txt 5000
+sh test -f @FX@/proj/keep.txt && test -f @FX@/outside/keep.txt
+sidebar files drop move on src files @FX@/outside/forced.txt
+expect sidebar.files.drop-op move
+until sidebar.files.selected src/forced.txt 5000
+sh test ! -e @FX@/outside/forced.txt
+# Into itself, or where it is already: refused.
+sidebar files drop on src files @FX@/proj/src
+expect sidebar.files.drop-op refused
+sidebar files drop files @FX@/proj/README.md
+expect sidebar.files.drop-op refused
+# Inside the tree: a file dragged onto a folder moves there.
+sidebar files drop on src files @FX@/proj/keep.txt
+until sidebar.files.selected src/keep.txt 5000
+sh test -f @FX@/proj/src/keep.txt && test ! -e @FX@/proj/keep.txt
+
+log === F10 a tree entry dragged onto a terminal: its drop zones; the top one pastes the path
+drop at 0.5,0.25 hover tree README.md
+expect drop.zones paste,move
+drop leave
+drop at 0.5,0.25 tree README.md
+expect drop.op dropped
+expect drop.last @FX@/proj/README.md
+
+log === F11 Return opens [editor] command in a pane beside
+sidebar focus
+sidebar files select README.md
+key enter
+until tiles 2 5000
+until sidebar.files.editor command:vim @FX@/proj/README.md 3000
+key cmd+w
+until tiles 1 5000
+
+log === F11b Open Folder in Editor: [editor] command on the folder, in a pane there; Return still opens and closes folders
+sidebar focus
+sidebar files select src
+key enter
+wait 300
+key enter
+wait 300
+expect tiles 1
+menu files src invoke Open Folder in Editor
+until tiles 2 5000
+until sidebar.files.editor command:vim @FX@/proj/src 3000
+until terminal.cwd @FX@/proj/src 10000
+key cmd+w
+until tiles 1 5000
+# On empty space: the root.
+menu files invoke Open Folder in Editor
+until tiles 2 5000
+until sidebar.files.editor command:vim @FX@/proj 3000
+until terminal.cwd @FX@/proj 10000
+key cmd+w
+until tiles 1 5000
+# ⌘⇧O on a file: its folder.
+sidebar focus
+sidebar files select src/a.rs
+key cmd+shift+o
+until tiles 2 5000
+until sidebar.files.editor command:vim @FX@/proj/src 3000
+key cmd+w
+until tiles 1 5000
+
+log === F12 [editor] app opens Local files in that app (recorded, never launched)
+sh cp {config} @FX@/config.orig
+sh printf '\n[editor]\napp = "TextEdit"\n' >> {config}
+until sidebar.files.editor.app TextEdit 8000
+sidebar focus
+sidebar files select README.md
+key enter
+wait 500
+expect sidebar.files.editor app:TextEdit
+expect sidebar.files.opened TextEdit|@FX@/proj/README.md
+expect tiles 1
+# Folders too: the app gets the folder, the root on empty space.
+menu files src invoke Open Folder in Editor
+expect sidebar.files.editor app:TextEdit
+expect sidebar.files.opened TextEdit|@FX@/proj/src
+menu files invoke Open Folder in Editor
+expect sidebar.files.opened TextEdit|@FX@/proj
+expect tiles 1
+
+log === F13 an app that isn't there: a HUD line, then the command
+sh cp @FX@/config.orig {config}
+sh printf '\n[editor]\napp = "NoSuchEditorApp"\ncommand = "less"\n' >> {config}
+until sidebar.files.editor.app NoSuchEditorApp 8000
+until sidebar.files.editor.command less 8000
+sidebar focus
+sidebar files select README.md
+key enter
+until tiles 2 5000
+until sidebar.files.editor fallback:less @FX@/proj/README.md 3000
+expect hud.last Can't find the app “NoSuchEditorApp”; opening it in less instead
+key cmd+w
+until tiles 1 5000
+# A folder falls back the same way (vim, which stays open on a folder).
+sh cp @FX@/config.orig {config}
+sh printf '\n[editor]\napp = "NoSuchEditorApp"\n' >> {config}
+until sidebar.files.editor.command vim 8000
+menu files src invoke Open Folder in Editor
+until tiles 2 5000
+until sidebar.files.editor fallback:vim @FX@/proj/src 3000
+expect hud.last Can't find the app “NoSuchEditorApp”; opening it in vim instead
+key cmd+w
+until tiles 1 5000
+sh cp @FX@/config.orig {config}
+until sidebar.files.editor.app - 8000
+sidebar mode agents
+quit

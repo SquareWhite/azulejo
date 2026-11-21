@@ -359,7 +359,17 @@ pub fn keys_template(platform: Platform) -> String {
          # Programs that take the mouse but whose panes still select text on a\n\
          # plain drag, as a shell's do. A click and the wheel still reach them.\n\
          # [terminal]\n\
-         # select_on_drag = [\"omp\"]\n",
+         # select_on_drag = [\"omp\"]\n\
+         \n\
+         # What a file or folder from the sidebar's Files view opens in. `command`\n\
+         # is a terminal editor, in a new pane beside the focused one on the\n\
+         # file's machine (arguments are fine: \"nvim -p\"). `app` opens Local\n\
+         # files and folders in a macOS app instead (\"Zed\", a bundle ID or a\n\
+         # path). Remote ones use `command`, unless the app is Zed: Zed opens\n\
+         # them over its own SSH.\n\
+         # [editor]\n\
+         # command = \"vim\"\n\
+         # app = \"\"\n",
     );
     out
 }

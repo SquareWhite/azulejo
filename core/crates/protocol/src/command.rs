@@ -164,6 +164,18 @@ pub enum Command {
     /// when it's done, with what became of each.
     #[serde(rename = "files.transfer")]
     FilesTransfer(crate::transfer::FilesTransfer),
+    /// Makes an empty file or folder, never replacing anything; replies
+    /// `file_created` with its path.
+    #[serde(rename = "files.create")]
+    FilesCreate(crate::transfer::FilesCreate),
+    /// Deletes files and folders: to the Trash on Local, for good on a
+    /// herdr machine; replies `deleted` with what became of each.
+    #[serde(rename = "files.delete")]
+    FilesDelete(crate::transfer::FilesDelete),
+    /// A path on a herdr machine as an `ssh://` URL for apps with their
+    /// own SSH; replies `ssh_url`.
+    #[serde(rename = "files.ssh_url")]
+    FilesSshUrl(crate::files::FilesSshUrl),
 
     // ----- layout -----
     /// The focused tab's layout; emits `layout.changed` and replies `layout`.
@@ -344,6 +356,9 @@ pub const METHODS: &[&str] = &[
     "files.panel",
     "files.panel_close",
     "files.transfer",
+    "files.create",
+    "files.delete",
+    "files.ssh_url",
     "layout.get",
     "layout.split",
     "layout.focus",

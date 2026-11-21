@@ -770,6 +770,57 @@
           "type": "object"
         },
         {
+          "description": "Makes an empty file or folder, never replacing anything; replies\n`file_created` with its path.",
+          "properties": {
+            "method": {
+              "const": "files.create",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesCreate"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Deletes files and folders: to the Trash on Local, for good on a\nherdr machine; replies `deleted` with what became of each.",
+          "properties": {
+            "method": {
+              "const": "files.delete",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesDelete"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A path on a herdr machine as an `ssh://` URL for apps with their\nown SSH; replies `ssh_url`.",
+          "properties": {
+            "method": {
+              "const": "files.ssh_url",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/$defs/FilesSshUrl"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
           "description": "The focused tab's layout; emits `layout.changed` and replies `layout`.",
           "properties": {
             "method": {
@@ -1496,6 +1547,32 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "DeleteItem": {
+      "description": "What became of one path of `files.delete`.",
+      "properties": {
+        "error": {
+          "description": "Why it couldn't be deleted; absent when it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "trashed": {
+          "description": "Where it is in the Trash (Local only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
       "type": "object"
     },
     "Direction": {
@@ -2386,6 +2463,21 @@
       ],
       "type": "string"
     },
+    "FileKind": {
+      "description": "What `files.create` makes.",
+      "oneOf": [
+        {
+          "const": "file",
+          "description": "An empty file.",
+          "type": "string"
+        },
+        {
+          "const": "folder",
+          "description": "An empty folder.",
+          "type": "string"
+        }
+      ]
+    },
     "FilesChanged": {
       "description": "Payload of `files.changed`.",
       "properties": {
@@ -2403,6 +2495,75 @@
       "required": [
         "tile",
         "dirs"
+      ],
+      "type": "object"
+    },
+    "FilesCreate": {
+      "description": "Makes an empty file or folder. Nothing is ever replaced: a name that's\ntaken (by a file, a folder or a link) fails with `invalid_params`, and\nso does a folder that isn't there.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/FileKind",
+          "default": "file"
+        },
+        "machine": {
+          "description": "The machine to make it on (`machines.list` ID); Local when absent or\n`local`. Leave it out with `tile`: a panel's entries are on its own\nmachine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The new entry: absolute, or relative to the panel's root. Its last\npart is the name (not `.` or `..`).",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A files panel (`files.panel`): `path` may be relative to its root,\nand a remote panel's entry is made on its machine."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "FilesDelete": {
+      "description": "Deletes files and folders. On Local they go to the Trash (Finder's Put\nBack works); on a herdr machine they're removed for good (`rm -rf` over\nits SSH connection), so shells ask first. With `tile`, every path must\nbe inside that panel's root (not the root itself).",
+      "properties": {
+        "machine": {
+          "description": "The machine the paths are on (`machines.list` ID); Local when absent\nor `local`. Leave it out with `tile`: a panel's entries are on its\nown machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paths": {
+          "description": "Absolute, or relative to the panel's root.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A files panel (`files.panel`): paths may be relative to its root,\nand a remote panel's are on its machine."
+        }
+      },
+      "required": [
+        "paths"
       ],
       "type": "object"
     },
@@ -2548,6 +2709,11 @@
           "const": "terminal",
           "description": "A new terminal tile below the anchor, in the folder (a file's folder\nfor a file). It takes focus.",
           "type": "string"
+        },
+        {
+          "const": "editor_folder",
+          "description": "A folder opens in the editor: a new terminal tile to the right of\nthe anchor, in the folder, runs the editor on it (`vim <folder>`).\nA file means its folder. It takes focus.",
+          "type": "string"
         }
       ]
     },
@@ -2637,6 +2803,37 @@
         "tile",
         "path",
         "dirs"
+      ],
+      "type": "object"
+    },
+    "FilesSshUrl": {
+      "description": "A path on a herdr machine as an `ssh://[user@]host[:port]/path` URL, for\napps with their own SSH (the sidebar opens a remote file in Zed with it).\nThe host is the machine's SSH target as saved, an `~/.ssh/config` alias\nstaying an alias. Fails with `unavailable`, saying why, when another\napp's SSH can't reach the machine as Azulejo does: `[herdr] ssh` is a\nwrapper rather than OpenSSH, or the target isn't a plain host.",
+      "properties": {
+        "machine": {
+          "description": "The machine the path is on (`machines.list` ID). Leave it out with\n`tile`: a panel's entries are on its own machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Absolute, or relative to the panel's root.",
+          "type": "string"
+        },
+        "tile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TileId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A files panel (`files.panel`): `path` may be relative to its root,\nand a remote panel's paths are on its machine."
+        }
+      },
+      "required": [
+        "path"
       ],
       "type": "object"
     },
@@ -4112,6 +4309,60 @@
           "required": [
             "type",
             "items"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "What `files.create` made: absolute (resolved on Local).",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_created",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "What `files.delete` did, one item per path, in order.",
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/DeleteItem"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "deleted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`files.ssh_url`: the path as `ssh://[user@]host[:port]/path`.",
+          "properties": {
+            "type": {
+              "const": "ssh_url",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url"
           ],
           "type": "object"
         }
@@ -5761,6 +6012,9 @@
     "files.panel",
     "files.panel_close",
     "files.transfer",
+    "files.create",
+    "files.delete",
+    "files.ssh_url",
     "layout.get",
     "layout.split",
     "layout.focus",

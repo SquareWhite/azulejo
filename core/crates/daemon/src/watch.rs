@@ -165,13 +165,15 @@ fn run(
 }
 
 /// Hands the core the settings it acts on itself (`[terminal] on_exit`,
-/// `[layout]`, `[herdr] mirror_layout`), from the config currently in force.
+/// `[layout]`, `[herdr] mirror_layout`, `[editor] command`), from the
+/// config currently in force.
 pub fn push_settings(core: &Core, shared: &SharedConfig) {
     if let Ok(config) = shared.read() {
         core.set_on_exit(config.terminal.on_exit);
         core.set_layout_prefs(config.layout.clone());
         core.set_sidebar_collapsed(config.sidebar.collapsed);
         core.set_mirror_layout(config.herdr.mirror_layout);
+        core.set_editor(config.editor.command.clone());
     }
 }
 

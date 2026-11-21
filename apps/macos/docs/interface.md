@@ -62,9 +62,58 @@ workspaces by state.
   rows with a status icon, name and git branch.
 - **Files**: a file tree (`FilesPanelView`, over the core's `files.panel`)
   on the focused workspace's repository or cwd, on its machine for a remote
-  workspace. Return opens a file in the editor: `vim` in a new terminal split
-  beside the focused tile (the core's `files.open`). Esc gives the keyboard
-  back. Refreshes don't steal the keyboard (`KeepsKeyboard`).
+  workspace. Return or a double-click opens a file in the editor: `[editor]
+  command` (`vim` by default) in a new terminal split beside the focused tile
+  (the core's `files.open`), on the file's machine. With `[editor] app` set,
+  Local files open in that app instead; when it can't be found a HUD line
+  says so and the command opens. Remote files open in the app only when it's
+  Zed (bundle ID `dev.zed.Zed*`, or an app named Zed): `zed://ssh/…` from the
+  core's `files.ssh_url`, the file alone. If Zed's SSH can't reach the
+  machine as Azulejo does (a `[herdr] ssh` wrapper), a HUD line says why and
+  the command opens on the machine; other apps always use the command.
+  Return and a double-click on a folder open or close it. Open Folder in
+  Editor (⌘⇧O, `files_open_folder_in_editor`; in the menu on a folder, and
+  on empty space for the root) opens a folder the same way: the app gets
+  the folder (Zed opens it as a project, a remote one as `zed://ssh/…`),
+  with the same HUD fallbacks; the command runs as `command <folder>` in a
+  new pane to the right, in that folder (`files.open`, target
+  `editor_folder`). With a file selected, the key opens the file's folder.
+  Esc gives the keyboard back. Refreshes don't steal the keyboard
+  (`KeepsKeyboard`).
+
+  The tree selects several rows (⌘-click, ⇧-click) and changes files
+  (`FilesOperations.swift`), all through the core and off the main thread,
+  with the outcome as a HUD line:
+
+  - **New File (⌘N) / New Folder (⌘⇧N)**: a name field in the target folder
+    (a folder itself, a file's folder, the root on empty space), made by
+    `files.create`, which never replaces anything; a taken or invalid name
+    keeps the field open. Return makes it, Esc doesn't, and the new entry
+    is selected.
+  - **Move to Trash (⌘⌫)**: Local entries go to the Trash (`files.delete`;
+    Put Back works). A remote machine's are removed for good, after a bar
+    in the panel asks (Return or Delete confirms, Esc or Cancel doesn't).
+  - **Copy (⌘C) / Paste (⌘V)**: the entries go on the pasteboard as files,
+    a remote machine's downloaded into the app's temp folder first
+    (`files.transfer`); pasting copies files on the pasteboard into the
+    target folder, uploading them for a remote workspace. Copy Path stays
+    text.
+  - **Drops** from Finder land in the folder under the pointer (the root on
+    empty space), Finder's way: the same volume moves, another copies, ⌥
+    copies, ⌘ moves; a remote workspace always uploads. Promised files are
+    received into the folder. Moving entries between folders by dragging
+    them inside the tree works the same way (Local only).
+  - **Drags out** carry Local entries as file URLs (a terminal shows its
+    drop zones) and a remote machine's as file promises that download where
+    they're dropped, plus their remote paths, which a terminal on that
+    machine types.
+
+  The keys are the keymap's `files` context (`files_new_file`,
+  `files_new_folder`, `files_delete`, `files_copy`, `files_paste`); the
+  right-click menu shows them. Remote panels list a folder again as soon
+  as the core changes it. Checked by `e2e/fops.sh` (Local, deletes into a
+  temp folder through `AZJ_TRASH_DIR`) and `e2e/rfops.sh` (through the SSH
+  stand-in).
 
 Each view has its own key: ⌘A (`toggle_agents_sidebar`, in terminals and the
 files list) and ⌘F (`toggle_files_sidebar`, which also gives the tree the

@@ -139,11 +139,17 @@ files_open          = "enter"         # edit in a new terminal beside, or open/c
 files_expand        = "l"             # expand the folder, or open the file
 files_collapse      = "h"             # collapse the folder, or go to the parent
 files_open_external = "cmd+down"      # default app (folders expand)
+files_open_folder_in_editor = "cmd+shift+o" # the folder (a file's folder) in [editor] app or command
 files_parent        = "cmd+up"
 files_quick_look    = "space"
 files_filter        = "/"
 files_toggle_hidden = "."
 files_leave         = "escape"        # back to the tiles
+files_new_file      = "cmd+n"         # an inline name field in the selected folder
+files_new_folder    = "cmd+shift+n"   # Finder's chord
+files_delete        = "cmd+backspace" # to the Trash; on a remote machine for good, once confirmed
+files_copy          = "cmd+c"         # the files themselves (a remote machine's downloaded first)
+files_paste         = "cmd+v"         # files on the pasteboard into the selected folder
 toggle_agents_sidebar = "cmd+a"       # from the Files view to Agents, as in terminals
 
 [keys.macos.palette]
@@ -248,11 +254,17 @@ files_open          = "enter"
 files_expand        = "l"
 files_collapse      = "h"
 files_open_external = "alt+down"      # GNOME Files' chords
+files_open_folder_in_editor = "ctrl+shift+o"
 files_parent        = "alt+up"
 files_quick_look    = "space"
 files_filter        = "/"
 files_toggle_hidden = "."
 files_leave         = "escape"
+files_new_file      = "ctrl+n"
+files_new_folder    = "ctrl+shift+n"  # GNOME Files' chords
+files_delete        = "delete"
+files_copy          = "ctrl+c"
+files_paste         = "ctrl+v"
 toggle_agents_sidebar = "super+a"
 
 [keys.linux.palette]

@@ -90,6 +90,18 @@ pub enum Reply {
     Transferred {
         items: Vec<crate::transfer::TransferItem>,
     },
+    /// What `files.create` made: absolute (resolved on Local).
+    FileCreated {
+        path: String,
+    },
+    /// What `files.delete` did, one item per path, in order.
+    Deleted {
+        items: Vec<crate::transfer::DeleteItem>,
+    },
+    /// `files.ssh_url`: the path as `ssh://[user@]host[:port]/path`.
+    SshUrl {
+        url: String,
+    },
 }
 
 /// A window without its workspaces' contents.

@@ -27,7 +27,9 @@ import UniformTypeIdentifiers
 /// list, escape clears it.
 ///
 /// What acts on entries (`MARK: Actions`) goes through the core with the
-/// panel's id, so it works the same for local and remote panels.
+/// panel's id, so it works the same for local and remote panels. Making,
+/// deleting, copying, pasting and dragging entries live in
+/// FilesOperations.swift.
 @MainActor
 final class FilesPanelView: NSView, ThemeAware {
     /// The `files.panel` this view shows.
@@ -40,10 +42,13 @@ final class FilesPanelView: NSView, ThemeAware {
     /// "Loading…", "Can't list this folder." or a remote folder's error,
     /// in a strip above the tree.
     private let status = NSTextField(wrappingLabelWithString: "")
+    /// A remote delete waiting for a yes (FilesOperations.swift).
+    let confirmBar = FilesConfirmBar()
     private let scroll = NSScrollView()
-    private let outline = FilesOutlineView()
+    let outline = FilesOutlineView()
     private var filterHeight: NSLayoutConstraint!
     private var statusHeight: NSLayoutConstraint!
+    var confirmHeight: NSLayoutConstraint!
     /// Esc (`files_leave`): the sidebar hands the keyboard back to the tiles.
     var onEscape: (() -> Void)?
     /// The herdr machine whose files this panel shows; nil for Local.
@@ -53,14 +58,14 @@ final class FilesPanelView: NSView, ThemeAware {
     var isRemote: Bool { machine != nil }
 
     /// The root's node; its children are the outline's top level.
-    private var root = FileNode(path: "", name: "", dir: true)
+    private(set) var root = FileNode(path: "", name: "", dir: true)
     /// Every listed node by absolute path, for events and selection.
-    private var nodes: [String: FileNode] = [:]
+    private(set) var nodes: [String: FileNode] = [:]
     private var git: [String: String] = [:]
     private var showHidden = false
     /// The root had more entries than a listing returns.
     private var truncated = false
-    private var query = ""
+    private(set) var query = ""
     /// With a filter: each node's kept children (matches and folders holding
     /// one), by identity.
     private var filtered: [ObjectIdentifier: [FileNode]] = [:]
@@ -89,11 +94,37 @@ final class FilesPanelView: NSView, ThemeAware {
     private var lastChangeAt: Double?
     private var revealed = 0
 
+    // File operations (FilesOperations.swift).
+    /// A new entry's name field, in its folder.
+    var draft: FileDraft?
+    /// Entries to select once a listing shows them (just made, pasted or
+    /// dropped), for a while: one that never shows up isn't selected later
+    /// out of the blue.
+    var pendingSelect: [String] = [] {
+        didSet { pendingSince = CACurrentMediaTime() }
+    }
+    var pendingSince: CFTimeInterval = 0
+    /// The folder a drag over the tree would land in (automation).
+    var dropTarget: String?
+    /// What the last operation said, for automation (`sidebar.files.op`),
+    /// and where it got to (`running`, `done`, `failed`, `asking`).
+    var lastOp = "-"
+    var lastOpState = "-"
+    /// What the last automated drop on the tree got (`copy`, `move`,
+    /// `none`, `refused`), and the last promise run.
+    var lastDropOp = "-"
+    var lastPromise = "-"
+    /// The last editor route (`command`, `fallback`, `app:<name>`) and the
+    /// tile it opened, if any (`sidebar.files.editor`).
+    var lastEditor = "-"
+    var lastEditorTile: String?
+
     // MARK: Setup
 
     static func install(core: Core, log: @escaping (String) -> Void) {
         Self.core = core
         Self.log = log
+        DispatchQueue.global(qos: .utility).async { RemoteCopies.sweep() }
     }
 
     /// Hands `files.*` events to the panel they're for; a substring check keeps
@@ -116,8 +147,8 @@ final class FilesPanelView: NSView, ThemeAware {
         }
     }
 
-    private static var core: Core?
-    private static var log: (String) -> Void = { _ in }
+    private(set) static var core: Core?
+    private(set) static var log: (String) -> Void = { _ in }
     private static var live: [String: WeakFiles] = [:]
     private static var icons: [String: NSImage] = [:]
 
@@ -152,13 +183,17 @@ final class FilesPanelView: NSView, ThemeAware {
         outline.indentationPerLevel = 14
         outline.autoresizesOutlineColumn = false
         outline.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        outline.allowsMultipleSelection = false
+        outline.allowsMultipleSelection = true
         outline.backgroundColor = .clear
         outline.dataSource = self
         outline.delegate = self
         outline.target = self
         outline.doubleAction = #selector(doubleClicked)
         outline.owner = self
+        outline.registerForDraggedTypes(FilesDragging.types)
+        outline.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: false)
+        outline.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
+        outline.draggingDestinationFeedbackStyle = .regular
 
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.documentView = outline
@@ -174,11 +209,16 @@ final class FilesPanelView: NSView, ThemeAware {
         status.cell?.truncatesLastVisibleLine = true
         status.isHidden = true
 
+        confirmBar.translatesAutoresizingMaskIntoConstraints = false
+        confirmBar.isHidden = true
+
         addSubview(filter)
         addSubview(status)
+        addSubview(confirmBar)
         addSubview(scroll)
         filterHeight = filter.heightAnchor.constraint(equalToConstant: 0)
         statusHeight = status.heightAnchor.constraint(equalToConstant: 0)
+        confirmHeight = confirmBar.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             filter.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             filter.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
@@ -188,7 +228,11 @@ final class FilesPanelView: NSView, ThemeAware {
             status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             statusHeight,
-            scroll.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 2),
+            confirmBar.topAnchor.constraint(equalTo: status.bottomAnchor),
+            confirmBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            confirmBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            confirmHeight,
+            scroll.topAnchor.constraint(equalTo: confirmBar.bottomAnchor, constant: 2),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -283,6 +327,9 @@ final class FilesPanelView: NSView, ThemeAware {
         root = FileNode(path: "", name: "", dir: true)
         nodes = [:]
         git = [:]
+        draft = nil
+        pendingSelect = []
+        hideConfirmation()
         rebuildFilter()
         outline.reloadData()
         showStatus()
@@ -307,7 +354,7 @@ final class FilesPanelView: NSView, ThemeAware {
         apply(listing, to: root)
         truncated = listing.truncated
         rebuildFilter()
-        outline.reloadData()
+        reloadAll()
         if window?.firstResponder === outline, outline.selectedRow < 0, outline.numberOfRows > 0 {
             outline.selectRowIndexes([0], byExtendingSelection: false)
         }
@@ -421,12 +468,13 @@ final class FilesPanelView: NSView, ThemeAware {
             guard let listing, self.nodes[node.path] === node, self.apply(listing, to: node) else { return }
             let selected = self.selectedNode
             self.rebuildFilter()
-            self.outline.reloadItem(node, reloadChildren: true)
+            self.reloadKeepingDraft { self.outline.reloadItem(node, reloadChildren: true) }
             if node.open, self.query.isEmpty {
                 self.outline.expandItem(node)
                 self.restoreExpansion(node)
             }
             self.keepSelection(selected)
+            self.listingsChanged()
         }
     }
 
@@ -443,7 +491,7 @@ final class FilesPanelView: NSView, ThemeAware {
 
     /// `files.changed`: list the open folders that changed again, then show
     /// them all at once.
-    private func changed(_ dirs: [String]) {
+    func changed(_ dirs: [String]) {
         let open = dirs.filter { dir in
             guard let node = nodes[dir], node.children != nil else { return false }
             return node === root || outline.isItemExpanded(node)
@@ -471,10 +519,18 @@ final class FilesPanelView: NSView, ThemeAware {
         }
         guard reloaded else { return }
         rebuildFilter()
-        outline.reloadData()
+        let rows = outline.selectedRowIndexes.compactMap { (outline.item(atRow: $0) as? FileNode)?.path }
+        reloadAll()
         restoreExpansion(root)
-        if let selected, let node = nodes[selected] { select(node) }
+        // Every entry that was selected and is still there stays selected.
+        let kept = IndexSet(rows.compactMap { nodes[$0] }.map { outline.row(forItem: $0) }.filter { $0 >= 0 })
+        if kept.count > 1 {
+            outline.selectRowIndexes(kept, byExtendingSelection: false)
+        } else if let selected, let node = nodes[selected] {
+            select(node)
+        }
         showStatus()
+        listingsChanged()
         changesApplied += 1
         lastChangeAt = Date().timeIntervalSince1970 * 1000
         Self.log(String(format: "files: %@ change applied at %.0f (%@)",
@@ -482,7 +538,7 @@ final class FilesPanelView: NSView, ThemeAware {
     }
 
     /// After `reloadData`, open again the folders that were open.
-    private func restoreExpansion(_ node: FileNode) {
+    func restoreExpansion(_ node: FileNode) {
         for child in children(of: node) where child.dir && child.open {
             outline.expandItem(child)
             restoreExpansion(child)
@@ -542,7 +598,7 @@ final class FilesPanelView: NSView, ThemeAware {
         return row >= 0 ? outline.item(atRow: row) as? FileNode : nil
     }
 
-    private func select(_ node: FileNode) {
+    func select(_ node: FileNode) {
         let row = outline.row(forItem: node)
         guard row >= 0 else { return }
         outline.selectRowIndexes([row], byExtendingSelection: false)
@@ -561,9 +617,76 @@ final class FilesPanelView: NSView, ThemeAware {
     /// Opens a file in the editor: a new terminal split beside the focused
     /// tile runs it there (the core's `files.open`, target `editor`), on the
     /// focused workspace's machine for a remote workspace. The core picks
-    /// the editor command.
+    /// the editor command (`[editor] command`). A Local file opens in
+    /// `[editor] app` instead when that's set (`EditorApp`), and in the
+    /// command when the app can't be found. A remote file opens in the app
+    /// only when it's Zed, over Zed's own SSH; when that can't reach the
+    /// machine a HUD line says why and the command opens it. A folder opens
+    /// a terminal there instead (`editFolder` opens one in the editor).
     func edit(_ node: FileNode) {
-        open(node, target: "editor")
+        guard !node.dir else { return open(node, target: "editor") }
+        openInEditor(node, target: "editor")
+    }
+
+    /// Opens a folder in the editor as `edit` does a file: `[editor] app`
+    /// for a Local folder (Zed opens it as a project), Zed over its own SSH
+    /// for a remote one, else the command on the folder in a new pane there
+    /// (target `editor_folder`). A file means its folder; none, the root.
+    func editFolder(_ node: FileNode?) {
+        let folder = targetFolder(for: node)
+        guard !folder.path.isEmpty else { return }
+        openInEditor(folder, target: "editor_folder")
+    }
+
+    /// `[editor] app` for `node` when it can take it, else the command
+    /// (`files.open` with `target`), with a HUD line when the app can't.
+    private func openInEditor(_ node: FileNode, target: String) {
+        var route = "command"
+        if isRemote, !EditorApp.app.isEmpty {
+            switch EditorApp.openRemote(sshURL: { sshURL(node) }) {
+            case .opened(let app):
+                lastEditor = "app:\(app)"
+                lastEditorTile = nil
+                return
+            case .failed(let why):
+                route = "fallback"
+                say("\(why); opening it in \(EditorApp.command) instead", .failed)
+            case .notZed:
+                break
+            }
+        } else if !EditorApp.app.isEmpty {
+            switch EditorApp.open(node.path) {
+            case .opened(let app):
+                lastEditor = "app:\(app)"
+                lastEditorTile = nil
+                return
+            case .notFound:
+                let text = "Can't find the app “\(EditorApp.app)”; opening it in \(EditorApp.command) instead"
+                route = "fallback"
+                Self.notice(window, text, .failed)
+            }
+        }
+        lastEditor = route
+        lastEditorTile = nil
+        open(node, target: target)
+    }
+
+    /// A remote entry as `ssh://[user@]host[:port]/path` (the core's
+    /// `files.ssh_url`), or why another app's SSH can't reach it.
+    private func sshURL(_ node: FileNode) -> EditorApp.SSHURL {
+        guard let core = Self.core else { return .unreachable("Azulejo's core isn't running") }
+        let result = core.execute([
+            "method": "files.ssh_url",
+            "params": ["tile": panelID, "path": node.path],
+        ])
+        switch result {
+        case .failure(let error):
+            Self.log("files: ssh url failed: \(error.message)")
+            return .unreachable(error.message)
+        case .success(let reply):
+            guard let url = reply["url"] as? String else { return .unreachable("the core gave no URL") }
+            return .url(url)
+        }
     }
 
     /// A new terminal below the focused tile, in the folder (a file's
@@ -580,7 +703,14 @@ final class FilesPanelView: NSView, ThemeAware {
             "method": "files.open",
             "params": ["tile": panelID, "path": node.path, "target": target],
         ])
-        if case .failure(let error) = result { Self.log("files: open failed: \(error.message)") }
+        switch result {
+        case .failure(let error):
+            Self.log("files: open failed: \(error.message)")
+        case .success(let reply):
+            if target == "editor_folder" || (target == "editor" && !node.dir) {
+                lastEditorTile = reply["tile"] as? String
+            }
+        }
     }
 
     /// A remote file has no local app to open it: it opens in the editor on
@@ -596,12 +726,13 @@ final class FilesPanelView: NSView, ThemeAware {
     /// Local files only: Finder can't show a remote path.
     func revealInFinder(_ node: FileNode) {
         guard !isRemote else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
+        ContextMenus.reveal(node.path)
     }
 
+    /// The path as text, on the pasteboard terminals use (a private one in
+    /// automation runs).
     func copyPath(_ node: FileNode) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(node.path, forType: .string)
+        ContextMenus.copy(node.path)
     }
 
     func toggleHidden() {
@@ -614,7 +745,7 @@ final class FilesPanelView: NSView, ThemeAware {
 
     @objc private func doubleClicked() {
         let row = outline.clickedRow
-        guard row >= 0, let node = outline.item(atRow: row) as? FileNode else { return }
+        guard row >= 0, let node = outline.item(atRow: row) as? FileNode, !node.isDraft else { return }
         activate(node)
     }
 
@@ -626,13 +757,13 @@ final class FilesPanelView: NSView, ThemeAware {
         window?.makeFirstResponder(filter)
     }
 
-    private func clearFilter() {
+    func clearFilter() {
         filter.stringValue = ""
         query = ""
         filter.isHidden = true
         filterHeight.constant = 0
         rebuildFilter()
-        outline.reloadData()
+        reloadAll()
         restoreExpansion(root)
         window?.makeFirstResponder(outline)
     }
@@ -666,9 +797,15 @@ final class FilesPanelView: NSView, ThemeAware {
         return node !== root && (node.name.lowercased().contains(query) || !kept.isEmpty)
     }
 
-    fileprivate func children(of node: FileNode) -> [FileNode] {
-        if !query.isEmpty { return filtered[ObjectIdentifier(node)] ?? [] }
-        return node.children ?? []
+    func children(of node: FileNode) -> [FileNode] {
+        let list = query.isEmpty ? node.children ?? [] : filtered[ObjectIdentifier(node)] ?? []
+        guard let draft, draft.parent === node else { return list }
+        // A new folder's field sits above the folders, a new file's above
+        // the files.
+        var out = list
+        let at = draft.kind == .folder ? 0 : (out.firstIndex { !$0.dir } ?? out.count)
+        out.insert(draft.node, at: at)
+        return out
     }
 
     // MARK: Cells
@@ -703,6 +840,7 @@ extension FilesPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let node = item as? FileNode else { return nil }
+        if node.isDraft, let draft { return draft.cell(icon: icon(for: node)) }
         let cell = outlineView.makeView(withIdentifier: FileCell.id, owner: self) as? FileCell ?? FileCell()
         cell.show(node, icon: icon(for: node), git: gitState(for: node))
         return cell
@@ -710,6 +848,39 @@ extension FilesPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
 
     func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
         FilesRowView()
+    }
+
+    // Dragging out and dropping in (FilesOperations.swift).
+
+    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
+        guard let node = item as? FileNode, !node.isDraft else { return nil }
+        return dragWriter(for: node)
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView, validateDrop info: any NSDraggingInfo, proposedItem item: Any?,
+        proposedChildIndex index: Int
+    ) -> NSDragOperation {
+        let folder = dropFolder(for: item as? FileNode)
+        let op = dropOperation(info, into: folder)
+        dropTarget = op.isEmpty ? nil : folder.path
+        guard !op.isEmpty else { return [] }
+        outlineView.setDropItem(folder === root ? nil : folder, dropChildIndex: NSOutlineViewDropOnItemIndex)
+        return op
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView, acceptDrop info: any NSDraggingInfo, item: Any?, childIndex index: Int
+    ) -> Bool {
+        dropTarget = nil
+        return acceptDrop(info, into: dropFolder(for: item as? FileNode))
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        dropTarget = nil
     }
 
     func outlineViewItemWillExpand(_ notification: Notification) {
@@ -724,6 +895,10 @@ extension FilesPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
         guard let node = notification.userInfo?["NSObject"] as? FileNode, query.isEmpty else { return }
         node.open = false
         _ = Self.core?.execute(["method": "files.collapse", "params": ["tile": panelID, "dir": node.path]])
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        !((item as? FileNode)?.isDraft ?? false)
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -788,7 +963,7 @@ extension FilesPanelView {
             ])
             if case .failure(let error)? = result { return "reveal: \(error.message)" }
         default:
-            return "unknown files verb \(verb)"
+            return automateOperation(verb, arg) ?? nil
         }
         return nil
     }
@@ -818,8 +993,9 @@ extension FilesPanelView {
             s["selected"] = "-"
         }
         s["names"] = (0..<min(outline.numberOfRows, 12))
-            .compactMap { (outline.item(atRow: $0) as? FileNode)?.name }
+            .compactMap { (outline.item(atRow: $0) as? FileNode).map { $0.isDraft ? "[new]" : $0.name } }
             .joined(separator: ",")
+        s.merge(operationState()) { $1 }
         return s
     }
 }
@@ -843,6 +1019,8 @@ final class FileNode {
     var loading = false
     /// Why a remote folder couldn't be listed.
     var error: String?
+    /// The row of a new entry's name field (`FileDraft`), not a listed one.
+    var isDraft = false
 
     init(path: String, name: String, dir: Bool) {
         self.path = path
@@ -954,30 +1132,24 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
         scrollRowToVisible(row)
     }
 
+    /// The right-click menu: for the row under the pointer (which joins the
+    /// selection, or replaces it when it wasn't part of it), or for the root
+    /// on empty space (`FilesPanelView.contextMenu(for:)`).
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard let owner else { return nil }
         let row = self.row(at: convert(event.locationInWindow, from: nil))
-        guard row >= 0, let node = item(atRow: row) as? FileNode, let owner else { return nil }
-        selectRowIndexes([row], byExtendingSelection: false)
-        let menu = NSMenu()
-        func add(_ title: String, _ handler: @escaping () -> Void) {
-            let item = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: "")
-            let action = MenuAction(handler)
-            item.target = action
-            item.representedObject = action
-            menu.addItem(item)
+        guard row >= 0, let node = item(atRow: row) as? FileNode, !node.isDraft else {
+            return owner.contextMenu(for: nil)
         }
-        if !node.dir { add("Open in Editor") { owner.edit(node) } }
-        add("Open Terminal Here") { owner.openTerminal(node) }
-        // A remote path isn't on this Mac.
-        if !owner.isRemote {
-            add("Open in Default App") { owner.openInDefaultApp(node) }
-            add("Reveal in Finder") { owner.revealInFinder(node) }
-        }
-        add("Copy Path") { owner.copyPath(node) }
-        menu.addItem(.separator())
-        add("Show or Hide Hidden Files") { owner.toggleHidden() }
-        return menu
+        if !selectedRowIndexes.contains(row) { selectRowIndexes([row], byExtendingSelection: false) }
+        return owner.contextMenu(for: node)
     }
+
+    // The Edit menu's Copy and Paste, and Delete, while the tree has the
+    // keyboard (the keymap's `files_copy` and friends do the same).
+    @objc func copy(_ sender: Any?) { owner?.copySelection() }
+    @objc func paste(_ sender: Any?) { owner?.pasteIntoSelection() }
+    @objc func delete(_ sender: Any?) { owner?.deleteSelection() }
 
     // Quick Look: the selected entry, toggled with Space.
 
@@ -1016,14 +1188,14 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
 }
 
 /// A menu item's closure.
-private final class MenuAction: NSObject {
+final class MenuAction: NSObject {
     let handler: () -> Void
     init(_ handler: @escaping () -> Void) { self.handler = handler }
     @objc func run() { handler() }
 }
 
 /// One row: icon, name, git badge. Hidden and ignored entries are dimmed.
-private final class FileCell: NSTableCellView {
+final class FileCell: NSTableCellView {
     static let id = NSUserInterfaceItemIdentifier("file")
     private let icon = NSImageView()
     private let name = NSTextField(labelWithString: "")
@@ -1123,9 +1295,17 @@ extension FilesPanelView: KeyScope {
         return window?.firstResponder === editor
     }
 
-    /// The `files` actions, and `find_bar`'s in the filter.
+    /// The `files` actions, and `find_bar`'s in the filter. While a remote
+    /// delete waits for a yes, Return confirms it and Esc cancels.
     func perform(keyAction name: String, event: NSEvent?) -> Bool {
         let node = selectedNode
+        if confirmBar.isShowing, !isFiltering {
+            switch name {
+            case "files_open": confirmBar.confirm(); return true
+            case "files_leave": hideConfirmation(); return true
+            default: break
+            }
+        }
         switch name {
         case "find_next":
             guard isFiltering else { return false }
@@ -1147,6 +1327,7 @@ extension FilesPanelView: KeyScope {
         case "files_open_external":
             guard let node else { return false }
             if node.dir { outline.expandItem(node) } else { openInDefaultApp(node) }
+        case "files_open_folder_in_editor": editFolder(node)
         case "files_parent":
             guard let node else { return false }
             goToParent(of: node)
@@ -1155,6 +1336,11 @@ extension FilesPanelView: KeyScope {
         case "files_toggle_hidden": toggleHidden()
         case "files_leave":
             onEscape?()
+        case "files_new_file": beginCreate(.file, in: targetFolder(for: selectedNode))
+        case "files_new_folder": beginCreate(.folder, in: targetFolder(for: selectedNode))
+        case "files_delete": deleteSelection()
+        case "files_copy": copySelection()
+        case "files_paste": pasteIntoSelection()
         default:
             return false
         }

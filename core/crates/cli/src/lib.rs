@@ -373,7 +373,7 @@ fn dispatch(
 
 /// Params that name files or folders: top-level `path`, `cwd`, `root` and
 /// `base_dir`, and the same inside a tile's `content`.
-const PATH_PARAMS: [&str; 4] = ["path", "cwd", "root", "base_dir"];
+const PATH_PARAMS: [&str; 5] = ["path", "paths", "cwd", "root", "base_dir"];
 
 /// What the schema says about paths the core resolves against a files
 /// panel's root (`files.open`, `files.reveal`). `azj` leaves those as typed
@@ -428,8 +428,10 @@ pub fn absolutise_paths(
         if panel && is_root_relative(spec, key) {
             continue;
         }
-        if let Some(value) = params.get_mut(key) {
-            fix(value);
+        match params.get_mut(key) {
+            Some(Value::Array(values)) => values.iter_mut().for_each(fix),
+            Some(value) => fix(value),
+            None => {}
         }
     }
     if let Some(Value::Object(content)) = params.get_mut("content") {
@@ -870,6 +872,25 @@ mod path_tests {
     }
 
     #[test]
+    fn lists_of_paths_are_made_absolute_unless_a_panel_takes_them() {
+        assert_eq!(
+            fixed("files.delete", json!({"paths": ["a.txt", "/srv/b", "~/c"]})),
+            json!({"paths": ["/work/proj/a.txt", "/srv/b", "/home/me/c"]})
+        );
+        assert_eq!(
+            fixed(
+                "files.delete",
+                json!({"paths": ["a.txt"], "tile": "tile_x"})
+            ),
+            json!({"paths": ["a.txt"], "tile": "tile_x"})
+        );
+        assert_eq!(
+            fixed("files.create", json!({"path": "new.txt"})),
+            json!({"path": "/work/proj/new.txt"})
+        );
+    }
+
+    #[test]
     fn paths_relative_to_a_panel_root_stay_relative() {
         for method in ["files.open", "files.reveal"] {
             assert_eq!(
@@ -903,7 +924,16 @@ mod path_tests {
                     .collect::<Vec<_>>()
             })
             .collect();
-        assert_eq!(marked, ["files.reveal.path", "files.open.path"]);
+        assert_eq!(
+            marked,
+            [
+                "files.reveal.path",
+                "files.open.path",
+                "files.create.path",
+                "files.delete.paths",
+                "files.ssh_url.path"
+            ]
+        );
     }
 
     #[test]

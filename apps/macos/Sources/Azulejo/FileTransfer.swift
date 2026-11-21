@@ -5,7 +5,8 @@ import Foundation
 /// and copies locally, `scp` over the machine's SSH connection otherwise,
 /// and never overwrites: a taken name gets Finder's "name 2.ext"). No UI:
 /// callers show `Result.summary` however they like. Drops on a terminal use
-/// it; so can the file tree.
+/// it, and so does the sidebar's file tree (pastes, drops, and downloads
+/// for Copy and drags out of a remote tree).
 @MainActor
 enum FileTransfer {
     enum Mode: String {
@@ -43,14 +44,16 @@ enum FileTransfer {
         var failure: String?
     }
 
-    /// Transfers `sources` (absolute local paths) into `folder`; `then`
-    /// runs on the main actor when it's done.
+    /// Transfers `sources` (absolute paths, Local or on herdr machine
+    /// `machine`: a download) into `folder`; `then` runs on the main actor
+    /// when it's done.
     static func run(
-        _ sources: [String], into folder: Folder, mode: Mode, core: Core,
+        _ sources: [String], from machine: String? = nil, into folder: Folder, mode: Mode, core: Core,
         then: @escaping @MainActor (Result) -> Void
     ) {
         var params: [String: Any] = ["sources": sources, "folder": folder.path, "mode": mode.rawValue]
         if let machine = folder.machine { params["to"] = machine }
+        if let machine { params["from"] = machine }
         core.executeAsync(["method": "files.transfer", "params": params], decode: { reply in
             switch reply {
             case .failure(let error):

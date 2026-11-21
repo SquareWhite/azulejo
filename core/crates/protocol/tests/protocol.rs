@@ -243,6 +243,11 @@ fn sample_commands() -> Vec<Command> {
             path: "/src/shop/README.md".into(),
             target: FilesOpenTarget::Editor,
         }),
+        Command::FilesOpen(FilesOpen {
+            tile: Some(tile),
+            path: "src".into(),
+            target: FilesOpenTarget::EditorFolder,
+        }),
         Command::FilesPanel(FilesPanel {
             panel: None,
             root: "~/src/shop".into(),
@@ -260,6 +265,22 @@ fn sample_commands() -> Vec<Command> {
             folder: "/srv/shop/uploads".into(),
             to: Some("0123456789abcdef0123456789abcdef".into()),
             mode: TransferMode::Move,
+        }),
+        Command::FilesCreate(FilesCreate {
+            tile: Some(tile),
+            path: "src/new".into(),
+            kind: FileKind::Folder,
+            machine: None,
+        }),
+        Command::FilesDelete(FilesDelete {
+            tile: None,
+            paths: vec!["/srv/shop/old.txt".into()],
+            machine: Some("0123456789abcdef0123456789abcdef".into()),
+        }),
+        Command::FilesSshUrl(FilesSshUrl {
+            tile: Some(TileId::new()),
+            path: "src/main.rs".into(),
+            machine: None,
         }),
         Command::LayoutApply(LayoutApply {
             path: Some("/src/shop/.azulejo.toml".into()),
@@ -707,6 +728,26 @@ fn replies_round_trip() {
                     error: Some("no such file or folder".into()),
                 },
             ],
+        },
+        Reply::FileCreated {
+            path: "/srv/shop/src/new".into(),
+        },
+        Reply::Deleted {
+            items: vec![
+                DeleteItem {
+                    path: "/src/shop/old.txt".into(),
+                    trashed: Some("/Users/me/.Trash/old.txt".into()),
+                    error: None,
+                },
+                DeleteItem {
+                    path: "/src/shop/gone".into(),
+                    trashed: None,
+                    error: Some("no such file or folder".into()),
+                },
+            ],
+        },
+        Reply::SshUrl {
+            url: "ssh://me@build-host:2222/srv/shop/a%20b.rs".into(),
         },
     ];
     for reply in replies {

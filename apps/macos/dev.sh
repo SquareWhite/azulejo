@@ -177,6 +177,8 @@ fi
 if [[ -n "${AZJ_DEBUG_MIRROR:-}" ]]; then envs+=(--env "AZJ_DEBUG_MIRROR=$AZJ_DEBUG_MIRROR"); fi
 # A delay before every folder listing, standing in for a slow folder (files-slow.sh).
 if [[ -n "${AZJ_FILES_LIST_DELAY_MS:-}" ]]; then envs+=(--env "AZJ_FILES_LIST_DELAY_MS=$AZJ_FILES_LIST_DELAY_MS"); fi
+# The Files view's deletes go to this folder instead of the Trash (tests).
+if [[ -n "${AZJ_TRASH_DIR:-}" ]]; then envs+=(--env "AZJ_TRASH_DIR=$AZJ_TRASH_DIR"); fi
 # Reflow motion tuning (Motion.reflowInterval, Motion.reflowLead).
 for v in AZJ_REFLOW_MS AZJ_REFLOW_LEAD_MS; do
   if [[ -n "${!v:-}" ]]; then envs+=(--env "$v=${!v}"); fi

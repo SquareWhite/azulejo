@@ -35,7 +35,7 @@ pub use env::{clean_env, clean_process_env};
 pub use error::{Error, Result, needs_attention};
 pub use event::{HerdrEvent, Subscription};
 pub use machine::{
-    MachineProfile, RemoteMachine, SSH_FAILED, Ssh, parse_machine_list, shell_quote,
+    MachineProfile, RemoteMachine, SSH_FAILED, Ssh, SshDestination, parse_machine_list, shell_quote,
 };
 pub use mirror::{
     ECHO_TOLERANCE, LayoutOps, MirrorError, MirrorOutcome, MirrorTarget, RATIO_TOLERANCE, diverged,

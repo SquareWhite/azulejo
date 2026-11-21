@@ -1,0 +1,174 @@
+# File operations in a remote workspace's Files view. rfops.sh sets up the
+# "remote" machine `standin` (a throwaway herdr session reached only through
+# scripts/ssh-standin.sh) and fills @FX@ (fixtures, resolved: remote-proj/
+# is "on" standin, local/ is this Mac's, promised/ where a promise lands),
+# @SIDE@ (the stand-in's folder) and @ID@ (standin's machine ID).
+log rfops
+delivery direct
+until machines Local=connected,standin=connected 20000
+sidebar mode agents
+clip clear
+
+# A workspace on standin, its shell in the fixture project.
+machine-add standin
+until workspace.machine standin 5000
+until terminal.phase attached 10000
+wait 800
+core {"method":"terminal.send_text","params":{"text":"cd @FX@/remote-proj\n"}}
+sidebar mode files
+# Everything below changes files: stop unless the view is on the fixtures.
+require sidebar.files.root @FX@/remote-proj 10000
+require sidebar.files.machine @ID@ 1000
+require sidebar.files.names docs,src,alpha.txt,notes.md 5000
+sidebar focus
+
+log === R01 a remote entry's menu: no Finder items; Delete asks first
+menu files notes.md
+expect menu.items Open in Editor [enter]|Open Terminal Here|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Copy [cmd+c]|Paste [cmd+v] (off)|Copy Path|-|Delete… [cmd+backspace]|-|Show or Hide Hidden Files [period]
+menu shot r01-remote-menu
+menu files src
+expect menu.items Open Folder in Editor [cmd+shift+o]|Open Terminal Here|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Copy [cmd+c]|Paste [cmd+v] (off)|Copy Path|-|Delete… [cmd+backspace]|-|Show or Hide Hidden Files [period]
+menu files
+expect menu.items Open Folder in Editor [cmd+shift+o]|-|New File… [cmd+n]|New Folder… [cmd+shift+n]|-|Paste [cmd+v] (off)|-|Show or Hide Hidden Files [period]
+
+log === R02 New File and New Folder over SSH; the listing follows at once
+sidebar files select alpha.txt
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+expect sidebar.files.draft.in .
+type remote.txt
+key enter
+until sidebar.files.draft none 8000
+until sidebar.files.selected remote.txt 2500
+sh test -f @FX@/remote-proj/remote.txt
+sidebar files select docs
+key cmd+shift+n
+until sidebar.files.draft.focused yes 2000
+expect sidebar.files.draft.in docs
+type sub
+key enter
+until sidebar.files.selected docs/sub 3000
+sh test -d @FX@/remote-proj/docs/sub
+# Taken: refused before it reaches the machine, and by the machine.
+sidebar files select notes.md
+key cmd+n
+until sidebar.files.draft.focused yes 2000
+type alpha.txt
+key enter
+expect sidebar.files.op “alpha.txt” is already there
+sh touch @FX@/remote-proj/late.txt
+sidebar files name late.txt
+key enter
+until sidebar.files.op.state failed 8000
+expect sidebar.files.op Couldn't make late.txt: late.txt is already there
+key escape
+until sidebar.files.draft none 2000
+
+log === R03 Delete asks in the panel; Esc keeps the file, Return removes it for good
+sidebar files select remote.txt
+key cmd+backspace
+until sidebar.files.confirm Delete “remote.txt” from standin? This can't be undone. 2000
+theme preview atom-one-dark
+shot r03-confirm-dark
+theme preview atom-one-light
+shot r03-confirm-light
+theme preview none
+key escape
+expect sidebar.files.confirm -
+sh test -f @FX@/remote-proj/remote.txt
+key cmd+backspace
+until sidebar.files.confirm Delete “remote.txt” from standin? This can't be undone. 2000
+key enter
+until sidebar.files.op Deleted remote.txt from standin 8000
+expect sidebar.files.confirm -
+sh test ! -e @FX@/remote-proj/remote.txt
+sidebar files select-many docs|late.txt
+key cmd+backspace
+until sidebar.files.confirm Delete 2 items from standin? This can't be undone. 2000
+sidebar files confirm yes
+until sidebar.files.op Deleted 2 items from standin 8000
+until sidebar.files.names src,alpha.txt,notes.md 3000
+sh test ! -e @FX@/remote-proj/docs && test ! -e @FX@/remote-proj/late.txt
+
+log === R04 Copy downloads to the pasteboard; Paste uploads
+sidebar files select notes.md
+key cmd+c
+until sidebar.files.op Copied notes.md from standin 8000
+expect sidebar.files.pasteboard notes.md
+sidebar files select src
+key cmd+v
+until sidebar.files.op Uploaded notes.md to standin:@FX@/remote-proj/src 8000
+until sidebar.files.selected src/notes.md 3000
+sh grep -q Notes @FX@/remote-proj/src/notes.md
+sidebar files clip-files @FX@/local/up.txt
+sidebar files select alpha.txt
+key cmd+v
+until sidebar.files.op Uploaded up.txt to standin:@FX@/remote-proj 8000
+until sidebar.files.selected up.txt 3000
+sh test -f @FX@/remote-proj/up.txt && test -f @FX@/local/up.txt
+
+log === R05 a drop on a remote tree uploads (a copy, whatever the keys)
+sidebar files drop-hover on src files @FX@/local/drag.txt
+expect sidebar.files.drop-op copy
+expect sidebar.files.drop-target src
+sidebar files drop on src files @FX@/local/drag.txt
+until sidebar.files.op Uploaded drag.txt to standin:@FX@/remote-proj/src 8000
+sh test -f @FX@/remote-proj/src/drag.txt && test -f @FX@/local/drag.txt
+
+log === R06 dragged out: the promise downloads where it's dropped; on standin's terminal, the remote path
+sidebar files promise notes.md @FX@/promised
+until sidebar.files.promise done 8000
+sh grep -q Notes @FX@/promised/notes.md
+drop at 0.5,0.5 hover tree alpha.txt
+expect drop.highlight 1
+expect drop.zones none
+drop leave
+drop at 0.5,0.5 tree alpha.txt
+expect drop.op dropped
+expect drop.last @FX@/remote-proj/alpha.txt
+
+log === R07 a remote file opens in [editor] command on the machine when the app isn't Zed
+sh printf '\n[editor]\napp = "TextEdit"\n' >> {config}
+until sidebar.files.editor.app TextEdit 8000
+sidebar focus
+sidebar files select notes.md
+key enter
+until tiles 2 5000
+until sidebar.files.editor command:vim @FX@/remote-proj/notes.md 3000
+expect sidebar.files.opened -
+# A remote folder: the command on it, on the machine, in that folder.
+menu files src invoke Open Folder in Editor
+until tiles 3 5000
+until sidebar.files.editor command:vim @FX@/remote-proj/src 3000
+until terminal.cwd @FX@/remote-proj/src 10000
+expect sidebar.files.opened -
+key cmd+w
+until tiles 2 5000
+# The Files view follows the focused pane's folder (src while the editor
+# had focus): back on the project, show src's files again.
+until sidebar.files.root @FX@/remote-proj 5000
+sidebar files reveal src/a b&c%.md
+until sidebar.files.selected src/a b&c%.md 5000
+
+log === R08 with Zed as the app, a remote file opens in Zed over SSH: no new tile
+sh sed -i '' 's|^app = .*|app = "@FX@/apps/Fake Editor.app"|' {config}
+until sidebar.files.editor.app @FX@/apps/Fake Editor.app 8000
+sidebar focus
+sidebar files select src/a b&c%.md
+key enter
+until sidebar.files.editor app:Fake Editor 3000
+expect sidebar.files.opened Fake Editor|zed://ssh/standin-host@FX@/remote-proj/src/a%20b%26c%25.md
+expect tiles 2
+# Folders open in Zed as remote projects: ⌘⇧O on a file means its folder,
+# a folder row its own, empty space the root.
+sidebar focus
+key cmd+shift+o
+expect sidebar.files.opened Fake Editor|zed://ssh/standin-host@FX@/remote-proj/src
+menu files invoke Open Folder in Editor
+expect sidebar.files.opened Fake Editor|zed://ssh/standin-host@FX@/remote-proj
+menu files src invoke Open Folder in Editor
+expect sidebar.files.opened Fake Editor|zed://ssh/standin-host@FX@/remote-proj/src
+expect sidebar.files.editor app:Fake Editor
+expect tiles 2
+sidebar mode agents
+quit

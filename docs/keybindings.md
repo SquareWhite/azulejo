@@ -222,11 +222,17 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `files_expand` | files | `l` | `l` | Files: expand folder or open file |
 | `files_collapse` | files | `h` | `h` | Files: collapse folder or go to parent |
 | `files_open_external` | files | `cmd+down` | `alt+down` | Files: open in default app |
+| `files_open_folder_in_editor` | files | `cmd+shift+o` | `ctrl+shift+o` | Files: open the folder in the editor |
 | `files_parent` | files | `cmd+up` | `alt+up` | Files: go to parent folder |
 | `files_quick_look` | files | `space` | `space` | Files: Quick Look |
 | `files_filter` | files | `slash` | `slash` | Files: filter |
 | `files_toggle_hidden` | files | `period` | `period` | Files: show or hide hidden files |
 | `files_leave` | files | `escape` | `escape` | Files: back to the tiles (sidebar) |
+| `files_new_file` | files | `cmd+n` | `ctrl+n` | Files: new file |
+| `files_new_folder` | files | `cmd+shift+n` | `ctrl+shift+n` | Files: new folder |
+| `files_delete` | files | `cmd+backspace` | `delete` | Files: move to the Trash (delete on a remote machine) |
+| `files_copy` | files | `cmd+c` | `ctrl+c` | Files: copy the selected files |
+| `files_paste` | files | `cmd+v` | `ctrl+v` | Files: paste files into the folder |
 | `switch_workspace` | global | `cmd+1..8` | `super+1..8` | Switch to workspace N |
 | `switch_tab` | global | `ctrl+1..8` | `ctrl+1..8` | Switch to tab N |
 | `send_text` | terminal | `cmd+l` | unbound | Type "\u000c" (ctrl+l) into the pane |
@@ -518,6 +524,7 @@ The fix is the `send_herdr_prefix` action, bound to `ctrl+b` in `[keys.<platform
 | `cmd+h` / `cmd+m` / `cmd+`` | hide / minimise / cycle windows | `hide` and `minimize`, as in every Mac app; `` cmd+` `` is the system's. the maintainer's config avoids `cmd+m` for this reason |
 | `cmd+a` | select all | **Decided:** `toggle_agents_sidebar` is bound **only when a terminal tile or the files list has the keyboard**; in text fields (palette, find bars, the files filter) `cmd+a` stays select-all. Done with the `[keys.<platform>.terminal]` and `[keys.<platform>.files]` context sections |
 | `cmd+f` | find | `toggle_files_sidebar`, everywhere; `find` moved to `cmd+shift+f` (Nov 17, 2026). In the sidebar's Files view `/` and `cmd+shift+f` both open its filter |
+| `cmd+n` / `cmd+shift+n` / `cmd+backspace` / `cmd+c` / `cmd+v` | new window / new folder (Finder) / move to Trash / copy / paste | In the sidebar's Files view (its `files` context, Nov 17, 2026): `files_new_file`, `files_new_folder`, `files_delete`, `files_copy` and `files_paste`, as in Finder and VS Code's explorer. `cmd+n` stays `new_window` everywhere else; the bundled keymap's own context shadowing doesn't warn, a user's does. Text fields keep AppKit's `cmd+c`/`cmd+v` |
 | `cmd+t` / `cmd+shift+t` | new tab / reopen closed tab | used for workspace / tab, as in herdr. |
 | `cmd+9` / `ctrl+9` | last tab (browsers) | `switch_workspace_last` / `switch_tab_last`: the last in order, as in a browser. The previously active workspace is `alt+0` |
 | `cmd+p` | print | taken by `goto` |

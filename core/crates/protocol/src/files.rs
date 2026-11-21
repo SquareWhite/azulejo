@@ -57,6 +57,10 @@ pub enum FilesOpenTarget {
     /// A new terminal tile below the anchor, in the folder (a file's folder
     /// for a file). It takes focus.
     Terminal,
+    /// A folder opens in the editor: a new terminal tile to the right of
+    /// the anchor, in the folder, runs the editor on it (`vim <folder>`).
+    /// A file means its folder. It takes focus.
+    EditorFolder,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -70,6 +74,26 @@ pub struct FilesOpen {
     pub path: String,
     #[serde(default)]
     pub target: FilesOpenTarget,
+}
+
+/// A path on a herdr machine as an `ssh://[user@]host[:port]/path` URL, for
+/// apps with their own SSH (the sidebar opens a remote file in Zed with it).
+/// The host is the machine's SSH target as saved, an `~/.ssh/config` alias
+/// staying an alias. Fails with `unavailable`, saying why, when another
+/// app's SSH can't reach the machine as Azulejo does: `[herdr] ssh` is a
+/// wrapper rather than OpenSSH, or the target isn't a plain host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FilesSshUrl {
+    /// A files panel (`files.panel`): `path` may be relative to its root,
+    /// and a remote panel's paths are on its machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<TileId>,
+    /// Absolute, or relative to the panel's root.
+    pub path: String,
+    /// The machine the path is on (`machines.list` ID). Leave it out with
+    /// `tile`: a panel's entries are on its own machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
 }
 
 /// A files panel: a file tree outside the layout (the sidebar's Files view).

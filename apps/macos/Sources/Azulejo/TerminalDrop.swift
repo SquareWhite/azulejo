@@ -36,6 +36,20 @@ enum TerminalDrop {
     static let types: [NSPasteboard.PasteboardType] =
         [.fileURL, .URL, .string] + imageTypes
         + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
+        + [FilesDragging.remoteType]
+
+    /// Entries dragged out of a remote machine's file tree, as a terminal
+    /// on `machine` (nil: Local) types them: their remote paths, escaped and
+    /// joined by spaces. Nil when the drag has none from that machine (a
+    /// terminal elsewhere receives their promises: downloaded, then the
+    /// local copies' paths).
+    static func remotePaths(_ pasteboard: NSPasteboard, on machine: String?) -> String? {
+        let refs = FilesDragging.remoteRefs(pasteboard)
+        guard let machine, machine != MachineModel.local, !refs.isEmpty,
+              refs.allSatisfy({ $0.machine == machine })
+        else { return nil }
+        return refs.map { escape($0.path.precomposedStringWithCanonicalMapping) }.joined(separator: " ")
+    }
 
     /// Where images and promised files go: a folder of our own in the
     /// per-user temp folder. `sweep` empties it of anything a day old.
@@ -467,6 +481,9 @@ private final class DropZoneCard {
 ///                                   type (png, tiff…), no file URL
 ///     drop [@N] web-image PATH URL  the image's bytes with the URL it came
 ///                                   from (a picture out of a web page)
+///     drop [@N] tree PATH[|PATH…]   what dragging those entries out of the
+///                                   sidebar's Files view carries (paths
+///                                   relative to its root)
 ///     drop [@N] hover KIND ARG…     the drag only enters (any kind above)
 ///     drop [@N] leave               …and leaves
 ///     drop [@N] at FX,FY …          where the drag is, as fractions of the
@@ -546,14 +563,14 @@ enum DropAutomation {
             return nil
         case "hover":
             let bits = rest.split(separator: " ", maxSplits: 1).map(String.init)
-            guard let pasteboard = pasteboard(bits.first ?? "", bits.count > 1 ? bits[1] : "") else {
+            guard let pasteboard = pasteboard(bits.first ?? "", bits.count > 1 ? bits[1] : "", controller) else {
                 return "drop hover files|text|custom|url|image|web-image ARG"
             }
             lastOp = name(tile.draggingEntered(StandInDrag(pasteboard, location: location, mask: mask)))
             return nil
         default:
-            guard let pasteboard = pasteboard(verb, rest) else {
-                return "drop [@N] [at FX,FY] [copy] files|text|custom|url|image|web-image|hover|leave ARG"
+            guard let pasteboard = pasteboard(verb, rest, controller) else {
+                return "drop [@N] [at FX,FY] [copy] files|text|custom|url|image|web-image|tree|hover|leave ARG"
             }
             let drag = StandInDrag(pasteboard, location: location, mask: mask)
             guard tile.draggingEntered(drag) != [], tile.prepareForDragOperation(drag) else {
@@ -569,10 +586,15 @@ enum DropAutomation {
     }
 
     /// A private pasteboard with the drag's contents.
-    private static func pasteboard(_ kind: String, _ arg: String) -> NSPasteboard? {
+    private static func pasteboard(_ kind: String, _ arg: String, _ controller: WindowController) -> NSPasteboard? {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("dev.azulejo.automation.drop"))
         pasteboard.clearContents()
         switch kind {
+        case "tree":
+            guard let panel = controller.sidebarView.filesPanel else { return nil }
+            let writers = arg.split(separator: "|").compactMap { panel.dragWriter(forPath: String($0)) }
+            guard !writers.isEmpty else { return nil }
+            pasteboard.writeObjects(writers)
         case "files":
             let urls = arg.split(separator: "|").map { URL(fileURLWithPath: String($0)) as NSURL }
             pasteboard.writeObjects(urls)
@@ -635,7 +657,7 @@ enum DropAutomation {
 /// A drag as far as a drop destination sees one: its pasteboard, where it
 /// is (window coordinates) and what its source allows.
 @MainActor
-private final class StandInDrag: NSObject, @preconcurrency NSDraggingInfo {
+final class StandInDrag: NSObject, @preconcurrency NSDraggingInfo {
     let draggingPasteboard: NSPasteboard
     let draggingLocation: NSPoint
     let draggingSourceOperationMask: NSDragOperation

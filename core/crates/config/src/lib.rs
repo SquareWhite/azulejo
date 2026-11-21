@@ -43,6 +43,13 @@
 //! select_on_drag = ["omp"]  # programs (by foreground process name) whose panes select text on a
 //!                        # plain drag, as a shell's do; clicks and the wheel still reach them
 //!
+//! [editor]               # what files from the sidebar's Files view open in
+//! command = "vim"        # a terminal editor: a new pane beside the focused one, on the
+//!                        # file's machine (remote files too); arguments are fine ("nvim -p")
+//! app = ""               # a macOS app for Local files instead ("Zed", "Visual Studio Code",
+//!                        # a bundle ID or an .app path); remote files use `command`, but
+//!                        # Zed opens them too, over its own SSH (ssh://host/path)
+//!
 //! [appearance]           # themes (docs/themes.md)
 //! theme = "atom-one-dark"   # a theme id, or "auto" to follow the system
 //! theme_light = "atom-one-light"  # with "auto"
@@ -296,6 +303,31 @@ impl Default for TerminalConfig {
     }
 }
 
+/// The `[editor]` settings: what a file from the sidebar's Files view
+/// opens in (Return, a double-click, Open in Editor), and a folder (Open
+/// Folder in Editor).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorConfig {
+    /// A terminal editor, run in a new pane beside the focused one on the
+    /// file's machine with the file's (or folder's) path after it: a
+    /// program (`vim`) or a command line (`nvim -p`).
+    pub command: String,
+    /// A macOS app Local files and folders open in instead (its name,
+    /// bundle ID or path); empty for none. Remote ones use `command`,
+    /// unless the app is Zed: it opens them over its own SSH
+    /// (`files.ssh_url`).
+    pub app: String,
+}
+
+impl Default for EditorConfig {
+    fn default() -> Self {
+        EditorConfig {
+            command: "vim".to_owned(),
+            app: String::new(),
+        }
+    }
+}
+
 /// The `[hints]` settings: visible-terminal hints (⌘S).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HintsConfig {
@@ -377,6 +409,7 @@ pub struct Config {
     pub themes: Themes,
     pub sidebar: SidebarConfig,
     pub hints: HintsConfig,
+    pub editor: EditorConfig,
     /// The file this came from, if any.
     pub path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
@@ -414,6 +447,7 @@ impl Config {
         let themes = Themes::load(themes_dir.as_deref(), &mut diagnostics);
         let mut sidebar = SidebarConfig::default();
         let mut hints = HintsConfig::default();
+        let mut editor = EditorConfig::default();
 
         parse_layer(
             DEFAULT_KEYMAP,
@@ -452,6 +486,10 @@ impl Config {
                     }
                     "hints" => {
                         parse_hints(sink, value, &mut hints);
+                        true
+                    }
+                    "editor" => {
+                        parse_editor(sink, value, &mut editor);
                         true
                     }
                     "layout" => {
@@ -501,6 +539,7 @@ impl Config {
             themes,
             sidebar,
             hints,
+            editor,
             path,
             diagnostics,
         }
@@ -763,6 +802,30 @@ fn parse_hints(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mu
                 "`hints.run_target` must be \"reuse\" or \"new\"",
             ),
             (other, _) => sink.warn(key.span(), format!("unknown setting `hints.{other}`")),
+        }
+    }
+}
+
+fn parse_editor(sink: &mut Sink<'_>, value: &toml::Spanned<DeValue<'_>>, out: &mut EditorConfig) {
+    let DeValue::Table(table) = value.get_ref() else {
+        sink.error(value.span(), "`editor` must be a table");
+        return;
+    };
+    for (key, value) in table.iter() {
+        match (key.get_ref().as_ref(), value.get_ref()) {
+            ("command", DeValue::String(s)) if !s.trim().is_empty() && !s.contains('\n') => {
+                out.command = s.trim().to_owned()
+            }
+            ("command", _) => sink.error(
+                value.span(),
+                "`editor.command` must be a command on one line, such as \"vim\" or \"nvim -p\"",
+            ),
+            ("app", DeValue::String(s)) if !s.contains('\n') => out.app = s.trim().to_owned(),
+            ("app", _) => sink.error(
+                value.span(),
+                "`editor.app` must be an app's name, bundle ID or path, such as \"Zed\", or \"\" for none",
+            ),
+            (other, _) => sink.warn(key.span(), format!("unknown setting `editor.{other}`")),
         }
     }
 }

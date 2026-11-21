@@ -276,7 +276,12 @@ enum ContextMenus {
     /// Each catalogue entry's first chord, by id (`commands.list`, the list
     /// ⌘K shows), so user overrides show here too.
     private static func catalogueChords(_ app: AppController) -> [String: String] {
-        guard case .success(let reply) = app.core.execute(["method": "commands.list"]),
+        catalogueChords(core: app.core)
+    }
+
+    /// Each catalogue entry's first chord, by id, from `core`.
+    static func catalogueChords(core: Core) -> [String: String] {
+        guard case .success(let reply) = core.execute(["method": "commands.list"]),
               let list = reply["commands"] as? [[String: Any]]
         else { return [:] }
         var out: [String: String] = [:]
@@ -358,6 +363,19 @@ enum MenuAutomation {
             guard tabs.indices.contains(n - 1) else { return "no tab \(n)" }
             let tab = tabs[n - 1]
             built = tab.contextMenu().map { ($0, tab.convert(tab.bounds, to: nil)) }
+        case "files":
+            // The Files view's menu: on an entry (relative to its root, as a
+            // right-click selects it) or, with no path, on empty space.
+            guard let panel = controller.sidebarView.filesPanel else { return "the Files view isn't shown" }
+            let path = words.first.flatMap { $0 == "invoke" ? nil : $0 }
+            if path != nil { words.removeFirst() }
+            var node: FileNode?
+            if let path {
+                guard let found = panel.node(forPath: path) else { return "\(path) isn't listed" }
+                node = found
+                panel.selectForMenu(found)
+            }
+            built = (panel.contextMenu(for: node), panel.menuAnchor(for: node))
         case "tile":
             guard let view = controller.tiles.focusedView as? NSView & ContextMenuProviding else {
                 return "the focused tile has no menu"

@@ -299,6 +299,144 @@ impl RemoteMachine {
     pub fn control_dir(&self) -> &Path {
         &self.ssh.control_dir
     }
+
+    /// The machine as another app's own SSH reaches it (Zed's remote
+    /// projects): the profile's target, split up, host alias and all. Only
+    /// when Azulejo itself runs a stock OpenSSH there, `ssh` from `PATH`
+    /// or a `[herdr] ssh` named `ssh`. A wrapper under another name may do
+    /// things the app's SSH won't, so the error says why not, naming the
+    /// machine by its label.
+    pub fn plain_destination(&self) -> std::result::Result<SshDestination, String> {
+        let label = &self.profile.label;
+        if self.ssh.program.file_name().and_then(|n| n.to_str()) != Some("ssh") {
+            let name = self.ssh.program.file_name().map_or_else(
+                || self.ssh.program.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            return Err(format!(
+                "Azulejo reaches {label} through {name} ([herdr] ssh), which other apps can't use"
+            ));
+        }
+        SshDestination::parse(&self.profile.target)
+            .ok_or_else(|| format!("{label}'s SSH target isn't a host other apps can reach"))
+    }
+}
+
+/// An SSH destination split up: `[user@]host[:port]`. The host stays as
+/// the profile names it (an `~/.ssh/config` alias stays an alias), so an
+/// app that reads `~/.ssh/config` gets the same settings `ssh` does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshDestination {
+    pub user: Option<String>,
+    pub host: String,
+    pub port: Option<u16>,
+}
+
+impl SshDestination {
+    /// Parses a destination as herdr saves it and `ssh` takes it: `host`,
+    /// `user@host`, an alias, or `ssh://[user@]host[:port]`. IPv6 hosts may
+    /// come bare or in brackets (a port needs the URI form). `None` for
+    /// anything that isn't plainly a host: options, spaces, paths.
+    pub fn parse(target: &str) -> Option<Self> {
+        let target = target.trim();
+        let (rest, uri) = match target.strip_prefix("ssh://") {
+            Some(rest) => (rest.strip_suffix('/').unwrap_or(rest), true),
+            None => (target, false),
+        };
+        let (user, hostport) = match rest.rsplit_once('@') {
+            Some((user, host)) => (Some(user), host),
+            None => (None, rest),
+        };
+        if let Some(user) = user
+            && (user.is_empty()
+                || user.starts_with('-')
+                || user
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control() || c == '/'))
+        {
+            return None;
+        }
+        let (host, port) = if let Some(inner) = hostport.strip_prefix('[') {
+            let (host, after) = inner.split_once(']')?;
+            host.parse::<std::net::Ipv6Addr>().ok()?;
+            let port = match after {
+                "" => None,
+                _ if !uri => return None,
+                after => Some(after.strip_prefix(':')?),
+            };
+            (host, port)
+        } else if hostport.parse::<std::net::Ipv6Addr>().is_ok() {
+            (hostport, None)
+        } else if uri {
+            match hostport.split_once(':') {
+                Some((host, port)) => (host, Some(port)),
+                None => (hostport, None),
+            }
+        } else {
+            (hostport, None)
+        };
+        let port = match port {
+            None => None,
+            Some(p) => Some(p.parse::<u16>().ok().filter(|p| *p != 0)?),
+        };
+        let ipv6 = host.parse::<std::net::Ipv6Addr>().is_ok();
+        let name = !host.is_empty()
+            && !host.starts_with('-')
+            && host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+        if !(ipv6 || name) {
+            return None;
+        }
+        Some(Self {
+            user: user.map(str::to_owned),
+            host: host.to_owned(),
+            port,
+        })
+    }
+
+    /// `ssh://[user@]host[:port]/path`: `path` (absolute) on this machine
+    /// as a URL, the user and path percent-encoded and an IPv6 host in
+    /// brackets.
+    pub fn url(&self, path: &str) -> String {
+        let mut out = String::from("ssh://");
+        if let Some(user) = &self.user {
+            out.push_str(&percent_encode(user, false));
+            out.push('@');
+        }
+        if self.host.contains(':') {
+            out.push('[');
+            out.push_str(&self.host);
+            out.push(']');
+        } else {
+            out.push_str(&self.host);
+        }
+        if let Some(port) = self.port {
+            out.push_str(&format!(":{port}"));
+        }
+        if !path.starts_with('/') {
+            out.push('/');
+        }
+        out.push_str(&percent_encode(path, true));
+        out
+    }
+}
+
+/// Percent-encodes every byte of `s` but RFC 3986's unreserved characters
+/// (and `/` for a path).
+fn percent_encode(s: &str, path: bool) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric()
+            || matches!(b, b'-' | b'.' | b'_' | b'~')
+            || (path && b == b'/')
+        {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// Exit code ssh uses for its own failures (unreachable, auth).
@@ -425,6 +563,109 @@ mod tests {
         assert_eq!(cmd.args[target + 1], "--");
         assert_eq!(cmd.args.last().unwrap(), "ls /srv");
         assert!(cmd.args.iter().any(|a| a == "ControlMaster=auto"));
+    }
+
+    fn dest(user: Option<&str>, host: &str, port: Option<u16>) -> SshDestination {
+        SshDestination {
+            user: user.map(str::to_owned),
+            host: host.into(),
+            port,
+        }
+    }
+
+    #[test]
+    fn parses_the_destinations_ssh_takes() {
+        let parse = SshDestination::parse;
+        assert_eq!(parse("build-host"), Some(dest(None, "build-host", None)));
+        assert_eq!(
+            parse("user@dev-server"),
+            Some(dest(Some("user"), "dev-server", None))
+        );
+        assert_eq!(
+            parse("me@box.example.invalid"),
+            Some(dest(Some("me"), "box.example.invalid", None))
+        );
+        assert_eq!(
+            parse("ssh://me@box.example.invalid:2222"),
+            Some(dest(Some("me"), "box.example.invalid", Some(2222)))
+        );
+        assert_eq!(parse("ssh://alias_1/"), Some(dest(None, "alias_1", None)));
+        // The host follows the last `@`, as for ssh.
+        assert_eq!(
+            parse("first.last+ci@corp@host"),
+            Some(dest(Some("first.last+ci@corp"), "host", None))
+        );
+        // IPv6: bare, bracketed, and with a port in the URI form.
+        assert_eq!(parse("me@::1"), Some(dest(Some("me"), "::1", None)));
+        assert_eq!(
+            parse("me@[2001:db8::1]"),
+            Some(dest(Some("me"), "2001:db8::1", None))
+        );
+        assert_eq!(
+            parse("ssh://[2001:db8::2]:2222"),
+            Some(dest(None, "2001:db8::2", Some(2222)))
+        );
+        assert_eq!(parse("192.0.2.7"), Some(dest(None, "192.0.2.7", None)));
+        // Not plainly a host.
+        for bad in [
+            "",
+            "@host",
+            "-oProxyCommand=x",
+            "me@-host",
+            "two words",
+            "host:2222",
+            "ssh://host:0",
+            "ssh://host:99999",
+            "ssh://host:port",
+            "[2001:db8::1]:22",
+            "[nope]",
+            "host/path",
+            "me@ho$t",
+        ] {
+            assert_eq!(parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn ssh_urls_encode_the_user_and_path_and_bracket_ipv6() {
+        assert_eq!(
+            dest(None, "build-host", None).url("/srv/app/main.rs"),
+            "ssh://build-host/srv/app/main.rs"
+        );
+        assert_eq!(
+            dest(Some("me"), "box.example.invalid", Some(2222)).url("/home/me/a b/notes #1.md"),
+            "ssh://me@box.example.invalid:2222/home/me/a%20b/notes%20%231.md"
+        );
+        assert_eq!(
+            dest(Some("first.last+ci@corp"), "h", None).url("/x?y=1&z%/naïve.txt"),
+            "ssh://first.last%2Bci%40corp@h/x%3Fy%3D1%26z%25/na%C3%AFve.txt"
+        );
+        assert_eq!(
+            dest(Some("me"), "2001:db8::1", Some(22)).url("/tmp/f"),
+            "ssh://me@[2001:db8::1]:22/tmp/f"
+        );
+        assert_eq!(dest(None, "h", None).url("rel"), "ssh://h/rel");
+    }
+
+    #[test]
+    fn other_apps_get_the_destination_only_over_stock_ssh() {
+        let mut m = machine();
+        assert_eq!(m.plain_destination(), Ok(dest(None, "build-host", None)));
+        // A `[herdr] ssh` that's still OpenSSH, by its name.
+        m.ssh.program = "/opt/homebrew/bin/ssh".into();
+        assert!(m.plain_destination().is_ok());
+        // A wrapper (or the test stand-in under another name): no.
+        m.ssh.program = "/opt/tools/ssh-wrapper.sh".into();
+        let err = m.plain_destination().unwrap_err();
+        assert!(err.contains("build-server"), "{err}");
+        assert!(err.contains("ssh-wrapper.sh"), "{err}");
+        assert!(!err.contains("/opt/tools"), "{err}");
+        // A target that isn't a plain host.
+        m.ssh.program = "ssh".into();
+        m.profile.target = "two words".into();
+        let err = m.plain_destination().unwrap_err();
+        assert!(err.contains("build-server"), "{err}");
+        assert!(!err.contains("two words"), "{err}");
     }
 
     #[test]

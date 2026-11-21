@@ -877,6 +877,12 @@ extension TerminalTileView {
             endDropLook()
             return []
         }
+        // Entries from this pane's machine's file tree: their paths there.
+        if TerminalDrop.remotePaths(pasteboard, on: model.herdr?.machine) != nil {
+            showDropZones(nil)
+            showDropHighlight(true)
+            return .copy
+        }
         let files = TerminalDrop.fileURLs(pasteboard)
         guard !files.isEmpty else {
             showDropZones(nil)
@@ -909,6 +915,11 @@ extension TerminalTileView {
         let copies = dropCopies(sender)
         endDropLook()
         guard dropSurface != nil else { return false }
+        if let text = TerminalDrop.remotePaths(sender.draggingPasteboard, on: model.herdr?.machine) {
+            focusForDrop()
+            typeDropped(text)
+            return true
+        }
         let files = TerminalDrop.fileURLs(sender.draggingPasteboard)
         if zone == .move, !files.isEmpty, let folder = dropFolder {
             transferDropped(files, into: folder, mode: copies ? .copy : .move)

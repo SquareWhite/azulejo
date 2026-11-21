@@ -55,6 +55,7 @@ import AppKit
 ///     core {json}            run a core command (`{"method": …, "params": …}`)
 ///     tile verb [arg]        hand a verb to the focused tile (AutomatableTile)
 ///     until key value [ms]   wait until `expect key value` holds (default 5000)
+///     require key value [ms] `until`, and stop the script if it never holds
 ///                            tile kinds add `tile.*` keys to expect/until
 ///     anim duration MS       slow (or speed up) layout motion; `default` resets
 ///     anim enabled BOOL      force motion on or off; `default` follows config
@@ -228,6 +229,7 @@ final class Automation {
             // Modifier changes time the ⌘N badges' wait: no extra pause.
             if arg.hasPrefix("hints") { delay = 0 }
         case "until": return until(arg)
+        case "require": return until(arg, abort: true)
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
         case "window-size":
@@ -595,7 +597,10 @@ final class Automation {
     }
 
     /// Polls `expect key value` every 50 ms until it holds or times out.
-    private func until(_ arg: String) {
+    /// `require`: `until` that ends the script when it times out, for a
+    /// precondition later steps act on (a suite that deletes files must be
+    /// in its own folder, not wherever the view happens to be).
+    private func until(_ arg: String, abort: Bool = false) {
         let parts = arg.split(separator: " ").map(String.init)
         guard parts.count >= 2 else {
             failures.append("line \(step): until needs a key and a value")
@@ -614,6 +619,10 @@ final class Automation {
                 let msg = "line \(step): timed out waiting for \(parts[0]) \(value), got \(actual)"
                 failures.append(msg)
                 record("until FAILED: \(msg)")
+                if abort {
+                    failures.append("line \(step): required, so the script stops here")
+                    return finish()
+                }
                 return next()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)

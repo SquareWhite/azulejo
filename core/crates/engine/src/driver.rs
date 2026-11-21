@@ -22,7 +22,8 @@ use azulejo_protocol::{
 };
 use tokio::sync::mpsc as tmpsc;
 
-use crate::files::{self as files_panels, Files, Handled};
+use crate::file_ops;
+use crate::files::{self as files_panels, Delivery, Files, Handled};
 use crate::link::{self, Effect, HerdrPort, Internal, Machine};
 use crate::mirror::{self, MirrorMsg};
 use crate::persist::{self, Loaded, Saver};
@@ -89,6 +90,7 @@ enum Msg {
     SetLayoutPrefs(azulejo_model::LayoutPrefs),
     SetMirrorLayout(bool),
     SetSidebarCollapsed(azulejo_model::SidebarState),
+    SetEditor(String),
     Shutdown(mpsc::Sender<()>),
 }
 
@@ -250,6 +252,13 @@ impl Core {
     /// or hidden. A rail until this is called.
     pub fn set_sidebar_collapsed(&self, collapsed: azulejo_model::SidebarState) {
         let _ = self.tx.send(Msg::SetSidebarCollapsed(collapsed));
+    }
+
+    /// The editor a file opens in (`files.open`, target `editor`): a
+    /// terminal command such as `vim` or `nvim -p`, run with the file's path
+    /// after it (`[editor] command`). `vim` until this is called.
+    pub fn set_editor(&self, command: String) {
+        let _ = self.tx.send(Msg::SetEditor(command));
     }
 
     /// Saves pending state and stops the core.
@@ -442,29 +451,87 @@ fn run<P: HerdrPort>(
                 }
             }
             // Moving and copying files: off this thread, replied when done.
+            // Remote panels showing a folder that changed list it again.
             Msg::Command(Command::FilesTransfer(p), reply) => {
                 match transfer::Transfer::new(p, &transfer_machines) {
                     Err(e) => {
                         let _ = reply.send(Err(e));
                     }
                     Ok(t) => {
-                        let spawned = thread::Builder::new()
-                            .name("azulejo-transfer".into())
-                            .spawn({
-                                let reply = reply.clone();
-                                move || {
-                                    let _ = reply.send(transfer::run(&t).map(|items| Outcome {
-                                        reply: Reply::Transferred { items },
-                                        events: Vec::new(),
-                                    }));
-                                }
-                            });
-                        if spawned.is_err() {
-                            let _ = reply.send(Err(Error::new(
-                                ErrorCode::Internal,
-                                "couldn't start a thread for the transfer",
-                            )));
-                        }
+                        let deliver = files.deliverer();
+                        spawn_job("azulejo-transfer", reply, move || {
+                            let result = transfer::run(&t);
+                            if result.is_ok() {
+                                touch_transferred(&t, &deliver);
+                            }
+                            result.map(|items| Outcome {
+                                reply: Reply::Transferred { items },
+                                events: Vec::new(),
+                            })
+                        });
+                    }
+                }
+            }
+            // Making and deleting entries: off this thread too.
+            Msg::Command(Command::FilesCreate(p), reply) => {
+                let job = files
+                    .panel(p.tile)
+                    .and_then(|panel| file_ops::Create::new(p, panel.as_ref(), &transfer_machines));
+                match job {
+                    Err(e) => {
+                        let _ = reply.send(Err(e));
+                    }
+                    Ok(c) => {
+                        let deliver = files.deliverer();
+                        spawn_job("azulejo-files-create", reply, move || {
+                            let path = file_ops::create(&c)?;
+                            let dirs = file_ops::parents(std::slice::from_ref(&path));
+                            deliver(Delivery::Touched(
+                                c.place.machine().map(str::to_owned),
+                                dirs,
+                            ));
+                            Ok(Outcome {
+                                reply: Reply::FileCreated {
+                                    path: path.display().to_string(),
+                                },
+                                events: Vec::new(),
+                            })
+                        });
+                    }
+                }
+            }
+            // A remote path as a URL: no I/O, answered here.
+            Msg::Command(Command::FilesSshUrl(p), reply) => {
+                let result = files.panel(p.tile).and_then(|panel| {
+                    file_ops::ssh_url(p, panel.as_ref(), &transfer_machines).map(|url| Outcome {
+                        reply: Reply::SshUrl { url },
+                        events: Vec::new(),
+                    })
+                });
+                let _ = reply.send(result);
+            }
+            Msg::Command(Command::FilesDelete(p), reply) => {
+                let job = files
+                    .panel(p.tile)
+                    .and_then(|panel| file_ops::Delete::new(p, panel.as_ref(), &transfer_machines));
+                match job {
+                    Err(e) => {
+                        let _ = reply.send(Err(e));
+                    }
+                    Ok(d) => {
+                        let deliver = files.deliverer();
+                        spawn_job("azulejo-files-delete", reply, move || {
+                            let items = file_ops::delete(&d, file_ops::trash())?;
+                            let dirs = file_ops::parents(&d.paths);
+                            deliver(Delivery::Touched(
+                                d.place.machine().map(str::to_owned),
+                                dirs,
+                            ));
+                            Ok(Outcome {
+                                reply: Reply::Deleted { items },
+                                events: Vec::new(),
+                            })
+                        });
                     }
                 }
             }
@@ -778,6 +845,7 @@ fn run<P: HerdrPort>(
             Msg::SetCommands(list) => commands = Some(list),
             Msg::SetConfigReplies(answer) => config_replies = Some(answer),
             Msg::SetOnExit(policy) => on_exit = policy,
+            Msg::SetEditor(command) => engine.set_editor(command),
             Msg::SetSidebarCollapsed(collapsed) => {
                 let events = engine.set_sidebar_collapsed(collapsed);
                 if !events.is_empty() {
@@ -1655,3 +1723,42 @@ mod layout_file_io {
 #[cfg(test)]
 #[path = "driver_tests.rs"]
 mod tests;
+
+/// Runs `job` on a thread of its own and replies with its result.
+fn spawn_job(
+    name: &str,
+    reply: mpsc::Sender<Result<Outcome, Error>>,
+    job: impl FnOnce() -> Result<Outcome, Error> + Send + 'static,
+) {
+    let spawned = thread::Builder::new().name(name.into()).spawn({
+        let reply = reply.clone();
+        move || {
+            let _ = reply.send(job());
+        }
+    });
+    if spawned.is_err() {
+        let _ = reply.send(Err(Error::new(
+            ErrorCode::Internal,
+            "couldn't start a thread for that",
+        )));
+    }
+}
+
+/// After a transfer: the remote folder it uploaded into, or (a move off a
+/// machine) the folders it removed things from, changed.
+fn touch_transferred(t: &transfer::Transfer, deliver: &files_panels::Deliver) {
+    if let Some(machine) = t.to.machine() {
+        deliver(Delivery::Touched(
+            Some(machine.to_owned()),
+            vec![t.folder.clone()],
+        ));
+    }
+    if t.mode == azulejo_protocol::TransferMode::Move
+        && let Some(machine) = t.from.machine()
+    {
+        deliver(Delivery::Touched(
+            Some(machine.to_owned()),
+            file_ops::parents(&t.sources),
+        ));
+    }
+}

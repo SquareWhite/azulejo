@@ -593,6 +593,25 @@ pub unsafe extern "C" fn azj_core_terminal(core: *const AzjCore) -> *mut c_char 
     }))
 }
 
+/// The `[editor]` settings, as JSON: `{"command":"vim","app":""}`. The
+/// core runs `command` itself (`files.open`); the shell opens Local files
+/// in `app` when it's set. Follows config reloads. Free with
+/// `azj_string_free`; NULL on a bad handle.
+///
+/// # Safety
+/// `core` must come from `azj_core_new*` and not be freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn azj_core_editor(core: *const AzjCore) -> *mut c_char {
+    let Some(app) = (unsafe { core.as_ref() }).and_then(|c| c.app.as_ref()) else {
+        return std::ptr::null_mut();
+    };
+    let editor = &app.config().editor;
+    out(json!({
+        "command": editor.command,
+        "app": editor.app,
+    }))
+}
+
 /// The themes and the `[appearance]` choice, as JSON (docs/themes.md):
 /// `{"theme":"atom-one-dark"|"auto","theme_light":…,"theme_dark":…,
 /// "terminal_colors":"theme"|"ghostty","terminal_colors_set":false,
@@ -1025,6 +1044,9 @@ mod tests {
 
             let terminal = take(azj_core_terminal(core));
             assert_eq!(terminal["select_on_drag"], json!(["omp"]));
+
+            let editor = take(azj_core_editor(core));
+            assert_eq!(editor, json!({"command": "vim", "app": ""}));
 
             let theme = take(azj_core_theme(core));
             assert_eq!(theme["theme"], "atom-one-dark");

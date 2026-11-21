@@ -269,6 +269,7 @@ Each runs in-process on the instance named, unless `AZJ_DEV_NAME` is set.
 | `just mac-bismuth` | default | `bismuth.azs`: every default layout chord, traced |
 | `just mac-rebind` (`rebind.sh`) | `rebind` | Live rebinding of every keymap context |
 | `files.sh` | `files` | The sidebar's Files view on a 50k-file repository |
+| `e2e/fops.sh`, `e2e/rfops.sh` | `e2e-fops`, `e2e-rfops` | The Files view's file operations, Local and through the SSH stand-in |
 | `files-slow.sh` | `fslow` | Slow folder listings never block the main thread |
 | `headers.sh` | `hdr` | Tile headers and a branch switch |
 | `chrome.sh` | `shell` | ⌘K, the layout picker, the config banner, attention badges |

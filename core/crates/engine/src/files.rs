@@ -31,6 +31,7 @@ use azulejo_protocol::{
 
 use crate::Outcome;
 use crate::driver::LogFn;
+use crate::file_ops;
 use crate::remote_files::{self, RemoteDir, RunError};
 
 /// How often a remote panel lists its open folders again.
@@ -74,6 +75,10 @@ pub(crate) enum Delivery {
     /// Time for a remote panel (in its `generation`) to list its open
     /// folders again.
     Poll(TileId, u64),
+    /// The core itself changed these folders on a machine (made, deleted or
+    /// uploaded into something): remote panels list them again now rather
+    /// than at the next poll. `None` is Local, which watching covers.
+    Touched(Option<String>, Vec<PathBuf>),
 }
 
 pub(crate) type Deliver = Arc<dyn Fn(Delivery) + Send + Sync>;
@@ -123,6 +128,9 @@ struct RemoteState {
     fetching: HashSet<PathBuf>,
     /// Folders whose last listing failed, and why.
     errors: HashMap<PathBuf, String>,
+    /// Folders that changed while a listing of them ran: listed again once
+    /// it's in, since it may have read them before the change.
+    again: HashSet<PathBuf>,
     /// When a listing last failed as a whole (unreachable, timed out).
     failed_at: Option<Instant>,
 }
@@ -310,6 +318,7 @@ impl Files {
                     running: HashMap::new(),
                     fetching: HashSet::new(),
                     errors: HashMap::new(),
+                    again: HashSet::new(),
                     failed_at: None,
                 }),
             },
@@ -500,7 +509,59 @@ impl Files {
                 result,
             } => self.remote_done(tile, fetch, dirs, result),
             Delivery::Poll(tile, generation) => self.poll(tile, generation),
+            Delivery::Touched(Some(machine), dirs) => self.touched(&machine, dirs),
+            Delivery::Touched(None, _) => Vec::new(),
         }
+    }
+
+    /// Hands work done off the engine's thread back to it (`accept`).
+    pub(crate) fn deliverer(&self) -> Deliver {
+        self.deliver.clone()
+    }
+
+    /// The files panel `tile` names, if it names one: its root and machine.
+    /// `None` when `tile` is absent; an error when it isn't a panel.
+    pub(crate) fn panel(&self, tile: Option<TileId>) -> Result<Option<file_ops::Panel>, Error> {
+        let Some(tile) = tile else {
+            return Ok(None);
+        };
+        let st = self.state(tile)?;
+        Ok(Some(file_ops::Panel {
+            root: st.root.clone(),
+            machine: st.machine().map(str::to_owned),
+        }))
+    }
+
+    /// Folders on `machine` changed by the core: every remote panel there
+    /// with one of them open lists it again now.
+    fn touched(&mut self, machine: &str, dirs: Vec<PathBuf>) -> Vec<Event> {
+        let tiles: Vec<TileId> = self
+            .tiles
+            .iter()
+            .filter(|(_, st)| st.machine() == Some(machine))
+            .map(|(t, _)| *t)
+            .collect();
+        let mut events = Vec::new();
+        for tile in tiles {
+            let Some(st) = self.tiles.get_mut(&tile) else {
+                continue;
+            };
+            let open: Vec<PathBuf> = dirs
+                .iter()
+                .map(|d| remote_files::normalize(d))
+                .filter(|d| st.expanded.contains(d))
+                .collect();
+            if let Some(r) = st.remote.as_mut() {
+                for d in &open {
+                    if r.fetching.contains(d) {
+                        r.again.insert(d.clone());
+                    }
+                }
+            }
+            let failed = self.fetch(tile, open);
+            events.extend(changed_event(tile, failed));
+        }
+        events
     }
 
     // MARK: Remote panels
@@ -625,8 +686,15 @@ impl Files {
             }
         }
         changed.retain(|d| st.expanded.contains(d));
+        // Changed while this listing ran: once more.
+        let again: Vec<PathBuf> = dirs_again(r, &st.expanded);
         self.trim_cache();
-        changed_event(tile, changed).into_iter().collect()
+        let mut events: Vec<Event> = changed_event(tile, changed).into_iter().collect();
+        if !again.is_empty() {
+            let failed = self.fetch(tile, again);
+            events.extend(changed_event(tile, failed));
+        }
+        events
     }
 
     /// A remote panel's poll: list its open folders again, unless a listing
@@ -757,7 +825,7 @@ impl Files {
             (target, _) => target,
         };
         let path = match (target, is_dir) {
-            (FilesOpenTarget::Terminal, Some(false)) => {
+            (FilesOpenTarget::Terminal | FilesOpenTarget::EditorFolder, Some(false)) => {
                 path.parent().map_or(path.clone(), Path::to_path_buf)
             }
             _ => path,
@@ -1052,6 +1120,21 @@ fn changed_event(tile: TileId, mut dirs: Vec<PathBuf>) -> Option<Event> {
         tile,
         dirs: dirs.iter().map(|d| display(d)).collect(),
     }))
+}
+
+/// A remote panel's folders to list again (`RemoteState::again`) that no
+/// listing covers any more and that are still open; taken off the list.
+fn dirs_again(r: &mut RemoteState, expanded: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+    let ready: Vec<PathBuf> = r
+        .again
+        .iter()
+        .filter(|d| !r.fetching.contains(*d))
+        .cloned()
+        .collect();
+    for d in &ready {
+        r.again.remove(d);
+    }
+    ready.into_iter().filter(|d| expanded.contains(d)).collect()
 }
 
 /// A remote listing in a listing's order: folders first, then natural name

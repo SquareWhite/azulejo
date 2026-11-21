@@ -157,12 +157,28 @@ pub enum Action {
     FilesCollapse,
     /// Opens in the default app (expands a folder).
     FilesOpenExternal,
+    /// Opens the selected folder (a file's folder; the root with nothing
+    /// selected) in the editor: `[editor] app`, or `[editor] command` in a
+    /// new pane.
+    FilesOpenFolderInEditor,
     FilesParent,
     FilesQuickLook,
     FilesFilter,
     FilesToggleHidden,
     /// The sidebar's Files view hands the keyboard back to the tiles.
     FilesLeave,
+    /// A new file in the selected folder (an inline name field).
+    FilesNewFile,
+    /// A new folder in the selected folder (an inline name field).
+    FilesNewFolder,
+    /// The selected entries go to the Trash (a remote machine's are removed
+    /// for good, once confirmed).
+    FilesDelete,
+    /// The selected entries onto the pasteboard as files (a remote
+    /// machine's downloaded first).
+    FilesCopy,
+    /// Files on the pasteboard copied (or uploaded) into the selected folder.
+    FilesPaste,
 }
 
 /// Where an action ends up.
@@ -289,11 +305,17 @@ pub(crate) fn names() -> Vec<(String, NameSpec)> {
         ("files_expand", FilesExpand),
         ("files_collapse", FilesCollapse),
         ("files_open_external", FilesOpenExternal),
+        ("files_open_folder_in_editor", FilesOpenFolderInEditor),
         ("files_parent", FilesParent),
         ("files_quick_look", FilesQuickLook),
         ("files_filter", FilesFilter),
         ("files_toggle_hidden", FilesToggleHidden),
         ("files_leave", FilesLeave),
+        ("files_new_file", FilesNewFile),
+        ("files_new_folder", FilesNewFolder),
+        ("files_delete", FilesDelete),
+        ("files_copy", FilesCopy),
+        ("files_paste", FilesPaste),
     ];
     out.extend(
         plain
@@ -433,10 +455,23 @@ impl Action {
             | PalettePageUp | PaletteComplete => KeyContext::Palette,
             FindNext | FindPrevious | FindClose => KeyContext::Find,
             ResizeModeExit => KeyContext::Resize,
-            FilesDown | FilesUp | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal
-            | FilesParent | FilesQuickLook | FilesFilter | FilesToggleHidden | FilesLeave => {
-                KeyContext::Files
-            }
+            FilesDown
+            | FilesUp
+            | FilesOpen
+            | FilesExpand
+            | FilesCollapse
+            | FilesOpenExternal
+            | FilesOpenFolderInEditor
+            | FilesParent
+            | FilesQuickLook
+            | FilesFilter
+            | FilesToggleHidden
+            | FilesLeave
+            | FilesNewFile
+            | FilesNewFolder
+            | FilesDelete
+            | FilesCopy
+            | FilesPaste => KeyContext::Files,
             _ => return None,
         })
     }
@@ -444,14 +479,54 @@ impl Action {
     pub fn target(self) -> Target {
         use Action::*;
         let method = match self {
-            ResizeMode | ToggleUnread | QuickOpen | CommandPalette | Goto | Find | OpenConfig
-            | ReloadConfig | ToggleSidebar | ToggleAgentsSidebar | ToggleFilesSidebar
-            | SetTheme | EnterPrefix | Quit | Hide | HideOthers | Minimize | SendHerdrPrefix
-            | SelectVisibleItem | TakeOver | SendText(_) | PaletteClose | PaletteRun
-            | PaletteNext | PalettePrevious | PalettePageDown | PalettePageUp | PaletteComplete
-            | FindNext | FindPrevious | FindClose | ResizeModeExit | FilesDown | FilesUp
-            | FilesOpen | FilesExpand | FilesCollapse | FilesOpenExternal | FilesParent
-            | FilesQuickLook | FilesFilter | FilesLeave => {
+            ResizeMode
+            | ToggleUnread
+            | QuickOpen
+            | CommandPalette
+            | Goto
+            | Find
+            | OpenConfig
+            | ReloadConfig
+            | ToggleSidebar
+            | ToggleAgentsSidebar
+            | ToggleFilesSidebar
+            | SetTheme
+            | EnterPrefix
+            | Quit
+            | Hide
+            | HideOthers
+            | Minimize
+            | SendHerdrPrefix
+            | SelectVisibleItem
+            | TakeOver
+            | SendText(_)
+            | PaletteClose
+            | PaletteRun
+            | PaletteNext
+            | PalettePrevious
+            | PalettePageDown
+            | PalettePageUp
+            | PaletteComplete
+            | FindNext
+            | FindPrevious
+            | FindClose
+            | ResizeModeExit
+            | FilesDown
+            | FilesUp
+            | FilesOpen
+            | FilesExpand
+            | FilesCollapse
+            | FilesOpenExternal
+            | FilesOpenFolderInEditor
+            | FilesParent
+            | FilesQuickLook
+            | FilesFilter
+            | FilesLeave
+            | FilesNewFile
+            | FilesNewFolder
+            | FilesDelete
+            | FilesCopy
+            | FilesPaste => {
                 return Target::Shell;
             }
             // The shell sends these for the tile (or sidebar panel) that has
