@@ -889,7 +889,7 @@ fn layout_kind(
     found
 }
 
-fn number(value: &DeValue<'_>) -> Option<f64> {
+pub(crate) fn number(value: &DeValue<'_>) -> Option<f64> {
     match value {
         DeValue::Float(f) => f.as_str().parse().ok(),
         DeValue::Integer(i) => i64::from_str_radix(i.as_str(), i.radix())

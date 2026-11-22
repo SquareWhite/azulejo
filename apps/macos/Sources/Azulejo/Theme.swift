@@ -49,6 +49,10 @@ struct TerminalSpec: Equatable, Sendable {
     var selectionBackground: UInt32?
     /// nil: selected cells keep their own colour.
     var selectionForeground: UInt32?
+    /// How opaque faint (SGR 2) text draws: Ghostty's `faint-opacity`
+    /// (its own default 0.5; the light themes lift it so dim text stays
+    /// readable).
+    var faintOpacity: Double
     var palette: [UInt32]
 
     /// Ghostty config lines for this palette (loaded after the user's own
@@ -60,6 +64,7 @@ struct TerminalSpec: Equatable, Sendable {
         if let cursorText { lines.append("cursor-text = \(hex(cursorText))") }
         if let selectionBackground { lines.append("selection-background = \(hex(selectionBackground))") }
         lines.append("selection-foreground = " + (selectionForeground.map(hex) ?? "cell-foreground"))
+        lines.append("faint-opacity = \(String(format: "%g", faintOpacity))")
         for (i, c) in palette.enumerated() { lines.append("palette = \(i)=\(hex(c))") }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -364,6 +369,7 @@ enum Theme {
                 cursor: color("cursor"), cursorText: color("cursor_text"),
                 selectionBackground: color("selection_background"),
                 selectionForeground: color("selection_foreground"),
+                faintOpacity: (term["faint_opacity"] as? Double) ?? base.terminal.faintOpacity,
                 palette: palette.count == 16 ? palette : base.terminal.palette),
             builtIn: json["builtin"] as? Bool ?? false,
             path: json["path"] as? String)

@@ -114,7 +114,14 @@ fn macos_themes_use_system_colours() {
             other => panic!("{id} {token}: {other:?}"),
         };
         assert_eq!(system("accent"), "controlAccentColor");
-        assert_eq!(system("selected"), "controlAccentColor");
+        // macOS Light selects in Finder's grey (the accent tint read as a
+        // second accent next to the blue icons); macOS Dark keeps the tint.
+        let selected = if id == "macos-light" {
+            "unemphasizedSelectedContentBackgroundColor"
+        } else {
+            "controlAccentColor"
+        };
+        assert_eq!(system("selected"), selected);
         assert_eq!(system("textPrimary"), "labelColor");
         assert_eq!(system("tile"), "textBackgroundColor");
         assert_eq!(system("border"), "separatorColor");
@@ -219,6 +226,7 @@ hint_callout_border = "#c8a02a"  # ⌘S labels lost their outline: ignored
 [terminal]
 background = "#1d2026"
 selection_foreground = ""
+faint_opacity = 0.8
 palette = { 1 = "#ff6c6b", 9 = "#ff8080" }
 "##,
         )],
@@ -237,6 +245,7 @@ palette = { 1 = "#ff6c6b", 9 = "#ff8080" }
     assert_eq!(dusk.terminal.background, rgba("#1d2026"));
     assert_eq!(dusk.terminal.foreground, base.terminal.foreground);
     assert_eq!(dusk.terminal.selection_foreground, None);
+    assert_eq!(dusk.terminal.faint_opacity, 0.8);
     assert_eq!(dusk.terminal.palette[1], rgba("#ff6c6b"));
     assert_eq!(dusk.terminal.palette[2], base.terminal.palette[2]);
     assert!(!dusk.is_builtin());
@@ -553,8 +562,13 @@ fn terminal_palette_as_ghostty_config() {
     let parsed = GhosttyConfig::parse(&text, Path::new("/tmp/theme"));
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     assert_eq!(parsed.palette.len(), 16);
+    // Ghostty's own faint opacity in the dark themes, lifted in the light ones.
+    assert!(text.contains("faint-opacity = 0.5\n"), "{text}");
     let mac = builtin("macos-light").unwrap().terminal.ghostty_config();
     assert!(mac.contains("selection-foreground = #000000\n"), "{mac}");
+    assert!(mac.contains("faint-opacity = 0.55\n"), "{mac}");
+    let atom = builtin("atom-one-light").unwrap().terminal.ghostty_config();
+    assert!(atom.contains("faint-opacity = 0.72\n"), "{atom}");
 }
 
 #[test]
@@ -566,6 +580,7 @@ fn themes_json_carries_what_the_shells_need() {
     assert_eq!(json["colors"]["accent"]["system"], "controlAccentColor");
     assert_eq!(json["colors"]["textMuted"]["alpha"], 0.45);
     assert_eq!(json["terminal"]["palette"].as_array().unwrap().len(), 16);
+    assert_eq!(json["terminal"]["faint_opacity"], 0.5);
     let atom = builtin("atom-one-dark").unwrap().to_json();
     assert_eq!(atom["colors"]["window"], "#1b1d23");
     assert_eq!(atom["colors"]["border"], "#ffffff14");

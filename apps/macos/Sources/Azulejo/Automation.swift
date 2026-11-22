@@ -947,8 +947,11 @@ final class Automation {
             },
             Source([
                 "sidebar.mode", "sidebar.statuses", "sidebar.footer", "sidebar.numbers", "workspace.active",
+                "sidebar.footer.words", "sidebar.rows", "sidebar.heights", "sidebar.overflow", "sidebar.pills",
+                "sidebar.fades", "sidebar.active.visible", "sidebar.empty", "sidebar.card", "sidebar.tips",
+                "sidebar.icons", "sidebar.icons.centred",
                 "drag.last", "drag.landed", "drag.active", "drag.slot", "drag.rows", "drag.indicator",
-            ], prefixes: ["rail.", "sidebar.files."]) { SidebarAutomation.state(controller) },
+            ], prefixes: ["rail.", "sidebar.files.", "sidebar.card."]) { SidebarAutomation.state(controller) },
             Source(["sidebar.hints", "sidebar.hints.pending", "sidebar.hints.fade"]) {
                 SidebarAutomation.hintState(app: app, controller: controller)
             },

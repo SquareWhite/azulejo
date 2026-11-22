@@ -25,8 +25,8 @@ theme set @THEME@
 until theme @THEME@ 5000
 wait 1500
 
-log --- hero: the mockup scene (azulejo, tab "agents"), sidebar on Agents
-sidebar mode agents
+log --- hero: the mockup scene (azulejo, tab "agents"), sidebar on Workspaces
+sidebar mode workspaces
 sidebar select 1
 until workspace.active azulejo 3000
 action switch_tab 1
@@ -34,15 +34,73 @@ wait 1500
 capture @THEME@-hero 0
 captured
 
-log --- the sidebar collapsed to its rail
+log --- ⌘ held alone: each row's ⌘N badge (handed to the app in-process)
+sidebar hints key on
+sidebar hints cmd
+until sidebar.hints.pending no 1000
+wait 300
+capture @THEME@-sidebar-hints 0
+captured
+sidebar hints none
+
+log --- the sidebar collapsed to its rail: icons only; ⌘ held, the badges; a row's hover card
 action toggle_sidebar
 until sidebar rail 3000
 wait 800
 capture @THEME@-sidebar-rail 0
 captured
+sidebar hints cmd
+until sidebar.hints.pending no 1000
+expect rail.hints.placed yes
+wait 300
+capture @THEME@-sidebar-rail-hints 0
+captured
+sidebar hints none
+until rail.hints hidden 1000
+sidebar hints key off
+sidebar rail hover 2
+wait 300
+capture @THEME@-sidebar-rail-hover 0
+captured
+sidebar rail hover 0
+sidebar rail group 3
+wait 300
+capture @THEME@-sidebar-rail-machine 0
+captured
+sidebar rail hover 0
+
+log --- a short window: the rail and the full sidebar overflow
+window-size 1440 480
+wait 800
+capture @THEME@-sidebar-rail-overflow 0
+captured
+sidebar rail scroll bottom
+wait 300
+capture @THEME@-sidebar-rail-overflow-end 0
+captured
+sidebar rail scroll top
 action toggle_sidebar
 until sidebar visible 3000
 wait 800
+sidebar scroll top
+wait 300
+capture @THEME@-sidebar-overflow 0
+captured
+sidebar scroll bottom
+wait 300
+capture @THEME@-sidebar-overflow-end 0
+captured
+sidebar scroll top
+window-size 1440 900
+wait 800
+
+log --- the narrowest sidebar: state words fold to icons
+sidebar width drag 180 200
+wait 600
+capture @THEME@-sidebar-narrow 0
+captured
+sidebar width double
+wait 600
 
 log --- ⌘K: the menu, a typed query, > commands, @ jump, Set theme…
 palette forget
@@ -76,7 +134,7 @@ palette key escape
 until palette closed 3000
 until theme @THEME@ 3000
 
-log --- sample-api: Agents, then Files with folders open
+log --- sample-api: Workspaces, then Files with folders open
 sidebar select 4
 until workspace.active sample-api 3000
 action switch_tab 1
@@ -104,7 +162,7 @@ wait 800
 capture @THEME@-sidebar-files 0
 captured
 key escape
-sidebar mode agents
+sidebar mode workspaces
 wait 800
 
 log --- ⌘S smart select: every kind labelled, then paths only

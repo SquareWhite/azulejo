@@ -93,7 +93,11 @@ class Palette:
             if replace is not None:
                 colour = colour[:3] + (float(replace),)
             if factor is not None:
-                colour = colour[:3] + (colour[3] * float(factor),)
+                # A number, or a terminal setting (term.faintOpacity: Ghostty's
+                # own 0.5 when a live file leaves it out).
+                amount = (float(self.terminal.get(factor[5:], 0.5)) if factor.startswith("term.")
+                          else float(factor))
+                colour = colour[:3] + (colour[3] * amount,)
             return colour
         return None
 

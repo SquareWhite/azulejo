@@ -1,11 +1,12 @@
-# ⌘ held alone shows each workspace row's chord in the full sidebar
-# (wshints.sh, WorkspaceHints): ⌘1…⌘8, and ⌘9 on the last row, numbered as
-# the rail and `sidebar.numbers` number them, across machine groups. They
-# wait 100 ms (a quick chord never shows them), go on release, on any key,
-# when another modifier joins ⌘, when the window resigns key and when the
-# app goes to the background; only a key window shows them; the rail stays
-# as it is. Opening the sidebar with ⌘ kept down (⌘A) shows them once its
-# motion ends. Modifiers are handed to the app in-process (`sidebar hints …`);
+# ⌘ held alone shows each workspace row's chord in the full sidebar and in
+# the folded rail (wshints.sh, WorkspaceHints): ⌘1…⌘8, and ⌘9 on the last
+# row, numbered as `sidebar.numbers` numbers them, across machine groups.
+# They wait 100 ms (a quick chord never shows them), go on release, on any
+# key, when another modifier joins ⌘, when the window resigns key and when
+# the app goes to the background; only a key window shows them. The rail
+# shows no numbers at rest, and the same badges in its icons' place while ⌘
+# is held, its rows and width unchanged. Opening the sidebar or folding it
+# with ⌘ kept down (⌘A) shows them once its motion ends. Modifiers are handed to the app in-process (`sidebar hints …`);
 # a background run has no key window, so `sidebar hints key on` counts this
 # one as key. wshints.sh fills in @FX@ (fixture repositories, one per Local
 # workspace) and sets up bravo, a stand-in remote machine (a throwaway
@@ -18,8 +19,8 @@ window-size 1100 640
 until tiles 1 8000
 until machines Local=connected,bravo=connected 20000
 until terminal.phase attached 10000
-# ⌘A collapses the sidebar from its Agents view (from Files it switches).
-sidebar mode agents
+# ⌘A collapses the sidebar from its Workspaces view (from Files it switches).
+sidebar mode workspaces
 core {"method":"workspace.rename","params":{"name":"l1"}}
 core {"method":"workspace.set_repo","params":{"path":"@FX@/l1"}}
 action new_workspace
@@ -179,26 +180,79 @@ expect sidebar.hints hidden
 sidebar hints none
 sidebar hints key on
 
-# ---- The rail: unchanged, no badges; collapsing while they show hides them.
+# ---- The rail: status icons only at rest, 28 pt rows; ⌘ alone shows the
+# full sidebar's badges in the icons' place, after the same wait, with the
+# same fade, the rows where they were; let go: gone, the icons back.
 action toggle_sidebar
 until sidebar rail 3000
 wait 400
-remember rail.rows
-sidebar hints cmd
-wait 400
-expect sidebar.hints hidden
-unchanged rail.rows
+expect rail.hints hidden
+expect rail.hints.placed yes
+expect rail.heights 28|28|28|28|28
 expect rail.rows 1:idle|2:idle|3:idle*|4:idle|5:idle
+remember rail.offsets
+remember rail.insets
+shot 04-rail-rest
+sidebar hints cmd
+expect rail.hints hidden
+expect sidebar.hints.pending yes
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect sidebar.hints hidden
+expect sidebar.hints.pending no
+expect rail.hints.fade 80
+until rail.hints.placed yes 1000
+expect rail.fits yes
+expect rail.centred yes
+unchanged rail.offsets
+unchanged rail.insets
+expect rail.heights 28|28|28|28|28
+wait 300
+shot 05-rail-hints-dark
 sidebar hints none
+expect rail.hints hidden
+until rail.hints.placed yes 1000
+# A quick chord in the rail: nothing; the key still does its job.
+sidebar hints cmd
+expect sidebar.hints.pending yes
+key cmd+2
+expect sidebar.hints.pending no
+until workspace.active l2 2000
+wait 400
+expect rail.hints hidden
+sidebar hints none
+key cmd+3
+until workspace.active l3 2000
+sidebar hints none
+# Held, then a key: gone at once.
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+key cmd+3
+expect rail.hints hidden
+wait 400
+expect rail.hints hidden
+sidebar hints none
+# The window resigns key: gone.
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+sidebar hints resign
+expect rail.hints hidden
+sidebar hints none
+# Opening the sidebar while they show: gone from the rail, and back on the
+# full sidebar's rows once its motion ends (⌘ still held).
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
 action toggle_sidebar
 until sidebar visible 3000
-wait 400
-sidebar hints cmd
+expect rail.hints hidden
 until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+# Folding while they show: gone from the full sidebar, and on the rail's
+# rows once its motion ends.
 action toggle_sidebar
 until sidebar rail 3000
 expect sidebar.hints hidden
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
 sidebar hints none
+expect rail.hints hidden
 action toggle_sidebar
 until sidebar visible 3000
 wait 400
@@ -216,13 +270,15 @@ until sidebar visible 3000
 until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
 expect sidebar.hints.pending no
 expect sidebar.hints.fade 80
-# ⌘A again collapses: gone.
+# ⌘A again collapses: gone from the full sidebar; ⌘ still down, the rail
+# shows them once its motion ends.
 key cmd+a
 until sidebar rail 3000
 expect sidebar.hints hidden
-wait 400
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
 expect sidebar.hints hidden
 sidebar hints none
+expect rail.hints hidden
 wait 400
 # Slow motion (800 ms): the wait runs to its end, not just 100 ms.
 anim duration 800
@@ -263,7 +319,8 @@ until workspace.active l2 2000
 wait 1000
 expect sidebar.hints hidden
 sidebar hints none
-# Collapsed inside the wait: nothing.
+# Folded inside the wait: none on the full sidebar; the rail's wait starts
+# and runs to its motion's end.
 action toggle_sidebar
 until sidebar rail 3000
 wait 1000
@@ -273,10 +330,13 @@ until sidebar visible 3000
 expect sidebar.hints.pending yes
 key cmd+a
 until sidebar rail 3000
-expect sidebar.hints.pending no
-wait 1000
+expect sidebar.hints.pending yes
+wait 300
+expect rail.hints hidden
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1500
 expect sidebar.hints hidden
 sidebar hints none
+expect rail.hints hidden
 anim duration default
 # ⌘⇧ held as it opens: nothing.
 sidebar hints cmd+shift
@@ -324,6 +384,18 @@ expect sidebar.hints.fade 0
 sidebar hints none
 expect sidebar.hints hidden
 expect sidebar.hints.fade 0
+# The rail too: at once, the icons gone and back at once.
+action toggle_sidebar
+until sidebar rail 3000
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+expect rail.hints.fade 0
+expect rail.hints.placed yes
+sidebar hints none
+expect rail.hints hidden
+expect rail.hints.placed yes
+action toggle_sidebar
+until sidebar visible 3000
 # Opened with ⌘ held and motion off: no motion to wait for, no fade.
 action toggle_sidebar
 until sidebar rail 3000
@@ -357,6 +429,17 @@ until sidebar.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
 wait 300
 shot 02-hints-light
 sidebar hints none
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 b1 1000
+wait 300
+shot 06-rail-hints-light
+sidebar hints none
+action toggle_sidebar
+until sidebar visible 3000
+wait 400
 theme set atom-one-dark
 wait 400
 
@@ -407,6 +490,18 @@ action toggle_sidebar
 until sidebar rail 3000
 wait 400
 expect rail.rows 1:idle|2:idle|3:idle|4:idle|5:idle|6:idle|7:idle|8:idle*|9:idle|10:idle
+expect rail.hints hidden
+# The rail's badges: the same chords, the ninth Local row none. (`key`
+# sends no modifier changes: ⌘ is let go first.)
+sidebar hints none
+sidebar hints cmd
+until rail.hints 1 l1|2 l2|3 l3|4 l4|5 l5|6 l6|7 l7|8 l8|9 b1 1000
+until rail.hints.placed yes 1000
+expect rail.fits yes
+wait 300
+shot 07-rail-hints-ten
+sidebar hints none
+expect rail.hints hidden
 action toggle_sidebar
 until sidebar visible 3000
 quit

@@ -218,6 +218,10 @@ pub struct TerminalPalette {
     pub selection_background: Option<Rgba>,
     /// `None`: selected cells keep their own colour.
     pub selection_foreground: Option<Rgba>,
+    /// How opaque faint (SGR 2) text draws, 0 to 1: Ghostty's
+    /// `faint-opacity` (its own default is 0.5; the light themes lift it so
+    /// dim text stays readable).
+    pub faint_opacity: f64,
     /// ANSI 0–15.
     pub palette: [Rgba; 16],
 }
@@ -243,6 +247,7 @@ impl TerminalPalette {
             Some(c) => out.push_str(&format!("selection-foreground = {}\n", hex(c))),
             None => out.push_str("selection-foreground = cell-foreground\n"),
         }
+        out.push_str(&format!("faint-opacity = {}\n", self.faint_opacity));
         for (i, c) in self.palette.iter().enumerate() {
             out.push_str(&format!("palette = {i}={}\n", hex(*c)));
         }
@@ -258,6 +263,7 @@ impl TerminalPalette {
             "cursor_text": opt(self.cursor_text),
             "selection_background": opt(self.selection_background),
             "selection_foreground": opt(self.selection_foreground),
+            "faint_opacity": self.faint_opacity,
             "palette": self.palette.iter().map(|c| c.hex()).collect::<Vec<_>>(),
             "ghostty": self.ghostty_config(),
         })
@@ -419,6 +425,10 @@ fn parse_builtins(json: &str) -> Result<BuiltIns, String> {
                 cursor_text: color("cursorText"),
                 selection_background: color("selectionBackground"),
                 selection_foreground: color("selectionForeground"),
+                faint_opacity: term["faintOpacity"]
+                    .as_f64()
+                    .filter(|v| *v > 0.0 && *v <= 1.0)
+                    .ok_or_else(|| err("terminal.faintOpacity"))?,
                 palette,
             },
             source: ThemeSource::BuiltIn,
@@ -718,6 +728,16 @@ fn parse_terminal(sink: &mut Sink<'_>, table: &DeTable<'_>, out: &mut TerminalPa
         match key {
             "palette" => {
                 parse_palette(sink, v, &mut out.palette, base);
+                continue;
+            }
+            "faint_opacity" => {
+                match crate::number(v.get_ref()) {
+                    Some(f) if f > 0.0 && f <= 1.0 => out.faint_opacity = f,
+                    _ => sink.warn(
+                        v.span(),
+                        format!("`terminal.faint_opacity` isn't a number above 0, up to 1; keeping {base}'s"),
+                    ),
+                }
                 continue;
             }
             "background"

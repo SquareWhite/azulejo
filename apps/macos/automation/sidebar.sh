@@ -7,7 +7,8 @@
 # tooltips, the right-click menu, the keyboard; after a relaunch
 # (sidebar-relaunch.azs) it's still collapsed, a stand-in remote machine
 # reconnects, and `[sidebar] collapsed = "hidden"` hides it instead.
-# Fixture repositories live in a temp folder that is removed afterwards.
+# Fixture repositories live in temp folders that are removed afterwards
+# (the hover card's deep ones in /tmp/azj-<name>-card).
 #   apps/macos/automation/sidebar.sh [--keep]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -19,13 +20,18 @@ side="$root/.dev/$AZJ_DEV_NAME.machines"
 remote="azj-dev-$AZJ_DEV_NAME-remote"
 fixtures="$(mktemp -d "${TMPDIR:-/tmp}/azj-side.XXXXXX")"
 fixtures="$(cd "$fixtures" && pwd -P)"
+# The rail's hover card fixtures: deep folders on long branches.
+cards="/tmp/azj-$AZJ_DEV_NAME-card"
+rm -rf "$cards"
+mkdir -p "$cards"
+cards="$(cd "$cards" && pwd -P)"
 
 # Never the user's herdr: every herdr call names a throwaway session.
 unset HERDR_SOCKET_PATH HERDR_PANE_ID HERDR_WORKSPACE_ID HERDR_TAB_ID HERDR_ENV
 herdr="$(command -v herdr || echo "$HOME/.local/bin/herdr")"
 
 cleanup() {
-  rm -rf "$fixtures"
+  rm -rf "$fixtures" "$cards"
   [[ "${1:-}" == "--keep" ]] && return
   "$root/apps/macos/dev.sh" --reset >/dev/null
   "$herdr" --session "$remote" server stop >/dev/null 2>&1 || true
@@ -49,11 +55,22 @@ repo sample-service development
 repo sample-project audit/critical-path-review
 repo sample-dashboard dev
 repo config main
+card() {
+  local dir="$cards/clients/example-studio/$1"
+  mkdir -p "$dir"
+  printf '# %s\n' "$1" >"$dir/README.md"
+  git -C "$dir" -c init.defaultBranch="$2" init -q
+  git -C "$dir" add -A
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -qm init
+}
+card quarterly-reporting-dashboard chore/release-candidate-handover-final
+printf 'draft\n' >>"$cards/clients/example-studio/quarterly-reporting-dashboard/README.md"
+card upload-service feature/upload-retry-with-exponential-backoff-and-jitter-for-large-files
 
 "$root/apps/macos/dev.sh" --reset >/dev/null
 rm -rf "$out" "$side"
 mkdir -p "$out" "$side"
-sed -e "s|@DIR@|$fixtures|g" "$here/sidebar.azs.in" >"$fixtures/sidebar.azs"
+sed -e "s|@DIR@|$fixtures|g" -e "s|@CARD@|$cards|g" "$here/sidebar.azs.in" >"$fixtures/sidebar.azs"
 sed -e "s|@SIDE@|$side|g" -e "s/azj-dev-side-remote/$remote/g" \
   "$here/sidebar-relaunch.azs.in" >"$fixtures/sidebar-relaunch.azs"
 ( sleep 360; "$root/apps/macos/dev.sh" --stop ) &

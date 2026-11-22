@@ -5,13 +5,22 @@
 # terminals show an agent, git and a log tail (showcase/), then, per theme
 # (shared/design/tokens.json), captures through showcase.azs.in:
 #   hero                  the mockup scene: tiles, tab strip, sidebar, focused header
-#   sidebar-rail          the sidebar collapsed to its rail
+#   sidebar-hints         ⌘ held alone: each row's ⌘N badge (handed to the app in-process)
+#   sidebar-rail          the sidebar collapsed to its rail: status icons only
+#   sidebar-rail-hints    …⌘ held alone: the same badges in the icons' place
+#   sidebar-rail-hover    a rail row's hover card
+#   sidebar-rail-machine  a rail machine letter's card (dev-server, reconnecting)
+#   sidebar-rail-overflow the rail in a short window: the active row in view, fades
+#   sidebar-rail-overflow-end  …scrolled to the end: the waiting rows above flagged
+#   sidebar-overflow      the full sidebar in a short window, at the top
+#   sidebar-overflow-end  …scrolled to the end
+#   sidebar-narrow        the sidebar at its narrowest (state words fold)
 #   quick-open            ⌘K, empty query (what needs you first)
 #   quick-open-query      ⌘K with "upl" typed
 #   quick-open-commands   ⌘K with ">"
 #   quick-open-jump       ⌘K with "@"
 #   quick-open-theme      ⌘K "Set theme…", the theme list
-#   workspace             the sample-api workspace, sidebar on Agents
+#   workspace             the sample-api workspace, sidebar on Workspaces
 #   sidebar-files         its Files view, a few folders open, git changes shown
 #   smart-select          ⌘S: the Select panel, each kind with its count
 #   smart-select-paths    ⌘S after `p`: the paths, labelled a, s, d…
@@ -117,7 +126,8 @@ TMPDIR="$work" AZJ_MOCKUP_TAIL="$work/showcase.azs" AZJ_MOCKUP_CWD="$work/azulej
 # Collect: the system capture when the harness got one, else the app's render.
 rm -rf "$dest"
 mkdir -p "$dest"
-views="hero sidebar-rail quick-open quick-open-query quick-open-commands quick-open-jump quick-open-theme
+views="hero sidebar-hints sidebar-rail sidebar-rail-hints sidebar-rail-hover sidebar-rail-machine sidebar-rail-overflow
+  sidebar-rail-overflow-end sidebar-overflow sidebar-overflow-end sidebar-narrow quick-open quick-open-query quick-open-commands quick-open-jump quick-open-theme
   workspace sidebar-files smart-select smart-select-paths"
 missing=0
 for theme in $themes; do

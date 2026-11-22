@@ -68,5 +68,5 @@ core {"method":"workspace.set_repo","params":{"path":"@DIR@"}}
 until sidebar.files.root @DIR@ 5000
 until sidebar.files.git 3 8000
 shot 09-git
-sidebar mode agents
+sidebar mode workspaces
 quit

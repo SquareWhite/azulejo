@@ -57,7 +57,7 @@ showing the same pane draws it cropped or padded.
 ## Key routing
 
 Chords resolve in the core (`azj_core_key`), not in Swift, so config
-overrides, per-tile contexts (`cmd+a` opens the Agents sidebar only in terminals and the files list)
+overrides, per-tile contexts (`cmd+a` opens the Workspaces sidebar only in terminals and the files list)
 and prefix mode behave the same in every shell. The router keeps prefix state
 in the core and sticky resize mode in Swift. Bound chords are consumed before
 AppKit sees them; anything unbound goes to the focused tile and then to menu

@@ -6,7 +6,7 @@ import QuartzCore
 /// `sidebarMaxWidth`; a double-click on the edge puts the default
 /// (`sidebarWidth`) back. One width for every window, kept across launches
 /// in `SettingsStore` (a dev instance keeps its own, as it does the
-/// sidebar's Agents | Files mode).
+/// sidebar's Workspaces | Files mode).
 @MainActor
 enum SidebarWidth {
     /// Posted when the saved width changes: every window lays out again.

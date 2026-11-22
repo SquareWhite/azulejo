@@ -9,7 +9,7 @@ delivery direct
 seen-visible off
 window-size 1100 700
 until terminal.phase attached 10000
-sidebar mode agents
+sidebar mode workspaces
 action split_right
 until tiles 2 5000
 until motion still
@@ -77,7 +77,7 @@ expect sidebar.width 520
 expect sidebar.gap 8
 divider check
 key cmd+a
-expect sidebar.mode agents
+expect sidebar.mode workspaces
 expect sidebar.width 520
 
 # ---- a double-click on the edge: the default again

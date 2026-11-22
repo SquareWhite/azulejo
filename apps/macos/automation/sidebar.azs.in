@@ -5,8 +5,8 @@
 
 log sidebar
 seen-visible off
-sidebar mode agents
-expect sidebar.mode agents
+sidebar mode workspaces
+expect sidebar.mode workspaces
 until sidebar.machines Local ● 5000
 
 # Five workspaces like the mockup's: azulejo (working), sample-service (blocked),
@@ -53,9 +53,58 @@ sh {herdr} --session {session} pane report-agent {pane} --source azj-test --agen
 until sidebar.statuses working|blocked|blocked|idle|idle 5000
 expect sidebar.footer working=1,blocked=2,idle=2,done=0
 expect sidebar.markers ●|●1|●1|-|-
+# The footer in words, zero counts left out; two-line rows with the time
+# in state on the waiting and working ones (a minute hasn't passed).
+expect sidebar.footer.words 2 waiting · 1 working · 2 idle
+expect sidebar.heights 40|40|40|40|40
+expect sidebar.rows azulejo now ¦ main ‖ sample-service now ¦ development ‖ sample-project now ¦ audit/cr…al-path-review ‖ sample-dashboard ¦ dev ‖ config ¦ main
+expect sidebar.machines Local ●
+expect sidebar.empty -
 action switch_workspace 1
 expect workspace 1
-shot 01-agents
+shot 01-workspaces
+
+# A row shows no hover card, only its hover fill (the rail's rows have
+# cards); a row whose branch is cut short has a plain tooltip with it in
+# full, the others none.
+sidebar hover 3
+wait 900
+expect sidebar.card -
+expect sidebar.tips - ‖ - ‖ sample-project ¦ audit/critical-path-review ‖ - ‖ -
+shot 01-hover
+sidebar hover 0
+expect sidebar.card -
+
+# A short window: only the list scrolls, its bottom edge fades, a pill
+# counts the rows below and the waiting ones among them; a click on it
+# brings the nearest waiting row into view. Scrolled to the end, the top
+# edge fades and a pill counts the waiting rows above; its click brings
+# the nearest one back.
+window-size 900 250
+wait 400
+expect sidebar.active.visible yes
+until sidebar.fades bottom 1500
+expect sidebar.overflow 0/0 3/1
+expect sidebar.pills -|↓ 3 more · 1 waiting
+shot 01-overflow
+sidebar pill bottom
+wait 200
+expect sidebar.overflow 1/0 1/0
+expect sidebar.pills -|↓ 1 more
+expect sidebar.fades both
+sidebar scroll bottom
+wait 200
+expect sidebar.overflow 2/1 0/0
+expect sidebar.pills ↑ 1 waiting above|-
+expect sidebar.fades top
+shot 01-overflow-end
+sidebar pill top
+wait 200
+expect sidebar.overflow 0/0 2/0
+window-size 1100 700
+wait 400
+until sidebar.fades none 1500
+expect sidebar.pills -|-
 
 # A click on a row focuses its workspace.
 sidebar select 4
@@ -106,8 +155,8 @@ until sidebar.files.root @DIR@/sample-service 3000
 expect sidebar.files.names README.md
 
 # Back to the list; the panel closes.
-sidebar mode agents
-expect sidebar.mode agents
+sidebar mode workspaces
+expect sidebar.mode workspaces
 expect sidebar.statuses working|blocked|blocked|idle|idle
 shot 04-back
 
@@ -137,7 +186,7 @@ action toggle_sidebar
 until sidebar rail 3000
 expect responder.focused yes
 expect rail.keyboard no
-sidebar mode agents
+sidebar mode workspaces
 wait 600
 expect rail.shown yes
 expect rail.groups L:connected
@@ -147,6 +196,11 @@ expect rail.rows 1:working*|2:blocked|3:blocked|4:working|5:idle
 expect rail.fits yes
 expect rail.centred yes
 expect rail.insets 4/4|4/4|4/4|4/4|4/4
+# Status icons only: no numbers at rest (⌘ held shows them, wshints.sh).
+expect rail.heights 28|28|28|28|28
+expect rail.hints hidden
+expect rail.hints.placed yes
+expect rail.offsets 0|0|0|0|0|0
 expect chrome.rail.overlaps none
 expect chrome.hit.close _NSThemeCloseWidget
 expect chrome.hit.toggle SidebarToggleButton
@@ -168,6 +222,86 @@ menu rail 1
 remember menu.items
 menu workspace 1
 unchanged menu.items
+
+# The rail's footer counts the waiting workspaces; a letter's card says
+# the machine's state.
+expect rail.wait 2
+sidebar rail group 1
+until sidebar.card Local ¦ Connected ¦ 5 workspaces · azulejo, sample-service, sample-project, sample-dashboard, config 1000
+# Its list wraps between words; the name and state keep to a line each.
+expect sidebar.card.lines 1|1|2
+expect sidebar.card.overflow none
+sidebar rail hover 0
+
+# A row's card keeps each value to one line, as wide as its longest line
+# (space.hoverCardMinWidth to hoverCardMaxWidth), cut only past that. A
+# deep folder on a long branch with uncommitted changes (sidebar.sh's
+# @CARD@ fixtures): the branch whole, the sidebar's dot after it and the
+# words on a line of their own; the path cut in its middle, its last
+# folder whole. config is idle, so its state has no time to tick over.
+action switch_workspace 5
+until workspace.active config 2000
+core {"method":"workspace.set_repo","params":{"path":"@CARD@/clients/example-studio/quarterly-reporting-dashboard"}}
+until sidebar.branches main|development|audit/critical-path-review|dev|chore/release-candidate-handover-final • 5000
+until rail.dirty -|-|-|-|• 5000
+sidebar rail hover 5
+expect sidebar.card config ⌘5 ¦ chore/release-candidate-handover-final • ¦ Uncommitted changes ¦ Idle ¦ @CARD@/clients/example-studio/quarterly-reporting-dashboard
+expect sidebar.card.drawn config ⌘5 ¦ chore/release-candidate-handover-final • ¦ Uncommitted changes ¦ Idle ¦ /private/tmp/…/quarterly-reporting-dashboard
+expect sidebar.card.lines 1|1|1|1|1
+expect sidebar.card.overflow none
+expect sidebar.card.width 380
+shot 05-rail-card
+sidebar rail hover 0
+# A branch too long for the widest card: cut in its middle, its feature/
+# prefix kept.
+core {"method":"workspace.set_repo","params":{"path":"@CARD@/clients/example-studio/upload-service"}}
+until sidebar.branches main|development|audit/critical-path-review|dev|feature/upload-retry-with-exponential-backoff-and-jitter-for-large-files 5000
+until rail.dirty -|-|-|-|- 5000
+sidebar rail hover 5
+expect sidebar.card config ⌘5 ¦ feature/upload-retry-with-exponential-backoff-and-jitter-for-large-files ¦ Idle ¦ @CARD@/clients/example-studio/upload-service
+expect sidebar.card.drawn config ⌘5 ¦ feature/upload-ret…ff-and-jitter-for-large-files ¦ Idle ¦ /private/…/clients/example-studio/upload-service
+expect sidebar.card.lines 1|1|1|1
+expect sidebar.card.overflow none
+expect sidebar.card.width 380
+sidebar rail hover 0
+# A short card is no narrower than hoverCardMinWidth.
+sidebar rail wait
+expect sidebar.card.lines 1
+expect sidebar.card.width 200
+sidebar rail hover 0
+core {"method":"workspace.set_repo","params":{"path":"@DIR@/config"}}
+until sidebar.branches main|development|audit/critical-path-review|dev|main 5000
+action switch_workspace 2
+until workspace.active sample-service 2000
+
+# A short window: the rail scrolls between its top and its footer. Folding
+# brings the active row into view (only a few of its 28 pt rows fit, so the
+# window is shorter than the full sidebar's check); a marker
+# flags the waiting rows out of view, and a click on it scrolls to the
+# nearest.
+action toggle_sidebar
+until sidebar visible 3000
+window-size 900 220
+action switch_workspace 5
+until workspace.active config 2000
+action toggle_sidebar
+until sidebar rail 3000
+wait 400
+expect rail.active.visible yes
+expect rail.markers ↑1|-
+shot 05-rail-overflow
+sidebar rail marker top
+wait 200
+expect rail.active.visible no
+expect rail.markers -|-
+sidebar rail scroll top
+wait 200
+expect rail.markers -|↓1
+window-size 1100 700
+wait 400
+expect rail.fits yes
+action switch_workspace 2
+until workspace.active sample-service 2000
 
 # Off: the full sidebar again, rows back; » does the same from the rail.
 action toggle_sidebar

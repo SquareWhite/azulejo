@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# ⌘ held alone shows each workspace row's chord in the full sidebar
-# (WorkspaceHints) on dev instance e2e-wsh: wshints.azs checks the numbers
-# against the rows, the rail and the chords across two machine groups and
+# ⌘ held alone shows each workspace row's chord in the full sidebar and the
+# folded rail (WorkspaceHints) on dev instance e2e-wsh: wshints.azs checks
+# the numbers against the rows and the chords across two machine groups and
 # past nine workspaces, the wait before they show, what hides them, the
-# rail left alone, the sidebar opened by ⌘A with ⌘ kept down (badges once
-# its motion ends; nothing with ⌘ up or ⌘⇧), and motion off and Reduce
-# Motion fading nothing. Shots of
-# the sidebar with the badges in a dark and a light theme (01-hints-dark,
-# 02-hints-light, 03-hints-ten). The "remote" machine, bravo, is a throwaway
+# rail with no numbers at rest and the badges in its icons' place while ⌘
+# is held (rows and insets unchanged), the sidebar opened or folded by ⌘A
+# with ⌘ kept down (badges once its motion ends; nothing with ⌘ up or ⌘⇧),
+# and motion off and Reduce Motion fading nothing. Shots of the sidebar and
+# the rail with the badges in a dark and a light theme (01-hints-dark,
+# 02-hints-light, 03-hints-ten, 04-rail-rest, 05-rail-hints-dark,
+# 06-rail-hints-light, 07-rail-hints-ten). The "remote" machine, bravo, is a throwaway
 # local herdr session reached only through the ssh stand-in
 # (scripts/ssh-standin.sh); the Local workspaces' repositories are fixtures.
 set -euo pipefail

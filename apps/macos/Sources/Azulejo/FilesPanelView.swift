@@ -51,6 +51,8 @@ final class FilesPanelView: NSView, ThemeAware {
     var confirmHeight: NSLayoutConstraint!
     /// Esc (`files_leave`): the sidebar hands the keyboard back to the tiles.
     var onEscape: (() -> Void)?
+    /// The work tree's changes came in again (`changedCount`).
+    var onGitChange: (() -> Void)?
     /// The herdr machine whose files this panel shows; nil for Local.
     /// Remote paths aren't on this Mac: Finder, the default app and Quick
     /// Look don't apply; the editor and terminals open on the machine.
@@ -584,6 +586,7 @@ final class FilesPanelView: NSView, ThemeAware {
 
     private func gitChanged(_ paths: [String: String]) {
         git = paths
+        onGitChange?()
         let visible = outline.rows(in: outline.visibleRect)
         guard visible.length > 0 else { return }
         outline.reloadData(
@@ -821,6 +824,19 @@ final class FilesPanelView: NSView, ThemeAware {
     }
 
     fileprivate func gitState(for node: FileNode) -> String? { git[node.path] }
+
+    /// How many files changed in the work tree: the core marks the folders
+    /// above each change too, so a path with another under it is a folder
+    /// and doesn't count.
+    var changedCount: Int {
+        let paths = git.keys.sorted()
+        var count = 0
+        for (i, path) in paths.enumerated() {
+            let next = i + 1 < paths.count ? paths[i + 1] : ""
+            if !next.hasPrefix(path.hasSuffix("/") ? path : path + "/") { count += 1 }
+        }
+        return count
+    }
 }
 
 // MARK: - Outline data source and delegate
@@ -847,7 +863,10 @@ extension FilesPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
-        FilesRowView()
+        let row = FilesRowView()
+        row.level = outlineView.level(forItem: item)
+        row.indent = outlineView.indentationPerLevel
+        return row
     }
 
     // Dragging out and dropping in (FilesOperations.swift).
@@ -1100,6 +1119,32 @@ private struct WeakFiles {
 /// ⌘K do. The system's accent selection kept the names' own colours
 /// (textPrimary, the git colours) on the accent: 2:1 in the light themes.
 private final class FilesRowView: NSTableRowView {
+    /// Its item's depth, and the outline's indent: one guide per folder
+    /// above it.
+    var level = 0
+    var indent: CGFloat = 14
+
+    /// Indent guides: a hairline down from each enclosing folder's
+    /// disclosure arrow, so deep rows show where they belong. (Drawn here:
+    /// a row with a clear background never gets `drawBackground`.)
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard level > 0, let cell = view(atColumn: 0) as? NSView else { return }
+        Design.Color.border.setFill()
+        for i in 0..<level {
+            // A row's arrow is centred about an indent and 5 points left of
+            // its cell (as drawn); an enclosing folder's a level further
+            // left each.
+            let x = cell.frame.minX - CGFloat(level - i + 1) * indent - 5
+            NSRect(x: floor(x), y: 0, width: 1, height: bounds.height).fill()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true
+    }
+
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         Design.Color.selected.setFill()
@@ -1122,6 +1167,7 @@ final class FilesOutlineView: NSOutlineView, QLPreviewPanelDataSource, QLPreview
     // No keyDown override: the key router hands the `files` actions to the
     // panel (FilesPanelView.perform(keyAction:)); what it lets through is
     // AppKit's (← → collapse and expand, type-select).
+
 
     /// Moves the selection by `delta` rows (NSTableView handles arrows in
     /// `keyDown`, not through `moveDown:`).

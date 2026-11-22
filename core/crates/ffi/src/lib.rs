@@ -945,7 +945,7 @@ mod tests {
             assert_eq!(tab["index"], 3);
             assert_eq!(tab["command"], Value::Null);
 
-            // cmd+a opens the Agents sidebar in terminals and the files
+            // cmd+a opens the Workspaces sidebar in terminals and the files
             // list, and is select-all elsewhere (a find bar).
             if cfg!(target_os = "macos") {
                 let term = key(c"{\"chord\":\"cmd+a\",\"tile\":\"terminal\"}");

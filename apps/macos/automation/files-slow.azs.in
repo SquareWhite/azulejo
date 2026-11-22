@@ -50,5 +50,5 @@ expect sidebar.files.root @SMALL@
 expect sidebar.files.rows 2
 expect sidebar.files.names a.txt,b.txt
 shot 03-new-root
-sidebar mode agents
+sidebar mode workspaces
 quit

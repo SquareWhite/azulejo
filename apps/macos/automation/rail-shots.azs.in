@@ -1,5 +1,10 @@
 # Rail captures (rail.sh): the collapsed sidebar in all four built-in themes,
-# five workspaces with agents working and blocked, the second one selected.
+# five workspaces with agents working and blocked, the second one selected;
+# at rest and with ⌘ held alone (its ⌘N badges, handed to the app
+# in-process; a build from before the rail's badges shows its rest state);
+# then the third row's hover card (sample-project in rail.sh's fixture repo
+# @CARD@: a deep path, a long branch, uncommitted changes) and the machine
+# letter's.
 # Uses only commands every build has, so it can capture a build from before
 # a rail change too.
 
@@ -15,6 +20,7 @@ core {"method":"workspace.rename","params":{"name":"sample-service"}}
 action new_workspace
 until workspaces 3 5000
 core {"method":"workspace.rename","params":{"name":"sample-project"}}
+core {"method":"workspace.set_repo","params":{"path":"@CARD@"}}
 action new_workspace
 until workspaces 4 5000
 core {"method":"workspace.rename","params":{"name":"sample-dashboard"}}
@@ -39,21 +45,95 @@ expect workspace 2
 action toggle_sidebar
 until sidebar rail 3000
 wait 600
+# A background run has no key window: count this one as key.
+sidebar hints key on
 
 theme set atom-one-dark
 wait 600
 capture atom-one-dark-rail 0
 wait 900
+sidebar hints cmd
+wait 500
+capture atom-one-dark-rail-cmd 0
+wait 900
+sidebar hints none
+wait 300
+sidebar rail hover 3
+wait 300
+capture atom-one-dark-card 0
+wait 900
+sidebar rail hover 0
+wait 200
+sidebar rail group 1
+wait 300
+capture atom-one-dark-group-card 0
+wait 900
+sidebar rail hover 0
+wait 200
 theme set atom-one-light
 wait 600
 capture atom-one-light-rail 0
 wait 900
+sidebar hints cmd
+wait 500
+capture atom-one-light-rail-cmd 0
+wait 900
+sidebar hints none
+wait 300
+sidebar rail hover 3
+wait 300
+capture atom-one-light-card 0
+wait 900
+sidebar rail hover 0
+wait 200
+sidebar rail group 1
+wait 300
+capture atom-one-light-group-card 0
+wait 900
+sidebar rail hover 0
+wait 200
 theme set macos-dark
 wait 600
 capture macos-dark-rail 0
 wait 900
+sidebar hints cmd
+wait 500
+capture macos-dark-rail-cmd 0
+wait 900
+sidebar hints none
+wait 300
+sidebar rail hover 3
+wait 300
+capture macos-dark-card 0
+wait 900
+sidebar rail hover 0
+wait 200
+sidebar rail group 1
+wait 300
+capture macos-dark-group-card 0
+wait 900
+sidebar rail hover 0
+wait 200
 theme set macos-light
 wait 600
 capture macos-light-rail 0
 wait 900
+sidebar hints cmd
+wait 500
+capture macos-light-rail-cmd 0
+wait 900
+sidebar hints none
+wait 300
+sidebar rail hover 3
+wait 300
+capture macos-light-card 0
+wait 900
+sidebar rail hover 0
+wait 200
+sidebar rail group 1
+wait 300
+capture macos-light-group-card 0
+wait 900
+sidebar rail hover 0
+wait 200
 wait 1500

@@ -5,7 +5,7 @@
 
 log menus
 seen-visible off
-sidebar mode agents
+sidebar mode workspaces
 until sidebar.machines Local ● 5000
 
 core {"method":"workspace.rename","params":{"name":"alpha"}}

@@ -63,10 +63,12 @@ class Themes(unittest.TestCase):
         theme["color"]["accent"] = {"system": "controlAccentColor"}
         theme["appearance"] = "sepia"
         theme["terminal"]["palette"] = theme["terminal"]["palette"][:15]
+        theme["terminal"]["faintOpacity"] = 1.5
         problems = "\n".join(gen.validate(broken))
         for needle in ["color.window: 'blue'", "unknown system colour 'notAColor'",
                        "color.accent: needs \"hex\"", "appearance must be light or dark",
-                       "terminal.palette: needs 16"]:
+                       "terminal.palette: needs 16",
+                       "terminal.faintOpacity: must be a number above 0, up to 1"]:
             self.assertIn(needle, problems)
 
     def test_bad_easing_fails(self):
@@ -108,6 +110,9 @@ class Themes(unittest.TestCase):
         # atom-one-dark is today's look: the mockup's window colour.
         self.assertIn('"window": .rgba(0x1b1d23ff)', swift)
         self.assertIn('.system("controlAccentColor"', swift)
+        # Faint (SGR 2) text: lifted in the light themes, Ghostty's 0.5 in the dark ones.
+        self.assertIn("faintOpacity: 0.72,", swift)
+        self.assertIn("faintOpacity: 0.5,", swift)
 
     def test_design_swift_is_fresh(self):
         self.assertEqual(gen.OUT.read_text(), gen.generate(TOKENS),

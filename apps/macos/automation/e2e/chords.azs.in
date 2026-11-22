@@ -162,16 +162,16 @@ expect key.last action:toggle_layout_manual
 expect kind manual
 key alt+shift+t
 expect kind tile
-# --- cmd+a: the Agents sidebar in a terminal, select-all elsewhere ---
-sidebar mode agents
+# --- cmd+a: the Workspaces sidebar in a terminal, select-all elsewhere ---
+sidebar mode workspaces
 expect sidebar visible
 key cmd+a
 expect key.last action:toggle_agents_sidebar
 expect sidebar rail
 key cmd+a
 expect sidebar visible
-expect sidebar.mode agents
-# --- cmd+f: the Files sidebar from anywhere; cmd+a back to Agents ---
+expect sidebar.mode workspaces
+# --- cmd+f: the Files sidebar from anywhere; cmd+a back to Workspaces ---
 key cmd+f
 expect key.last action:toggle_files_sidebar
 expect sidebar visible
@@ -181,7 +181,7 @@ key cmd+a
 expect key.last action:toggle_agents_sidebar
 expect key.context files
 expect sidebar visible
-expect sidebar.mode agents
+expect sidebar.mode workspaces
 expect responder terminal
 key cmd+f
 until sidebar.files.keyboard yes 3000
@@ -202,7 +202,7 @@ expect key.last passed
 expect sidebar.mode files
 key escape
 key cmd+a
-expect sidebar.mode agents
+expect sidebar.mode workspaces
 expect sidebar visible
 # In a terminal's find bar cmd+a selects the query, and alt+] / alt+[
 # still switch layouts: the router sees them before the field.

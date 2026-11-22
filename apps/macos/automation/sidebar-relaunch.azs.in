@@ -26,6 +26,7 @@ until rail.groups L:connected|S:reconnecting 10000
 expect rail.rows 1:working|2:blocked*|3:blocked|4:working|5:idle|6:idle~
 # The turning ring keeps the group's letter and mark centred too.
 expect rail.centred yes
+expect rail.offsets 0|0|0|0|0|0|0|0
 shot 07-rail-reconnecting
 capture 07-rail-reconnecting-window 0
 sh rm -f @SIDE@/ssh.fail

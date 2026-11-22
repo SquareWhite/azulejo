@@ -268,5 +268,5 @@ key cmd+w
 until tiles 1 5000
 sh cp @FX@/config.orig {config}
 until sidebar.files.editor.app - 8000
-sidebar mode agents
+sidebar mode workspaces
 quit

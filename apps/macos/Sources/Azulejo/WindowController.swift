@@ -46,11 +46,11 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarState: SidebarState = .full {
         didSet {
             guard sidebarState != oldValue else { return }
-            // The ⌘N badges belong to the full sidebar.
-            if sidebarState != .full {
-                sidebar.setHints(false)
-                app?.workspaceHints.sidebarCollapsed(in: self)
-            }
+            // The ⌘N badges belong to the sidebar that showed them, full or
+            // rail: they go with it.
+            sidebar.setHints(false)
+            rail.setHints(false)
+            app?.workspaceHints.sidebarChanged(in: self)
             // The keyboard doesn't stay in a sidebar that's going away (the
             // Files panel): back to the focused tile, as Esc would.
             if sidebarState != .full, let responder = window.firstResponder as? NSView,
@@ -61,10 +61,10 @@ final class WindowController: NSObject, NSWindowDelegate {
             // Opened by `toggle_files_sidebar`: the tree takes the keyboard.
             if sidebarState == .full, focusFilesOnOpen { sidebar.setMode(.files, focus: true) }
             focusFilesOnOpen = false
-            // Opened with ⌘ still held alone (⌘A and ⌘ kept down): the
-            // badges, once the rows are in.
-            if sidebarState == .full, model != nil {
-                app?.workspaceHints.sidebarExpanded(in: self, settling: settling)
+            // Opened or folded with ⌘ still held alone (⌘A and ⌘ kept
+            // down): the badges, once the rows are in.
+            if sidebarState != .hidden, model != nil {
+                app?.workspaceHints.sidebarShown(in: self, settling: settling)
             }
         }
     }
@@ -150,6 +150,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         let keymap = app.core.keymap()
         quickOpen.apply(keymap: keymap)
         layoutPicker.apply(keymap: keymap)
+        sidebar.apply(keymap: keymap)
         // A kind's key does the same: `toggle_layout_*`, for a kind the tab
         // isn't in (where toggling is setting).
         layoutPicker.onPick = { [weak self, weak app] kind in
@@ -280,7 +281,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     var sidebarMachines: [String] { sidebar.machineHeaders }
     /// Automation: each sidebar row's branch.
     var sidebarBranches: [String] { sidebar.branches }
-    /// Automation: the sidebar itself (Agents | Files, rows, footer).
+    /// Automation: the sidebar itself (Workspaces | Files, rows, footer).
     var sidebarView: SidebarView { sidebar }
     /// Automation: the collapsed sidebar's rail.
     var railView: SidebarRailView { rail }
@@ -299,6 +300,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     func refreshKeymap(_ keymap: [String: Any]) {
         quickOpen.apply(keymap: keymap)
         layoutPicker.apply(keymap: keymap)
+        sidebar.apply(keymap: keymap)
     }
 
     /// Automation: each tab's state icon.

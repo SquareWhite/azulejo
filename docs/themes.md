@@ -13,7 +13,9 @@ Azulejo's chrome and its terminals follow one theme. Four ship built in; you can
 
 - **Atom One Dark** is the designer mockup's look and what Azulejo looked like before themes; nothing in it changed.
 - **Atom One Light** uses the official Atom One Light palette (one-light-ui and one-light-syntax): `#fafafa` bodies, `#eaeaeb` cards and strips, `#383a42` text. Its status, git, accent and terminal colours are the palette's hues made darker, so they read as well on its light surfaces as Atom One Dark's do on its dark ones ("Contrast" below).
-- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent and selected rows). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and find bar strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and find bar strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
+- **macOS Dark** and **macOS Light** use the system's own colours (`NSColor.labelColor`, `secondaryLabelColor`, `separatorColor`, `textBackgroundColor`, `windowBackgroundColor`, …), resolved live, so they follow your accent colour (`controlAccentColor` for the accent, and for selected rows in macOS Dark; macOS Light selects rows in Finder's grey, `unemphasizedSelectedContentBackgroundColor`, so the selection doesn't read as a second accent next to the blue icons). The sidebar card is a vibrancy view (`NSVisualEffectView`, `.sidebar` material, behind the window), as in Finder. Changing the accent colour in System Settings re-colours the app at once. Links, ⌘K's matched characters and the working ring use `linkColor` in macOS Dark (Apple tunes it to read as text) and a fixed darker blue in macOS Light, so they don't follow the accent colour. Where macOS has no system colour that fits, the theme uses a fixed one: macOS Light's status and git colours (Apple's orange, green and red are 2:1 on its light surfaces; the fixed ones are darker, like Apple's increased-contrast variants), macOS Dark's window, header and find bar strips (`#2a2a2a`, `#242424`: macOS 26 draws the window, the strips and the tiles in nearly one grey), macOS Light's window (`#ececec`, the classic light window grey; macOS 26's `windowBackgroundColor` is white, which would leave the cards no edge) and its sidebar, header and find bar strips (`#f5f5f5`), the focus dim (black in macOS Dark, the window grey in macOS Light), and the HUD, badge and overlay fills. The terminal palettes are fixed too (Ghostty takes hex colours).
+
+Every theme also sets how opaque faint (SGR 2) text draws, `terminal.faintOpacity` in tokens.json (`faint_opacity` in a user theme), written as Ghostty's `faint-opacity` when terminals use the theme's colours: Ghostty's own 0.5 in the dark themes, 0.72 in Atom One Light and 0.55 in macOS Light, so an agent's dimmed lines ("Waiting for…") still read on a light tile (4.7:1, from 2.7:1 and 4:1).
 
 ## Picking a theme
 
@@ -112,6 +114,7 @@ cursor = "#ff8800"
 cursor_text = "#1d2026"
 selection_background = "#3a3f4b"
 selection_foreground = ""    # "": selected text keeps its colours
+faint_opacity = 0.6          # faint (SGR 2) text's opacity, 0 to 1 (Ghostty's faint-opacity)
 palette = { 1 = "#ff6c6b", 9 = "#ff8080" }   # or a list of 16 colours
 ```
 
@@ -136,12 +139,12 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `tile` | tile body: the terminal backdrop | `#282c34` | `#fafafa` | textBackgroundColor | textBackgroundColor |
 | `tileAlt` | secondary tile bodies | `#252930` | `#f5f5f6` | textBackgroundColor | textBackgroundColor |
 | `sunken` | inset strips | `#202329` | `#ededee` | underPageBackgroundColor | `#f5f5f5` |
-| `control` | segmented tracks, tab container, the sidebar's ⌘N badges | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
-| `selected` | selected sidebar row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | controlAccentColor @ 0.21 |
+| `control` | segmented tracks, tab container, the ⌘N badges in the sidebar and the rail | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
+| `selected` | selected sidebar row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | unemphasizedSelectedContentBackgroundColor |
 | `border` | hairlines around cards, fields and toasts | `#ffffff14` | `#0000001a` | separatorColor | separatorColor |
 | `textPrimary` | names, titles, tile header titles | `#d7dae0` | `#383a42` | labelColor | labelColor |
-| `textSecondary` | tab labels, details, tile header icons | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
-| `textMuted` | group labels, branches, subtitles, hidden files | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.5 |
+| `textSecondary` | tab labels, details, tile header icons | `#9da5b4` | `#4d5059` | secondaryLabelColor | labelColor @ 0.68 |
+| `textMuted` | group labels, branches, subtitles, hidden files | `#7f848e` | `#5a5d66` | labelColor @ 0.45 | labelColor @ 0.6 |
 | `textOnAccent` | text on HUDs, badges and coloured fills | `#ffffff` | `#ffffff` | alternateSelectedControlTextColor | alternateSelectedControlTextColor |
 | `accent` | progress bars, highlights, drop targets, drag slots | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
 | `accentText` | the accent as text: links, matched characters in ⌘K | `#61afef` | `#3a52dc` | linkColor | `#0058c4` |
@@ -165,8 +168,8 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `statusWorking` | working agents (azulejo.ring) | `#61afef` | `#2558cc` | linkColor | `#0058c4` |
 | `statusBlocked` | agents waiting for input | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
 | `statusDone` | agents that finished | `#98c379` | `#186219` | systemGreen | `#007419` |
-| `statusIdle` | idle agents | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.45 |
-| `statusOff` | machines that are off | `#5c6370` | `#a0a1a7` | tertiaryLabelColor | labelColor @ 0.32 |
+| `statusIdle` | idle agents | `#7f848e` | `#5a5d66` | labelColor @ 0.45 | labelColor @ 0.55 |
+| `statusOff` | machines that are off | `#5c6370` | `#868890` | tertiaryLabelColor | labelColor @ 0.4 |
 | `statusConnected` | connected machines | `#98c379` | `#186219` | systemGreen | `#007419` |
 | `statusConnecting` | machines connecting | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
 | `statusReconnecting` | machines reconnecting | `#d19a66` | `#9a4b00` | systemOrange | `#a64400` |
@@ -202,7 +205,7 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `chip` | small fills: ⌘K section counts and machine chips | `#34363a` | `#eaeaeb` | secondarySystemFill | secondarySystemFill |
 | `chipText` | text on chips | `#abb2bf` | `#5c5f69` | labelColor @ 0.62 | labelColor @ 0.62 |
 | `titlebarIcon` | sidebar toggle next to the traffic lights | `#7f848e` | `#6b6d76` | secondaryLabelColor | secondaryLabelColor |
-| `palette` | the ⌘K quick-open panel | `#21252b` | `#ffffff` | `#262628` | `#ffffff` |
+| `palette` | the ⌘K quick-open panel and the floating surfaces in its family: sidebar and rail hover cards, overflow pills and the rail's waiting markers | `#21252b` | `#ffffff` | `#262628` | `#ffffff` |
 | `paletteSelected` | selected ⌘K row (a hovered one at alpha.rowHover) | `#2c313a` | `#e6e7ec` | controlAccentColor @ 0.26 | controlAccentColor @ 0.14 |
 | `paletteScrim` | shade over the window while ⌘K is open | `#00000066` | `#0000002e` | `#00000059` | `#0000002e` |
 | `paletteMatchSelected` | matched characters on the selected ⌘K row | `#61afef` | `#3a52dc` | `#ffffff` | `#0040a0` |

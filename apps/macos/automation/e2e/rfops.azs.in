@@ -6,7 +6,7 @@
 log rfops
 delivery direct
 until machines Local=connected,standin=connected 20000
-sidebar mode agents
+sidebar mode workspaces
 clip clear
 
 # A workspace on standin, its shell in the fixture project.
@@ -174,5 +174,5 @@ menu files src invoke Open Folder in Editor
 expect sidebar.files.opened Fake Editor|zed://ssh/standin-host@FX@/remote-proj/src
 expect sidebar.files.editor app:Fake Editor
 expect tiles 2
-sidebar mode agents
+sidebar mode workspaces
 quit

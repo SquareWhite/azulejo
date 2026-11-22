@@ -46,7 +46,7 @@ SYSTEM_COLORS = [
     "linkColor", "placeholderTextColor", "alternateSelectedControlTextColor",
 ]
 TERMINAL_KEYS = ["background", "foreground", "cursor", "cursorText", "selectionBackground",
-                 "selectionForeground", "palette"]
+                 "selectionForeground", "faintOpacity", "palette"]
 
 
 def fail(msg: str) -> None:
@@ -160,6 +160,9 @@ def validate(tokens: dict) -> list[str]:
                 continue
             if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
                 errors.append(f"{where}.terminal.{key}: must be #rrggbb")
+        faint = term.get("faintOpacity")
+        if isinstance(faint, bool) or not isinstance(faint, (int, float)) or not 0 < faint <= 1:
+            errors.append(f"{where}.terminal.faintOpacity: must be a number above 0, up to 1")
         palette = term.get("palette")
         if not isinstance(palette, list) or len(palette) != 16 or not all(
                 isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette):
@@ -264,6 +267,7 @@ def generate(tokens: dict) -> str:
         add(f"                    cursor: {opt('cursor')}, cursorText: {opt('cursorText')},")
         add(f"                    selectionBackground: {opt('selectionBackground')}, "
             f"selectionForeground: {opt('selectionForeground')},")
+        add(f"                    faintOpacity: {number(term['faintOpacity'], f'themes.{tid}.terminal.faintOpacity')},")
         palette = ", ".join(rgba(c, f"themes.{tid}.terminal.palette") for c in term["palette"])
         add(f"                    palette: [{palette}])),")
     add("        ]")

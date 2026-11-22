@@ -150,7 +150,7 @@ files_new_folder    = "cmd+shift+n"   # Finder's chord
 files_delete        = "cmd+backspace" # to the Trash; on a remote machine for good, once confirmed
 files_copy          = "cmd+c"         # the files themselves (a remote machine's downloaded first)
 files_paste         = "cmd+v"         # files on the pasteboard into the selected folder
-toggle_agents_sidebar = "cmd+a"       # from the Files view to Agents, as in terminals
+toggle_agents_sidebar = "cmd+a"       # from the Files view to Workspaces, as in terminals
 
 [keys.macos.palette]
 # Quick open (cmd+k). Typing goes to its field; ">" and "@" at the start of

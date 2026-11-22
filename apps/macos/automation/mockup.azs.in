@@ -5,7 +5,7 @@
 log mockup
 seen-visible off
 window-size 1440 900
-sidebar mode agents
+sidebar mode workspaces
 until machines Local=connected,build-server=connected,dev-server=connected 20000
 
 # Local: seven workspaces, as in the mockup. The first gets the tile scene;
@@ -76,7 +76,7 @@ until machines Local=connected,build-server=connected,dev-server=reconnecting 15
 # The mockup's view: azulejo, tab "agents", the claude tile focused.
 sidebar select 1
 action switch_tab 1
-sidebar mode agents
+sidebar mode workspaces
 wait 2500
 expect chrome.lights 29,26
 capture 01-scene 0

@@ -83,7 +83,7 @@ enum MainMenu {
         ]))
         main.addItem(menu("View", [
             item("Toggle Sidebar", "toggle_sidebar"),
-            item("Agents Sidebar", "toggle_agents_sidebar"),
+            item("Workspaces Sidebar", "toggle_agents_sidebar"),
             item("Files Sidebar", "toggle_files_sidebar"),
             item("Zoom Tile", "zoom_tile"),
             .separator(),

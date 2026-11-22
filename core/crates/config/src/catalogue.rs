@@ -295,7 +295,7 @@ pub(crate) fn title(action: Action) -> String {
         OpenConfig => "Open config file".into(),
         ReloadConfig => "Reload config".into(),
         ToggleSidebar => "Toggle sidebar".into(),
-        ToggleAgentsSidebar => "Toggle agents sidebar".into(),
+        ToggleAgentsSidebar => "Toggle workspaces sidebar".into(),
         ToggleFilesSidebar => "Toggle files sidebar".into(),
         SetTheme => "Set theme…".into(),
         EditScrollback => "Edit scrollback".into(),

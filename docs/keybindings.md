@@ -199,8 +199,8 @@ Every action, by context, with its default on each platform. `azj config keys` s
 | `open_config` | global | `cmd+comma` | `super+comma` | Open config file |
 | `reload_config` | global | unbound | unbound | Reload config |
 | `toggle_sidebar` | global | unbound | unbound | Toggle sidebar |
-| `toggle_agents_sidebar` | terminal | `cmd+a` | `super+a` | Toggle agents sidebar |
-| `toggle_agents_sidebar` | files | `cmd+a` | `super+a` | Toggle agents sidebar |
+| `toggle_agents_sidebar` | terminal | `cmd+a` | `super+a` | Toggle workspaces sidebar |
+| `toggle_agents_sidebar` | files | `cmd+a` | `super+a` | Toggle workspaces sidebar |
 | `toggle_files_sidebar` | global | `cmd+f` | `super+f` | Toggle files sidebar |
 | `set_theme` | global | unbound | unbound | Set theme… |
 | `edit_scrollback` | global | unbound | unbound | Edit scrollback |
@@ -271,7 +271,7 @@ Prefix mode (`[prefix] enabled = true`): press the prefix (`cmd+b` on macOS, `su
 | `command_palette` | `shift+slash` | Commands… |
 | `goto` | `w`, `g` | Go to… |
 | `find` | `bracketleft` | Find in terminal… |
-| `toggle_agents_sidebar` | `b` | Toggle agents sidebar |
+| `toggle_agents_sidebar` | `b` | Toggle workspaces sidebar |
 | `toggle_files_sidebar` | `f` | Toggle files sidebar |
 | `edit_scrollback` | `e` | Edit scrollback |
 | `switch_tab` | `1..9` | Switch to tab N |
@@ -374,7 +374,7 @@ The table compares this direct-modifier layout with herdr's prefix-based default
 | last tab (`last.py tab`) | `alt+9` | n/a (script) | **yes** |
 | next / previous tab | `ctrl+tab` / `ctrl+shift+tab` | `prefix+n` / `prefix+p` | **yes** |
 | close tab | `cmd+w` | `prefix+shift+x` | **yes** |
-| toggle sidebar | `cmd+a` (Agents view) | `prefix+b` | **yes** |
+| toggle sidebar | `cmd+a` (Workspaces view) | `prefix+b` | **yes** |
 | copy mode (scrollback) | `prefix+[` | `prefix+[` | yes (spelling only) |
 | workspace picker / goto | `prefix+w` / `prefix+g` | same | no |
 | rename tab / workspace / pane | `prefix+shift+t/w/p` | same | no |
@@ -431,7 +431,7 @@ Where each global default came from:
 | `last_tab` (the previously active tab) | unbound | herdr's `alt+9`; Hammerspoon owns `alt+9`, so it's palette-only |
 | `next_tab` / `previous_tab` | `ctrl+tab` / `ctrl+shift+tab` | herdr |
 | `close_tab` | `cmd+shift+w` | was `cmd+w` (herdr); moved so it mirrors `cmd+shift+t` |
-| `toggle_agents_sidebar` (the sidebar's Agents view: opens it, switches to it from Files, or collapses the sidebar when it already shows) | `cmd+a`, **terminal tiles and the files list only** | herdr (see conflicts) |
+| `toggle_agents_sidebar` (the sidebar's Workspaces view, once called Agents: opens it, switches to it from Files, or collapses the sidebar when it already shows) | `cmd+a`, **terminal tiles and the files list only** | herdr (see conflicts) |
 | `toggle_files_sidebar` (the same for the Files view, whose tree takes the keyboard) | `cmd+f` | new (Nov 17, 2026; `cmd+f` was `find` until then) |
 | `toggle_sidebar` (opens or collapses the sidebar, whatever it shows: the toolbar button) | unbound | was `cmd+a` until Nov 17, 2026 |
 | `send_text` (types `ctrl+l`) | `cmd+l`, **terminal tiles only** | kitty's `cmd+l` clears the last command; under herdr only the shell can clear ([Terminal keys](#terminal-keys)) |
@@ -512,7 +512,7 @@ Match keys by physical key (hardware keycode), not by the shifted keyval. Otherw
 
 Off by default. When on, it mirrors herdr's prefix sequences exactly (`prefix+x`, `prefix+v`, `prefix+minus`, `prefix+1..9`, `prefix+shift+w`, …), so anything without a direct chord is still a two-key sequence away.
 
-- **Prefix: `cmd+b` on macOS, `super+b` on Linux** (`ctrl+shift+b` in the `ctrl+shift` layout, which then moves the Agents sidebar to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
+- **Prefix: `cmd+b` on macOS, `super+b` on Linux** (`ctrl+shift+b` in the `ctrl+shift` layout, which then moves the Workspaces sidebar to the palette and prefix mode). It's the same letter as herdr's `ctrl+b`, but it never reaches the PTY. So it can't trip the attach client's `ctrl+b q` detach, and the shell keeps `ctrl+b` (backward-char).
 - `ctrl+b` as the Azulejo prefix would make the key router swallow the shell's `ctrl+b`. Passing it through instead hands it to the attach client, where `ctrl+b q` detaches. Either way it's worse.
 
 ### `ctrl+b` inside terminal tiles
@@ -553,5 +553,5 @@ For example, a global `alt+shift+h/j/k/l` window mover must stand aside for Azul
 Settled with the maintainer on Nov 3, 2026:
 
 1. **Tall layout.** `split_auto`, `promote_tile`, `rotate_layout` and `equalize_layout` live in the core (`layout.split_auto`, `layout.promote`, `layout.rotate`, `layout.equalize`). Niri-style scrolling columns aren't built.
-2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else. (Nov 17, 2026: it's now the Agents view, `toggle_agents_sidebar`, and works from the sidebar's files list too; `cmd+f` is the Files view and `find` moved to `cmd+shift+f`.)
+2. **`cmd+a` toggles the sidebar only in terminal tiles**; it's select-all everywhere else. (Nov 17, 2026: it's now the Agents view, since renamed Workspaces, `toggle_agents_sidebar`, and works from the sidebar's files list too; `cmd+f` is the Files view and `find` moved to `cmd+shift+f`.)
 3. **Linux uses Super by default** for the `cmd` chords, with the `ctrl+shift` layout documented as the alternative. **Every shortcut is configurable.**

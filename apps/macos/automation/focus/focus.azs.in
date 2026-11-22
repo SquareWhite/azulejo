@@ -86,7 +86,7 @@ wait 500
 clip has azjfocus7
 
 log === S10 cmd+a is the sidebar in a terminal (context chord); first responder stays
-sidebar mode agents
+sidebar mode workspaces
 expect sidebar visible
 key cmd+a
 expect key.last action:toggle_agents_sidebar
@@ -174,7 +174,7 @@ key escape
 expect key.last action:files_leave
 until responder terminal 3000
 expect responder.focused yes
-sidebar mode agents
+sidebar mode workspaces
 
 # --- focus after layout changes, in a tab of their own: T | V(T / H(T | T)) ---
 key cmd+shift+t

@@ -103,8 +103,9 @@ pub enum Action {
     /// Opens or collapses the sidebar, whatever it shows (the toolbar
     /// button).
     ToggleSidebar,
-    /// The sidebar's Agents view: opens the sidebar on it, switches to it
-    /// from Files, or collapses the sidebar when it already shows.
+    /// The sidebar's Workspaces view (the id keeps the view's old name,
+    /// Agents, so configs keep working): opens the sidebar on it, switches
+    /// to it from Files, or collapses the sidebar when it already shows.
     ToggleAgentsSidebar,
     /// The same for the Files view, which also takes the keyboard.
     ToggleFilesSidebar,

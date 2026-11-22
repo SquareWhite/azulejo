@@ -25,7 +25,7 @@ wait 1500
 remember theme.colors
 sidebar select 1
 action switch_tab 1
-sidebar mode agents
+sidebar mode workspaces
 wait 1200
 capture @THEME@-scene 0
 captured
@@ -64,6 +64,6 @@ sidebar focus
 wait 1500
 capture @THEME@-files 0
 captured
-sidebar mode agents
+sidebar mode workspaces
 wait 500
 #END

@@ -26,7 +26,7 @@ root="$(cd "$here/../../../.." && pwd)"
 # only the order matters).
 ALL="contrast fixes mtabs wsslide wshints chords unread dim gallery rfiles agents topbar drop fops
   tabdrag reorder sbwidth resize wsnum rfops motion wssync hover ended rdrop adopt reload animoff git
-  palette-clip palette-motion api drag dyn"
+  rowicon palette-clip palette-motion api drag dyn"
 # Frame-drop counts (dyn and drag: `anim expect-clean`), the ⌘K menu's
 # 165–285 ms open timings (palette-motion) and api's 1 s herdr round trips
 # go wrong under load: with -j > 1 they run alone, after the rest.

@@ -7,7 +7,7 @@ log focus dim
 delivery direct
 until terminal.phase attached 10000
 core {"method":"workspace.set_repo","params":{"path":"@FX@"}}
-sidebar mode agents
+sidebar mode workspaces
 expect dim.strength @STRENGTH@
 expect dimmed none
 key ctrl+cmd+t
@@ -71,7 +71,7 @@ until sidebar.files.names README.md 5000
 sidebar focus
 expect sidebar.files.keyboard yes
 expect dimmed 2,3,4
-sidebar mode agents
+sidebar mode workspaces
 responder focus
 wait 300
 

@@ -670,7 +670,7 @@ fn cmd_f_opens_the_files_sidebar_and_find_moved_to_cmd_shift_f() {
         Some(Action::ToggleFilesSidebar)
     );
     assert_eq!(resolve(&linux, "super+shift+f", None), Some(Action::Find));
-    // Prefix mode: herdr's prefix+b is the Agents view, prefix+f Files.
+    // Prefix mode: herdr's prefix+b is the Workspaces view, prefix+f Files.
     let prefix = |a| mac.keymap.prefix_chords_for(a);
     assert_eq!(
         prefix(Action::ToggleAgentsSidebar),

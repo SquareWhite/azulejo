@@ -231,6 +231,7 @@ enum ThemeAutomation {
             "cursor": hex(term.cursor), "cursorText": hex(term.cursorText),
             "selectionBackground": hex(term.selectionBackground),
             "selectionForeground": hex(term.selectionForeground),
+            "faintOpacity": term.faintOpacity,
             "palette": term.palette.map { hex($0) },
         ]
         let system: [String: String] = [

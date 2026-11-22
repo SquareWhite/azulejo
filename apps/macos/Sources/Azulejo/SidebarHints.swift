@@ -1,8 +1,9 @@
 import AppKit
 
 /// ⌘ held alone shows each workspace row's chord (⌘1…⌘8, ⌘9 for the last)
-/// in the full sidebar, as Safari and Arc show their tab shortcuts. The rail
-/// always shows its numbers, so nothing changes there.
+/// in the sidebar, as Safari and Arc show their tab shortcuts: at the end of
+/// each full sidebar row, or in each rail row's icon's place when it's
+/// folded. The same badge, wait and fade in both.
 ///
 /// The badges wait `Design.Motion.sidebarHintDelay` (100 ms) after ⌘ goes
 /// down alone: a chord typed at normal speed (⌘C, ⌘T, ⌘1) has its key down
@@ -13,12 +14,13 @@ import AppKit
 /// and when the app goes to the background. Only the key window shows them.
 ///
 /// One exception to "a key with ⌘ keeps them away until ⌘ is let go": the
-/// full sidebar opening while ⌘ is still held alone (⌘A, toggle_agents_sidebar,
-/// and ⌘ kept down) starts the wait again, so the badges show on the rows
-/// that just came in. They wait for the sidebar's motion to end too, so they
-/// don't fade in on rows still growing in. The keyboard must say ⌘ alone
-/// after the expand: a click on the rail or ⌘K's Toggle Sidebar, with ⌘ up,
-/// shows nothing. ⌘C, ⌘V and the other chords keep the rule.
+/// sidebar opening or folding to its rail while ⌘ is still held alone (⌘A,
+/// toggle_agents_sidebar, and ⌘ kept down) starts the wait again, so the
+/// badges show on the rows that just came in. They wait for the sidebar's
+/// motion to end too, so they don't fade in on rows still growing in. The
+/// keyboard must say ⌘ alone after the change: a click on the rail's » or
+/// ⌘K's Toggle Sidebar, with ⌘ up, shows nothing. ⌘C, ⌘V and the other
+/// chords keep the rule.
 ///
 /// It only watches: the flagsChanged monitor hands every event on, and key
 /// downs reach it from the key router before it decides them, so the
@@ -81,11 +83,11 @@ final class WorkspaceHints {
         hide()
     }
 
-    /// The full sidebar opened in `controller` (from the rail or hidden).
-    /// With ⌘ still held alone in the key window, the wait starts again,
-    /// even after the chord that opened it; it lasts until the sidebar's
-    /// motion (`settling`) ends if that's longer.
-    func sidebarExpanded(in controller: WindowController, settling: TimeInterval) {
+    /// The full sidebar or the rail came in, in `controller`. With ⌘ still
+    /// held alone in the key window, the wait starts again, even after the
+    /// chord that did it; it lasts until the sidebar's motion (`settling`)
+    /// ends if that's longer.
+    func sidebarShown(in controller: WindowController, settling: TimeInterval) {
         let now = InputState.modifiers.intersection(Self.modifiers)
         guard now == .command, showing == nil,
               Self.assumeKey || (NSApp.isActive && controller.window.isKeyWindow)
@@ -94,9 +96,9 @@ final class WorkspaceHints {
         wait(max(Design.Motion.sidebarHintDelay, settling), in: controller.window)
     }
 
-    /// The sidebar in `controller` collapsed or hid: its wait stops (the
-    /// sidebar hides its own badges).
-    func sidebarCollapsed(in controller: WindowController) {
+    /// The sidebar in `controller` opened, folded or hid: its wait stops
+    /// (the window hides the badges that showed).
+    func sidebarChanged(in controller: WindowController) {
         if showing === controller { showing = nil }
         if pendingWindow === controller.window { cancelWait() }
     }
@@ -128,16 +130,20 @@ final class WorkspaceHints {
 
     private func show(in window: NSWindow?) {
         guard let app, let controller = app.controller(for: window ?? NSApp.keyWindow),
-              Self.assumeKey || (NSApp.isActive && controller.window.isKeyWindow),
-              controller.sidebarState == .full
+              Self.assumeKey || (NSApp.isActive && controller.window.isKeyWindow)
         else { return }
+        switch controller.sidebarState {
+        case .full: controller.sidebarView.setHints(true)
+        case .rail: controller.railView.setHints(true)
+        case .hidden: return
+        }
         showing = controller
-        controller.sidebarView.setHints(true)
     }
 
     func hide() {
         cancelWait()
         showing?.sidebarView.setHints(false)
+        showing?.railView.setHints(false)
         showing = nil
     }
 

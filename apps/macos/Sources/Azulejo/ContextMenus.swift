@@ -69,7 +69,7 @@ final class ContextMenuItem: NSMenuItem {
     @objc func fire(_ sender: Any?) { run() }
 }
 
-/// The right-click menus on workspace rows (sidebar, Agents view) and tile
+/// The right-click menus on workspace rows (sidebar, Workspaces view) and tile
 /// header strips. Standard
 /// NSMenus: native, following the system appearance. They never handle a
 /// right-click inside a terminal's body: libghostty and mouse-reporting apps

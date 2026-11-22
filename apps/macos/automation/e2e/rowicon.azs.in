@@ -1,0 +1,126 @@
+# The full sidebar's status icons on the middle of their rows' text
+# (rowicon.sh): `sidebar.icons.centred` checks each icon's centre against
+# its text block's (both lines, or the one) to half a point, in every
+# state, with and without a branch, selected, hovered and with ⌘ held, in
+# a dark and a light theme. rowicon.sh fills in @FX@ (fixture folders).
+# Agent states come from `herdr pane report-agent` on the instance's own
+# session; done is a working agent going idle in a workspace not shown.
+
+log rowicon
+seen-visible off
+window-size 1100 640
+until tiles 1 8000
+until terminal.phase attached 10000
+sidebar mode workspaces
+theme set atom-one-dark
+core {"method":"workspace.rename","params":{"name":"orbit-api"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/orbit-api"}}
+action new_workspace
+until workspaces 2 5000
+core {"method":"workspace.rename","params":{"name":"lantern"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/lantern"}}
+action new_workspace
+until workspaces 3 5000
+core {"method":"workspace.rename","params":{"name":"scratch"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/scratch"}}
+action new_workspace
+until workspaces 4 5000
+core {"method":"workspace.rename","params":{"name":"pebble-docs"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/pebble-docs"}}
+action new_workspace
+until workspaces 5 5000
+core {"method":"workspace.rename","params":{"name":"kiln"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/kiln"}}
+action new_workspace
+until workspaces 6 5000
+core {"method":"workspace.rename","params":{"name":"notes"}}
+core {"method":"workspace.set_repo","params":{"path":"@FX@/notes"}}
+# Two lines with a branch, one without.
+until sidebar.heights 40|40|30|40|40|30 10000
+expect sidebar.statuses idle|idle|idle|idle|idle|idle
+expect sidebar.icons.centred yes
+
+# Agent states: each workspace's terminal needs its herdr binding first.
+action switch_workspace 1
+wait 1500
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state working
+action switch_workspace 2
+wait 1000
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state blocked
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state blocked
+action switch_workspace 4
+wait 1000
+sh echo {pane} >@FX@/pane4
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent codex --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent codex --state working
+action switch_workspace 6
+wait 1000
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state working
+wait 400
+sh {herdr} --session {session} pane report-agent {pane} --source e2e --agent claude --state working
+action switch_workspace 1
+wait 600
+# pebble-docs finishes while another workspace shows: done, unread.
+sh {herdr} --session {session} pane report-agent "$(cat @FX@/pane4)" --source e2e --agent codex --state idle
+until sidebar.statuses working|blocked|idle|done|idle|working 5000
+expect sidebar.heights 40|40|30|40|40|30
+until sidebar.icons.centred yes 1000
+# A bare prompt in the fixture folder for the shots.
+core {"method":"terminal.send_text","params":{"text":"exec env -i HOME=@FX@ PATH=/usr/bin:/bin TERM=xterm-256color PS1='$ ' /bin/sh\n"}}
+wait 400
+core {"method":"terminal.send_text","params":{"text":"cd ~/orbit-api && clear\n"}}
+wait 600
+expect workspace.active orbit-api
+expect sidebar.icons.centred yes
+remember sidebar.icons
+shot 01-dark
+
+# Hovered: the fill only, the icons where they were.
+sidebar hover 2
+wait 200
+expect sidebar.icons.centred yes
+unchanged sidebar.icons
+sidebar hover 0
+
+# ⌘ held: the key badges at the rows' ends, the icons where they were.
+sidebar hints key on
+sidebar hints cmd
+until sidebar.hints 1 orbit-api|2 lantern|3 scratch|4 pebble-docs|5 kiln|6 notes 1000
+wait 300
+expect sidebar.icons.centred yes
+unchanged sidebar.icons
+shot 02-dark-cmd
+sidebar hints none
+until sidebar.hints hidden 1000
+
+# A light theme: the same.
+appearance light
+theme set macos-light
+# Past the "Config reloaded" note.
+wait 2500
+expect sidebar.statuses working|blocked|idle|done|idle|working
+expect sidebar.icons.centred yes
+unchanged sidebar.icons
+shot 03-light
+sidebar hints cmd
+until sidebar.hints 1 orbit-api|2 lantern|3 scratch|4 pebble-docs|5 kiln|6 notes 1000
+wait 300
+expect sidebar.icons.centred yes
+unchanged sidebar.icons
+shot 04-light-cmd
+sidebar hints none
+sidebar hints key off
+theme set atom-one-dark
+appearance system
+wait 400
+
+# Selecting another row (semibold name): still on its middle.
+action switch_workspace 5
+until workspace.active kiln 2000
+wait 300
+expect sidebar.icons.centred yes
+quit

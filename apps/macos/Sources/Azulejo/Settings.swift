@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where the app keeps its own small UI settings across launches: the
-/// sidebar's Agents | Files mode and width, the ⌘K recents. Everything that
+/// sidebar's Workspaces | Files mode and width, the ⌘K recents. Everything that
 /// used to go straight to `UserDefaults.standard` goes through here.
 ///
 /// - A plain launch (the installed app) uses `UserDefaults.standard`, the

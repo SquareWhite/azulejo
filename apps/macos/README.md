@@ -326,8 +326,8 @@ Each runs in-process on the instance named, unless `AZJ_DEV_NAME` is set.
 | `headers.sh` | `hdr` | Tile headers and a branch switch |
 | `chrome.sh` | `shell` | ⌘K, the layout picker, the config banner, attention badges |
 | `toolbar.sh` | `toolbar` | Where clicks land under the title bar; window captures |
-| `topbar.sh LABEL`, `rail.sh LABEL` | `topbar`, `railcap` | The toolbar row and the collapsed sidebar in all four themes, for before/after comparison |
-| `sidebar.sh` | `side` | Agents and Files views with fixture repositories |
+| `topbar.sh LABEL`, `rail.sh LABEL` | `topbar`, `railcap` | The toolbar row and the collapsed sidebar (with a row's and a machine letter's hover cards) in all four themes, for before/after comparison |
+| `sidebar.sh` | `side` | Workspaces and Files views with fixture repositories |
 | `menus.sh` | `mnu` | Right-click menus, and that closed workspaces stay closed |
 | `mouse.sh` | `e2e-mouse` | Terminal selection, ⌘-click links, mouse-aware programs |
 | `hints.sh` | `e2e-hints` | ⌘S smart select: the core's checks, then the GUI in a dark and a light theme |

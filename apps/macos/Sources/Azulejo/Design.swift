@@ -22,7 +22,7 @@ enum Design {
         static let tileAlt = Theme.token("tileAlt")
         /// inset strips
         static let sunken = Theme.token("sunken")
-        /// segmented tracks, tab container, the sidebar's ⌘N badges
+        /// segmented tracks, tab container, the ⌘N badges in the sidebar and the rail
         static let control = Theme.token("control")
         /// selected sidebar row
         static let selected = Theme.token("selected")
@@ -154,7 +154,7 @@ enum Design {
         static let chipText = Theme.token("chipText")
         /// sidebar toggle next to the traffic lights
         static let titlebarIcon = Theme.token("titlebarIcon")
-        /// the ⌘K quick-open panel
+        /// the ⌘K quick-open panel and the floating surfaces in its family: sidebar and rail hover cards, overflow pills and the rail's waiting markers
         static let palette = Theme.token("palette")
         /// selected ⌘K row (a hovered one at alpha.rowHover)
         static let paletteSelected = Theme.token("paletteSelected")
@@ -331,6 +331,7 @@ enum Design {
                     background: 0x282c34ff, foreground: 0xabb2bfff,
                     cursor: 0x528bffff, cursorText: 0x282c34ff,
                     selectionBackground: 0x3e4451ff, selectionForeground: nil,
+                    faintOpacity: 0.5,
                     palette: [0x21252bff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff, 0x767676ff, 0xe06c75ff, 0x98c379ff, 0xe5c07bff, 0x61afefff, 0xc678ddff, 0x56b6c2ff, 0xabb2bfff])),
             ThemeSpec(
                 id: "atom-one-light", name: "Atom One Light", appearance: .light,
@@ -345,8 +346,8 @@ enum Design {
                     "selected": .rgba(0xcbcbceff),
                     "border": .rgba(0x0000001a),
                     "textPrimary": .rgba(0x383a42ff),
-                    "textSecondary": .rgba(0x5c5f69ff),
-                    "textMuted": .rgba(0x6b6d76ff),
+                    "textSecondary": .rgba(0x4d5059ff),
+                    "textMuted": .rgba(0x5a5d66ff),
                     "textOnAccent": .rgba(0xffffffff),
                     "accent": .rgba(0x4760efff),
                     "accentText": .rgba(0x3a52dcff),
@@ -370,8 +371,8 @@ enum Design {
                     "statusWorking": .rgba(0x2558ccff),
                     "statusBlocked": .rgba(0x935a00ff),
                     "statusDone": .rgba(0x186219ff),
-                    "statusIdle": .rgba(0x6b6d76ff),
-                    "statusOff": .rgba(0xa0a1a7ff),
+                    "statusIdle": .rgba(0x5a5d66ff),
+                    "statusOff": .rgba(0x868890ff),
                     "statusConnected": .rgba(0x186219ff),
                     "statusConnecting": .rgba(0x935a00ff),
                     "statusReconnecting": .rgba(0x9a4b00ff),
@@ -416,6 +417,7 @@ enum Design {
                     background: 0xfafafaff, foreground: 0x383a42ff,
                     cursor: 0x526fffff, cursorText: 0xfafafaff,
                     selectionBackground: 0xdcdce0ff, selectionForeground: nil,
+                    faintOpacity: 0.72,
                     palette: [0x383a42ff, 0xc93d33ff, 0x186219ff, 0x8f6300ff, 0x2e63ddff, 0xa626a4ff, 0x0172a3ff, 0xa0a1a7ff, 0x696c77ff, 0xc93d33ff, 0x186219ff, 0x8f6300ff, 0x2e63ddff, 0xa626a4ff, 0x0172a3ff, 0xfafafaff])),
             ThemeSpec(
                 id: "macos-dark", name: "macOS Dark", appearance: .dark,
@@ -501,6 +503,7 @@ enum Design {
                     background: 0x1e1e1eff, foreground: 0xffffffff,
                     cursor: 0x98989dff, cursorText: 0x1e1e1eff,
                     selectionBackground: 0x3f638bff, selectionForeground: 0xffffffff,
+                    faintOpacity: 0.5,
                     palette: [0x1a1a1aff, 0xe0473dff, 0x26a439ff, 0xcdac08ff, 0x3d8ef0ff, 0xb06ad9ff, 0x479ec2ff, 0x98989dff, 0x7c7c7cff, 0xff453aff, 0x32d74bff, 0xffd60aff, 0x0a84ffff, 0xbf5af2ff, 0x76d6ffff, 0xffffffff])),
             ThemeSpec(
                 id: "macos-light", name: "macOS Light", appearance: .light,
@@ -512,11 +515,11 @@ enum Design {
                     "tileAlt": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
                     "sunken": .rgba(0xf5f5f5ff),
                     "control": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
-                    "selected": .system("controlAccentColor", alpha: 0.21, fallback: 0x007aff36),
+                    "selected": .system("unemphasizedSelectedContentBackgroundColor", alpha: nil, fallback: 0xdcdcdcff),
                     "border": .system("separatorColor", alpha: nil, fallback: 0x00000019),
                     "textPrimary": .system("labelColor", alpha: nil, fallback: 0x000000d8),
-                    "textSecondary": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
-                    "textMuted": .system("labelColor", alpha: 0.5, fallback: 0x00000080),
+                    "textSecondary": .system("labelColor", alpha: 0.68, fallback: 0x000000ad),
+                    "textMuted": .system("labelColor", alpha: 0.6, fallback: 0x00000099),
                     "textOnAccent": .system("alternateSelectedControlTextColor", alpha: nil, fallback: 0xffffffff),
                     "accent": .system("controlAccentColor", alpha: nil, fallback: 0x007affff),
                     "accentText": .rgba(0x0058c4ff),
@@ -540,8 +543,8 @@ enum Design {
                     "statusWorking": .rgba(0x0058c4ff),
                     "statusBlocked": .rgba(0xa64400ff),
                     "statusDone": .rgba(0x007419ff),
-                    "statusIdle": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
-                    "statusOff": .system("labelColor", alpha: 0.32, fallback: 0x00000052),
+                    "statusIdle": .system("labelColor", alpha: 0.55, fallback: 0x0000008c),
+                    "statusOff": .system("labelColor", alpha: 0.4, fallback: 0x00000066),
                     "statusConnected": .rgba(0x007419ff),
                     "statusConnecting": .rgba(0xa64400ff),
                     "statusReconnecting": .rgba(0xa64400ff),
@@ -586,6 +589,7 @@ enum Design {
                     background: 0xffffffff, foreground: 0x000000ff,
                     cursor: 0x6e6e73ff, cursorText: 0xffffffff,
                     selectionBackground: 0xb3d7ffff, selectionForeground: 0x000000ff,
+                    faintOpacity: 0.55,
                     palette: [0x1a1a1aff, 0xcc372eff, 0x1d7a2cff, 0x8a6d00ff, 0x0869cbff, 0x9647bfff, 0x1c6f91ff, 0x98989dff, 0x464646ff, 0xff453aff, 0x1d7a2cff, 0x8a6d00ff, 0x0062d1ff, 0x9a3fc9ff, 0x1c6f91ff, 0xffffffff])),
         ]
     }
@@ -674,6 +678,7 @@ enum Design {
     /// Opacities (0 to 1) applied on top of colour tokens.
     enum Alpha {
         static let workingMarker: CGFloat = 0.6
+        static let workingTrack: CGFloat = 0.28
         static let rowHover: CGFloat = 0.45
         static let footerZero: CGFloat = 0.45
         static let dimmed: CGFloat = 0.5
@@ -751,19 +756,33 @@ enum Design {
         static let sidebarTilesMinWidth: CGFloat = 200
         static let sidebarEdgeInset: CGFloat = 2
         static let sidebarPadding: CGFloat = 8
-        static let sidebarRowHeight: CGFloat = 31
+        static let sidebarRowHeight: CGFloat = 40
+        static let sidebarRowCompact: CGFloat = 30
         static let sidebarSegmentTop: CGFloat = 8
         static let sidebarSegmentHeight: CGFloat = 28
         static let sidebarListTop: CGFloat = 2
-        static let sidebarGroupHeight: CGFloat = 32
-        static let sidebarAddHeight: CGFloat = 26
+        static let sidebarGroupHeight: CGFloat = 28
+        static let sidebarGroupGap: CGFloat = 13
         static let sidebarFooterHeight: CGFloat = 36
+        static let sidebarCountChip: CGFloat = 14
+        static let sidebarPillHeight: CGFloat = 22
+        static let sidebarEdgeFade: CGFloat = 32
+        static let sidebarCompactBelow: CGFloat = 200
+        static let hoverCardMinWidth: CGFloat = 200
+        static let hoverCardMaxWidth: CGFloat = 380
+        static let hoverCardPaddingX: CGFloat = 14
+        static let hoverCardPaddingY: CGFloat = 12
+        static let hoverCardLineGap: CGFloat = 5
+        static let hoverCardTitleGap: CGFloat = 8
+        static let hoverCardKeyGap: CGFloat = 16
+        static let hoverCardIconGap: CGFloat = 6
         static let railWidth: CGFloat = 40
         static let railPadding: CGFloat = 4
-        static let railGroupHeight: CGFloat = 22
-        static let railRowHeight: CGFloat = 24
-        static let railContentGap: CGFloat = 3
-        static let railExpandHeight: CGFloat = 30
+        static let railGroupHeight: CGFloat = 28
+        static let railRowHeight: CGFloat = 28
+        static let railExpandHeight: CGFloat = 28
+        static let railWaitHeight: CGFloat = 20
+        static let railEdgeMarker: CGFloat = 16
         static let dragThreshold: CGFloat = 4
         static let dropMargin: CGFloat = 24
         static let dropZoneInset: CGFloat = 12
@@ -787,12 +806,14 @@ enum Design {
         static let paletteSearch: CGFloat = 13
         static let layoutPicker: CGFloat = 12
         static let sidebarToggle: CGFloat = 14
-        static let sidebarRow: CGFloat = 12
-        static let sidebarAdd: CGFloat = 11
+        static let sidebarRow: CGFloat = 14
+        static let sidebarAdd: CGFloat = 12
+        static let sidebarGroup: CGFloat = 11
         static let sidebarSegment: CGFloat = 11
         static let footerStatus: CGFloat = 11
         static let machineRing: CGFloat = 9
-        static let railStatus: CGFloat = 11
+        static let railStatus: CGFloat = 14
+        static let railWait: CGFloat = 9
         static let railExpand: CGFloat = 11
         static let paletteKind: CGFloat = 12
         static let paletteStatus: CGFloat = 11
@@ -820,12 +841,22 @@ enum Design {
         nonisolated(unsafe) static let hintCategoryKey: NSFont = .systemFont(ofSize: 11, weight: .semibold)
         nonisolated(unsafe) static let hintPanelTitle: NSFont = .systemFont(ofSize: 13, weight: .semibold)
         nonisolated(unsafe) static let groupLabel: NSFont = .systemFont(ofSize: 11, weight: .regular)
-        nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .light)
-        nonisolated(unsafe) static let sidebarBranch: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let sidebarGroup: NSFont = .systemFont(ofSize: 11, weight: .bold)
+        nonisolated(unsafe) static let sidebarMachineState: NSFont = .systemFont(ofSize: 11, weight: .medium)
+        nonisolated(unsafe) static let sidebarRow: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let sidebarRowSelected: NSFont = .systemFont(ofSize: 13, weight: .semibold)
+        nonisolated(unsafe) static let sidebarBranch: NSFont = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        nonisolated(unsafe) static let sidebarTime: NSFont = .systemFont(ofSize: 11, weight: .regular)
+        nonisolated(unsafe) static let sidebarCount: NSFont = .systemFont(ofSize: 10, weight: .bold)
+        nonisolated(unsafe) static let sidebarEmptyTitle: NSFont = .systemFont(ofSize: 13, weight: .medium)
+        nonisolated(unsafe) static let sidebarPillStrong: NSFont = .systemFont(ofSize: 11, weight: .semibold)
+        nonisolated(unsafe) static let hoverCardTitle: NSFont = .systemFont(ofSize: 13, weight: .semibold)
         nonisolated(unsafe) static let sidebarSegment: NSFont = .systemFont(ofSize: 12, weight: .medium)
-        nonisolated(unsafe) static let footerCount: NSFont = .systemFont(ofSize: 12, weight: .regular)
-        nonisolated(unsafe) static let railNumber: NSFont = .systemFont(ofSize: 12, weight: .regular)
-        nonisolated(unsafe) static let railLetter: NSFont = .systemFont(ofSize: 11, weight: .medium)
+        nonisolated(unsafe) static let footerCount: NSFont = .systemFont(ofSize: 11, weight: .semibold)
+        nonisolated(unsafe) static let footerLabel: NSFont = .systemFont(ofSize: 11, weight: .regular)
+        nonisolated(unsafe) static let railLetter: NSFont = .systemFont(ofSize: 11, weight: .bold)
+        nonisolated(unsafe) static let railWait: NSFont = .systemFont(ofSize: 11, weight: .bold)
+        nonisolated(unsafe) static let railMarker: NSFont = .systemFont(ofSize: 10, weight: .bold)
         nonisolated(unsafe) static let dot: NSFont = .systemFont(ofSize: 8, weight: .regular)
         nonisolated(unsafe) static let addButton: NSFont = .systemFont(ofSize: 13, weight: .regular)
         nonisolated(unsafe) static let badge: NSFont = .systemFont(ofSize: 11, weight: .semibold)
@@ -865,6 +896,7 @@ enum Design {
         case blocked
         case done
         case idle
+        case starting
         case off
         case connected
         case connecting
@@ -876,8 +908,9 @@ enum Design {
             switch self {
             case .working: "azulejo.ring"
             case .blocked: "exclamationmark.circle.fill"
-            case .done: "checkmark.circle"
-            case .idle: "circle.dashed"
+            case .done: "checkmark.circle.fill"
+            case .idle: "azulejo.idleRing"
+            case .starting: "circle.dotted"
             case .off: "circle.dotted"
             case .connected: "circle.fill"
             case .connecting: "circle.dotted"
@@ -892,6 +925,7 @@ enum Design {
             case .blocked: Design.Color.statusBlocked
             case .done: Design.Color.statusDone
             case .idle: Design.Color.statusIdle
+            case .starting: Design.Color.textMuted
             case .off: Design.Color.statusOff
             case .connected: Design.Color.statusConnected
             case .connecting: Design.Color.statusConnecting
@@ -951,6 +985,7 @@ enum Design {
         static let drag: TimeInterval = 0.17
         static let sidebarHint: TimeInterval = 0.08
         static let sidebarHintDelay: TimeInterval = 0.1
+        static let hoverCardDelay: TimeInterval = 0.4
         static let hintFilter: TimeInterval = 0.08
         static let hintExtendDelay: TimeInterval = 0.1
         static let hintExtend: TimeInterval = 0.08

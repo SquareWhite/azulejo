@@ -55,14 +55,40 @@ stays quiet).
 
 ## Sidebar
 
-`Sidebar.swift` has an Agents | Files switch and a footer counting
-workspaces by state.
+`Sidebar.swift` has a Workspaces | Files switch and a footer counting
+workspaces by state in words ("3 waiting  1 working  4 idle", zero counts
+left out). The view was called Agents; its key keeps the old id
+(`toggle_agents_sidebar`) and `sidebar mode agents` still works in scripts.
 
-- **Agents**: one group per herdr machine (with a connection dot), workspace
-  rows with a status icon, name and git branch.
+- **Workspaces**: one group per herdr machine. Its header: a machine glyph
+  (a laptop for Local), the name in bold, a connection dot, the workspace
+  count and a "+" for a new workspace there, on connected machines only;
+  otherwise the state in words ("Reconnecting" with a turning arc, "Can't
+  connect", "Off"), folded to its icon when the card is narrower than
+  `space.sidebarCompactBelow` (200 pt). A hairline parts the groups; a
+  connected machine with nothing on it says "No workspaces · New…", and a
+  window with no workspaces at all shows a centred hint instead of the
+  list. Workspace rows (`WorkspaceRow`) are two lines, 40 pt: the status
+  icon (filled when it needs you: waiting, done; a ring on a track while
+  working; a thin grey ring as wide as the others when idle; dotted while
+  herdr starts it), the name and the time in that state (`agent.since_ms`),
+  then the branch in mono, cut in the middle so a `feature/` prefix and the
+  tail stay (`SidebarText.middle`), a dot when the tree is dirty; a
+  detached HEAD shows its short hash and "detached", a new workspace
+  "Starting…". Without a
+  branch the row is one 30 pt line. Several agents in the winning state show
+  their count on a chip. A row shows no hover card (the row already says
+  it all); one whose name or branch is cut short gets a plain tooltip with
+  both in full. Only the list scrolls (the switch and the
+  footer stay): its edges fade where rows go on beyond them
+  (`space.sidebarEdgeFade`), a pill at the bottom counts the rows below and
+  the waiting ones among them ("↓ 9 more · 1 waiting"), one at the top the
+  waiting rows above; a click scrolls to the nearest waiting row. The active
+  row scrolls into view when the workspace changes.
 - **Files**: a file tree (`FilesPanelView`, over the core's `files.panel`)
   on the focused workspace's repository or cwd, on its machine for a remote
-  workspace. Return or a double-click opens a file in the editor: `[editor]
+  workspace, under a header with the folder's name, how many files changed
+  and its branch, and with indent guides down each open folder. Return or a double-click opens a file in the editor: `[editor]
   command` (`vim` by default) in a new terminal split beside the focused tile
   (the core's `files.open`), on the file's machine. With `[editor] app` set,
   Local files open in that app instead; when it can't be found a HUD line
@@ -134,9 +160,35 @@ listings for a root that has since changed. `files-slow.sh` checks this with
 every listing held back 2.5 s.
 
 Collapsed, the sidebar is a rail (`SidebarRail.swift`) of machine letters and
-workspace numbers. In the full sidebar, holding ⌘ alone shows each row's ⌘
-number after 100 ms (`SidebarHints.swift`), so a chord typed at speed never
-flashes them; checked by `e2e/wshints.sh`.
+workspaces, 28 pt rows with the status icon alone (the active one on the
+selected fill; idle, as in the full sidebar, a thin grey ring as wide as the
+other icons), workspaces only (no Workspaces | Files switch). Its footer
+counts the waiting workspaces (its hover card counts the rest) above `»`.
+Resting the pointer on a row or a letter for 400 ms
+(`motion.hoverCardDelay`) shows its hover card (`HoverCard`, in
+`SidebarParts.swift`) to the rail's right: a row's name and ⌘ key,
+branch (its dot and "Uncommitted changes" under it when dirty), state with
+time and agent, and path; a letter's machine, its state and herdr's
+message. Each value keeps to one line: the card is as wide as its longest
+line (`space.hoverCardMinWidth` to `hoverCardMaxWidth`), and past that a
+name is cut at its end, a branch in the middle (its `feature/` prefix
+kept) and a path in the middle, its last folders whole; only a message or
+the letter's workspace list wraps, between words. The cards, the overflow pills and the rail's
+markers float as ⌘K's menu does: its `palette` fill, `border` hairline and
+shadow, its corner radius and keycaps. The list scrolls between the top and
+the footer, with the same edge fades; "↑2" / "↓1" markers count the waiting
+rows out of view (a click scrolls to the nearest), and the active row
+scrolls into view when the sidebar folds and when the workspace changes.
+
+Holding ⌘ alone shows each workspace's chord after 100 ms
+(`SidebarHints.swift`), so a chord typed at speed never flashes them: ⌘1…⌘8,
+⌘9 for the last, none between. The full sidebar shows them at the end of
+each row over its time; the rail shows the same key badge in each row's
+icon's place, so its width and rows stay put. Both fade in and out over
+80 ms (at once with motion off), and go on release, on any key, when
+another modifier joins ⌘ and when the window stops being key. Opening the
+sidebar or folding it to the rail with ⌘ still held (⌘A) shows them once
+its motion ends. Checked by `e2e/wshints.sh`.
 
 Workspace rows reorder by drag in the list and the rail (`SidebarDrag.swift`),
 running `workspace.move`. Workspace order is Azulejo's, not herdr's. It all

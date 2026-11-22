@@ -26,28 +26,61 @@ extension Design.Color {
 
 extension Design {
     /// Icons the token file names `azulejo.*`, drawn here because SF Symbols
-    /// has no match for the mockup. `azulejo.ring` is the working state: an
-    /// open ring (about 270°) with round caps.
+    /// has no match for the mockup, in a box `pointSize` × 8/7 square (16 for
+    /// the sidebar's 14), as the mockup's 16-point viewBox:
+    /// - `azulejo.ring`, working: an open ring (about 270°, round caps,
+    ///   radius 5.5 of 16) over its full circle at `alpha.workingTrack`.
+    /// - `azulejo.idleRing`, idle: a small hollow ring (radius 3.25 of 16).
+    /// - `azulejo.idleCircle`, idle in the sidebar and the rail: a thin
+    ///   hollow ring as wide as the other states' icons there (13.5 of 16
+    ///   across, the working ring's 13 and the filled discs' 14 between), so
+    ///   the column lines up and idle reads as an empty slot.
+    /// - `azulejo.arc`: the working ring's arc alone, with no circle under
+    ///   it (a machine connecting or reconnecting).
     static func customSymbol(_ name: String, color: NSColor, pointSize: CGFloat) -> NSImage? {
-        guard name == "azulejo.ring" else { return nil }
-        let side = ceil(pointSize * 1.15)
+        guard ["azulejo.ring", "azulejo.arc", "azulejo.idleRing", "azulejo.idleCircle"].contains(name) else {
+            return nil
+        }
+        let side = (pointSize * 8 / 7).rounded()
         // Resolved now: the image is baked into a layer (StatusIconView makes
         // it again on a theme change).
         let color = Theme.resolved(color)
+        let working = name != "azulejo.idleRing" && name != "azulejo.idleCircle"
+        let wide = name == "azulejo.idleCircle"
+        let circled = name == "azulejo.ring"
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
-            let line = max(1.4, pointSize * 0.15)
-            let radius = (min(rect.width, rect.height) - line) / 2 - 0.5
-            let path = NSBezierPath()
-            // From 12 o'clock, clockwise, leaving a quarter open at the top-left.
-            path.appendArc(withCenter: NSPoint(x: rect.midX, y: rect.midY), radius: radius,
-                           startAngle: 90, endAngle: 180, clockwise: true)
-            path.lineWidth = line
-            path.lineCapStyle = .round
-            color.setStroke()
-            path.stroke()
+            let unit = min(rect.width, rect.height) / 16
+            let centre = NSPoint(x: rect.midX, y: rect.midY)
+            if working {
+                let line = max(1.4, unit * 2)
+                let radius = unit * 5.5
+                if circled {
+                    let circle = NSBezierPath()
+                    circle.appendArc(withCenter: centre, radius: radius, startAngle: 0, endAngle: 360)
+                    circle.lineWidth = line
+                    color.withAlphaComponent(color.alphaComponent * Design.Alpha.workingTrack).setStroke()
+                    circle.stroke()
+                }
+                let arc = NSBezierPath()
+                // From 12 o'clock, clockwise, leaving a quarter open at the top-left.
+                arc.appendArc(withCenter: centre, radius: radius, startAngle: 90, endAngle: 180, clockwise: true)
+                arc.lineWidth = line
+                arc.lineCapStyle = .round
+                color.setStroke()
+                arc.stroke()
+            } else {
+                let ring = NSBezierPath()
+                // Wide: the stroke's outer edge at 6.75 of 16.
+                let line = wide ? max(1, unit * 1.1) : max(1.1, unit * 1.5)
+                ring.appendArc(withCenter: centre, radius: wide ? unit * 6.75 - line / 2 : unit * 3.25,
+                               startAngle: 0, endAngle: 360)
+                ring.lineWidth = line
+                color.setStroke()
+                ring.stroke()
+            }
             return true
         }
-        image.accessibilityDescription = "working"
+        image.accessibilityDescription = working ? "working" : "idle"
         return image
     }
 }

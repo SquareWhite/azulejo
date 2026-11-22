@@ -516,7 +516,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case "toggle_agents_sidebar", "toggle_files_sidebar":
             // Opens on that view, switches to it, or collapses the sidebar
             // when it already shows it.
-            let mode: SidebarView.Mode = name == "toggle_files_sidebar" ? .files : .agents
+            let mode: SidebarView.Mode = name == "toggle_files_sidebar" ? .files : .workspaces
             if let visible = controller.toggleSidebar(to: mode) {
                 send(["method": "window.set_sidebar",
                       "params": ["window": controller.windowID, "visible": visible]])
