@@ -4,10 +4,9 @@
 # action, checks the mark looks like an unread finish everywhere, survives
 # status changes and stays while its tile stays focused, then clears once
 # the user comes back to the tile; the Dock badge counts unread agent tiles
-# across two workspaces, empties at 0, follows `[appearance] dock_badge` and
-# keeps its count through `app_icon` switches. unread-relaunch.azs: the mark
-# comes back after a relaunch. Agents are faked with `herdr pane
-# report-agent`; every folder is a fixture.
+# across two workspaces, empties at 0 and follows `[appearance] dock_badge`.
+# unread-relaunch.azs: the mark comes back after a relaunch. Agents are
+# faked with `herdr pane report-agent`; every folder is a fixture.
 set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-unr}" E2E_SUITE=unread
 source "$(dirname "$0")/lib.sh"

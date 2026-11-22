@@ -350,9 +350,6 @@ pub fn keys_template(platform: Platform) -> String {
          # agent's tile shows a status icon alone). docs/themes.md.\n\
          # [appearance]\n\
          # tile_agent_badge = false\n\
-         # The Dock icon while Azulejo runs: \"light\", \"dark\" or \"auto\" (follows\n\
-         # the system). Finder always shows the light one.\n\
-         # app_icon = \"light\"\n\
          # The number of unread agent tiles on the Dock icon.\n\
          # dock_badge = true\n\
          \n\
@@ -551,7 +548,6 @@ mod tests {
                 assert!(text.contains(&format!("# {name} = ")), "{name} missing");
             }
             assert!(text.contains("\n# tile_agent_badge = false\n"));
-            assert!(text.contains("\n# app_icon = \"light\"\n"));
             assert!(text.contains("\n# dock_badge = true\n"));
             // The `[appearance]` block uncommented gives the defaults too.
             let appearance: String = text[text.find("\n# [appearance]\n").unwrap()..]

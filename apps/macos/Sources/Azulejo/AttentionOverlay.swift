@@ -356,11 +356,9 @@ enum AttentionTracker {
     }
 
     /// Puts the badge on the Dock tile; empty at 0 or with `dock_badge` off.
-    /// `force`: set it even when the label looks the same (after the Dock
-    /// icon changes, `DockIcon.update`).
-    static func applyBadge(force: Bool = false) {
+    static func applyBadge() {
         let label = dockBadge && unreadCount > 0 ? "\(unreadCount)" : nil
-        if force || NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
+        if NSApp.dockTile.badgeLabel != label { NSApp.dockTile.badgeLabel = label }
     }
 
     /// A finished agent's result counts as read once its tile has been the

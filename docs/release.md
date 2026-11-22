@@ -66,7 +66,7 @@ DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" just release-mac   #
 | `Contents/MacOS/azj-observe` | Decoder for read-only (observed) terminal tiles |
 | `Contents/Resources/ghostty` | Ghostty's themes and shell integration |
 | `Contents/Resources/terminfo` | Compiled `xterm-ghostty` terminfo |
-| `Contents/Resources/AppIcon.icns`, `AppIconDark.icns` | The app icon and the dark look swapped into the Dock at run time |
+| `Contents/Resources/AppIcon.icns` | The app icon |
 
 libghostty finds its resources by climbing up from the executable to
 `Contents/Resources/terminfo/78/xterm-ghostty`, then using

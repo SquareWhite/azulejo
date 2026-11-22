@@ -110,12 +110,10 @@ colour settings there apply to terminals. Ghostty's colours win over
 Azulejo's theme by default; set `[appearance] terminal_colors = "theme"` to
 let the theme colour terminals too ([themes](themes.md#terminal-colours)).
 
-### Dock icon and badge
+### Dock badge
 
-`[appearance] app_icon` picks the Dock icon while Azulejo runs: `"light"`
-(default), `"dark"` or `"auto"` ([themes](themes.md#app-icon)). The Dock
-badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
-([themes](themes.md#dock-badge)).
+The Dock badge counts unread agent tiles; `[appearance] dock_badge = false`
+hides it ([themes](themes.md#dock-badge)).
 
 ## Everyday use
 

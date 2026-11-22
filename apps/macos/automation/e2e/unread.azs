@@ -173,17 +173,9 @@ expect unread.count 2
 until dock.badge 2 1000
 expect sidebar.markers ●1|●1
 
-log === app_icon switches keep the badge
-sh cp {config} {config}.unread
-sh printf '\n[appearance]\napp_icon = "dark"\n' >> {config}
-until dockicon dark 4000
-expect dock.badge 2
-sh sed -i '' 's/^app_icon = .*/app_icon = "light"/' {config}
-until dockicon light 4000
-expect dock.badge 2
-
 log === dock_badge = false hides it; true brings it back
-sh printf 'dock_badge = false\n' >> {config}
+sh cp {config} {config}.unread
+sh printf '\n[appearance]\ndock_badge = false\n' >> {config}
 until dock.badge.setting off 4000
 expect dock.badge none
 expect unread.count 2
@@ -193,7 +185,6 @@ expect dock.badge 2
 sh mv {config}.unread {config}
 wait 1000
 expect dock.badge.setting on
-expect dockicon light
 
 log === Mark All as Read on the workspace rows: the badge empties at 0
 menu workspace 2 invoke Mark All as Read

@@ -26,13 +26,11 @@ add_ghostty_resources() {
   cp -R "$share/terminfo" "$res/terminfo"
 }
 
-# The app icon (Info.plist's CFBundleIconFile) and its dark look, which the
-# app swaps into the Dock in dark mode (DockIcon.swift). `just icon`
-# regenerates both from scripts/icon/draw.swift.
+# The app icon (Info.plist's CFBundleIconFile). `just icon` regenerates it
+# from scripts/icon/draw.swift.
 add_icon() {
   mkdir -p "$1/Contents/Resources"
   cp Resources/AppIcon.icns "$1/Contents/Resources/AppIcon.icns"
-  cp Resources/AppIconDark.icns "$1/Contents/Resources/AppIconDark.icns"
 }
 
 if xcodebuild -version >/dev/null 2>&1; then

@@ -58,7 +58,6 @@
 //! terminal_colors = "theme"  # or "ghostty"; default: "ghostty" if its config sets colours
 //! tile_agent_badge = false  # true: "● claude · working" in terminal tile headers
 //!                           # (off, a blocked tile still gets a yellow mark there)
-//! app_icon = "light"     # the Dock icon while running: "light", "dark" or "auto" (follows the system)
 //! dock_badge = true      # the number of unread agent tiles on the Dock icon
 //! [sidebar]
 //! collapsed = "rail"     # what toggle_sidebar collapses it to: "rail" (workspace numbers and
@@ -109,7 +108,7 @@ pub use listing::{
     DOC_BEGIN, DOC_END, GLOBAL, chord_patterns, key_listing, keys_template, reference_markdown,
     splice_reference,
 };
-pub use theme::{AppIcon, AppearanceConfig, TerminalColors, Theme, Themes};
+pub use theme::{AppearanceConfig, TerminalColors, Theme, Themes};
 
 use diag::Sink;
 use keymap::{Layer, LayerInfo, LayerParser};

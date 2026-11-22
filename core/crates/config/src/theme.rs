@@ -834,41 +834,6 @@ impl TerminalColors {
     }
 }
 
-/// Which icon the Dock shows while Azulejo runs. Finder, Launchpad, Spotlight
-/// and the Dock before launch always show the bundle's light icon: without an
-/// Xcode-compiled `Assets.car`, macOS has no dark variant to pick.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum AppIcon {
-    /// The bundle's light icon, always.
-    #[default]
-    Light,
-    /// The dark icon, always.
-    Dark,
-    /// The light or the dark icon, following the system appearance.
-    Auto,
-}
-
-impl AppIcon {
-    pub const NAMES: &[&str] = &["light", "dark", "auto"];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            AppIcon::Light => "light",
-            AppIcon::Dark => "dark",
-            AppIcon::Auto => "auto",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<AppIcon> {
-        match name {
-            "light" => Some(AppIcon::Light),
-            "dark" => Some(AppIcon::Dark),
-            "auto" => Some(AppIcon::Auto),
-            _ => None,
-        }
-    }
-}
-
 /// `[appearance]` in config.toml.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppearanceConfig {
@@ -886,8 +851,6 @@ pub struct AppearanceConfig {
     /// Dock show agent state, and a working, blocked or unread-done agent's
     /// tile header shows its status icon alone.
     pub tile_agent_badge: bool,
-    /// The Dock icon while the app runs: light (the default), dark, or auto.
-    pub app_icon: AppIcon,
     /// The number of unread agent tiles on the Dock icon (on by default).
     pub dock_badge: bool,
 }
@@ -900,7 +863,6 @@ impl Default for AppearanceConfig {
             theme_dark: DEFAULT_DARK_THEME.into(),
             terminal_colors: None,
             tile_agent_badge: false,
-            app_icon: AppIcon::Light,
             dock_badge: true,
         }
     }
@@ -931,8 +893,6 @@ impl AppearanceConfig {
         })
     }
 }
-
-const APP_ICON_VALUES: &str = "`appearance.app_icon` must be \"light\", \"dark\" or \"auto\"";
 
 pub(crate) fn parse_appearance(
     sink: &mut Sink<'_>,
@@ -984,11 +944,11 @@ pub(crate) fn parse_appearance(
                 value.span(),
                 "`appearance.tile_agent_badge` must be true or false",
             ),
-            ("app_icon", DeValue::String(s)) => match AppIcon::from_name(s) {
-                Some(icon) => out.app_icon = icon,
-                None => sink.error(value.span(), APP_ICON_VALUES),
-            },
-            ("app_icon", _) => sink.error(value.span(), APP_ICON_VALUES),
+            // Deprecated: `app_icon` picked a light, dark or auto Dock icon
+            // until the dark icon went (Nov 2026). Configs written before
+            // then may still set it, so any value is accepted and ignored,
+            // without an "unknown setting" warning.
+            ("app_icon", _) => {}
             ("dock_badge", DeValue::Boolean(on)) => out.dock_badge = *on,
             ("dock_badge", _) => sink.error(
                 value.span(),

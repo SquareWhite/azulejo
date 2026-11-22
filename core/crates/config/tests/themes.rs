@@ -8,7 +8,7 @@ use azulejo_config::theme::{
     self, Appearance, ColorValue, Rgba, TerminalColors, Theme, builtin, builtin_themes,
     color_tokens,
 };
-use azulejo_config::{AppIcon, Config, Platform, Severity, reload};
+use azulejo_config::{Config, Platform, Severity, reload};
 
 const MAC: Platform = Platform::Macos;
 
@@ -410,35 +410,18 @@ fn appearance_section() {
     );
     assert!(!wrong.appearance.tile_agent_badge);
 
-    // The Dock icon: light unless the config says otherwise.
-    assert_eq!(
-        plain.appearance.app_icon,
-        AppIcon::Light,
-        "light by default"
-    );
-    for (name, icon) in [
-        ("light", AppIcon::Light),
-        ("dark", AppIcon::Dark),
-        ("auto", AppIcon::Auto),
-    ] {
-        let set = Config::from_toml(&format!("[appearance]\napp_icon = \"{name}\"\n"), None, MAC);
-        assert!(set.diagnostics.is_empty(), "{name}: {:?}", set.diagnostics);
-        assert_eq!(set.appearance.app_icon, icon);
-        assert_eq!(icon.name(), name);
-    }
-    for bad in ["\"system\"", "true", "1"] {
-        let wrong = Config::from_toml(&format!("[appearance]\napp_icon = {bad}\n"), None, MAC);
+    // `app_icon` is gone (the dark icon went), but configs that still set it
+    // keep loading: any value, no error and no "unknown setting" warning.
+    for value in ["\"light\"", "\"dark\"", "\"auto\"", "\"sepia\"", "true"] {
+        let legacy = Config::from_toml(&format!("[appearance]\napp_icon = {value}\n"), None, MAC);
         assert!(
-            messages(&wrong, Severity::Error).iter().any(
-                |e| e.contains("`appearance.app_icon` must be \"light\", \"dark\" or \"auto\"")
-            ),
-            "{bad}: {:?}",
-            wrong.diagnostics
+            legacy.diagnostics.is_empty(),
+            "{value}: {:?}",
+            legacy.diagnostics
         );
         assert_eq!(
-            wrong.appearance.app_icon,
-            AppIcon::Light,
-            "{bad} keeps the default"
+            legacy.appearance, plain.appearance,
+            "{value} changes nothing"
         );
     }
 
