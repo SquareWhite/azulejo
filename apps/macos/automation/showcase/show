@@ -1,0 +1,14 @@
+#!/usr/bin/perl
+# showcase.sh's terminal content: prints a fixture screen (each `\e` in it
+# becomes ESC) and, given a NAME, idles under that name so the tile header
+# shows a running program instead of a prompt. It never runs anything else.
+#   show FILE [NAME]
+use strict;
+my ($file, $name) = @ARGV;
+open(my $fh, '<', $file) or die "show: $file: $!\n";
+$| = 1;
+while (<$fh>) { s/\\e/\e/g; print; }
+close($fh);
+exit 0 unless $name;
+$0 = $name;
+sleep 86400;

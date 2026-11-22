@@ -1,0 +1,123 @@
+# showcase.sh's part, run after mockup.azs has built the scene
+# (AZJ_MOCKUP_TAIL). @WORK@ is showcase.sh's fixture folder, @FX@ the
+# mockup's. The block between @EACH_THEME@ and @END_THEME@ runs once per
+# built-in theme with @THEME@ filled in. Every view is captured with
+# `capture NAME 0`, and `captured` waits for the PNG before the next change.
+
+log === showcase: the sample-api workspace, for ⌘S and the Files view
+delivery direct
+anim enabled false
+sidebar select 4
+until workspace.active sample-api 3000
+core {"method":"workspace.set_repo","params":{"path":"@WORK@/sample-api"}}
+core {"method":"layout.apply","params":{"path":"@WORK@/sample-api.toml","mode":"replace_tab"}}
+until tabs 2 8000
+action switch_tab 1
+wait 2500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-showcase --agent claude --state working
+wait 500
+sh {herdr} --session {session} pane report-agent {pane} --source azj-showcase --agent claude --state working
+wait 800
+
+@EACH_THEME@
+log === @THEME@
+theme set @THEME@
+until theme @THEME@ 5000
+wait 1500
+
+log --- hero: the mockup scene (azulejo, tab "agents"), sidebar on Agents
+sidebar mode agents
+sidebar select 1
+until workspace.active azulejo 3000
+action switch_tab 1
+wait 1500
+capture @THEME@-hero 0
+captured
+
+log --- the sidebar collapsed to its rail
+action toggle_sidebar
+until sidebar rail 3000
+wait 800
+capture @THEME@-sidebar-rail 0
+captured
+action toggle_sidebar
+until sidebar visible 3000
+wait 800
+
+log --- ⌘K: the menu, > commands, @ jump, Set theme…
+palette forget
+palette open
+wait 600
+capture @THEME@-quick-open 0
+captured
+palette type >
+wait 500
+capture @THEME@-quick-open-commands 0
+captured
+palette type @
+wait 500
+capture @THEME@-quick-open-jump 0
+captured
+palette close
+until palette closed 3000
+palette open >
+palette type set theme
+wait 300
+palette key enter
+until palette list:themes 3000
+wait 600
+capture @THEME@-quick-open-theme 0
+captured
+palette key escape
+until palette closed 3000
+until theme @THEME@ 3000
+
+log --- sample-api: Agents, then Files with folders open
+sidebar select 4
+until workspace.active sample-api 3000
+action switch_tab 1
+wait 1500
+capture @THEME@-workspace 0
+captured
+sidebar mode files
+until sidebar.files.root @WORK@/sample-api 5000
+wait 800
+sidebar focus
+sidebar files select src
+key l
+wait 600
+sidebar files select src/upload
+key l
+wait 600
+sidebar files select tests
+key l
+wait 600
+sidebar files select tests/upload
+key l
+wait 600
+sidebar files select src/upload/retry.ts
+wait 800
+capture @THEME@-sidebar-files 0
+captured
+key escape
+sidebar mode agents
+wait 800
+
+log --- ⌘S smart select: every kind labelled, then paths only
+key cmd+s
+until hints.state choosing 3000
+wait 600
+capture @THEME@-smart-select 0
+captured
+key p
+wait 600
+capture @THEME@-smart-select-paths 0
+captured
+key escape
+until hints.state closed 3000
+wait 500
+@END_THEME@
+
+theme set atom-one-dark
+anim enabled default
+quit

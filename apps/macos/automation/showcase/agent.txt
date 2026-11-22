@@ -1,0 +1,26 @@
+
+\e[1m›\e[0m the upload retries look flaky on staging, can you take a look?
+
+\e[32m●\e[0m \e[1mBash\e[0m(rg -n "retry" src/upload src/session)
+\e[2m  ⎿\e[0m  src/upload/retry.ts:12:  const retry = backoff(3);
+     src/upload/client.ts:31:  await retry(() => put(url, body));
+     src/session/store.ts:40:  // retry once on a 503
+
+\e[32m●\e[0m \e[1mBash\e[0m(curl -s https://api.example.invalid/v1/status)
+\e[2m  ⎿\e[0m  {"status":"degraded","region":"eu-west","build":"7c3e9a1"}
+
+\e[32m●\e[0m \e[1mRead\e[0m(docs/upload.md)
+\e[2m  ⎿\e[0m  Read 84 lines
+
+● The retry wraps the whole PUT, so one 503 halfway through sends
+  every chunk again. I'd move it into putChunk() in
+  src/upload/client.ts:31 and cap it at three tries per chunk.
+
+  To check it against staging:
+
+  \e[36m$ npm test -- tests/upload/retry.test.ts --runInBand\e[0m
+
+  The backoff policy is at https://docs.example.invalid/upload#retry,
+  and the failing request is 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864.
+
+\e[2m* Waiting for 1 background agent to finish\e[0m

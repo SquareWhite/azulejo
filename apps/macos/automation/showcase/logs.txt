@@ -1,0 +1,6 @@
+\e[32msample-api\e[0m $ tail -n 4 logs/api.log
+12:04:31 \e[33mWARN \e[0m 503 from 192.0.2.10:8443 upload=3f9c2a7e
+12:04:32 \e[36mINFO \e[0m retry 1/3 chunk=14 via cdn.example.org
+12:04:35 \e[31mERROR\e[0m upload failed, see logs/upload.err
+12:04:36 \e[36mINFO \e[0m healthy on 198.51.100.12 (build 7c3e9a1)
+\e[32msample-api\e[0m $ open http://localhost:8080/admin/uploads

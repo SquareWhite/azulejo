@@ -1,0 +1,27 @@
+# showcase.sh's sample-api workspace: an agent, git and a log tail with
+# URLs, paths, hashes, IDs, IPs, branches and commands for ⌘S to label.
+# @WORK@ is showcase.sh's fixture folder.
+
+name = "sample-api"
+
+[[tab]]
+name = "upload-retry"
+[tab.root]
+split = "horizontal"
+sizes = [55, 45]
+[[tab.root.children]]
+title = "claude"
+cwd = "@WORK@/sample-api"
+command = "clear; @WORK@/show @WORK@/screens/agent.txt claude"
+focus = true
+[[tab.root.children]]
+split = "vertical"
+sizes = [60, 40]
+children = [
+  { title = "git", cwd = "@WORK@/sample-api", command = "clear; @WORK@/show @WORK@/screens/git.txt" },
+  { title = "logs", cwd = "@WORK@/sample-api", command = "clear; @WORK@/show @WORK@/screens/logs.txt" },
+]
+
+[[tab]]
+name = "server"
+tile = [{ title = "npm", cwd = "@WORK@/sample-api" }]

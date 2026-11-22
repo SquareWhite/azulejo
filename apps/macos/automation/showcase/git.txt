@@ -1,0 +1,12 @@
+\e[32msample-api\e[0m $ git log --oneline --graph -7
+* \e[33m7c3e9a1\e[0m \e[33m(\e[1;36mHEAD -> \e[1;32mfix/upload-retry\e[0;33m)\e[0m Retry each chunk
+* \e[33m4b2d8e0\e[0m Cap upload retries at three
+*   \e[33ma6f1c9b\e[0m \e[33m(\e[1;31morigin/main\e[0;33m, \e[1;32mmain\e[0;33m)\e[0m Merge pull request #212
+\e[31m|\e[32m\
+\e[31m|\e[0m \e[32m*\e[0m \e[33m3d7e2a4\e[0m Session store: drop expired tokens
+\e[31m|\e[0m\e[32m/\e[0m
+* \e[33mf80b5c6\e[0m \e[33m(\e[1;33mtag: v2.4.1\e[0;33m)\e[0m Release 2.4.1
+\e[32msample-api\e[0m $ git status --short
+ \e[31mM\e[0m src/upload/client.ts
+ \e[31mM\e[0m src/upload/retry.ts
+\e[31m??\e[0m tests/upload/retry.test.ts
