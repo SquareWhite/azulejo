@@ -27,7 +27,7 @@ lint:
 design-tokens:
     scripts/design-tokens
 
-# Regenerate the app icon (apps/macos/Resources/AppIcon.icns, AppIconDark.icns) and its Icon Composer layers from scripts/icon/draw.swift
+# Regenerate the app icon (apps/macos/Resources/AppIcon.icns, AppIconDark.icns), its Icon Composer layers and the README's copy from scripts/icon/draw.swift
 icon:
     scripts/icon/build.sh
 

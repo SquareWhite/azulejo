@@ -1,8 +1,31 @@
-# Azulejo
+<p><img src=".github/assets/icon.png" width="96" height="96" align="left" vspace="24" alt="Azulejo app icon"></p>
 
-A tiling terminal workspace for macOS and Linux: terminals share one keyboard-driven layout, with a file tree in the sidebar; terminal sessions live in [herdr](https://herdr.dev).
+<h1>Azulejo</h1>
 
-## Setup
+<p>A keyboard-driven tiling terminal workspace for macOS.</p>
+
+<br clear="left">
+
+<p align="center">
+  <img src=".github/assets/hero.png" alt="An Azulejo window: a coding agent, git and logs tiled side by side, with workspaces and agent status in the sidebar">
+</p>
+
+Azulejo tiles your terminals in one window and drives them from the keyboard, with a file tree and your agents' status in the sidebar. Its terminals run in [herdr](https://herdr.dev), so your shells and coding agents keep running when you quit the app and come back where you left them. It's for developers who live in the terminal, often with a few agents at work at once, and want a whole project on one screen.
+
+It runs on macOS 14 or later and needs herdr installed. There's no prebuilt download yet: [build it from source](#building-from-source). A GTK4 shell for Linux exists, but it's an early prototype that only draws placeholder tiles.
+
+## Features
+
+- **Dynamic tiling:** Tile, Three Column and Monocle layouts in the style of [Bismuth](https://github.com/Bismuth-Forge/bismuth), or a manual split tree; `alt+hjkl` moves between tiles.
+- **Sessions that outlive the app:** herdr keeps every process and its scrollback through a quit and relaunch.
+- **Files sidebar (⌘F):** a file tree on the current project; Return opens a file in your editor (`vim` by default) in a split beside the focused tile.
+- **Agent status:** working, blocked and finished coding agents show in the sidebar, tab strip, tile headers and Dock badge.
+- **Quick open (⌘K):** fuzzy search over every action, workspace, tab and tile.
+- **Smart select (⌘S):** pick the URLs, paths, commands or hashes on screen by label, then copy, open or run one.
+- **One config file:** rebind any key and pick one of four themes (or write your own); saving applies it, no restart.
+- **Scriptable:** the `azj` CLI, a socket API and a Python client; `azj layout apply` opens a project's tabs and tiles from a `.azulejo.toml`.
+
+## Building from source
 
 ```sh
 mise install        # Rust, Zig, XcodeGen, just, uv at pinned versions
@@ -14,7 +37,7 @@ just linux          # GTK4 shell (Linux only)
 
 `just mac` uses XcodeGen and xcodebuild when full Xcode is installed, and falls back to SwiftPM with the Command Line Tools.
 
-## Layout
+### Repository layout
 
 | Path | What |
 | --- | --- |

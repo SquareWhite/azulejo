@@ -3,6 +3,7 @@
 #   apps/macos/Resources/AppIcon.icns       the bundle's icon (iconutil, 16–1024 px)
 #   apps/macos/Resources/AppIconDark.icns   the dark look, swapped into the Dock at run time
 #   scripts/icon/composer/*.svg             the chosen icon's layers, for Icon Composer
+#   .github/assets/icon.png                 the light icon at 256 px, for README.md
 #   scripts/icon/AppIcon.sha256             stamp: draw.swift and the .icns files it made
 #
 #   scripts/icon/build.sh            # regenerate everything
@@ -41,6 +42,8 @@ swift "$src" --iconset "$work/AppIcon.iconset" --iconset-dark "$work/AppIconDark
   --composer scripts/icon/composer
 /usr/bin/iconutil -c icns "$work/AppIcon.iconset" -o "$icns"
 /usr/bin/iconutil -c icns "$work/AppIconDark.iconset" -o "$dark"
+cp "$work/AppIcon.iconset/icon_128x128@2x.png" .github/assets/icon.png
 stamp_now > "$stamp"
 echo "==> $icns"
 echo "==> $dark"
+echo "==> .github/assets/icon.png"
