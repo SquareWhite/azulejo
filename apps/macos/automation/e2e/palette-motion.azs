@@ -4,6 +4,7 @@
 # rapid toggles never leave it half-open or doubled up. palette-motion.sh
 # checks the timings this logs (`remember palette.open.ms` / `.close.ms`).
 log palette motion
+anim require-frames
 delivery direct
 until terminal.phase attached 10000
 palette forget

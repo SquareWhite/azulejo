@@ -23,3 +23,28 @@ expect palette.anims 0
 key escape
 expect palette closed
 expect palette.visible no
+# Motion on, with no display-link ticks (`anim no-frames` stands in for a
+# sleeping display): motion still ends on time, on wall-clock time, and
+# `motion` turns still rather than staying "moving: reveal".
+anim enabled true
+anim no-frames true
+key alt+shift+m
+until motion still 2000
+expect zoomed no
+key ctrl+cmd+t
+until tiles 3 3000
+until motion still 2000
+key alt+z
+until motion still 2000
+expect kind monocle
+key alt+z
+until motion still 2000
+expect kind tile
+key cmd+t
+until workspaces 2 5000
+until motion still 2000
+key cmd+1
+until workspace 1 2000
+until motion still 2000
+anim no-frames false
+anim enabled default

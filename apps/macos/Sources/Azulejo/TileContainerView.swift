@@ -1454,12 +1454,59 @@ final class TileContainerView: NSView, ThemeAware {
             link.add(to: .main, forMode: .common)
             self.link = link
         }
+        if link?.isPaused != false { wokeAt = CACurrentMediaTime() }
         link?.isPaused = false
+        startFallbackClock()
     }
 
+    /// When the display link last ticked, or was woken.
+    private var lastLinkTick: CFTimeInterval = 0
+    private var wokeAt: CFTimeInterval = 0
+    private var fallbackClock: Timer?
+    /// How long the display link may stay silent before wall-clock ticks
+    /// stand in for it.
+    private static let fallbackAfter: CFTimeInterval = 0.1
+
+    /// The display link doesn't tick while the display sleeps or the screen
+    /// is locked (and may not while the window is hidden): a timer ticks the
+    /// motion clock then, so whatever waits on it (a reveal's deadline, a
+    /// motion's or a slide's end) still finishes on time and `motion` turns
+    /// `still`. It never ticks while the link does.
+    private func startFallbackClock() {
+        guard fallbackClock == nil else { return }
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fallbackTick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        fallbackClock = timer
+    }
+
+    private func fallbackTick() {
+        let now = CACurrentMediaTime()
+        if clock.isEmpty, reflowing.isEmpty, dividerDrag == nil, now > max(motionEnds, switchEnds) + 0.05 {
+            fallbackClock?.invalidate()
+            fallbackClock = nil
+            return
+        }
+        guard now - max(lastLinkTick, wokeAt) > Self.fallbackAfter else { return }
+        fallbackTicks += 1
+        if !reflowing.isEmpty { finishReflow(at: now) }
+        Perf.measure("clock.fallback") { clock.tick(now) }
+    }
+
+    /// Wall-clock stand-in ticks so far (`fallbackTick`): none while the
+    /// display is awake.
+    private(set) var fallbackTicks = 0
+
+    /// Automation (`anim no-frames true`): ignore display-link ticks, as if
+    /// the display slept, so the wall-clock stand-in runs.
+    static var ignoreLinkTicks = false
+
     @objc private func tick(_ link: CADisplayLink) {
+        guard !Self.ignoreLinkTicks else { return }
         linkTicks += 1
         let now = CACurrentMediaTime()
+        lastLinkTick = now
         if now <= max(motionEnds, switchEnds) + 0.02 || dividerDrag != nil {
             MotionStats.shared.tick(link.timestamp, now: now)
         } else {

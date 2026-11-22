@@ -109,6 +109,32 @@ run_azs() {
   return 0
 }
 
+# display_asleep: succeeds when the main display sleeps. The app's display
+# link (and every frame it times or draws in motion) stops then. Only
+# looks: never wakes the display or keeps it awake.
+display_asleep() {
+  python3 - <<'EOF'
+import ctypes, sys
+cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+cg.CGMainDisplayID.restype = ctypes.c_uint32
+cg.CGDisplayIsAsleep.argtypes = [ctypes.c_uint32]
+cg.CGDisplayIsAsleep.restype = ctypes.c_bool
+sys.exit(0 if cg.CGDisplayIsAsleep(cg.CGMainDisplayID()) else 1)
+EOF
+}
+
+# require_frames: for suites that time or capture frames (drop counts,
+# mid-motion captures): with the display asleep, record a FAIL that says
+# so and stop, rather than time out or pass on nothing. Their scripts start
+# with `anim require-frames` too, for a display that sleeps (or a screen
+# that locks) after this.
+require_frames() {
+  if display_asleep; then
+    echo "FAIL display is asleep: frame-timing checks need an awake display" | tee -a "$checks"
+    exit 1
+  fi
+}
+
 wait_ping() { for _ in $(seq 200); do azj core ping >/dev/null 2>&1 && return 0; sleep 0.05; done; return 1; }
 
 # Fixtures, in a temp folder removed on exit.

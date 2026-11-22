@@ -2,6 +2,7 @@
 # are made in the app and handed to the container (DividerAutomation): no
 # OS input. drag.sh checks the mirror log around the `drag-N` markers.
 log D1 divider drags
+anim require-frames
 delivery direct
 until terminal.phase attached 10000
 expect kind manual

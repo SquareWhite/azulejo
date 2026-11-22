@@ -2,6 +2,7 @@
 # PTY resize accounting (anim expect-clean: one resize per changed terminal
 # per motion, none for Monocle focus switches).
 log B3 dynamic layouts
+anim require-frames
 delivery direct
 until terminal.phase attached 10000
 expect kind tile
@@ -88,7 +89,11 @@ key alt+t
 expect kind tile
 until motion still
 anim stats dyn-stats
-anim expect-clean
+# Frames the app drops (its main thread busy through the gap): a layout
+# switch's first frame lays out and redraws the tab's chrome (~9 ms on
+# 120 Hz's 8.3 ms), so one now and then; a 30 ms stall in each motion drops
+# ~19. Frames the system misses (main thread idle) don't count here.
+anim expect-clean 2
 shot 04-back-to-tile
 # What herdr itself holds on each pane's screen, next to the in-app shot.
 wait 1500

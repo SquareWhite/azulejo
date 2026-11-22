@@ -64,9 +64,17 @@ import AppKit
 ///     anim reflow-lead MS    reflow: how far ahead of the frame a terminal's grid runs
 ///     anim reset             clear motion stats
 ///     anim stats [name]      write motion stats → <out>/name.json (anim-stats)
-///     anim expect-clean [N]  fail if more than N (default 0) frames dropped, or
-///                            PTY resizes ≠ one per terminal per motion
-///                            (reflow: one to `Motion.maxLiveResizes`)
+///     anim expect-clean [N]  fail if more than N (default 0) frames dropped by
+///                            the app (its main thread busy through the gap;
+///                            frames the system missed are reported, and fail
+///                            past 5% of ticks: `frameVerdict`), if no frames
+///                            were timed (display asleep), or if PTY resizes ≠
+///                            one per terminal per motion (reflow: one to
+///                            `Motion.maxLiveResizes`)
+///     anim require-frames    stop the script at once if frames can't be timed
+///                            (display asleep, screen locked)
+///     anim no-frames BOOL    ignore display-link ticks, standing in for a
+///                            sleeping display (motion ends on wall-clock time)
 ///     capture name [ms]      after ms, ask the harness to `screencapture` the
 ///                            window → <out>/name.png (Metal and in-flight
 ///                            motion included, unlike `shot`); the script
@@ -288,6 +296,14 @@ final class Automation {
             if arg.hasPrefix("hints") { delay = 0 }
         case "until": return until(arg)
         case "require": return until(arg, abort: true)
+        case "anim" where arg == "require-frames":
+            if let why = framesUnavailable {
+                record("anim require-frames FAILED: \(why)")
+                failures.append("line \(step): \(why); the script stops here")
+                return finish()
+            }
+            record("anim require-frames ✓")
+            delay = 0
         case "anim": animCommand(arg); delay = 0
         case "capture": capture(arg); delay = 0
         case "captured":
@@ -526,10 +542,20 @@ final class Automation {
             if let ms = Double(value), ms >= 0 { Motion.reflowInterval = ms / 1000 }
         case "reflow-lead":
             if let ms = Double(value), ms >= 0 { Motion.reflowLead = ms / 1000 }
+        case "no-frames":
+            // Stands in for a sleeping display: the display link's ticks are
+            // ignored, and the motion clock runs on wall-clock time.
+            TileContainerView.ignoreLinkTicks = value == "true"
         case "reset":
             MotionStats.shared.reset()
         case "stats":
-            let summary = MotionStats.shared.summary()
+            var summary = MotionStats.shared.summary()
+            // A covered window may get fewer frames; a sleeping display none.
+            if let controller = app?.focusedController {
+                summary["window_visible"] = controller.window.occlusionState.contains(.visible)
+                summary["fallback_ticks"] = controller.tiles.fallbackTicks
+            }
+            summary["frames_unavailable"] = framesUnavailable ?? "no"
             let name = value.isEmpty ? "anim-stats" : value
             if let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
                 try? data.write(to: out.appendingPathComponent("\(name).json"))
@@ -538,15 +564,73 @@ final class Automation {
             record("anim stats: \(summary.filter { !quiet.contains($0.key) })")
         case "expect-clean":
             let summary = MotionStats.shared.summary()
-            let dropped = summary["dropped_frames"] as? Int ?? -1
             let mismatches = summary["resize_mismatches"] as? [String] ?? []
-            let allowed = Int(value) ?? 0
-            if dropped > allowed { failures.append("line \(step): \(dropped) dropped frame(s), allowed \(allowed)") }
             if !mismatches.isEmpty { failures.append("line \(step): \(mismatches.joined(separator: ", "))") }
+            let verdict = frameVerdict(summary, allowed: Int(value) ?? 0)
+            if let problem = verdict.problem { failures.append("line \(step): \(problem)") }
+            record("anim \(arg): \(verdict.report)")
+            return
         default:
-            failures.append("line \(step): anim needs duration|enabled|style|reduce-motion|reflow-ms|reflow-lead|reset|stats|expect-clean")
+            failures.append(
+                "line \(step): anim needs duration|enabled|style|reduce-motion|reflow-ms|reflow-lead|reset|stats|"
+                    + "expect-clean|require-frames|no-frames")
         }
         record("anim \(arg)")
+    }
+
+    /// Why frames can't be timed right now (nil: they can): the display-link
+    /// stops while the window's display sleeps or the screen is locked, and
+    /// frame checks then time nothing.
+    var framesUnavailable: String? {
+        if Self.screenLocked { return "screen is locked: frame-timing checks need an unlocked, awake display" }
+        let screen = app?.focusedController?.window.screen ?? NSScreen.main
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        let display = (screen?.deviceDescription[key] as? NSNumber)?.uint32Value ?? CGMainDisplayID()
+        if CGDisplayIsAsleep(display) != 0 { return "display is asleep: frame-timing checks need an awake display" }
+        return nil
+    }
+
+    /// `anim expect-clean N`: at most N dropped frames that were the app's
+    /// doing (`MotionStats.DropCause`): its main thread busy and on a CPU
+    /// through the gap, or busy and off it on a quiet machine (blocked).
+    /// Frames the system missed with the main thread waiting (the window
+    /// server, the GPU, the display link paced down), and the main thread
+    /// preempted on a busy machine, aren't the app's: they're reported, and
+    /// only fail past 5% of all ticks (something far off, whoever's).
+    /// No ticks while motions ran (the display asleep, the screen locked)
+    /// fails: there was nothing to time.
+    private func frameVerdict(_ s: [String: Any], allowed: Int) -> (problem: String?, report: String) {
+        let ticks = s["ticks"] as? Int ?? 0
+        let animations = s["animation_count"] as? Int ?? 0
+        let dropped = s["dropped_frames"] as? Int ?? 0
+        let appDrops = s["dropped_app"] as? Int ?? 0
+        let offCPU = s["dropped_off_cpu"] as? Int ?? 0
+        let system = s["dropped_system"] as? Int ?? 0
+        let load = MotionStats.loadAverage.first ?? 0
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let busyMachine = load >= Double(cores) / 2
+        let counted = appDrops + (busyMachine ? 0 : offCPU)
+        let loadText = String(format: "load %.1f on %d cores%@", load, cores, busyMachine ? " (machine busy)" : "")
+        let byKind = (s["dropped_app_by_kind"] as? [String: Int] ?? [:]).sorted { $0.key < $1.key }
+            .map { "\($0.key) \($0.value)" }.joined(separator: ", ")
+        let report = "\(dropped) of \(ticks) tick(s) dropped: \(appDrops) app (\(byKind.isEmpty ? "-" : byKind)), "
+            + "\(offCPU) main thread off-CPU, \(system) system; allowed \(allowed); \(loadText)"
+        if ticks == 0, animations > 0 {
+            let why = framesUnavailable
+                ?? "display asleep or screen locked? frame-timing checks need an awake display"
+            return ("no display-link ticks while \(animations) motion(s) ran: \(why)", report)
+        }
+        if counted > allowed {
+            return ("\(counted) dropped frame(s) the app caused (main thread busy), allowed \(allowed): \(report)", report)
+        }
+        let outside = dropped - counted
+        if ticks > 0, Double(outside) > 0.05 * Double(ticks) {
+            let pct = String(format: "%.1f", 100 * Double(outside) / Double(ticks))
+            return ("\(outside) of \(ticks) frames (\(pct)%) dropped outside the app's main thread: \(report). "
+                + (busyMachine ? "The machine is busy: rerun when it's quiet" : "A window server or GPU regression?"),
+                report)
+        }
+        return (nil, report)
     }
 
     /// A window capture by the system (Metal layers and running animations

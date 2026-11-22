@@ -94,12 +94,17 @@ final class LayoutPickerView: NSView, ThemeAware {
 private final class LayoutSegment: NSView, ThemeAware {
     let kind: LayoutKind
     var handler: ((LayoutKind) -> Void)?
+    /// The icon in both states, each drawn once (per theme): a selection
+    /// change only swaps which one shows. Making and drawing a hierarchical
+    /// symbol costs ~1 ms, and a layout switch changes two segments in the
+    /// frame its motion starts on.
     private let icon = NSImageView()
+    private let selectedIcon = NSImageView()
     var selected = false {
         didSet {
             guard selected != oldValue else { return }
             setAccessibilityValue(selected)
-            Theme.reapply(self)
+            showSelection()
         }
     }
     var chord: String? {
@@ -111,8 +116,10 @@ private final class LayoutSegment: NSView, ThemeAware {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = Design.Radius.searchField - Design.Space.layoutPickerPadding
-        icon.imageScaling = .scaleProportionallyDown
-        addSubview(icon)
+        for view in [icon, selectedIcon] {
+            view.imageScaling = .scaleProportionallyDown
+            addSubview(view)
+        }
         toolTip = "\(kind.title) layout"
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel("\(kind.title) layout")
@@ -124,13 +131,23 @@ private final class LayoutSegment: NSView, ThemeAware {
     required init?(coder: NSCoder) { fatalError() }
 
     func applyTheme() {
-        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
         // Hierarchical: the panes in the text colour, the frame round them lighter.
-        let colour = Theme.resolved(selected ? Design.Color.tabTextSelected : Design.Color.tabText)
-        let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.layoutPicker, weight: .regular)
-            .applying(.init(hierarchicalColor: colour))
-        icon.image = NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.title)?
-            .withSymbolConfiguration(config)
+        func image(_ colour: NSColor) -> NSImage? {
+            let config = NSImage.SymbolConfiguration(pointSize: Design.Symbol.layoutPicker, weight: .regular)
+                .applying(.init(hierarchicalColor: Theme.resolved(colour)))
+            return NSImage(systemSymbolName: kind.symbol, accessibilityDescription: kind.title)?
+                .withSymbolConfiguration(config)
+        }
+        icon.image = image(Design.Color.tabText)
+        selectedIcon.image = image(Design.Color.tabTextSelected)
+        showSelection()
+    }
+
+    private func showSelection() {
+        // theme: applyTheme() runs this again.
+        layer?.backgroundColor = selected ? Design.Color.tabSelected.cgColor : nil
+        icon.isHidden = selected
+        selectedIcon.isHidden = !selected
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -141,6 +158,7 @@ private final class LayoutSegment: NSView, ThemeAware {
     override func layout() {
         super.layout()
         icon.frame = bounds.insetBy(dx: 4, dy: 3)
+        selectedIcon.frame = icon.frame
     }
 
     func press() { handler?(kind) }

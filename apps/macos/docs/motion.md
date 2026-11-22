@@ -103,4 +103,22 @@ runs never depend on your own Ghostty config. Checked by `e2e/dim.sh`.
 from the display link, PTY resizes per motion, and captures. `--slow` runs
 1.5 s motions with mid-motion window captures, and `AZJ_ANIM_STYLE` picks one
 style. In scripts, `anim stats` writes the numbers and `anim expect-clean
-[N]` fails on more than N dropped frames or the wrong number of PTY resizes.
+[N]` fails on more than N frames the app dropped or the wrong number of PTY
+resizes.
+
+A dropped frame is a display-link interval over 1.5 frames (12.5 ms at
+120 Hz). Each one is put down to whoever caused it, from what the main thread
+did in the gap (`Perf.mainThread`: run-loop passes, wall and CPU time):
+`app` when it was busy for half a frame or more and mostly on a CPU; `off_cpu`
+when busy but mostly not running (preempted or blocked; counted as the app's
+unless the load average is over half the cores); `system` when it waited for
+the next event, so the frame was missed elsewhere. `anim stats` has the counts
+(`dropped_app`, `dropped_off_cpu`, `dropped_system`, `dropped_app_by_kind`)
+and each drop's `cause`, `main_busy_ms`, `main_cpu_ms` and `since_start_ms`.
+System drops only fail `expect-clean` past 5% of ticks: on a quiet machine
+they are a handful in ~2,800 (the link paced at 72, 60 or 48 Hz), and they
+go up with load. With no ticks at all (display asleep, screen locked) it
+fails, and `anim require-frames` stops a script up front. When the link stops
+the motion clock runs on a wall-clock timer, so motion still ends on time and
+`motion` turns `still`; `anim no-frames true` stands in for a sleeping
+display.

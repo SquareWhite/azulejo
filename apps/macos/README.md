@@ -276,8 +276,13 @@ AZJ_DEV_NAME=e2e-me-1 apps/macos/automation/e2e/dyn.sh
 - `stale-check.sh` isn't in `run-all.sh`: it needs the screen unlocked and the
   display awake.
 
-The `dyn` suite's "0 dropped frames" check (`anim expect-clean`) is known to
-fail on a loaded machine.
+Frame checks (`anim expect-clean` in `dyn`, `drag` and `anim.sh`) count only
+frames the app dropped itself: its main thread busy through the gap. Frames
+the system misses while the main thread waits (ProMotion pacing the display
+link at 72, 60 or 48 Hz, the window server, other load) are reported and only
+fail past 5% of ticks. Suites that time or capture frames (`dyn`, `drag`,
+`motion`, `wsslide`, `palette-motion`, `anim.sh`) stop at once with "display
+is asleep" when it is: the display link doesn't tick then. They never wake it.
 
 ### Focus suite
 

@@ -4,6 +4,7 @@ set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-dyn}" E2E_SUITE=B3-dyn
 source "$(dirname "$0")/lib.sh"
 trap e2e_cleanup EXIT
+require_frames
 reset_instance
 write_config </dev/null
 run_azs "$e2e_here/dyn.azs" dyn

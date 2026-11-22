@@ -11,6 +11,7 @@ set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-wss}" E2E_SUITE=wsslide
 source "$(dirname "$0")/lib.sh"
 trap e2e_cleanup EXIT
+require_frames
 reset_instance
 write_config </dev/null
 # A fixture folder per workspace (the sidebar's Files view and the terminals

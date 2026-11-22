@@ -462,6 +462,9 @@ final class MotionStats {
     private var lastCallback: CFTimeInterval?
     private(set) var currentKind = ""
     private(set) var droppedByKind: [String: Int] = [:]
+    /// Dropped ticks by whose doing (`DropCause`), and the app's by kind.
+    private(set) var droppedByCause: [DropCause: Int] = [:]
+    private(set) var appDroppedByKind: [String: Int] = [:]
     /// Per dropped tick: what overlapped it (`Perf` spans), summed by name.
     private(set) var dropCauses: [String: Double] = [:]
     private(set) var drops: [[String: Any]] = []
@@ -483,6 +486,8 @@ final class MotionStats {
         lastTick = nil
         lastCallback = nil
         droppedByKind = [:]
+        droppedByCause = [:]
+        appDroppedByKind = [:]
         dropCauses = [:]
         drops = []
         Perf.reset()
@@ -490,6 +495,7 @@ final class MotionStats {
 
     func started(kind: String, setup: Double) {
         currentKind = kind
+        startedAt = CACurrentMediaTime()
         animations[kind, default: 0] += 1
         setupMs.append(setup * 1000)
     }
@@ -522,14 +528,40 @@ final class MotionStats {
         lastCallback = now
     }
 
+    /// Whose doing a dropped tick was, from what the main thread did between
+    /// the two callbacks (`Perf.mainThread`):
+    /// - `app`: it was busy for half a frame or more, mostly on a CPU (our
+    ///   own work ran long: the drops a change can cause and fix);
+    /// - `offCPU`: busy as long, but mostly not running (preempted on a
+    ///   loaded machine, or blocked);
+    /// - `system`: it was waiting for the next event, so the frame was
+    ///   missed elsewhere (the window server or GPU, or the display link
+    ///   running slower: on ProMotion the system may pace it at 72, 60 or
+    ///   48 Hz when the machine is busy).
+    enum DropCause: String { case app, offCPU = "off_cpu", system }
+
+    static func cause(busyMs: Double, cpuMs: Double, frameMs: Double) -> DropCause {
+        guard busyMs >= frameMs / 2 else { return .system }
+        return cpuMs >= busyMs / 2 ? .app : .offCPU
+    }
+
     private func blame(interval: Double, from: CFTimeInterval, to: CFTimeInterval) {
         let causes = Perf.overlap(from: from, to: to)
         for (name, ms) in causes { dropCauses[name, default: 0] += ms }
+        let main = Perf.mainThread(from: from, to: to)
+        let cause = Self.cause(busyMs: main.busy, cpuMs: main.cpu, frameMs: 1000 / Double(Motion.refreshRate))
+        droppedByCause[cause, default: 0] += 1
+        if cause == .app { appDroppedByKind[currentKind, default: 0] += 1 }
         guard drops.count < 40 else { return }
         let top = causes.sorted { $0.value > $1.value }.prefix(8)
             .map { "\($0.key) \(round2($0.value))" }
-        drops.append(["kind": currentKind, "interval_ms": round2(interval), "causes": top])
+        drops.append(["kind": currentKind, "interval_ms": round2(interval), "causes": top, "cause": cause.rawValue,
+                      "main_busy_ms": round2(main.busy), "main_cpu_ms": round2(main.cpu),
+                      "since_start_ms": round2((to - startedAt) * 1000)])
     }
+
+    /// When the latest motion started.
+    private var startedAt: CFTimeInterval = 0
 
     /// Motion over (or paused): the next tick starts a new interval run.
     func idle() {
@@ -573,6 +605,11 @@ final class MotionStats {
             "ticks": intervals.count,
             "dropped_frames": dropped,
             "dropped_by_kind": droppedByKind,
+            "dropped_app": droppedByCause[.app] ?? 0,
+            "dropped_off_cpu": droppedByCause[.offCPU] ?? 0,
+            "dropped_system": droppedByCause[.system] ?? 0,
+            "dropped_app_by_kind": appDroppedByKind,
+            "load_average": Self.loadAverage.map(round2),
             "interval_median_ms": round2(pct(0.5)),
             "interval_p99_ms": round2(pct(0.99)),
             "interval_max_ms": round2(sorted.last ?? 0),
@@ -594,4 +631,10 @@ final class MotionStats {
     }
 
     private func round2(_ v: Double) -> Double { (v * 100).rounded() / 100 }
+
+    /// The machine's 1, 5 and 15 minute load averages.
+    static var loadAverage: [Double] {
+        var load = [Double](repeating: 0, count: 3)
+        return getloadavg(&load, 3) == 3 ? load : []
+    }
 }

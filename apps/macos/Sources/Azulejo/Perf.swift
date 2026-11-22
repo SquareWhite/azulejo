@@ -15,6 +15,10 @@ enum Perf {
         let name: String
         let start: CFTimeInterval
         let end: CFTimeInterval
+        /// Run-loop passes: the main thread's CPU time over the pass, in
+        /// seconds (wall time minus this is time it wasn't running: waiting
+        /// to be scheduled on a busy machine, or blocked).
+        var cpu: CFTimeInterval = 0
     }
 
     private static var ring: [Span] = []
@@ -63,8 +67,8 @@ enum Perf {
         return try body()
     }
 
-    static func record(_ name: String, _ start: CFTimeInterval, _ end: CFTimeInterval) {
-        let span = Span(name: name, start: start, end: end)
+    static func record(_ name: String, _ start: CFTimeInterval, _ end: CFTimeInterval, cpu: CFTimeInterval = 0) {
+        let span = Span(name: name, start: start, end: end, cpu: cpu)
         if ring.count < capacity {
             ring.append(span)
         } else {
@@ -89,6 +93,31 @@ enum Perf {
         return out
     }
 
+    /// How long the main thread was in a run-loop pass between `from` and
+    /// `to` (the pass in progress included), and how much of that it spent
+    /// on a CPU, in ms. Busy and on a CPU: the app's own work. Busy and off
+    /// it: runnable or blocked (a loaded machine, a lock). Neither: it
+    /// waited for the next event, so a frame missed then wasn't its doing.
+    static func mainThread(from: CFTimeInterval, to: CFTimeInterval) -> (busy: Double, cpu: Double) {
+        var busy = 0.0, cpu = 0.0
+        func add(_ start: CFTimeInterval, _ end: CFTimeInterval, _ spanCPU: CFTimeInterval) {
+            let overlap = Swift.min(end, to) - Swift.max(start, from)
+            guard overlap > 0, end > start else { return }
+            busy += overlap
+            cpu += spanCPU * overlap / (end - start)
+        }
+        for span in ring where span.name == "runloop" && span.end > from && span.start < to {
+            add(span.start, span.end, span.cpu)
+        }
+        if passStart > 0 { add(passStart, CACurrentMediaTime(), threadCPU() - passCPUStart) }
+        return (busy * 1000, cpu * 1000)
+    }
+
+    /// The calling thread's CPU time so far, in seconds.
+    static func threadCPU() -> CFTimeInterval {
+        Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e9
+    }
+
     static func noteEvent(_ json: String, moving: Bool) {
         guard moving else { return }
         motionEvents[eventName(json), default: 0] += 1
@@ -108,6 +137,7 @@ enum Perf {
     // MARK: Run loop
 
     private static var passStart: CFTimeInterval = 0
+    private static var passCPUStart: CFTimeInterval = 0
     private static var commitStart: CFTimeInterval = 0
     private static var observers: [CFRunLoopObserver] = []
 
@@ -125,7 +155,10 @@ enum Perf {
         }
         // Earliest: a pass starts when the loop wakes; ends just before it sleeps.
         add([.afterWaiting], order: Int.min) { _ in
-            MainActor.assumeIsolated { passStart = CACurrentMediaTime() }
+            MainActor.assumeIsolated {
+                passStart = CACurrentMediaTime()
+                passCPUStart = threadCPU()
+            }
         }
         // Before sleeping, AppKit runs its display cycle (layout, drawing) and
         // Core Animation commits (order 2,000,000): bracket all of it.
@@ -137,7 +170,7 @@ enum Perf {
                 let now = CACurrentMediaTime()
                 if commitStart > 0 { record("display.commit", commitStart, now) }
                 if passStart > 0 {
-                    record("runloop", passStart, now)
+                    record("runloop", passStart, now, cpu: threadCPU() - passCPUStart)
                     notePass(passStart, now)
                 }
                 commitStart = 0

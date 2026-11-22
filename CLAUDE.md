@@ -74,7 +74,7 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 - [ ] Generated files are regenerated, never hand-merged: `just design-tokens`, `just schema`, `just keys-doc`, `just icon`.
 - [ ] Merge with `git merge --no-ff`.
 
-Frame-drop numbers on a loaded machine are noisy. Before calling something a regression, run the same check on main and on your branch, alternating runs. Known flake: the `dyn` suite's "0 dropped frames" check (`anim expect-clean`) fails under load.
+Frame-drop numbers on a loaded machine are noisy. Before calling something a regression, run the same check on main and on your branch, alternating runs. Frame checks (`anim expect-clean`, `anim.sh`) count only drops the app caused (main thread busy) and fail on system drops only past 5% of ticks, saying "machine busy" when load is high. They need an awake display and stop with "display is asleep" otherwise; never wake or keep the display awake to get around that.
 
 ## Dogfood builds
 

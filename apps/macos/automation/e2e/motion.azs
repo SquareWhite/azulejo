@@ -2,6 +2,7 @@
 # (in-app renders of the presentation layers; `capture` also asks for a
 # system capture, which needs an unlocked screen).
 log C6 motion polish
+anim require-frames
 delivery direct
 until terminal.phase attached 10000
 core {"method":"layout.set","params":{"kind":"manual"}}

@@ -9,6 +9,7 @@
 # (@FX@, filled in by wsslide.sh), so captures show no real files.
 
 log wsslide
+anim require-frames
 seen-visible off
 window-size 1100 640
 until terminal.phase attached 10000

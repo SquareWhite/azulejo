@@ -7,6 +7,7 @@ set -euo pipefail
 export AZJ_DEV_NAME="${AZJ_DEV_NAME:-e2e-drag}" E2E_SUITE=D1-drag AZJ_DEBUG_MIRROR=1
 source "$(dirname "$0")/lib.sh"
 trap e2e_cleanup EXIT
+require_frames
 reset_instance
 write_config <<'EOF'
 mirror_layout = true
