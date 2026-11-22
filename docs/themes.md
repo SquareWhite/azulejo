@@ -151,8 +151,8 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `tile` | tile body: the terminal backdrop | `#282c34` | `#fafafa` | textBackgroundColor | textBackgroundColor |
 | `tileAlt` | secondary tile bodies | `#252930` | `#f5f5f6` | textBackgroundColor | textBackgroundColor |
 | `sunken` | inset strips | `#202329` | `#ededee` | underPageBackgroundColor | `#f5f5f5` |
-| `control` | segmented tracks, search field, tab container | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
-| `selected` | selected sidebar row, selected palette row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | controlAccentColor @ 0.21 |
+| `control` | segmented tracks, tab container, the sidebar's ⌘N badges | `#2c3036` | `#dfdfe1` | secondarySystemFill | secondarySystemFill |
+| `selected` | selected sidebar row | `#35393e` | `#cbcbce` | controlAccentColor @ 0.26 | controlAccentColor @ 0.21 |
 | `border` | hairlines around cards, fields and toasts | `#ffffff14` | `#0000001a` | separatorColor | separatorColor |
 | `textPrimary` | names, titles, tile header titles | `#d7dae0` | `#383a42` | labelColor | labelColor |
 | `textSecondary` | tab labels, details, tile header icons | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
@@ -207,13 +207,14 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `tabText` | unselected tab names | `#9da5b4` | `#5c5f69` | secondaryLabelColor | labelColor @ 0.62 |
 | `tabTextSelected` | the selected tab's name | `#d7dae0` | `#383a42` | labelColor | labelColor |
 | `tabAdd` | the tab strip's + | `#6c717a` | `#74767f` | secondaryLabelColor | secondaryLabelColor |
-| `searchField` | toolbar search field | `#27292e` | `#fafafa` | secondarySystemFill | textBackgroundColor |
-| `searchBorder` | toolbar search field hairline | `#33353a` | `#c9c9cc` | separatorColor | labelColor @ 0.13 |
-| `searchBorderActive` | search field hairline while quick open is open | `#61afef80` | `#4760efb3` | controlAccentColor @ 0.7 | controlAccentColor @ 0.7 |
-| `searchText` | search placeholder and magnifier | `#7f848e` | `#6b6d76` | labelColor @ 0.45 | labelColor @ 0.45 |
-| `searchBadge` | the search field's key badge (⌘K) | `#34363a` | `#eaeaeb` | secondarySystemFill | secondarySystemFill |
-| `searchBadgeText` | the search field's key badge text | `#abb2bf` | `#5c5f69` | labelColor @ 0.62 | labelColor @ 0.62 |
+| `searchBorderActive` | the toolbar's ⌘ button hairline while quick open is open | `#61afef80` | `#4760efb3` | controlAccentColor @ 0.7 | controlAccentColor @ 0.7 |
+| `chip` | small fills: ⌘K section counts and machine chips | `#34363a` | `#eaeaeb` | secondarySystemFill | secondarySystemFill |
+| `chipText` | text on chips | `#abb2bf` | `#5c5f69` | labelColor @ 0.62 | labelColor @ 0.62 |
 | `titlebarIcon` | sidebar toggle next to the traffic lights | `#7f848e` | `#6b6d76` | secondaryLabelColor | secondaryLabelColor |
+| `palette` | the ⌘K quick-open panel | `#21252b` | `#ffffff` | `#262628` | `#ffffff` |
+| `paletteSelected` | selected ⌘K row (a hovered one at alpha.rowHover) | `#2c313a` | `#e6e7ec` | controlAccentColor @ 0.26 | controlAccentColor @ 0.14 |
+| `paletteScrim` | shade over the window while ⌘K is open | `#00000066` | `#0000002e` | `#00000059` | `#0000002e` |
+| `paletteMatchSelected` | matched characters on the selected ⌘K row | `#61afef` | `#3a52dc` | `#ffffff` | `#0040a0` |
 
 ## Contrast
 
@@ -228,7 +229,7 @@ Atom One Dark is the reference: its contrast levels, and the way its colours rel
 
 Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the same pair (counted as ratio − 1, so 1:1 is none), up to 7:1 for text, 4.5:1 for secondary text and 3.5:1 for UI parts: a light theme's blocked icon on its header has to stand out about as much as Atom One Dark's does. Dimmed-tile pairs, offline rows and other deliberately faded parts only need their minimum. And relationships must not flip: primary text out-contrasts muted text on the same backdrop, a selected tab's name its neighbours', a focused tile's text a dimmed one's, a selected row a hovered one.
 
-`scripts/theme-contrast` checks it: over tokens.json's values in `just lint` (system colours at their defaults, the accent blue), and over the colours the running app resolves (your accent and macOS's live system colours, with ⌘K's vibrant backdrop and a vibrant sidebar sampled from the window) in `apps/macos/automation/e2e/contrast.sh`. `--table` prints every pair with its ratio and Atom One Dark's. Known exceptions sit in `accept` with the reason; the check lists them without failing. User themes aren't checked.
+`scripts/theme-contrast` checks it: over tokens.json's values in `just lint` (system colours at their defaults, the accent blue), and over the colours the running app resolves (your accent and macOS's live system colours, with a vibrant sidebar sampled from the window) in `apps/macos/automation/e2e/contrast.sh`. `--table` prints every pair with its ratio and Atom One Dark's. Known exceptions sit in `accept` with the reason; the check lists them without failing. User themes aren't checked.
 
 ## Where it lives
 

@@ -130,6 +130,7 @@ fn under(theme: &Theme, token: &str) -> Rgba {
         "selected" | "control" => get("sidebar").over(window),
         "header" | "sunken" | "tileAlt" | "overlay" | "findField" => get("tile").over(window),
         "tabSelected" => get("tabStrip").over(window),
+        "paletteSelected" => get("palette").over(window),
         _ => window,
     }
 }
@@ -162,7 +163,8 @@ fn text_meets_wcag_aa_in_every_built_in() {
             ),
             ("tabText", &["tabStrip"], 3.0),
             ("tabTextSelected", &["tabSelected"], 4.5),
-            ("searchText", &["searchField"], 3.0),
+            ("textPrimary", &["palette", "paletteSelected"], 4.5),
+            ("textSecondary", &["palette", "paletteSelected"], 3.0),
             ("overlayText", &["overlay"], 4.5),
         ];
         for (text, backgrounds, minimum) in checks {

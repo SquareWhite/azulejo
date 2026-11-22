@@ -1,7 +1,7 @@
-# Window chrome, tab strip and toolbar search field:
+# Window chrome, tab strip and the toolbar's ⌘ button:
 # traffic lights in the sidebar card, clicks reaching the toolbar's controls
 # under the transparent title bar, tab state icons, "+", the layout picker,
-# the ⌘K badge and the quick-open dropdown hanging from the search field.
+# the ⌘ button and quick open centred over the window under its scrim.
 #   apps/macos/automation/toolbar.sh
 
 log toolbar
@@ -16,13 +16,13 @@ expect chrome.lights 29,26
 expect chrome.hit.close _NSThemeCloseWidget
 expect chrome.hit.tab1 TabButton
 expect chrome.hit.add NSButton
-expect chrome.hit.search ToolbarSearchView
+expect chrome.hit.quickopen QuickOpenButton
 expect chrome.hit.picker LayoutSegment
 expect picker.kind tile
 expect chrome.hit.toggle SidebarToggleButton
 expect chrome.hit.toolbar ChromeLayoutView
 expect chrome.fits yes
-expect search.chord ⌘K
+expect quickopen.chord ⌘K
 expect tab.statuses idle
 capture 01-one-tab 0
 wait 400
@@ -49,17 +49,18 @@ expect chrome.hit.tab1 TabButton
 capture 02-three-tabs 0
 wait 400
 
-# Search field: ⌘K opens quick open as a dropdown from the search field, which lights
-# up; Escape closes it and the field goes quiet again.
+# ⌘ button: ⌘K opens quick open centred under the toolbar, the window under a scrim;
+# the button stays pressed until Escape closes it.
 key cmd+k
 until palette all 3000
-expect palette.anchor search
-expect search.active yes
+expect palette.anchor centred
+expect palette.scrim yes
+expect quickopen.active yes
 capture 03-quick-open 0
 wait 400
 key escape
 until palette closed 3000
-expect search.active no
+expect quickopen.active no
 expect palette.anchor -
 
 # The sidebar collapsed to its rail: lights stay put, the toggle follows them, the tabs

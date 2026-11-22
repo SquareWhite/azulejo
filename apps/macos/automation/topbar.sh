@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Top bar captures: the toolbar row (traffic lights, sidebar toggle, tabs,
-# layout picker, ⌘K field) in all four built-in themes, with the sidebar
+# layout picker, ⌘ button) in all four built-in themes, with the sidebar
 # full, as a rail and hidden (topbar-shots.azs), on its own dev instance
 # (AZJ_DEV_NAME=topbar). Window captures of our own window only; the top
 # 72 pt of each lands in .dev/topbar.out/topbar-<label>/ for before/after

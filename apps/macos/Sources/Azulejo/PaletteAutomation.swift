@@ -7,6 +7,8 @@ import AppKit
 ///     palette forget               clear this dev instance's recents
 ///     palette type TEXT            set the search text (as if typed)
 ///     palette key CHORD            hand a navigation key to the palette
+///     palette scroll DY            scroll its list DY points (negative: up),
+///                                  as a wheel does
 ///     palette close
 ///     palette toggle N [MS]        ⌘K's open/close N times, MS apart (0: all in
 ///                                  this turn), from the empty query
@@ -22,6 +24,14 @@ import AppKit
 /// Keys: `palette` (closed / all / commands / jump / prompt:<id>), `palette.top`,
 /// `palette.topkind` (Command / Workspace / Tab / Terminal …), `palette.kinds`
 /// (the distinct kinds in the results), `palette.count`, `palette.selected`,
+/// `palette.sections` (an empty query's headers: `Needs you 2|Places 3`, `-`
+/// for a flat list), `palette.topstatus` (the top row's agent state, `-`),
+/// `palette.topdetail` (its detail as drawn, `-`), `palette.scrim` (the
+/// window's shade shows), `palette.overdraw` (how far the list paints past
+/// its area into the field row or footer: `0`, `footer 14`, `field 6`),
+/// `palette.selrow` (the selected row: `shown` whole between the rules,
+/// `cut`, `hidden`), `palette.footer` (`front`: over the list),
+/// `palette.scroll` (the list's: `none` (it fits), `top`, `mid`, `end`),
 /// `palette.motion` (none / opening / closing), `palette.visible` (on screen,
 /// a closing menu included), `palette.look` (scale@opacity as shown, `-`
 /// hidden), `palette.anims` (motion animations on its layer), `palette.typing`
@@ -65,6 +75,10 @@ enum ShellAutomation {
                 }
                 controller.palette.perform(keyAction: name)
                 controller.layoutChrome()
+            case "scroll":
+                guard controller.palette.isOpen else { return "palette isn't open" }
+                guard let dy = Double(rest) else { return "palette scroll DY" }
+                controller.palette.scrollList(by: CGFloat(dy))
             case "close":
                 controller.palette.close()
             case "toggle":
@@ -91,7 +105,7 @@ enum ShellAutomation {
                 // Fresh recents for a deterministic run (this dev instance's only).
                 guard PaletteStore.forgetDevRecents() else { return "palette forget is dev-only" }
             default:
-                return "palette open|type|key|close|toggle|select|forget"
+                return "palette open|type|key|scroll|close|toggle|select|forget"
             }
         case "seen-visible":
             AttentionTracker.assumeVisible = arg != "off"
@@ -173,6 +187,16 @@ enum ShellAutomation {
         s["palette.kinds"] = kinds.sorted().joined(separator: ",")
         s["palette.selected"] = palette.results.indices.contains(palette.selected)
             ? palette.results[palette.selected].item.title : "-"
+        s["palette.sections"] = palette.describeSections
+        s["palette.topstatus"] = palette.results.first?.item.status?.rawValue ?? "-"
+        s["palette.topdetail"] = palette.results.first.map { PaletteView.detailText($0.item, flat: palette.sections.isEmpty) }
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "-"
+        s["palette.scrim"] = palette.scrimVisible ? "yes" : "no"
+        palette.layoutSubtreeIfNeeded()
+        s["palette.overdraw"] = palette.isOpen ? palette.describeOverdraw : "-"
+        s["palette.selrow"] = palette.isOpen ? palette.describeSelectedRow : "-"
+        s["palette.footer"] = palette.describeFooter
+        s["palette.scroll"] = palette.isOpen ? palette.describeScroll : "-"
         s["banner"] = controller.banner.isHidden
             ? "none" : controller.banner.message.split(separator: "\n").first.map(String.init) ?? ""
         s["banner.full"] = controller.banner.isHidden

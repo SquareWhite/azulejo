@@ -78,7 +78,7 @@ shot r01-defaults
 
 log === R02 rebind one key per context in the config file; it reloads on save
 sh cat @DIR@/rebind.toml >> {config}
-until search.chord ⌘J 5000
+until quickopen.chord ⌘J 5000
 expect banner.shown no
 sh @AZJ@ --json config keys > {out}/keys-rebound.json
 
@@ -154,7 +154,7 @@ shot r08-rebound
 
 log === R08 the old file back: the defaults return without a restart
 sh cp {config}.orig {config}
-until search.chord ⌘K 5000
+until quickopen.chord ⌘K 5000
 key j
 expect key.last action:files_down
 expect sidebar.files.selected gamma.txt
@@ -169,4 +169,4 @@ sh test -s {config}
 sh cp {config} {out}/created-config.toml
 sh @AZJ@ config defaults > {out}/defaults.toml
 sh mv {config}.moved {config}
-until search.chord ⌘K 5000
+until quickopen.chord ⌘K 5000

@@ -33,7 +33,7 @@ expect chrome.hit.toolbar ChromeLayoutView
 expect chrome.winmove.tabs stays,stays,stays
 expect chrome.winmove.add stays
 expect chrome.winmove.picker stays
-expect chrome.winmove.search stays
+expect chrome.winmove.quickopen stays
 expect chrome.winmove.toggle stays
 expect chrome.winmove.toolbar moves
 sh {herdr} --session {session} tab list >{out}/herdr-tabs-before.json
@@ -178,7 +178,7 @@ wait 600
 expect chrome.winmove.tabs stays,stays,stays
 expect chrome.winmove.add stays
 expect chrome.winmove.toggle stays
-expect chrome.winmove.search stays
+expect chrome.winmove.quickopen stays
 expect chrome.winmove.toolbar moves
 action toggle_sidebar
 until sidebar visible 3000

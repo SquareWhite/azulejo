@@ -4,10 +4,10 @@ log B8 B13 reload
 delivery direct
 until terminal.phase attached 10000
 sh cp {config} {config}.orig
-expect search.chord ⌘K
+expect quickopen.chord ⌘K
 key cmd+k
 expect palette all
-expect palette.anchor search
+expect palette.anchor centred
 key escape
 expect palette closed
 # Every command: count the `>` scope against the core's commands.list.
@@ -18,7 +18,7 @@ sh "$AZJ" --json commands list > {out}/commands.json
 palette close
 # --- rebind quick_open: the badge and the router follow on save ---
 sh printf '\n[keys]\nquick_open = "cmd+j"\n' >> {config}
-until search.chord ⌘J 3000
+until quickopen.chord ⌘J 3000
 key cmd+j
 expect key.last action:quick_open
 expect palette all
@@ -38,7 +38,7 @@ shot 02-broken-config
 # --- animation keys reload: motion off, then a split is instant ---
 sh cp {config}.orig {config}
 sh printf '\n[animation]\nenabled = false\n' >> {config}
-until search.chord ⌘K 3000
+until quickopen.chord ⌘K 3000
 until banner.shown no 3000
 wait 300
 anim reset
@@ -49,9 +49,9 @@ anim stats anim-after-reload
 sh cp {config}.orig {config}
 # --- [layout] resize_step reloads: the resize keys follow. The quick_open
 # rebind in the same save shows when it's in. ---
-until search.chord ⌘K 3000
+until quickopen.chord ⌘K 3000
 sh printf '\n[keys]\nquick_open = "cmd+j"\n[layout]\nresize_step = 0.1\n' >> {config}
-until search.chord ⌘J 3000
+until quickopen.chord ⌘J 3000
 key alt+h
 expect ratio 0.50
 key ctrl+alt+shift+l

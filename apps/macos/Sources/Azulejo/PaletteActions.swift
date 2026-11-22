@@ -79,6 +79,7 @@ extension AppController {
         palette.onClose = { [weak controller] in
             controller?.tiles.focusedView?.setFocused(true)
         }
+        palette.chord = controller.quickOpen.chordText
         palette.open(items: items, recents: PaletteStore.recents(), query: query)
         controller.layoutChrome()
     }
@@ -106,9 +107,9 @@ extension AppController {
             let prompt = entry["prompt"] as? String
             var item = PaletteItem(
                 id: id, title: title, kind: .command,
-                detail: entry["category"] as? String ?? "",
                 chords: entry["chords"] as? [String] ?? [],
                 prompt: prompt, searchExtra: id)
+            item.category = entry["category"] as? String
             if planned {
                 item.enabled = false
                 item.note = "planned"
@@ -207,43 +208,51 @@ extension AppController {
 
     // MARK: Go to
 
+    /// Every place in the session, in its order: each workspace, its tabs
+    /// (when it has more than one, or the tab more than one tile) and their
+    /// tiles. A tile with an agent is an agent row: named for where it is,
+    /// its task as the detail, its state's icon and how long it's been in it.
     private func gotoItems(for controller: WindowController) -> [PaletteItem] {
         guard let session else { return [] }
         var items: [PaletteItem] = []
         let multiWindow = session.windows.count > 1
+        let now = UInt64(max(0, Date().timeIntervalSince1970 * 1000))
         for (w, window) in session.windows.enumerated() {
-            let where0 = multiWindow ? "window \(w + 1) · " : ""
+            let windowCrumb = multiWindow ? ["window \(w + 1)"] : []
+            // This window's ⌘1…⌘8 (⌘9 the last), in the sidebar's order.
+            let ordered = window.id == controller.windowID ? SidebarView.ordered(window, machines: machines) : []
             for ws in window.workspaces {
-                // Remote workspaces carry their machine's name, in
-                // the detail and in what the query matches.
+                // Remote workspaces carry their machine's name: a chip on
+                // the row, and in what the query matches.
                 let host = Self.machineLabel(ws.machineID, machines: machines)
-                let where1 = where0 + (host.map { "\($0) · " } ?? "")
-                let blocked = ws.tabs.flatMap(\.tiles).filter { $0.agent?.status == .blocked }.count
-                items.append(PaletteItem(
-                    id: "ws:" + ws.id, title: ws.name, kind: .workspace,
-                    detail: where1 + "\(ws.tabs.count) tab\(ws.tabs.count == 1 ? "" : "s")",
-                    searchExtra: [ws.cwd, host].compactMap { $0 }.joined(separator: " "),
-                    dot: blocked > 0 ? AttentionStyle.blocked : nil,
-                    status: Self.status(ws.tabs.flatMap(\.tiles))))
+                var row = PaletteItem(id: "ws:" + ws.id, title: ws.name, kind: .workspace)
+                row.crumbs = windowCrumb
+                row.machine = host
+                if let branch = ws.git?.branch, !branch.isEmpty {
+                    row.detail = branch
+                    row.detailMono = true
+                }
+                if let n = ordered.firstIndex(where: { $0.id == ws.id }) {
+                    row.keyHint = SidebarView.chord(n + 1, of: ordered.count)
+                }
+                row.searchExtra = [ws.cwd.map(SidebarView.tilde), host].compactMap { $0 }.joined(separator: " ")
+                items.append(row)
+                let tabCrumbs = windowCrumb + [ws.name]
                 for tab in ws.tabs {
                     if ws.tabs.count > 1 || tab.tiles.count > 1 {
-                        items.append(PaletteItem(
-                            id: "tab:" + tab.id, title: tab.label, kind: .tab,
-                            detail: "\(where1)in \(ws.name)",
-                            searchExtra: host ?? ""))
+                        var row = PaletteItem(id: "tab:" + tab.id, title: tab.label, kind: .tab)
+                        row.crumbs = tabCrumbs
+                        row.machine = host
+                        let n = tab.tiles.count
+                        row.detail = "\(n) terminal\(n == 1 ? "" : "s")"
+                        row.searchExtra = host ?? ""
+                        items.append(row)
                     }
+                    // Where a tile lives: its workspace, and its tab when there are more.
+                    let where_ = ws.tabs.count > 1 ? tabCrumbs + [tab.label] : tabCrumbs
                     for tile in tab.tiles {
-                        // The header's subtitle: what runs there, or where.
-                        let doing = tile.header?.subtitle.flatMap { $0.isEmpty ? nil : $0 }
-                        items.append(PaletteItem(
-                            id: "tile:" + tile.id, title: Self.tileTitle(tile), kind: .tile(tile.kind),
-                            detail: "\(where1)" + (doing.map { "\($0) · " } ?? "") + "in \(ws.name)",
-                            searchExtra: [tile.cwd, tile.agent?.name,
-                                          tile.command?.joined(separator: " "), tile.header?.title,
-                                          doing, host]
-                                .compactMap { $0 }.joined(separator: " "),
-                            dot: AttentionStyle.color(for: tile),
-                            status: Self.status([tile])))
+                        items.append(tileItem(tile, in: ws, tab: tab, crumbs: where_, windowCrumb: windowCrumb,
+                                              host: host, now: now))
                     }
                 }
             }
@@ -251,14 +260,112 @@ extension AppController {
         return items
     }
 
-    /// The state icon for some tiles' agents, as the sidebar ranks them:
-    /// blocked, then finished but not looked at, then working.
-    static func status(_ tiles: [TileModel]) -> Design.Status? {
-        let agents = tiles.compactMap(\.agent)
-        if agents.contains(where: { $0.status == .blocked }) { return .blocked }
-        if agents.contains(where: { $0.attention }) { return .done }
-        if agents.contains(where: { $0.status == .working }) { return .working }
-        return nil
+    private func tileItem(_ tile: TileModel, in ws: WorkspaceModel, tab: TabModel, crumbs: [String],
+                          windowCrumb: [String], host: String?, now: UInt64) -> PaletteItem {
+        var row = PaletteItem(id: "tile:" + tile.id, title: tile.header?.title ?? Self.tileTitle(tile),
+                              kind: .tile(tile.kind))
+        row.machine = host
+        let doing = Self.terminalDetail(tile, in: ws)
+        row.detail = doing?.text ?? ""
+        row.detailMono = doing?.mono ?? false
+        row.crumbs = crumbs
+        if let agent = tile.agent {
+            // Named for where it is: the workspace, and the tab when there are more.
+            if ws.tabs.count > 1 {
+                row.crumbs = windowCrumb + [ws.name]
+                row.title = tab.label
+            } else {
+                row.crumbs = windowCrumb
+                row.title = ws.name
+            }
+            if let task = Self.task(tile) {
+                row.detail = task
+                row.detailMono = false
+            }
+            switch agent.status {
+            case .blocked:
+                row.status = .blocked
+                row.bucket = .blocked
+            case _ where agent.attention:
+                row.status = .done
+                row.bucket = .attention
+            case .working:
+                row.status = .working
+                row.bucket = .working
+            default:
+                row.status = .idle
+            }
+            row.since = agent.sinceMs ?? 0
+            if row.bucket != nil, let since = agent.sinceMs, since > 0, since <= now {
+                row.wait = Self.waitText(ms: now - since)
+            }
+        }
+        row.searchExtra = [tile.agent?.name, tile.header?.title, Self.tileTitle(tile),
+                           tile.command.map { Self.withoutEnv($0.joined(separator: " ")) },
+                           tile.terminalCwd.map(SidebarView.tilde), host]
+            .compactMap { $0 }.joined(separator: " ")
+        return row
+    }
+
+    /// What a terminal is doing, for its row: the foreground command
+    /// (leading `VAR=value` words dropped: they can hold anything), else
+    /// where it is, relative to the workspace's folder (nothing when it's
+    /// that folder; never a full path).
+    static func terminalDetail(_ tile: TileModel, in ws: WorkspaceModel) -> (text: String, mono: Bool)? {
+        if tile.ended == true { return ("session ended", false) }
+        if let command = tile.pane?.command.map(withoutEnv), !command.isEmpty { return (command, true) }
+        guard let cwd = tile.terminalCwd.map(trimSlash), !cwd.isEmpty else { return nil }
+        if let base = ws.cwd.map(trimSlash), !base.isEmpty {
+            if cwd == base { return nil }
+            if cwd.hasPrefix(base + "/") { return (String(cwd.dropFirst(base.count + 1)), true) }
+        }
+        if cwd == NSHomeDirectory() { return ("~", true) }
+        return ((cwd as NSString).lastPathComponent, true)
+    }
+
+    /// `command` without environment assignments: the `VAR=value` words
+    /// before it (`TERM=x just dogfood` → `just dogfood`), and everything
+    /// from the first one after it. A program that rewrites its own title
+    /// can show its whole environment after its name (`claude TERM=…
+    /// HOME=…`); an argument like `make CC=gcc` loses its tail too, which is
+    /// the price of never showing an environment.
+    static func withoutEnv(_ command: String) -> String {
+        func isAssignment(_ word: Substring) -> Bool {
+            guard let eq = word.firstIndex(of: "="), eq != word.startIndex,
+                  let first = word.first, first == "_" || first.isLetter else { return false }
+            return word[..<eq].allSatisfy { $0 == "_" || $0.isLetter || $0.isNumber }
+        }
+        var words = command.split(separator: " ", omittingEmptySubsequences: true)
+        while let first = words.first, isAssignment(first) { words.removeFirst() }
+        if let cut = words.firstIndex(where: isAssignment) { words.removeSubrange(cut...) }
+        return words.joined(separator: " ")
+    }
+
+    /// An agent's task: the title its program set, less the spinner or
+    /// state glyphs in front; nil when that's only the agent's own name or
+    /// a path.
+    static func task(_ tile: TileModel) -> String? {
+        guard let raw = tile.pane?.title else { return nil }
+        let title = String(raw.drop { !($0.isLetter || $0.isNumber) }).trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty, !raw.hasPrefix("/"), !raw.hasPrefix("~") else { return nil }
+        let lowered = title.lowercased()
+        if let name = tile.agent?.name?.lowercased(), lowered == name || lowered == name + " code" { return nil }
+        return title
+    }
+
+    /// Without a trailing `/` (a folder's).
+    private static func trimSlash(_ path: String) -> String {
+        path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
+    /// "now", "4m", "1h 12m", "3d".
+    static func waitText(ms: UInt64) -> String {
+        let minutes = Int(ms / 60_000)
+        if minutes < 1 { return "now" }
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return minutes % 60 == 0 ? "\(hours)h" : "\(hours)h \(minutes % 60)m" }
+        return "\(hours / 24)d"
     }
 
     /// A remote machine's label for ⌘K rows; nil for Local. A machine herdr

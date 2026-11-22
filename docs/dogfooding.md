@@ -124,9 +124,10 @@ badge counts unread agent tiles; `[appearance] dock_badge = false` hides it
   `alt+o` rotate, `alt+shift+e` equalize, `alt+shift+m` zoom. `cmd+t` and
   `cmd+1..8` for workspaces, `cmd+shift+t` and `ctrl+1..8` for tabs. Full list
   and overrides: [keybindings](keybindings.md).
-- `cmd+k` opens quick open: every action (with its chord) and every
-  workspace, tab and tile (by name, cwd, URL, path or agent), fuzzy, recent
-  first. Start with `>` for commands only or `@` for places only. In terminals
+- `cmd+k` (or the ⌘ button, top right) opens quick open: every action (with
+  its chord) and every workspace, tab and tile (by name, cwd, path or agent),
+  fuzzy, agents that need you first. Start with `>` for commands only or `@`
+  for places only. In terminals
   `cmd+k` doesn't clear the screen as in Ghostty: use `ctrl+l`.
 - Agent state shows in the sidebar, the tab strip, ⌘K, tile headers and the
   Dock badge ([themes](themes.md#agent-state-in-tile-headers)). Right-click a

@@ -32,11 +32,11 @@ Scripts use `tile tabs click N|drag N M|more N` and the `tile.tabs*` and
 
 There's no visible title bar. The traffic lights sit in the sidebar card's
 top band (`TrafficLights`), and the 52 pt toolbar row holds the tab strip
-(`TabStrip.swift`), the layout picker (`LayoutPicker.swift`) and the search
-field (`ToolbarSearch.swift`, which opens ⌘K as a dropdown). The picker
-follows the active tab's layout and runs the same `toggle_layout_*` action as
-the keys; it hides first when the window gets narrow. Empty toolbar space
-drags the window.
+(`TabStrip.swift`), the layout picker (`LayoutPicker.swift`) and the ⌘
+button (`QuickOpenButton` in `ToolbarButtons.swift`), which opens ⌘K. The
+picker follows the active tab's layout and runs the same `toggle_layout_*`
+action as the keys; it hides first when the window gets narrow, the button
+never does. Empty toolbar space drags the window.
 
 Tabs reorder by dragging: past a 4 pt threshold the tab lifts and follows
 the pointer, and letting go sends the core's `tab.move`. Escape, or letting
@@ -44,7 +44,7 @@ go well above or below the strip, cancels. Tab order is Azulejo's own, saved
 with the session and never sent to herdr.
 
 The strip sits where the window server moves the window on a drag before the
-app sees it, so each tab, picker segment and the search field cut themselves
+app sees it, so each tab, picker segment and the ⌘ button cut themselves
 out of that region (`_opaqueRectForWindowMoveWhenInTitlebar`).
 `chrome.winmove.*` reads the region AppKit last computed.
 

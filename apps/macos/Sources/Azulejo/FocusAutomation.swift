@@ -150,7 +150,7 @@ enum FocusAutomation {
             "key.context": app.lastKeyContext,
             "keys.resizing": app.keysResizing ? "yes" : "no",
             "keywindow": NSApp.keyWindow === window ? "yes" : "no",
-            "palette.query": controller.palette.isOpen ? controller.palette.field.stringValue : "-",
+            "palette.query": controller.palette.isOpen ? controller.palette.query : "-",
             "clipboard": TerminalRuntime.pasteboard.string(forType: .string) ?? "-",
             "banner.shown": controller.banner.isHidden ? "no" : "yes",
             "banner.capped": controller.banner.capped ? "yes" : "no",

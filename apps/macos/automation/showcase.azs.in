@@ -44,11 +44,15 @@ action toggle_sidebar
 until sidebar visible 3000
 wait 800
 
-log --- ⌘K: the menu, > commands, @ jump, Set theme…
+log --- ⌘K: the menu, a typed query, > commands, @ jump, Set theme…
 palette forget
 palette open
 wait 600
 capture @THEME@-quick-open 0
+captured
+palette type upl
+wait 500
+capture @THEME@-quick-open-query 0
 captured
 palette type >
 wait 500

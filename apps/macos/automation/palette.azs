@@ -8,13 +8,16 @@ palette forget
 expect palette closed
 key cmd+k
 expect palette all
-# Empty query, nothing recent yet: places first, then commands, all mixed in.
+# Empty query, no agents and nothing recent yet: every place, under one
+# header; commands wait for a query (or ">").
 expect palette.topkind Workspace
-expect palette.kinds Command,Terminal,Workspace
+expect palette.kinds Terminal,Workspace
+expect palette.sections Places 2
 shot 10-quickopen-open
 palette type split right
 expect palette.top Split right
 expect palette.topkind Command
+expect palette.sections -
 shot 11-quickopen-split-right
 key enter
 until tiles 2
@@ -36,6 +39,7 @@ expect palette closed
 # Recently run rows come first on an empty query.
 key cmd+k
 expect palette.top Split right
+expect palette.sections Recent 1|Places 4
 # ⌘K again closes it.
 key cmd+k
 expect palette closed
@@ -45,6 +49,8 @@ key cmd+k
 palette type >
 expect palette commands
 expect palette.kinds Command
+expect palette.top Split right
+log sections in >
 palette type >zoom
 expect palette.top Zoom tile
 shot 12-quickopen-commands
@@ -52,6 +58,9 @@ palette type @
 expect palette jump
 expect palette.kinds Tab,Terminal,Workspace
 shot 13-quickopen-jump
+# The scope is a token in the field: ⌫ on the empty query removes it.
+key backspace
+expect palette all
 key escape
 
 # Arrow keys move the selection.
@@ -128,6 +137,8 @@ key escape
 sh cp {config}.orig {config}
 sh printf '\n[keys]\ncommand_palette = "cmd+shift+p"\ngoto = "cmd+p"\n' >> {config}
 until banner none 4000
+# The copy back alone clears the banner; the new keys can land a reload later.
+wait 1000
 key cmd+shift+p
 expect palette commands
 # ⌘P while it's open switches the scope instead of closing.

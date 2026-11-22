@@ -956,7 +956,9 @@ final class Automation {
             Source([
                 "palette", "palette.count", "palette.motion", "palette.visible", "palette.look", "palette.anims",
                 "palette.typing", "palette.open.ms", "palette.close.ms", "palette.index", "palette.top",
-                "palette.topkind", "palette.kinds", "palette.selected", "banner", "banner.full", "badges",
+                "palette.topkind", "palette.kinds", "palette.selected", "palette.sections", "palette.topstatus",
+                "palette.topdetail", "palette.scrim", "palette.overdraw", "palette.selrow", "palette.footer",
+                "palette.scroll", "banner", "banner.full", "badges",
                 "tile.badge.setting", "sidebar.markers", "sidebar.machines", "machines", "workspace.machine",
                 "sidebar.branches", "tab.markers", "dock", "focused.id", "tab.label", "agents", "header.agents",
                 "focused.agent",
@@ -988,7 +990,7 @@ final class Automation {
             },
             Source([
                 "hud.flashes", "hud.last", "prompt.asks", "prompt.last", "tab.statuses", "tab.overflow",
-                "tab.names", "tab.hint", "search.chord", "search.active", "palette.anchor",
+                "tab.names", "tab.hint", "quickopen.chord", "quickopen.active", "palette.anchor",
             ], prefixes: ["chrome."]) { controller.chromeState() },
             Source(prefixes: ["picker."]) { LayoutPickerAutomation.state(controller) },
             Source(["tab.visual", "tab.selected", "tab.leftmost", "tab.session"], prefixes: ["tabdrag."]) {

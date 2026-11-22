@@ -1,0 +1,154 @@
+# The ⌘K menu's list scrolls between the field row and the footer: a row
+# scrolled part way out is cut at their rules, never drawn over them; the
+# footer is opaque and over the list; arrowing to the last row shows all of
+# it above the footer. At the menu's most height and in a short window
+# (where the window caps it). palette-clip.sh runs it.
+log palette clip
+delivery direct
+until terminal.phase attached 10000
+anim enabled false
+palette forget
+window-size 900 640
+# Made-up workspaces: enough places for the list to scroll in a short window.
+core {"method":"workspace.create","params":{"name":"Atlas"}}
+core {"method":"workspace.create","params":{"name":"Borealis"}}
+core {"method":"workspace.create","params":{"name":"Cobalt"}}
+core {"method":"workspace.create","params":{"name":"Dunmore"}}
+core {"method":"workspace.create","params":{"name":"Elmwood"}}
+core {"method":"workspace.create","params":{"name":"Fernhill"}}
+core {"method":"workspace.create","params":{"name":"Granite"}}
+core {"method":"workspace.create","params":{"name":"Harbour"}}
+until workspaces 9 10000
+key cmd+1
+until workspace 1
+
+# --- Every command (">"): far more rows than fit, under section headers.
+key cmd+k
+palette type >
+expect palette commands
+expect palette.anchor centred
+expect palette.footer front
+expect palette.scroll top
+expect palette.selrow shown
+expect palette.overdraw 0
+# Part way down by the wheel: rows cut at both rules, none over them.
+palette scroll 157
+expect palette.scroll mid
+expect palette.overdraw 0
+shot 01-commands-mid
+# All the way down: the last row whole, above the footer.
+palette scroll 100000
+expect palette.scroll end
+expect palette.overdraw 0
+shot 02-commands-end
+palette scroll -100000
+expect palette.scroll top
+# Arrowed to the last row (page down past the end): scrolled to it, all of
+# it above the footer.
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+expect palette.scroll end
+expect palette.selrow shown
+expect palette.overdraw 0
+shot 03-commands-last
+# Back up a few: the selected row at the top edge, one cut at the bottom.
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+palette key up
+expect palette.scroll mid
+expect palette.selrow shown
+expect palette.overdraw 0
+shot 04-commands-up
+key escape
+expect palette closed
+
+# --- Places ("@") in a short window: the window caps the menu's height.
+window-size 900 380
+key cmd+k
+palette type @
+expect palette jump
+expect palette.count 10
+expect palette.footer front
+expect palette.scroll top
+expect palette.overdraw 0
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+expect palette.selected Harbour
+expect palette.scroll end
+expect palette.selrow shown
+expect palette.overdraw 0
+shot 05-short-last
+palette scroll -23
+expect palette.scroll mid
+expect palette.selrow cut
+expect palette.overdraw 0
+shot 06-short-mid
+palette key up
+palette key up
+palette key up
+expect palette.selrow shown
+expect palette.overdraw 0
+key escape
+expect palette closed
+
+# --- Shorter still: a row or two of list.
+window-size 900 300
+key cmd+k
+palette type @
+palette scroll 31
+expect palette.scroll mid
+expect palette.overdraw 0
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+palette key pagedown
+expect palette.selected Harbour
+expect palette.scroll end
+expect palette.selrow shown
+expect palette.overdraw 0
+shot 07-shorter-last
+key escape
+expect palette closed

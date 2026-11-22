@@ -246,8 +246,10 @@ shot n4-overflow-tab4
 window-size 480 320
 wait 1000
 remember tab.overflow
-# N4c: the selected tab still shows; V25: the banner is capped.
-expect tab.overflow selected
+# N4c: the selected tab still shows (the ⌘ button leaves the strip room to
+# scroll at the minimum size, so it shows among its neighbours, scrolled into
+# view); V25: the banner is capped.
+expect tab.overflow left,right
 expect banner.capped yes
 shot n4-overflow-min-banner
 window-size 1440 900

@@ -284,6 +284,8 @@ struct TileModel: Decodable, Equatable {
 
 /// What herdr reports for a terminal tile's pane (`azulejo_model::PaneMeta`).
 struct PaneMetaModel: Decodable, Equatable {
+    /// The title the program in the pane set (OSC 0/2): an agent's task.
+    var title: String?
     /// Its working directory now (the tile's `cwd` is where it started).
     var cwd: String?
     /// The foreground command when it isn't the shell.

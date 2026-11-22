@@ -7,9 +7,8 @@ the contact sheets.
 SHOTS is mockup.sh's output (automation.log and the captures), OUT where the
 live colour files, the table and the sheets go. For each theme, the
 `remember theme.colors` line the automation logged becomes OUT/live-<id>.json,
-with samples from the window captures: the ⌘K menu's backdrop (a vibrancy
-view, so no token has its colour) and, for themes whose sidebar card is
-vibrant, the card. Exit status 1 when a theme fails or a capture is missing.
+with a sample from the window capture for themes whose sidebar card is
+vibrant: the card (a vibrancy view, so no token has its colour). Exit status 1 when a theme fails or a capture is missing.
 """
 
 from __future__ import annotations
@@ -77,15 +76,6 @@ for theme in themes:
         failures.append(f"{theme}: no theme.colors in the automation log")
         continue
     samples = {}
-    pal = capture(f"{theme}-palette", system_only=True)
-    box = regions_before(f"{theme}-palette").get("palette")
-    if pal is not None and box:
-        # The list part, below the field: mostly backdrop.
-        x, y, w, h = box
-        samples["sample.palette"] = mode(pal, (x + 8, y + 56, w - 16, h - 64))
-    else:
-        # No system capture (a locked screen): contrast.json's typical sample.
-        print(f"NOTE {theme}: no system capture of ⌘K; its backdrop is contrast.json's default")
     if tokens["themes"][theme].get("sidebarMaterial"):
         scene = capture(f"{theme}-scene", system_only=True)
         if scene is not None:

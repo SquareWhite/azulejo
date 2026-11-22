@@ -6,7 +6,8 @@
 # (shared/design/tokens.json), captures through showcase.azs.in:
 #   hero                  the mockup scene: tiles, tab strip, sidebar, focused header
 #   sidebar-rail          the sidebar collapsed to its rail
-#   quick-open            ⌘K, empty query
+#   quick-open            ⌘K, empty query (what needs you first)
+#   quick-open-query      ⌘K with "upl" typed
 #   quick-open-commands   ⌘K with ">"
 #   quick-open-jump       ⌘K with "@"
 #   quick-open-theme      ⌘K "Set theme…", the theme list
@@ -116,7 +117,7 @@ TMPDIR="$work" AZJ_MOCKUP_TAIL="$work/showcase.azs" AZJ_MOCKUP_CWD="$work/azulej
 # Collect: the system capture when the harness got one, else the app's render.
 rm -rf "$dest"
 mkdir -p "$dest"
-views="hero sidebar-rail quick-open quick-open-commands quick-open-jump quick-open-theme
+views="hero sidebar-rail quick-open quick-open-query quick-open-commands quick-open-jump quick-open-theme
   workspace sidebar-files smart-select smart-select-paths"
 missing=0
 for theme in $themes; do

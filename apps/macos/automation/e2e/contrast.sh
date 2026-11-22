@@ -10,8 +10,8 @@
 # Checks: in each theme, `theme.colors` (every token as the app resolves it,
 # system colours and the user's accent included, the terminal palette and
 # the focus dim) goes through scripts/theme-contrast with the pairs in
-# shared/design/contrast.json, with the ⌘K menu's backdrop and, for themes
-# with a vibrant sidebar, the sidebar card sampled from the window capture.
+# shared/design/contrast.json, with, for themes with a vibrant sidebar, the
+# sidebar card sampled from the window capture.
 # Writes per-surface contact sheets (every theme side by side) for a look:
 # .dev/e2e.out/contrast/sheets/. Captures: .dev/<name>.out/mockup/.
 set -euo pipefail

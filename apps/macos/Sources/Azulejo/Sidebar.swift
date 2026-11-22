@@ -763,10 +763,9 @@ final class WorkspaceRow: NSView, ContextMenuProviding, ThemeAware, WorkspaceDra
     func press() { handler() }
 }
 
-/// A workspace row's key badge (⌘3): the top bar's ⌘K badge's size and
-/// type, the row's text on the Agents | Files track's fill (the search
-/// badge's fill is meant for the search field and vanishes on a light
-/// sidebar).
+/// A workspace row's key badge (⌘3): `keyBadge` type, the row's text on
+/// the Agents | Files track's fill (`chip` is meant for ⌘K's panel and
+/// vanishes on a light sidebar).
 @MainActor
 private final class HintBadge: NSView, ThemeAware {
     private let label = NSTextField(labelWithString: "")
@@ -778,9 +777,9 @@ private final class HintBadge: NSView, ThemeAware {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = Design.Radius.searchBadge
+        layer?.cornerRadius = Design.Radius.chip
         layer?.cornerCurve = .continuous
-        label.font = Design.Font.searchBadge
+        label.font = Design.Font.keyBadge
         label.textColor = Design.Color.textPrimary
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -796,7 +795,7 @@ private final class HintBadge: NSView, ThemeAware {
     required init?(coder: NSCoder) { fatalError() }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: ceil(label.intrinsicContentSize.width) + 12, height: Design.Space.searchBadgeHeight)
+        NSSize(width: ceil(label.intrinsicContentSize.width) + 12, height: Design.Space.keyBadgeHeight)
     }
 
     override func viewDidChangeEffectiveAppearance() {

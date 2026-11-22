@@ -18,14 +18,17 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// Automation: the sidebar card's vibrancy material, if the theme has one.
     var sidebarMaterial: String? { sidebarCard.materialName }
     private let tabBar = TabStripView()
-    let search = ToolbarSearchView()
-    /// The layout picker, left of the search field.
+    /// The ⌘ button at the toolbar row's right end: opens quick open.
+    let quickOpen = QuickOpenButton()
+    /// The layout picker, left of the ⌘ button.
     let layoutPicker = LayoutPickerView()
     private lazy var sidebarToggle = SidebarToggleButton { [weak self] in
         self?.app?.perform(action: "toggle_sidebar")
     }
     private let hud = HUDView()
     let palette = PaletteView()
+    /// The shade over the window while quick open shows.
+    private let paletteScrim = PaletteScrimView()
     let banner = BannerView()
     let attention = AttentionOverlayView()
     let terminalHints = TerminalHintOverlay()
@@ -118,21 +121,25 @@ final class WindowController: NSObject, NSWindowDelegate {
         content.sidebarToggle = sidebarToggle
         content.sidebarEdge = sidebarEdgeView
         content.tabBar = tabBar
-        content.search = search
+        content.quickOpen = quickOpen
         content.picker = layoutPicker
         content.tiles = tiles
         content.hud = hud
         content.attention = attention
         content.banner = banner
         content.palette = palette
+        content.paletteScrim = paletteScrim
+        palette.scrim = paletteScrim
         // The card draws the sidebar's (rounded) background; the rows, full
         // or the rail's, sit in it and it clips them as it changes shape.
         sidebar.layer?.backgroundColor = nil
         sidebarCard.addSubview(sidebar)
         sidebarCard.addSubview(rail)
         rail.isHidden = true
-        [sidebarCard, sidebarEdgeView, sidebarToggle, tabBar, layoutPicker, search, tiles, attention, banner, hud,
-         palette].forEach(content.addSubview)
+        // The scrim shades everything but the ⌘ button (pressed while the
+        // menu shows) and the menu.
+        [sidebarCard, sidebarEdgeView, sidebarToggle, tabBar, layoutPicker, tiles, attention, banner, hud,
+         paletteScrim, quickOpen, palette].forEach(content.addSubview)
         sidebarEdgeView.onBegin = { [weak content] in content?.beginSidebarResize() }
         sidebarEdgeView.onDrag = { [weak content] dx in content?.dragSidebarResize(by: dx) }
         sidebarEdgeView.onEnd = { [weak content] in content?.endSidebarResize() }
@@ -141,7 +148,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         window.contentView = content
         window.delegate = self
         let keymap = app.core.keymap()
-        search.apply(keymap: keymap)
+        quickOpen.apply(keymap: keymap)
         layoutPicker.apply(keymap: keymap)
         // A kind's key does the same: `toggle_layout_*`, for a kind the tab
         // isn't in (where toggling is setting).
@@ -149,11 +156,11 @@ final class WindowController: NSObject, NSWindowDelegate {
             guard let self, let app, let tab = self.model?.workspace?.tab, tab.kind != kind else { return }
             app.perform(action: kind.toggleAction, target: .tab(tab.id), in: self)
         }
-        search.onActivate = { [weak self, weak app] in
+        quickOpen.onActivate = { [weak self, weak app] in
             guard let self, let app else { return }
             app.openQuickOpen(in: self)
         }
-        palette.onShownChange = { [weak self] shown in self?.search.active = shown }
+        palette.onShownChange = { [weak self] shown in self?.quickOpen.active = shown }
         tabBar.onAdd = { [weak app] in app?.perform(action: "new_tab") }
         tabBar.onMenu = { [weak self] id in self.flatMap { ContextMenus.tabMenu(id, in: $0) } }
         // A tab dropped in a new place: the core's `tab.move`, as Move Left /
@@ -288,9 +295,9 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// Automation: the tab strip (its tabs' right-click menus).
     var tabStrip: TabStripView { tabBar }
 
-    /// The keymap changed (config reload): the search field's chord badge.
+    /// The keymap changed (config reload): the ⌘ button's tooltip chord.
     func refreshKeymap(_ keymap: [String: Any]) {
-        search.apply(keymap: keymap)
+        quickOpen.apply(keymap: keymap)
         layoutPicker.apply(keymap: keymap)
     }
 
@@ -386,11 +393,11 @@ final class WindowController: NSObject, NSWindowDelegate {
 
 /// The window's chrome, from the mockup: the sidebar card down the
 /// left with the traffic lights in its top band, a toolbar row along the top
-/// holding the tab strip, the layout picker and the search field, and the
-/// tiles below. Manual
+/// holding the tab strip, the layout picker and the ⌘ button (quick open),
+/// and the tiles below. Manual
 /// layout keeps it predictable while tiles are being moved around.
 ///
-///     ╭─────────╮ ( tabs … + )        [▤▥▣■] [ Jump to …   ⌘K ]
+///     ╭─────────╮ ( tabs … + )                         [▤▥▣■] [⌘]
 ///     │ ● ● ●  ▯│ ┌─────────────────── tiles ───────────────────┐
 ///     │ sidebar │ │                                              │
 ///     ╰─────────╯ └──────────────────────────────────────────────┘
@@ -402,13 +409,14 @@ final class ChromeLayoutView: NSView {
     weak var sidebarToggle: NSView?
     weak var sidebarEdge: NSView?
     weak var tabBar: TabStripView?
-    weak var search: ToolbarSearchView?
+    weak var quickOpen: QuickOpenButton?
     weak var picker: LayoutPickerView?
     weak var tiles: NSView?
     weak var hud: NSView?
     weak var attention: AttentionOverlayView?
     weak var banner: BannerView?
     weak var palette: PaletteView?
+    weak var paletteScrim: NSView?
     /// A drag of the sidebar's edge under way (`SidebarResize.swift`).
     var sidebarResize: SidebarResizeDrag?
     /// Automation: the last edge drag's width changes and pointer events.
@@ -477,7 +485,7 @@ final class ChromeLayoutView: NSView {
         sidebarGeneration += 1
         let generation = sidebarGeneration
         let animate = animated && Motion.active && window != nil && bounds.width > 1 && bounds.height > 1
-        let others: [NSView?] = [sidebarCard, sidebarToggle, tabBar, picker, search, banner, hud]
+        let others: [NSView?] = [sidebarCard, sidebarToggle, tabBar, picker, quickOpen, banner, hud]
         let sliding = others.compactMap { $0 }
         // The rows inside the card: shown in their own form only.
         let rows: [(view: NSView, shown: Bool)] = [(sidebar, state == .full), (rail, state == .rail)]
@@ -584,7 +592,7 @@ final class ChromeLayoutView: NSView {
     }
 
     /// The toolbar row along the top. Its empty space moves the window; the
-    /// tabs, "+", the toggle, the layout picker and the search field take
+    /// tabs, "+", the toggle, the layout picker and the ⌘ button take
     /// their own clicks.
     var toolbarRect: NSRect {
         NSRect(x: 0, y: bounds.height - Design.Space.toolbarHeight,
@@ -636,35 +644,33 @@ final class ChromeLayoutView: NSView {
             if sidebarState == .rail { tilesLeft = card.maxX + inset }
         }
 
-        // The search field at the row's right end, the layout picker left of
+        // The ⌘ button at the row's right end, the layout picker left of
         // it; the tabs get what's left.
-        var searchLeft = bounds.width - inset
+        var rowRight = bounds.width - inset
         let room = max(0, bounds.width - inset - toolbarLeft)
         // The tab strip keeps room for the selected tab and "+" (N4c).
         let strip = tabBar.map { $0.minimumWidth + Design.Space.toolbarGap } ?? 0
-        // The picker shows when it leaves the tabs and the search field their
-        // least; in a narrower window it goes first (its keys still work).
+        let button = Design.Space.quickOpenButton
+        // The picker shows when it leaves the tabs their least; in a
+        // narrower window it goes first (its keys still work). The button
+        // never hides.
         let pickerSpace = LayoutPickerView.width + Design.Space.layoutPickerGap
-        let showPicker = picker?.kind != nil && room >= strip + pickerSpace + Design.Space.searchMinWidth
+        let showPicker = picker?.kind != nil && room >= strip + pickerSpace + button
         picker?.isHidden = !showPicker
-        if let search {
-            // In a narrow window the search shrinks below its minimum before the tabs do.
-            let rest = room - (showPicker ? pickerSpace : 0)
-            let wanted = max(min(Design.Space.searchWidth, rest * 0.4), min(Design.Space.searchMinWidth, rest))
-            let width = max(min(wanted, rest - strip), min(Design.Space.searchHeight, rest))
-            let height = Design.Space.searchHeight
-            search.frame = NSRect(x: bounds.width - inset - width, y: rowMidY - height / 2, width: width, height: height)
-            searchLeft = search.frame.minX
+        if let quickOpen {
+            quickOpen.frame = NSRect(x: bounds.width - inset - button, y: rowMidY - button / 2,
+                                     width: button, height: button)
+            rowRight = quickOpen.frame.minX
         }
         if let picker, showPicker {
             let height = Design.Space.searchHeight
-            picker.frame = NSRect(x: searchLeft - Design.Space.layoutPickerGap - LayoutPickerView.width,
+            picker.frame = NSRect(x: rowRight - Design.Space.layoutPickerGap - LayoutPickerView.width,
                                   y: rowMidY - height / 2, width: LayoutPickerView.width, height: height)
-            searchLeft = picker.frame.minX
+            rowRight = picker.frame.minX
         }
         if let tabBar {
             let height = TabStripView.height
-            let room = max(0, searchLeft - Design.Space.toolbarGap - toolbarLeft)
+            let room = max(0, rowRight - Design.Space.toolbarGap - toolbarLeft)
             tabBar.frame = NSRect(x: toolbarLeft, y: rowMidY - height / 2,
                                   width: min(tabBar.naturalWidth, room), height: height)
         }
@@ -693,14 +699,11 @@ final class ChromeLayoutView: NSView {
             attention.frame = rest
             attention.relayout(frames: container.visibleTileFrames())
         }
+        paletteScrim?.frame = bounds
         if let palette, palette.isOpen {
-            // Quick open drops down from the search field: right edges aligned, its
-            // own field over the toolbar field.
-            let anchor = search?.frame ?? NSRect(x: rest.maxX, y: rest.maxY, width: 0, height: 0)
-            let width = min(max(anchor.width, 560), max(0, bounds.width - 2 * inset))
-            let top = anchor.maxY + 4
-            let height = max(0, min(palette.preferredHeight, top - inset))
-            palette.frame = NSRect(x: max(inset, anchor.maxX - width), y: top - height, width: width, height: height)
+            // Quick open centred on the window, a gap under the toolbar row;
+            // as tall as its rows up to its most, then the list scrolls.
+            palette.frame = Self.paletteFrame(in: bounds, preferredHeight: palette.preferredHeight)
         }
         if let hud {
             let size = hud.fittingSize
@@ -708,6 +711,18 @@ final class ChromeLayoutView: NSView {
                 x: rest.midX - size.width / 2, y: rest.minY + 16, width: size.width, height: size.height)
         }
         if let window { TrafficLights.place(in: window) }
+    }
+
+    /// Quick open's frame in a window's content `bounds`: `paletteWidth`
+    /// wide (less in a narrow window), centred, `paletteTopGap` under the
+    /// toolbar row, `preferredHeight` tall up to `paletteMaxHeight` (and the
+    /// window's height less a margin).
+    static func paletteFrame(in bounds: NSRect, preferredHeight: CGFloat) -> NSRect {
+        let width = max(0, min(Design.Space.paletteWidth, bounds.width - 32))
+        let top = bounds.height - Design.Space.toolbarHeight - Design.Space.paletteTopGap
+        let most = max(0, min(Design.Space.paletteMaxHeight, top - 24))
+        let height = min(preferredHeight, most)
+        return NSRect(x: ((bounds.width - width) / 2).rounded(), y: top - height, width: width, height: height)
     }
 
     /// Empty toolbar space moves the window; a double click there does what
@@ -897,15 +912,15 @@ final class HUDView: NSView, ThemeAware {
 }
 
 extension WindowController {
-    /// Automation keys for the window chrome, tab strip and search field:
+    /// Automation keys for the window chrome, tab strip and ⌘ button:
     /// `chrome.lights` (close button centre from the top left, "29,26"),
     /// `chrome.hit.<part>` (the view class a click there reaches: `tab1`,
-    /// `add`, `search`, `picker` (its Monocle segment), `toggle`, `toolbar` (an empty spot in the row),
+    /// `add`, `quickopen`, `picker` (its Monocle segment), `toggle`, `toolbar` (an empty spot in the row),
     /// `close`), `chrome.winmove.<part>` (`moves` where a drag in the title
     /// bar moves the window before the app sees it, else `stays`; `tabs`
     /// lists every tab shown), `chrome.tiles` (the tile area, top-left coordinates),
-    /// `chrome.fits`, `tab.statuses`, `search.chord`, `search.active` and
-    /// `palette.anchor` (`search` while the ⌘K dropdown hangs from the field).
+    /// `chrome.fits`, `tab.statuses`, `quickopen.chord` (its tooltip's chord), `quickopen.active` and
+    /// `palette.anchor` (`centred` while the ⌘K menu sits centred under the toolbar row).
     func chromeState() -> [String: String] {
         var s: [String: String] = ["chrome.lights": TrafficLights.describe(window)]
         s["hud.flashes"] = "\(flashes)"
@@ -920,12 +935,12 @@ extension WindowController {
         }
         s["chrome.hit.tab1"] = hit(tabBar.firstTab)
         s["chrome.hit.add"] = hit(tabBar.subviews.first { $0 is NSButton })
-        s["chrome.hit.search"] = hit(search)
+        s["chrome.hit.quickopen"] = hit(quickOpen)
         s["chrome.hit.picker"] = hit(layoutPicker.isHidden ? nil : layoutPicker.segment(.monocle))
         s["chrome.hit.toggle"] = hit(sidebarToggle)
-        let right = layoutPicker.isHidden ? search.frame.minX : layoutPicker.frame.minX
-        // An empty spot in the row: between the tab strip and the picker (or the search field).
-        let gap = NSPoint(x: (tabBar.frame.maxX + right) / 2, y: search.frame.midY)
+        let right = layoutPicker.isHidden ? quickOpen.frame.minX : layoutPicker.frame.minX
+        // An empty spot in the row: between the tab strip and the picker (or the ⌘ button).
+        let gap = NSPoint(x: (tabBar.frame.maxX + right) / 2, y: quickOpen.frame.midY)
         s["chrome.hit.toolbar"] = hit(content, at: content.convert(gap, to: theme))
         s["chrome.hit.close"] = hit(window.standardWindowButton(.closeButton))
         // Where a drag moves the window before the app sees it.
@@ -939,15 +954,15 @@ extension WindowController {
         s["chrome.winmove.tabs"] = tabBar.tabButtons.filter { !$0.isHidden }.map { winmove($0) }
             .joined(separator: ",")
         s["chrome.winmove.add"] = winmove(tabBar.subviews.first { $0 is NSButton })
-        s["chrome.winmove.search"] = winmove(search)
+        s["chrome.winmove.quickopen"] = winmove(quickOpen)
         s["chrome.winmove.picker"] = winmove(layoutPicker.isHidden ? nil : layoutPicker.segment(.monocle))
         s["chrome.winmove.toggle"] = winmove(sidebarToggle)
         s["chrome.winmove.toolbar"] = winmove(content, at: content.convert(gap, to: nil))
         let t = tiles.frame
         s["chrome.tiles"] = "\(Int(t.minX)),\(Int(content.bounds.height - t.maxY)),\(Int(t.width)),\(Int(t.height))"
-        // The tabs end before the picker, the picker before the search field.
+        // The tabs end before the picker, the picker before the ⌘ button.
         s["chrome.fits"] = tabBar.frame.maxX <= right && (layoutPicker.isHidden
-            || layoutPicker.frame.maxX <= search.frame.minX) ? "yes" : "no"
+            || layoutPicker.frame.maxX <= quickOpen.frame.minX) ? "yes" : "no"
         // As a rail, the card sits clear of the traffic lights, the toggle,
         // the tab strip and the tiles (a gutter from them): what it
         // overlaps, or "none".
@@ -968,13 +983,14 @@ extension WindowController {
         s["tab.overflow"] = tabBar.overflow
         s["tab.names"] = tabBar.tabButtons.map(\.title).joined(separator: "|")
         s["tab.hint"] = tabBar.selectedHint
-        s["search.chord"] = search.chordText.isEmpty ? "-" : search.chordText
-        s["search.active"] = search.active ? "yes" : "no"
+        s["quickopen.chord"] = quickOpen.chordText.isEmpty ? "-" : quickOpen.chordText
+        s["quickopen.active"] = quickOpen.active ? "yes" : "no"
         if !palette.isOpen {
             s["palette.anchor"] = "-"
         } else {
-            let p = palette.frame, f = search.frame
-            s["palette.anchor"] = abs(p.maxX - f.maxX) < 1 && p.maxY >= f.maxY ? "search" : "elsewhere"
+            let p = palette.frame, b = content.bounds
+            let want = ChromeLayoutView.paletteFrame(in: b, preferredHeight: palette.preferredHeight)
+            s["palette.anchor"] = abs(p.midX - b.midX) < 1 && abs(p.maxY - want.maxY) < 1 ? "centred" : "elsewhere"
         }
         return s
     }

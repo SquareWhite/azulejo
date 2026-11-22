@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Window chrome, tab strip and toolbar search field check,
+# Window chrome, tab strip and toolbar ⌘ button check,
 # in-process, on its own dev instance (AZJ_DEV_NAME=toolbar). Window captures
 # land in .dev/<name>/out/toolbar.
 #   apps/macos/automation/toolbar.sh [--keep]   (--keep: leave the dev instance)

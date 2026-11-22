@@ -83,7 +83,7 @@ extension AppController {
             controller?.tiles.focusedView?.setFocused(true)
         }
         palette.openList(id: "themes", items: items, selectedID: "theme:" + current,
-                         placeholder: "Set theme…   ↑↓ previews · ↩ keeps it · esc goes back")
+                         placeholder: "Search themes")
         palette.onSelect = { item in
             guard item.id.hasPrefix("theme:") else { return }
             Theme.preview(String(item.id.dropFirst("theme:".count)))

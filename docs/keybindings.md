@@ -450,10 +450,11 @@ New tabs start as a dynamic Tile layout (`[layout] default`), so a plain split (
 
 ### Quick open (⌘K)
 
-One menu for commands and places. On an empty query it lists recent rows first (commands and places mixed), then workspaces, tabs and tiles, then commands. Typing fuzzy-matches across all of them, ranked together: whole or leading matches on a name come first, places win a close tie with commands, and recently used rows get a boost. Each row says what it is (Workspace, Tab, Terminal or Command), and commands show their chords.
+One menu for commands and places, centred over the window; the ⌘ button at the toolbar's right end opens it too. On an empty query it lists what needs you first (blocked agents, longest waiting first, then finished agents you haven't read), then working agents, then the last few rows you ran, then every other workspace, tab and tile. Typing fuzzy-matches across places and commands in one flat list: whole or leading matches on a name come first, places win a close tie with commands, and recently used rows get a boost, with the matched letters lit wherever they show. A row starts with an agent's state or its kind's icon, then where it lives (`workspace › tab ›`) and its name, then what it's doing (an agent's task, a command, a branch, a folder); on the right, how long an agent has waited, a command's chords or a workspace's `cmd+N`.
 
-- `>` at the start limits it to commands (what `cmd+shift+p` used to open).
+- `>` at the start limits it to commands (what `cmd+shift+p` used to open), by category, recent ones first.
 - `@` limits it to workspaces, tabs and tiles (what `cmd+p` used to open).
+- Either shows as a token in the field; `backspace` on an empty query removes it.
 - Commands that need input (renames, open URL, layouts) ask for it inline, as before.
 - `command_palette` and `goto` still exist as actions with no default chord. Bind them to open the menu with `>` or `@` already typed:
 

@@ -77,9 +77,13 @@ wait 1200
 expect focused.agent blocked!
 seen-visible off
 
-# ⌘K shows the agents too (dot) and finds tiles by agent name.
+# ⌘K lists what needs you first (blocked, then the unread finish), with
+# their state icons, and finds tiles by agent name.
 key cmd+k
+expect palette.sections Needs you 2|Places 2
+expect palette.topstatus blocked
+expect palette.scrim yes
 palette type @codex
-expect palette.top codex
 expect palette.topkind Terminal
+expect palette.topstatus blocked
 key escape

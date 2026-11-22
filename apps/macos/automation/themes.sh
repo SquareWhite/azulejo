@@ -93,7 +93,7 @@ failures = []
 # Where things sit in the mockup scene at 1440 × 900 (points, top left).
 SIDEBAR = (60, 600, 140, 180)      # the card below the machine groups
 TABSTRIP = (507, 22, 14, 18)       # the strip's pill, between "release" and "+"
-GUTTER = (600, 15, 400, 30)        # the window colour, between the tabs and the search field
+GUTTER = (600, 15, 400, 30)        # the window colour, between the tabs and the layout picker
 HEADER = (260, 54, 160, 22)        # the focused claude tile's strip, left of its title
 TERMINAL = (640, 700, 200, 140)    # the claude terminal, below its last line
 
@@ -119,7 +119,7 @@ for tag, theme in themes:
     r = regions(f"{tag}-{theme}-palette")
     if "palette" in r:
         x, y, w, h = r["palette"]
-        samples["palette"] = (mode(pal, (x + 20, y + h - 40, w - 40, 30)), None)
+        samples["palette"] = (mode(pal, (x + 20, y + h - 40, w - 40, 30)), solid(theme, "palette"))
     else:
         failures.append(f"{theme}: the palette's frame wasn't logged")
     r = regions(f"{tag}-{theme}-find")

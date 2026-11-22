@@ -22,9 +22,9 @@ enum Design {
         static let tileAlt = Theme.token("tileAlt")
         /// inset strips
         static let sunken = Theme.token("sunken")
-        /// segmented tracks, search field, tab container
+        /// segmented tracks, tab container, the sidebar's ⌘N badges
         static let control = Theme.token("control")
-        /// selected sidebar row, selected palette row
+        /// selected sidebar row
         static let selected = Theme.token("selected")
         /// hairlines around cards, fields and toasts
         static let border = Theme.token("border")
@@ -134,20 +134,22 @@ enum Design {
         static let tabTextSelected = Theme.token("tabTextSelected")
         /// the tab strip's +
         static let tabAdd = Theme.token("tabAdd")
-        /// toolbar search field
-        static let searchField = Theme.token("searchField")
-        /// toolbar search field hairline
-        static let searchBorder = Theme.token("searchBorder")
-        /// search field hairline while quick open is open
+        /// the toolbar's ⌘ button hairline while quick open is open
         static let searchBorderActive = Theme.token("searchBorderActive")
-        /// search placeholder and magnifier
-        static let searchText = Theme.token("searchText")
-        /// the search field's key badge (⌘K)
-        static let searchBadge = Theme.token("searchBadge")
-        /// the search field's key badge text
-        static let searchBadgeText = Theme.token("searchBadgeText")
+        /// small fills: ⌘K section counts and machine chips
+        static let chip = Theme.token("chip")
+        /// text on chips
+        static let chipText = Theme.token("chipText")
         /// sidebar toggle next to the traffic lights
         static let titlebarIcon = Theme.token("titlebarIcon")
+        /// the ⌘K quick-open panel
+        static let palette = Theme.token("palette")
+        /// selected ⌘K row (a hovered one at alpha.rowHover)
+        static let paletteSelected = Theme.token("paletteSelected")
+        /// shade over the window while ⌘K is open
+        static let paletteScrim = Theme.token("paletteScrim")
+        /// matched characters on the selected ⌘K row
+        static let paletteMatchSelected = Theme.token("paletteMatchSelected")
     }
 
     /// The built-in themes (tokens.json `themes`), in order. The core sends
@@ -217,13 +219,14 @@ enum Design {
             "tabText",
             "tabTextSelected",
             "tabAdd",
-            "searchField",
-            "searchBorder",
             "searchBorderActive",
-            "searchText",
-            "searchBadge",
-            "searchBadgeText",
+            "chip",
+            "chipText",
             "titlebarIcon",
+            "palette",
+            "paletteSelected",
+            "paletteScrim",
+            "paletteMatchSelected",
         ]
         static let builtIn: [ThemeSpec] = [
             ThemeSpec(
@@ -291,13 +294,14 @@ enum Design {
                     "tabText": .rgba(0x9da5b4ff),
                     "tabTextSelected": .rgba(0xd7dae0ff),
                     "tabAdd": .rgba(0x6c717aff),
-                    "searchField": .rgba(0x27292eff),
-                    "searchBorder": .rgba(0x33353aff),
                     "searchBorderActive": .rgba(0x61afef80),
-                    "searchText": .rgba(0x7f848eff),
-                    "searchBadge": .rgba(0x34363aff),
-                    "searchBadgeText": .rgba(0xabb2bfff),
+                    "chip": .rgba(0x34363aff),
+                    "chipText": .rgba(0xabb2bfff),
                     "titlebarIcon": .rgba(0x7f848eff),
+                    "palette": .rgba(0x21252bff),
+                    "paletteSelected": .rgba(0x2c313aff),
+                    "paletteScrim": .rgba(0x00000066),
+                    "paletteMatchSelected": .rgba(0x61afefff),
                 ],
                 terminal: TerminalSpec(
                     background: 0x282c34ff, foreground: 0xabb2bfff,
@@ -369,13 +373,14 @@ enum Design {
                     "tabText": .rgba(0x5c5f69ff),
                     "tabTextSelected": .rgba(0x383a42ff),
                     "tabAdd": .rgba(0x74767fff),
-                    "searchField": .rgba(0xfafafaff),
-                    "searchBorder": .rgba(0xc9c9ccff),
                     "searchBorderActive": .rgba(0x4760efb3),
-                    "searchText": .rgba(0x6b6d76ff),
-                    "searchBadge": .rgba(0xeaeaebff),
-                    "searchBadgeText": .rgba(0x5c5f69ff),
+                    "chip": .rgba(0xeaeaebff),
+                    "chipText": .rgba(0x5c5f69ff),
                     "titlebarIcon": .rgba(0x6b6d76ff),
+                    "palette": .rgba(0xffffffff),
+                    "paletteSelected": .rgba(0xe6e7ecff),
+                    "paletteScrim": .rgba(0x0000002e),
+                    "paletteMatchSelected": .rgba(0x3a52dcff),
                 ],
                 terminal: TerminalSpec(
                     background: 0xfafafaff, foreground: 0x383a42ff,
@@ -447,13 +452,14 @@ enum Design {
                     "tabText": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
                     "tabTextSelected": .system("labelColor", alpha: nil, fallback: 0xffffffd8),
                     "tabAdd": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
-                    "searchField": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
-                    "searchBorder": .system("separatorColor", alpha: nil, fallback: 0xffffff19),
                     "searchBorderActive": .system("controlAccentColor", alpha: 0.7, fallback: 0x007affb3),
-                    "searchText": .system("labelColor", alpha: 0.45, fallback: 0xffffff73),
-                    "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
-                    "searchBadgeText": .system("labelColor", alpha: 0.62, fallback: 0xffffff9e),
+                    "chip": .system("secondarySystemFill", alpha: nil, fallback: 0xffffff14),
+                    "chipText": .system("labelColor", alpha: 0.62, fallback: 0xffffff9e),
                     "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0xffffff8c),
+                    "palette": .rgba(0x262628ff),
+                    "paletteSelected": .system("controlAccentColor", alpha: 0.26, fallback: 0x007aff42),
+                    "paletteScrim": .rgba(0x00000059),
+                    "paletteMatchSelected": .rgba(0xffffffff),
                 ],
                 terminal: TerminalSpec(
                     background: 0x1e1e1eff, foreground: 0xffffffff,
@@ -525,13 +531,14 @@ enum Design {
                     "tabText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
                     "tabTextSelected": .system("labelColor", alpha: nil, fallback: 0x000000d8),
                     "tabAdd": .system("secondaryLabelColor", alpha: nil, fallback: 0x0000007f),
-                    "searchField": .system("textBackgroundColor", alpha: nil, fallback: 0xffffffff),
-                    "searchBorder": .system("labelColor", alpha: 0.13, fallback: 0x00000021),
                     "searchBorderActive": .system("controlAccentColor", alpha: 0.7, fallback: 0x007affb3),
-                    "searchText": .system("labelColor", alpha: 0.45, fallback: 0x00000073),
-                    "searchBadge": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
-                    "searchBadgeText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
+                    "chip": .system("secondarySystemFill", alpha: nil, fallback: 0x00000014),
+                    "chipText": .system("labelColor", alpha: 0.62, fallback: 0x0000009e),
                     "titlebarIcon": .system("secondaryLabelColor", alpha: nil, fallback: 0x0000007f),
+                    "palette": .rgba(0xffffffff),
+                    "paletteSelected": .system("controlAccentColor", alpha: 0.14, fallback: 0x007aff24),
+                    "paletteScrim": .rgba(0x0000002e),
+                    "paletteMatchSelected": .rgba(0x0040a0ff),
                 ],
                 terminal: TerminalSpec(
                     background: 0xffffffff, foreground: 0x000000ff,
@@ -606,7 +613,7 @@ enum Design {
         static let tab: CGFloat = 8
         static let headerTab: CGFloat = 6
         static let searchField: CGFloat = 8
-        static let searchBadge: CGFloat = 4
+        static let chip: CGFloat = 4
         static let sidebarSegment: CGFloat = 7
         static let badgeDot: CGFloat = 4
         static let hintBadge: CGFloat = 4
@@ -637,6 +644,7 @@ enum Design {
         static let bannerMix: CGFloat = 0.75
         static let bannerBorder: CGFloat = 0.5
         static let paletteShadow: CGFloat = 0.35
+        static let paletteScope: CGFloat = 0.14
         static let dragShadow: CGFloat = 0.3
         static let dropSlot: CGFloat = 0.12
         static let dropSlotBorder: CGFloat = 0.75
@@ -676,10 +684,18 @@ enum Design {
         static let headerTabIconGap: CGFloat = 5
         static let headerTabMinWidth: CGFloat = 96
         static let headerTabMoreWidth: CGFloat = 34
-        static let searchWidth: CGFloat = 280
-        static let searchMinWidth: CGFloat = 170
         static let searchHeight: CGFloat = 30
-        static let searchBadgeHeight: CGFloat = 16
+        static let keyBadgeHeight: CGFloat = 16
+        static let quickOpenButton: CGFloat = 30
+        static let paletteWidth: CGFloat = 620
+        static let paletteTopGap: CGFloat = 12
+        static let paletteMaxHeight: CGFloat = 560
+        static let paletteFieldHeight: CGFloat = 48
+        static let paletteRowHeight: CGFloat = 30
+        static let paletteSectionHeight: CGFloat = 24
+        static let paletteFooterHeight: CGFloat = 30
+        static let paletteInset: CGFloat = 6
+        static let paletteRowPaddingX: CGFloat = 10
         static let layoutPickerSegmentWidth: CGFloat = 28
         static let layoutPickerPadding: CGFloat = 3
         static let layoutPickerGap: CGFloat = 8
@@ -722,7 +738,8 @@ enum Design {
         static let findButton: CGFloat = 11
         static let tabAdd: CGFloat = 13
         static let tabStatus: CGFloat = 12
-        static let searchIcon: CGFloat = 12
+        static let quickOpenButton: CGFloat = 13
+        static let paletteSearch: CGFloat = 13
         static let layoutPicker: CGFloat = 12
         static let sidebarToggle: CGFloat = 14
         static let sidebarRow: CGFloat = 12
@@ -762,10 +779,15 @@ enum Design {
         nonisolated(unsafe) static let hud: NSFont = .systemFont(ofSize: 12, weight: .medium)
         nonisolated(unsafe) static let field: NSFont = .systemFont(ofSize: 12, weight: .regular)
         nonisolated(unsafe) static let paletteField: NSFont = .systemFont(ofSize: 15, weight: .regular)
-        nonisolated(unsafe) static let paletteTitle: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let paletteTitle: NSFont = .systemFont(ofSize: 13, weight: .medium)
         nonisolated(unsafe) static let paletteMatch: NSFont = .systemFont(ofSize: 13, weight: .bold)
-        nonisolated(unsafe) static let paletteSection: NSFont = .systemFont(ofSize: 10, weight: .medium)
+        nonisolated(unsafe) static let paletteSection: NSFont = .systemFont(ofSize: 11, weight: .semibold)
         nonisolated(unsafe) static let palettePrompt: NSFont = .systemFont(ofSize: 11, weight: .semibold)
+        nonisolated(unsafe) static let paletteDetail: NSFont = .systemFont(ofSize: 12, weight: .regular)
+        nonisolated(unsafe) static let paletteCrumb: NSFont = .systemFont(ofSize: 13, weight: .regular)
+        nonisolated(unsafe) static let paletteChip: NSFont = .systemFont(ofSize: 10.5, weight: .medium)
+        nonisolated(unsafe) static let paletteScope: NSFont = .systemFont(ofSize: 12, weight: .semibold)
+        nonisolated(unsafe) static let paletteEmpty: NSFont = .systemFont(ofSize: 13, weight: .semibold)
         nonisolated(unsafe) static let chord: NSFont = .monospacedSystemFont(ofSize: 11, weight: .regular)
         nonisolated(unsafe) static let bannerIcon: NSFont = .systemFont(ofSize: 13, weight: .bold)
         nonisolated(unsafe) static let bannerText: NSFont = .monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -780,8 +802,7 @@ enum Design {
         nonisolated(unsafe) static let tileLabel: NSFont = .monospacedSystemFont(ofSize: 12, weight: .medium)
         nonisolated(unsafe) static let tab: NSFont = .systemFont(ofSize: 13, weight: .regular)
         nonisolated(unsafe) static let tabSelected: NSFont = .systemFont(ofSize: 13, weight: .medium)
-        nonisolated(unsafe) static let search: NSFont = .systemFont(ofSize: 13, weight: .regular)
-        nonisolated(unsafe) static let searchBadge: NSFont = .systemFont(ofSize: 11, weight: .regular)
+        nonisolated(unsafe) static let keyBadge: NSFont = .systemFont(ofSize: 11, weight: .regular)
     }
 
     /// Agent and machine states, each with an SF Symbol and a colour.
