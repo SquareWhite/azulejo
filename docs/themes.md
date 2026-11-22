@@ -60,7 +60,7 @@ With Ghostty's colours, a Ghostty `theme = light:…,dark:…` follows Azulejo's
 
 ## Agent state in tile headers
 
-Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. A terminal tile whose agent is working, blocked or finished (and not read yet) shows a small status icon at the right end of its header strip: no text (the agent's name and state sit in its tooltip) and no coloured border round the tile. The icons and colours match the tab strip and sidebar:
+Agent state shows in the sidebar rows, the rail, the tab strip's status icons, ⌘K, the sidebar footer counts and the Dock badge. A terminal tile whose agent is working, blocked or finished (and not read yet) shows a small status icon in place of the terminal icon, just before its header title: no text (the agent's name and state sit in its tooltip) and no coloured border round the tile. The icons and colours match the tab strip and sidebar:
 
 | State | Icon | Colour |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ Agent state shows in the sidebar rows, the rail, the tab strip's status icons, �
 | blocked (waiting for input) | `exclamationmark.circle.fill` | `statusBlocked` |
 | done, not read yet | `checkmark.circle` | `statusDone` |
 
-A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show no icon, so the title gets the whole strip. In a Monocle tab with more than one tile the strip shows the stack as tabs, and each tab carries its own tile's icon at its right end instead.
+A blocked icon stays until the agent moves on: looking doesn't answer it. A finished agent shows the checkmark until you read it: its tile focused, on screen, in the front window for 0.75 s. Then it reads as idle, though herdr may still call it `done`. An idle agent and a plain shell show the plain terminal icon there. The icon and the status icon share one fixed-width slot, so the title stays put as the state changes. In a Monocle tab with more than one tile the strip shows the stack as tabs, and each tab carries its own tile's icon at its right end instead.
 
 **Mark as Unread.** To come back to an agent tile later, right-click its header and choose Mark as Unread (or run "Mark tile as unread" from ⌘K, or bind `toggle_unread`). It then looks like a finish nobody has read: the checkmark in its header, the sidebar's and tab strip's markers, the footer's done count and the Dock badge. It stays unread while its tile stays focused, and whatever the agent does next; a working or blocked agent keeps its own icon in the header until it stops. Once focus has moved to another tile, tab or workspace, coming back to the tile for the same 0.75 s reads it. Switching apps or windows doesn't count as leaving it, and the mark survives a relaunch. Mark as Read (the same menu item and ⌘K command once it's unread) clears it straight away; a workspace row's menu has Mark All as Read. Plain shells (no agent) can't be marked.
 

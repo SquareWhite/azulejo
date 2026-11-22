@@ -34,7 +34,7 @@ enum AttentionStyle {
     /// The status icon in a tile's header: blocked, then working, then an
     /// unread finish or unread mark. Nil for a quiet agent (idle, or a
     /// finish already read, whatever herdr still calls it), without an
-    /// agent, or once herdr lets go of it: the title keeps the whole strip.
+    /// agent, or once herdr lets go of it: the kind icon keeps its slot.
     /// A working agent is only ever lit when the user marked it unread: its
     /// ring keeps the header until it stops, then the done mark shows.
     static func status(for tile: TileModel) -> Design.Status? {
@@ -78,14 +78,14 @@ enum AttentionStyle {
     }
 }
 
-/// Agent state on the tiles, at the right end of a terminal tile's header
-/// strip: the agent's status icon while it's working, blocked or finished and
-/// unread (the default; the same symbols and colours as the tab strip and
-/// sidebar) or, with `[appearance] tile_agent_badge =
-/// true`, the agent's name and state. No coloured border round the tile.
-/// Either sits clear of the terminal's text: it's the strip's subview, so it
-/// moves with it and the title keeps clear of it. The overlay lies over the
-/// tile container and passes every click through.
+/// Agent state on the tiles, in a terminal tile's header strip: the agent's
+/// status icon while it's working, blocked or finished and unread (the
+/// default; the same symbols and colours as the tab strip and sidebar), in
+/// place of the kind icon before the title, or, with `[appearance]
+/// tile_agent_badge = true`, the agent's name and state at the strip's right
+/// end. No coloured border round the tile. Either sits clear of the
+/// terminal's text: it's the strip's subview, so it moves with it. The
+/// overlay lies over the tile container and passes every click through.
 @MainActor
 final class AttentionOverlayView: NSView, ThemeAware {
     /// A tile's header strip, so the badge can sit in it.
@@ -194,12 +194,17 @@ final class AttentionOverlayView: NSView, ThemeAware {
             .withSymbolConfiguration(config)
     }
 
-    /// `view` at the right end of the tile's header strip, which lays it out
-    /// and keeps its title clear of it; over the tile's top right corner when
-    /// it has no strip.
+    /// `view` in the tile's header strip, which lays it out: a status icon
+    /// in place of the kind icon before the title, a badge at the right end
+    /// with the title kept clear of it. Over the tile's top right corner
+    /// when it has no strip.
     private func place(_ view: NSView, tile id: String, frame: CGRect) {
         if let strip = header?(id), !strip.isHidden {
-            strip.badge = view
+            if let mark = view as? StatusIconView {
+                strip.status = mark
+            } else {
+                strip.badge = view
+            }
             return
         }
         if view.superview !== self { addSubview(view) }
@@ -210,7 +215,10 @@ final class AttentionOverlayView: NSView, ThemeAware {
     }
 
     private func unplace(_ view: NSView, tile id: String) {
-        if let strip = header?(id), strip.badge === view { strip.badge = nil }
+        if let strip = header?(id) {
+            if strip.badge === view { strip.badge = nil }
+            if strip.status === view { strip.status = nil }
+        }
         view.removeFromSuperview()
     }
 }

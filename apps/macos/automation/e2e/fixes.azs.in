@@ -147,6 +147,18 @@ key ctrl+cmd+t
 until tiles 4 5000
 until motion still
 log === N5 no agent badge in headers by default: each agent tile shows its status icon
+# A quiet agent (idle, nothing unread): the kind icon leads its title.
+# Where the title starts, for once the agent works (its ring takes the same
+# slot, so the title stays put).
+key alt+h
+expect focus 1
+until motion still
+expect tile.header.lead icon
+sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state idle
+until tile.header.title claude 3000
+wait 300
+expect tile.header.lead icon
+remember tile.header.titlex
 sh {herdr} --session {session} pane report-agent {pane:1} --source e2e --agent claude --state working
 sh {herdr} --session {session} pane report-agent {pane:2} --source e2e --agent codex --state blocked
 sh {herdr} --session {session} pane report-agent {pane:3} --source e2e --agent claude --state working
@@ -165,10 +177,13 @@ expect header.agents working,blocked,done,none
 shot n5-badges-narrow
 window-size 1440 900
 wait 800
-# The working tile's title keeps clear of its ring alone (13 pt + the inset).
+# The working tile's ring takes the kind icon's place before the title:
+# nothing at the right end, and the title hasn't moved.
 key alt+h
 expect focus 1
-expect tile.header.inset 19
+expect tile.header.inset 0
+expect tile.header.lead working
+unchanged tile.header.titlex
 # Blocked and focused: the icon stays, without text. Up the stack from its
 # last tile. Focus alone answers nothing and reads nothing (tile 3 is passed
 # on the way; reading is the shell's dwell, see agents.azs).
@@ -179,7 +194,8 @@ expect focus 2
 wait 300
 expect agents working,blocked!,done!,none
 expect header.agents working,blocked,done,none
-remember tile.header.inset
+expect tile.header.lead blocked
+expect tile.header.inset 0
 key alt+h
 expect focus 1
 log === N5a tile_agent_badge = true brings the badge back, live
@@ -187,14 +203,18 @@ sh cp {config} {config}.n5
 sh printf '\n[appearance]\ntile_agent_badge = true\n' >> {config}
 until tile.badge.setting on 4000
 until header.agents badge,badge,badge,none 2000
-# The working tile's badge takes room from its title again.
+# The working tile's badge takes room from its title at the right end; the
+# kind icon leads the title again.
 remember tile.header.inset
+expect tile.header.lead icon
 wait 600
 shot n5a-badges-on
 sh cp {config}.n5 {config}
 until tile.badge.setting off 4000
 until header.agents working,blocked,done,none 2000
-expect tile.header.inset 19
+expect tile.header.inset 0
+expect tile.header.lead working
+unchanged tile.header.titlex
 log === N5c mid-swap: the blocked icon rides its strip into the master area
 key alt+l
 expect focus 2

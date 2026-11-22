@@ -382,8 +382,13 @@ extension TileFrame: AutomatableTile {
         state["tile.header.subtitle"] = header.subtitleText
         state["tile.header.shown"] = header.shownSubtitle
         state["tile.header.focused"] = header.focused ? "yes" : "no"
-        // Room the strip keeps clear at its right end (status icon or badge; 0 without).
+        // Room the strip keeps clear at its right end (the badge; 0 without).
         state["tile.header.inset"] = "\(Int(header.trailingInset.rounded()))"
+        // What sits before the title: the kind icon, or the agent's status
+        // icon in its place ("working", "blocked", "done").
+        state["tile.header.lead"] = header.leadKind
+        // Where the title starts in the strip: a status change leaves it put.
+        state["tile.header.titlex"] = "\(Int(header.titleX.rounded()))"
         state.merge(TileTabAutomation.state(header)) { _, tabs in tabs }
         state["tile.dim"] = dimLevel > 0 ? "yes" : "no"
         state["tile.overlays.top"] = subviews.last === overlays && layer?.sublayers?.last === overlays.layer
@@ -401,8 +406,9 @@ extension TileFrame: AutomatableTile {
 ///
 /// Title content: what the strip shows between its left edge and the
 /// badge is one of three things (`contentKind`):
-/// - `title`: icon, title and subtitle, as above (the agent's status icon or
-///   badge at the right end);
+/// - `title`: icon, title and subtitle, as above. A busy agent's status icon
+///   (`status`) takes the kind icon's slot at the same size, so the title
+///   stays put; the opt-in badge (`tile_agent_badge`) sits at the right end;
 /// - `tabs`: in a Monocle tab with more than one tile, the stack as tabs
 ///   (`TileTabStripView`, set with `setStack`); each tab carries its own
 ///   status icon, so the strip's badge stands down;
@@ -522,7 +528,8 @@ final class TileHeaderView: NSView, ThemeAware {
     private func showContent(fade: Bool) {
         let tabsOn = showsTabs && overrideContent == nil
         let titleOn = !showsTabs && overrideContent == nil
-        var parts: [(view: NSView, on: Bool)] = [(icon, titleOn), (label, titleOn)]
+        var parts: [(view: NSView, on: Bool)] = [(icon, titleOn && status == nil), (label, titleOn)]
+        if let status { parts.append((status, titleOn)) }
         if let tileTabs { parts.append((tileTabs, tabsOn)) }
         contentFades += 1
         let generation = contentFades
@@ -578,10 +585,40 @@ final class TileHeaderView: NSView, ThemeAware {
         render()
     }
 
-    /// The agent's status icon, or its badge (the attention overlay makes
-    /// and fills either), at the strip's right end; the title keeps clear of
-    /// it. None without an agent: the title gets the whole strip. A subview, so it
-    /// rides with the strip when the strip follows a crop clip mid-motion.
+    /// The agent's status icon (the attention overlay makes it) in place of
+    /// the kind icon: the same slot before the title, so the title doesn't
+    /// move when it comes or goes. Nil without a busy agent: the kind icon
+    /// shows. It shows and hides with the title (tabs and overrides hide it).
+    var status: StatusIconView? {
+        didSet {
+            let moved = status.map { $0.superview !== self } ?? false
+            guard oldValue !== status || moved else { return }
+            if oldValue !== status, oldValue?.superview === self { oldValue?.removeFromSuperview() }
+            if let status, moved { addSubview(status, positioned: .above, relativeTo: icon) }
+            // The slot's occupant takes the title's visibility (and its
+            // target opacity mid-fade); the other one stands down.
+            let lead: NSView = status ?? icon
+            lead.isHidden = label.isHidden
+            lead.alphaValue = label.alphaValue
+            if status != nil {
+                icon.isHidden = true
+                icon.alphaValue = 0
+            }
+            needsLayout = true
+        }
+    }
+
+    /// Automation: what the title's leading slot shows: "icon", or the
+    /// status icon's state.
+    var leadKind: String { status.map(\.status.rawValue) ?? "icon" }
+
+    /// Automation: the title's left edge in the strip. Valid after a layout.
+    var titleX: CGFloat { label.frame.minX }
+
+    /// The agent's badge (`tile_agent_badge` on; the attention overlay makes
+    /// and fills it) at the strip's right end; the title keeps clear of it.
+    /// A subview, so it rides with the strip when the strip follows a crop
+    /// clip mid-motion.
     var badge: NSView? {
         didSet {
             if oldValue !== badge, oldValue?.superview === self { oldValue?.removeFromSuperview() }
@@ -590,7 +627,8 @@ final class TileHeaderView: NSView, ThemeAware {
         }
     }
 
-    /// Room kept clear at the strip's right end for the badge (0 without one).
+    /// Room kept clear at the strip's right end for the badge (0 without one;
+    /// the status icon takes none).
     private(set) var trailingInset: CGFloat = 0
 
     /// Automation: the subtitle as drawn after fitting ("…/T/azj/azulejo").
@@ -665,7 +703,7 @@ final class TileHeaderView: NSView, ThemeAware {
         let h = bounds.height
         let iconSize: CGFloat = 14, spacing: CGFloat = 6, margin: CGFloat = 10
         trailingInset = 0
-        // With tabs, each tab carries its tile's status icon.
+        // With tabs, each tab carries its tile's status icon or badge.
         badge?.isHidden = showsTabs
         if let badge, !showsTabs {
             let size = badge.fittingSize, inset = Design.Space.badgeInset
@@ -701,6 +739,8 @@ final class TileHeaderView: NSView, ThemeAware {
         let group = iconSize + spacing + labelWidth
         let left = max(margin, min((bounds.width - group) / 2, right - group))
         icon.frame = NSRect(x: left, y: (h - iconSize) / 2, width: iconSize, height: iconSize)
+        // The status icon centres its symbol in the same slot.
+        status?.frame = icon.frame
         label.frame = NSRect(x: left + iconSize + spacing, y: (h - labelHeight) / 2,
                              width: labelWidth, height: labelHeight)
         CATransaction.begin()

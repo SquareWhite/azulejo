@@ -11,7 +11,8 @@ core {"method":"layout.set","params":{"kind":"manual"}}
 # --- V4: long working-directory subtitles; V8: agent state in headers ---
 # The first terminal prints text at its top-right edge, where the badge used to
 # sit over it. Headers carry no badge now: each agent tile shows its status
-# icon at its right end (the working ring, the blocked icon).
+# icon in place of the terminal icon, before the title (the working ring,
+# the blocked icon).
 core {"method":"terminal.send_text","params":{"text":"cd @DEEP@; @FX@/right.sh\n"}}
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@HOME@"}}}
 until tiles 2 5000
@@ -35,7 +36,8 @@ key alt+h
 wait 300
 remember tile.header.subtitle
 remember tile.header.shown
-expect tile.header.inset 19
+expect tile.header.inset 0
+expect tile.header.lead working
 
 # --- V9: a broken config: the banner ---
 sh cp {config} {config}.orig
