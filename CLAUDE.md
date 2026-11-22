@@ -54,6 +54,11 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 - `vendor/ghostty` (a submodule) is empty in a new worktree. For builds, replace it with a symlink to the main checkout's copy, which holds the built GhosttyKit. Resolve the checkout from Git rather than hard-coding a home directory:
   `rmdir vendor/ghostty && ln -s "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/vendor/ghostty" vendor/ghostty`
 - Never commit that symlink: check `git status` before every commit. Remove it (`rm vendor/ghostty`) before you remove the worktree.
+- The orchestrator removes a sub-agent's worktree as soon as its work is merged or dropped: `rm vendor/ghostty`, `git worktree remove .claude/worktrees/agent-<id>`, then `git branch -d` its branch. Don't leave finished worktrees around: each one carries its own `target/`, around 5 GB.
+
+## Build caches
+
+- `target/` grows without bound: debug and release builds, incremental caches, `target/macos`. Once it passes about 20 GB, or the disk runs low, run `cargo clean` in that checkout (main or worktree) and rebuild. Check with `du -sh target`.
 
 ## Running tests next to other agents
 
