@@ -76,6 +76,7 @@ final class TerminalSurfaceView: NSView {
     init?(runtime: TerminalRuntime, frame: NSRect, command: String, readOnly: Bool) {
         self.readOnly = readOnly
         super.init(frame: frame)
+        addPointerArea()
         token = runtime.register(self)
 
         var cfg = ghostty_surface_config_new()
@@ -140,7 +141,7 @@ final class TerminalSurfaceView: NSView {
         default: pointerCursor = .arrow; cursorName = "arrow"
         }
         // A hovered or dragged divider keeps its resize cursor.
-        if TileContainerView.tileMaySetCursor(self) { pointerCursor.set() }
+        if TileContainerView.tileMaySetCursor(self) { InputState.setCursor(pointerCursor) }
     }
 
     /// libghostty only sends a shape when it changes, so the pointer coming
@@ -148,12 +149,14 @@ final class TerminalSurfaceView: NSView {
     /// and leaving takes it down, unless a divider has the pointer.
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) { pointerCursor.set() }
+        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) {
+            InputState.setCursor(pointerCursor)
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) { NSCursor.arrow.set() }
+        if TileContainerView.tileMaySetCursor(self, pointer: event.locationInWindow) { InputState.setCursor(.arrow) }
     }
 
     func mouseOverLink(_ url: String) { hoveredLink = url.isEmpty ? nil : url }
@@ -698,13 +701,16 @@ final class TerminalSurfaceView: NSView {
 
     // MARK: Mouse
 
-    override func updateTrackingAreas() {
-        trackingAreas.forEach { removeTrackingArea($0) }
+    /// The pointer's area: added once, at init. It follows the visible rect
+    /// by itself (`.inVisibleRect`), so it needn't wait for AppKit's
+    /// `updateTrackingAreas` pass, which may never come for a background
+    /// window that's never key (an automation run's, covered by the user's
+    /// windows, got none: its in-app pointer found no area to enter).
+    private func addPointerArea() {
         addTrackingArea(NSTrackingArea(
-            rect: bounds,
+            rect: .zero,
             options: [.mouseMoved, .mouseEnteredAndExited, .inVisibleRect, .activeInKeyWindow],
             owner: self))
-        super.updateTrackingAreas()
     }
 
     // herdr's attach client turns on every mouse mode in the host terminal

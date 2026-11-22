@@ -1092,6 +1092,8 @@ enum SidebarAutomation {
         case "resign":
             controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: controller.window))
         case "deactivate":
+            // Going to the background lets go of what automation held.
+            InputState.hold([])
             hints.appResignedActive()
         default:
             var flags: NSEvent.ModifierFlags = []
@@ -1112,9 +1114,9 @@ enum SidebarAutomation {
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: controller.window.windowNumber,
                 context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
             else { return "couldn't make a flagsChanged event" }
-            // From here on what's held is what automation says (the sidebar
-            // opening with ⌘ held reads it), not the keyboard.
-            WorkspaceHints.handedIn = true
+            // From here on these are held (the sidebar opening with ⌘ held
+            // reads them).
+            InputState.hold(flags)
             hints.flagsChanged(event)
         }
         return nil

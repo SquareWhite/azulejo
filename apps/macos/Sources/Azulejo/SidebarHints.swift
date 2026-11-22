@@ -38,14 +38,9 @@ final class WorkspaceHints {
     private var suppressed = false
     /// flagsChanged events the monitor has seen (automation checks it).
     private(set) var flagsSeen = 0
-    /// The modifiers the last flagsChanged held.
-    private var held: NSEvent.ModifierFlags = []
     /// Automation: treat the window as key in a background run, which has
     /// none (`sidebar hints key on|off`).
     static var assumeKey = false
-    /// Automation hands the modifiers in (`sidebar hints cmd|none|MODS`):
-    /// what's held is what it last said, not the keyboard.
-    static var handedIn = false
 
     init(app: AppController) {
         self.app = app
@@ -69,7 +64,6 @@ final class WorkspaceHints {
 
     func flagsChanged(_ event: NSEvent) {
         let held = event.modifierFlags.intersection(Self.modifiers)
-        self.held = held
         if held == .command {
             guard !suppressed, pending == nil, showing == nil else { return }
             wait(Design.Motion.sidebarHintDelay, in: event.window)
@@ -92,7 +86,7 @@ final class WorkspaceHints {
     /// even after the chord that opened it; it lasts until the sidebar's
     /// motion (`settling`) ends if that's longer.
     func sidebarExpanded(in controller: WindowController, settling: TimeInterval) {
-        let now = Self.handedIn ? held : NSEvent.modifierFlags.intersection(Self.modifiers)
+        let now = InputState.modifiers.intersection(Self.modifiers)
         guard now == .command, showing == nil,
               Self.assumeKey || (NSApp.isActive && controller.window.isKeyWindow)
         else { return }
@@ -111,7 +105,6 @@ final class WorkspaceHints {
 
     func appResignedActive() {
         suppressed = false
-        held = []
         hide()
     }
 

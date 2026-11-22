@@ -79,14 +79,14 @@ final class SidebarEdgeView: NSView {
             return
         }
         start = event.locationInWindow.x
-        Self.cursor.set()
+        InputState.setCursor(Self.cursor)
         onBegin?()
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let start else { return }
         // Off the strip the pointer keeps the resize cursor until release.
-        Self.cursor.set()
+        InputState.setCursor(Self.cursor)
         onDrag?(event.locationInWindow.x - start)
     }
 

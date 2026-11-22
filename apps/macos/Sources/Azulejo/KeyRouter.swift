@@ -192,7 +192,7 @@ final class KeyRouter {
     /// through: a field's AppKit fallback for enter or escape must then leave
     /// it alone (the user unbound that key there).
     static func letThroughCurrentKey() -> Bool {
-        guard let event = KeyDelivery.delivering ?? NSApp.currentEvent, event.type == .keyDown else { return false }
+        guard let event = InputState.keyEvent, event.type == .keyDown else { return false }
         return lastPassed == event.timestamp
     }
 

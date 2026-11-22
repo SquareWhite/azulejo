@@ -27,11 +27,15 @@ import GhosttyKit
 /// in the tab's order, FX FY from its top left, default the centre), or
 /// `off DX DY` (from where the pointer is, y up).
 ///
+/// The app reads this pointer as the pointer (`InputState.pointer`), and the
+/// cursor it sets is recorded rather than shown (`InputState.setCursor`).
+///
 /// `expect` keys: `hover` (the hovered divider's path, `-` the root,
-/// `none`), `cursor` (the app's cursor: arrow, ibeam, pointer, resize-lr,
-/// resize-ud, other), `hint` (the divider whose gutter the hint line sits
-/// on, `none` while it's hidden), `shape` (libghostty's shape for the
-/// terminal under the pointer, as a cursor name; `none` off a terminal).
+/// `none`), `cursor` (the cursor the app set last: arrow, ibeam, pointer,
+/// resize-lr, resize-ud, other; never the real pointer's), `hint` (the
+/// divider whose gutter the hint line sits on, `none` while it's hidden),
+/// `shape` (libghostty's shape for the terminal under the pointer, as a
+/// cursor name; `none` off a terminal).
 @MainActor
 enum DividerHoverAutomation {
     private enum Order: String { case exitFirst = "exit-first", enterFirst = "enter-first", movedFirst = "moved-first" }
@@ -101,19 +105,13 @@ enum DividerHoverAutomation {
         ["hover": hover(tiles), "cursor": cursorName(), "hint": hint(tiles), "shape": shape(tiles)]
     }
 
-    /// Points the dividers' pointer lookups (`TileContainerView.pointerLocation`)
-    /// at this pointer.
-    static func install() {
-        guard TileContainerView.pointerLocator == nil else { return }
-        TileContainerView.pointerLocator = { _ in pointer }
-    }
-
     /// A drag's pointer (`divider drag`) let go at `point` (window
     /// coordinates): the hover pointer is there now, inside the divider
     /// areas there, with no events (the mouse-up has had its say). Other
     /// areas there hear of it on the next step.
     static func place(at point: CGPoint, in window: NSWindow) {
         pointer = point
+        InputState.movePointer(to: point, in: window)
         inside = Set(trackingAreas(in: window)
             .filter { $0.area.owner is TileContainerView && $0.rect.contains(point) }.map(\.id))
     }
@@ -124,6 +122,7 @@ enum DividerHoverAutomation {
     /// owners of mouse-moved areas the pointer is now in.
     private static func move(to point: CGPoint?, in window: NSWindow) {
         pointer = point
+        InputState.movePointer(to: point, in: window)
         let areas = trackingAreas(in: window)
         let now = Set(areas.filter { area in point.map { area.rect.contains($0) } ?? false }.map(\.id))
         // An area removed under the pointer sends nothing (as in AppKit).
@@ -244,7 +243,7 @@ enum DividerHoverAutomation {
         return "none"
     }
 
-    private static func cursorName(_ c: NSCursor = NSCursor.current) -> String {
+    private static func cursorName(_ c: NSCursor = InputState.cursor) -> String {
         if c === NSCursor.arrow { return "arrow" }
         if c === NSCursor.iBeam { return "ibeam" }
         if c === NSCursor.pointingHand { return "pointer" }

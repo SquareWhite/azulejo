@@ -483,8 +483,7 @@ extension FilesPanelView {
     func dropMode(_ info: any NSDraggingInfo, _ urls: [URL], into folder: FileNode) -> FileTransfer.Mode {
         if isRemote { return .copy }
         let mask = info.draggingSourceOperationMask
-        // Automation never reads the keys the user holds right now.
-        let flags: NSEvent.ModifierFlags = ContextMenus.automating ? [] : NSEvent.modifierFlags
+        let flags = InputState.modifiers
         if flags.contains(.option) || (mask.contains(.copy) && !mask.contains(.move) && !mask.contains(.generic)) {
             return .copy
         }

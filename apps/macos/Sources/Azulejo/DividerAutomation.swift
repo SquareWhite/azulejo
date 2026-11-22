@@ -42,8 +42,6 @@ enum DividerAutomation {
                     note: @escaping (String) -> Void) -> (problem: String?, wait: TimeInterval) {
         guard let controller = app?.focusedController else { return ("no window", 0) }
         let tiles = controller.tiles
-        // The hover goes by the in-app pointer, never the real one.
-        DividerHoverAutomation.install()
         let parts = arg.split(separator: " ").map(String.init)
         let path = parts.count > 1 ? (parts[1] == "-" ? "" : parts[1]) : ""
         switch parts.first ?? "" {

@@ -64,7 +64,7 @@ Details: [apps/macos/README.md, "Dev profile"](apps/macos/README.md#dev-profile-
 
 ## Before merging into main
 
-- [ ] `just lint` (fmt, clippy, design tokens, keys doc, theme colours, icon freshness)
+- [ ] `just lint` (fmt, clippy, design tokens, keys doc, theme colours, global input reads, icon freshness)
 - [ ] `just test`
 - [ ] `just mac`
 - [ ] Every e2e suite in `apps/macos/automation/e2e/` (see above for parallel runs)

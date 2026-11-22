@@ -108,6 +108,13 @@ expect drop.label.move Drop to|copy into @FX@/dest
 expect drop.icon.move doc.on.doc
 wait 300
 shot z02-zones-copy-dark
+# ⌥ alone, from a source that leaves the mask as it was: the app goes by
+# the key it reads as held (automation's, never the keyboard's).
+drop alt at 0.5,0.2 hover files @FX@/src/one.txt
+expect drop.zone move
+expect drop.op copy
+expect drop.label.move Drop to|copy into @FX@/dest
+expect drop.icon.move doc.on.doc
 drop at 0.5,0.2 hover files @FX@/src/one.txt
 expect drop.label.move Drop to|move into @FX@/dest
 expect drop.icon.move arrow.forward.folder

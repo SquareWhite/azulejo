@@ -537,7 +537,14 @@ private final class DropZoneCard {
 ///                                   tile from its top left (0.5,0.75 by
 ///                                   default: the bottom half, which
 ///                                   pastes; the top half moves)
-///     drop [@N] copy …              ⌥ held: the drag's mask narrows to copy
+///     drop [@N] copy …              ⌥ held: the drag's mask narrows to
+///                                   copy, as AppKit narrows it
+///     drop [@N] alt …               ⌥ held, the mask as it was (a source
+///                                   that doesn't narrow it): only the
+///                                   modifier says copy
+///
+/// The modifiers held through a drop are what these say
+/// (`InputState.modifiers`), never the keyboard's.
 ///
 /// `@N` is the tile's place in the tab (`expect focus`); the focused tile
 /// by default. Keys: `drop.op` (what the last hover or drop got:
@@ -580,6 +587,7 @@ enum DropAutomation {
         var place: Int?
         var at = NSPoint(x: 0.5, y: 0.75)
         var copy = false
+        var alt = false
         func shift() {
             words = words.count > 1 ? words[1].split(separator: " ", maxSplits: 1).map(String.init) : []
         }
@@ -588,6 +596,8 @@ enum DropAutomation {
                 place = Int(first.dropFirst())
             } else if first == "copy" {
                 copy = true
+            } else if first == "alt" {
+                alt = true
             } else if first == "at" {
                 shift()
                 let xy = (words.first ?? "").split(separator: ",").compactMap { Double($0) }
@@ -606,6 +616,14 @@ enum DropAutomation {
         let location = tile.convert(point, to: nil)
         let mask: NSDragOperation = copy ? .copy : [.copy, .move, .link, .generic]
         let verb = words.first ?? "", rest = words.count > 1 ? words[1] : ""
+        return InputState.holding(copy || alt ? .option : []) {
+            drag(verb, rest, tile: tile, location: location, mask: mask, controller: controller)
+        }
+    }
+
+    /// One drag `verb` over `tile`, with what's held now.
+    private static func drag(_ verb: String, _ rest: String, tile: TerminalTileView, location: NSPoint,
+                             mask: NSDragOperation, controller: WindowController) -> String? {
         switch verb {
         case "leave":
             tile.draggingExited(nil)
@@ -620,7 +638,7 @@ enum DropAutomation {
             return nil
         default:
             guard let pasteboard = pasteboard(verb, rest, controller) else {
-                return "drop [@N] [at FX,FY] [copy] files|text|custom|url|image|web-image|tree|hover|leave ARG"
+                return "drop [@N] [at FX,FY] [copy|alt] files|text|custom|url|image|web-image|tree|hover|leave ARG"
             }
             let drag = StandInDrag(pasteboard, location: location, mask: mask)
             guard tile.draggingEntered(drag) != [], tile.prepareForDragOperation(drag) else {

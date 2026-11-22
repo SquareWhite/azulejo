@@ -159,7 +159,7 @@ extension TileContainerView {
             aware.liveResizeWillStart(final: view.frame.size)
         }
         dividerDrag = drag
-        divider.cursor.set()
+        InputState.setCursor(divider.cursor)
         dividerCursorSet = true
         showDividerHint(divider, dragging: true)
         MotionStats.shared.started(kind: "divider_drag", setup: 0)
@@ -179,7 +179,7 @@ extension TileContainerView {
         drag.events += 1
         let ratio = drag.divider.ratio(at: drag.divider.coordinate(of: point) - drag.grab)
         MotionStats.shared.movingUntil = max(MotionStats.shared.movingUntil, CACurrentMediaTime() + 0.25)
-        drag.divider.cursor.set()
+        InputState.setCursor(drag.divider.cursor)
         guard drag.lastSent.map({ abs($0 - ratio) > 1e-4 }) ?? true else {
             dividerDrag = drag
             return
@@ -305,18 +305,11 @@ extension TileContainerView {
         if hoveredDivider == hovered { showDividerHint(all.first { $0.path == hovered }, dragging: false) }
     }
 
-    /// Automation's in-app pointer (`DividerHoverAutomation`), in window
-    /// coordinates, in place of the real one; it answers nil when that
-    /// pointer is off the window.
-    static var pointerLocator: ((NSWindow) -> CGPoint?)?
-
-    /// Where the pointer is, in this view's coordinates.
+    /// Where the pointer is, in this view's coordinates (automation: its
+    /// in-app pointer, nil off the window).
     var pointerLocation: CGPoint? {
         guard let window else { return nil }
-        guard let locate = Self.pointerLocator else {
-            return convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        }
-        return locate(window).map { convert($0, from: nil) }
+        return InputState.pointer(in: window).map { convert($0, from: nil) }
     }
 
     /// Whether a mouse-moved event at `point` is the dividers' to handle:
@@ -344,11 +337,11 @@ extension TileContainerView {
         let was = hoveredDivider
         hoveredDivider = divider?.path
         if let divider {
-            divider.cursor.set()
+            InputState.setCursor(divider.cursor)
             dividerCursorSet = true
         } else if dividerCursorSet {
             dividerCursorSet = false
-            cursorBelowDividers(at: point).set()
+            InputState.setCursor(cursorBelowDividers(at: point))
         }
         if was != hoveredDivider { showDividerHint(divider, dragging: false) }
     }

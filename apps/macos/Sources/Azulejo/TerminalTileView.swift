@@ -868,7 +868,7 @@ extension TerminalTileView {
     /// lets them be copied): AppKit then narrows the drag's mask to copy.
     private func dropCopies(_ sender: any NSDraggingInfo) -> Bool {
         let mask = sender.draggingSourceOperationMask
-        return !mask.contains(.move) || NSEvent.modifierFlags.contains(.option)
+        return !mask.contains(.move) || InputState.modifiers.contains(.option)
     }
 
     private func dropOperation(_ sender: any NSDraggingInfo) -> NSDragOperation {

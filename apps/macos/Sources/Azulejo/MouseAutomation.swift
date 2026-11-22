@@ -11,7 +11,9 @@ import AppKit
 ///     mouse hover C,R [MODS]       the modifiers change, then the pointer moves there
 ///     mouse mods [MODS]            only the modifiers change (none without MODS)
 ///
-/// MODS: `cmd`, `shift`, `alt`, `ctrl`, joined with `+`.
+/// MODS: `cmd`, `shift`, `alt`, `ctrl`, joined with `+`. They're what the
+/// app reads as held (`InputState.modifiers`): through a click or drag, and
+/// from a hover or `mods` on until the next one.
 ///
 /// Keys: `mouse.target` (what the last event reached: `terminal`, or the
 /// view's class), `terminal.selection.text` (newlines as `\n`, trailing
@@ -67,19 +69,23 @@ enum MouseAutomation {
         }
         switch (verb, points.count) {
         case ("click", 1):
-            for n in 1...max(1, count) {
-                send(.leftMouseDown, at: points[0], flags: flags, clicks: n, window: window)
-                send(.leftMouseUp, at: points[0], flags: flags, clicks: n, window: window)
+            InputState.holding(flags) {
+                for n in 1...max(1, count) {
+                    send(.leftMouseDown, at: points[0], flags: flags, clicks: n, window: window)
+                    send(.leftMouseUp, at: points[0], flags: flags, clicks: n, window: window)
+                }
             }
         case ("drag", 2):
             let (a, b) = (points[0], points[1])
-            send(.leftMouseDown, at: a, flags: flags, clicks: 1, window: window)
-            for i in 1...6 {
-                let t = CGFloat(i) / 6
-                send(.leftMouseDragged, at: CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t),
-                     flags: flags, clicks: 1, window: window)
+            InputState.holding(flags) {
+                send(.leftMouseDown, at: a, flags: flags, clicks: 1, window: window)
+                for i in 1...6 {
+                    let t = CGFloat(i) / 6
+                    send(.leftMouseDragged, at: CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t),
+                         flags: flags, clicks: 1, window: window)
+                }
+                send(.leftMouseUp, at: b, flags: flags, clicks: 1, window: window)
             }
-            send(.leftMouseUp, at: b, flags: flags, clicks: 1, window: window)
         case ("hover", 1):
             modifiers(flags, window: window)
             send(.mouseMoved, at: points[0], flags: flags, clicks: 0, window: window)
@@ -126,6 +132,7 @@ enum MouseAutomation {
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
             context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
         else { return }
+        InputState.hold(flags)
         window.firstResponder?.flagsChanged(with: event)
     }
 

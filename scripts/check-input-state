@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Fails when the macOS shell reads global input state outside InputState.
+
+    scripts/check-input-state        (run by `just lint`)
+
+AppKit can tell the app which modifier keys are held right now, where the
+pointer is, which buttons are down and which cursor is showing. That's the
+hardware's state, the user's. Automation runs (the `.azs` suites) drive the
+app with synthetic events while the user keeps working, so a key they hold
+or where their pointer sits would leak into the test: a drop that should
+move copies because the user held ⌥.
+
+So every such read goes through `InputState` (apps/macos/Sources/Azulejo/
+InputState.swift), which asks the hardware in a normal run and answers with
+automation's simulated state in an automation run. Setting the cursor goes
+through it too (`InputState.setCursor`), so automation can read back the
+cursor the app chose rather than whatever the window server shows.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCES = ROOT / "apps" / "macos" / "Sources"
+ALLOWED = {"InputState.swift"}
+
+# (pattern, what to use instead)
+RULES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bNSEvent\s*\.\s*modifierFlags\b"), "InputState.modifiers"),
+    (re.compile(r"\bNSEvent\s*\.\s*mouseLocation\b"), "InputState.pointer(in:)"),
+    (re.compile(r"\bNSEvent\s*\.\s*pressedMouseButtons\b"), "a new InputState property"),
+    (re.compile(r"\bmouseLocationOutsideOfEventStream\b"), "InputState.pointer(in:)"),
+    (re.compile(r"\bNSCursor\s*\.\s*current(System)?\b"), "InputState.cursor"),
+    (re.compile(r"\bCGEventSource\w*\s*[.(]"), "a new InputState property"),
+    (re.compile(r"\b(GetCurrentKeyModifiers|GetCurrentEventKeyModifiers|CGEventGetLocation)\b"),
+     "a new InputState property"),
+    (re.compile(r"\bcurrentEvent\b"), "InputState.keyEvent"),
+    # Showing a cursor: InputState.setCursor records it for automation.
+    (re.compile(r"\bNSCursor\s*\.\s*\w+\s*\.\s*(set|push)\s*\(\s*\)|\bNSCursor\s*\.\s*pop\s*\("),
+     "InputState.setCursor"),
+    (re.compile(r"\b\w*[cC]ursor\w*(\.\w+)*\s*(\([^()]*\))?\s*\.\s*set\s*\(\s*\)"), "InputState.setCursor"),
+]
+
+
+def strip(line: str) -> str:
+    """The line without string literals and // comments."""
+    line = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
+    return line.split("//", 1)[0]
+
+
+def problems_in(text: str) -> list[tuple[int, str, str]]:
+    out: list[tuple[int, str, str]] = []
+    in_block = False
+    for i, raw in enumerate(text.splitlines(), 1):
+        line = raw
+        if in_block:
+            if "*/" not in line:
+                continue
+            line = line.split("*/", 1)[1]
+            in_block = False
+        while "/*" in line:
+            head, tail = line.split("/*", 1)
+            if "*/" in tail:
+                line = head + tail.split("*/", 1)[1]
+            else:
+                line, in_block = head, True
+        code = strip(line)
+        for pattern, instead in RULES:
+            m = pattern.search(code)
+            if m:
+                out.append((i, m.group(0), instead))
+                break
+    return out
+
+
+def self_test() -> None:
+    bad = [
+        "let f = NSEvent.modifierFlags",
+        "let p = NSEvent.mouseLocation",
+        "let b = NSEvent.pressedMouseButtons",
+        "let p = window.mouseLocationOutsideOfEventStream",
+        "if NSCursor.current === x {}",
+        "let c = NSCursor.currentSystem",
+        "let f = CGEventSource.flagsState(.combinedSessionState)",
+        "let f = CGEventSourceFlagsState(.hidSystemState)",
+        "guard let e = NSApp.currentEvent else { return }",
+        "NSCursor.arrow.set()",
+        "NSCursor.iBeam.push()",
+        "Self.cursor.set()",
+        "divider.cursor.set()",
+        "pointerCursor.set()",
+        "cursorBelowDividers(at: point).set()",
+    ]
+    good = [
+        "let f = event.modifierFlags",
+        "var flags: NSEvent.ModifierFlags = []",
+        "InputState.setCursor(divider.cursor)",
+        "shadow.set()",
+        "// NSEvent.modifierFlags in a comment",
+        'note("NSApp.currentEvent")',
+        "let c = InputState.cursor",
+        "/* NSCursor.current */ let x = 1",
+    ]
+    for line in bad:
+        assert problems_in(line), f"check-input-state self-test: should flag {line!r}"
+    for line in good:
+        assert not problems_in(line), f"check-input-state self-test: should pass {line!r}"
+
+
+def main() -> int:
+    self_test()
+    found = 0
+    for path in sorted(SOURCES.rglob("*.swift")):
+        if path.name in ALLOWED:
+            continue
+        for line, what, instead in problems_in(path.read_text()):
+            found += 1
+            rel = path.relative_to(ROOT)
+            print(f"{rel}:{line}: `{what}` reads or sets global input state; use {instead}", file=sys.stderr)
+    if found:
+        print(f"check-input-state: {found} global input read(s) outside InputState.swift "
+              "(automation must never see the user's keys, pointer or cursor)", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

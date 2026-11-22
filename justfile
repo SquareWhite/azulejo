@@ -19,6 +19,7 @@ lint:
     python3 scripts/test_design_tokens.py
     scripts/theme-contrast
     scripts/check-theme-colours
+    scripts/check-input-state
     scripts/icon/build.sh --check
     core/crates/hints/tools/model.sh --check
 
