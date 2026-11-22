@@ -781,3 +781,131 @@ fn row_classifier() {
     );
     assert_eq!(cmds(&diff, false), before, "off again: the detector alone");
 }
+
+/// Screens as the terminal reads them: every row padded to the pane width,
+/// detected with and without the row classifier.
+fn screen(rows: &[&str], branch: Option<&str>, colors: &[ColorSpan]) -> [Vec<Item>; 2] {
+    let padded: Vec<String> = rows.iter().map(|r| format!("{r:<100}")).collect();
+    let refs: Vec<&str> = padded.iter().map(String::as_str).collect();
+    [false, true].map(|on| {
+        detect(
+            &Input {
+                rows: &refs,
+                columns: Some(100),
+                cwd: Some(DIR),
+                local: true,
+                branch,
+                colors,
+                row_classifier: on,
+                ..Input::default()
+            },
+            &Fake::new(),
+        )
+    })
+}
+
+/// Items on a row, as `kind value`.
+fn on_row(items: &[Item], row: usize) -> Vec<String> {
+    items
+        .iter()
+        .filter(|i| i.spans.iter().any(|s| s.row == row))
+        .map(|i| format!("{} {}", i.kind.name(), i.value))
+        .collect()
+}
+
+/// Coding agents' status areas, editor mode lines and bare prompt rows
+/// hold no items; the items around them stay.
+#[test]
+fn status_lines_and_bare_prompts() {
+    let rule = "─".repeat(96);
+    let notice = format!(
+        "{}Update available! Run: brew upgrade example-tool@latest",
+        " ".repeat(40)
+    );
+    let agent = [
+        "✻ Worked for 1m 12s · done 9:41 AM · 1 shell still running",
+        notice.as_str(),
+        rule.as_str(),
+        "❯ tidy up the parser and ship it",
+        rule.as_str(),
+        "  Model 9 | effort: high | ctx: 40% | 5h: 6% (→14:50) | 7d: 33% (→Sun 11:00)",
+        "  feature/demo * | /fixture/proj/src",
+        "-- INSERT -- ⏵⏵ auto mode on · 1 shell · ← for agents",
+        "  ⏵⏵ accept edits on (shift+tab to cycle)",
+        "-- VISUAL LINE --",
+        "-- NORMAL --",
+    ];
+    // The notice is drawn in one colour, as the agent does.
+    let colors = [ColorSpan {
+        row: 1,
+        start: notice.find("Update").unwrap(),
+        end: notice.len(),
+        color: 0xe5c07b,
+    }];
+    for (classifier, items) in screen(&agent, Some("feature/demo"), &colors)
+        .iter()
+        .enumerate()
+    {
+        let context = format!("row classifier {}", classifier == 1);
+        assert!(
+            commands(items).is_empty(),
+            "{context}: an update notice is no command: {:?}",
+            described(items)
+        );
+        for row in [0, 1, 2, 3, 4, 5, 7, 8, 9, 10] {
+            assert!(
+                on_row(items, row).is_empty(),
+                "{context}: nothing on status row {row} ({:?}): {:?}",
+                agent[row],
+                on_row(items, row)
+            );
+        }
+        assert_eq!(
+            on_row(items, 6),
+            ["branch feature/demo", "path /fixture/proj/src"],
+            "{context}: the branch and path on the status line stay"
+        );
+    }
+
+    // Two-line prompts (starship, oh-my-posh): the bare second row holds
+    // nothing; with a command typed, the command is an item.
+    let prompts = [
+        "╭─ /fixture/proj/src (feature/demo|✔)",
+        "╰─> ",
+        "",
+        "/fixture/proj/src on  feature/demo",
+        "❯ ",
+        "",
+        "╭─ /fixture/proj/src (feature/demo|✔)",
+        "╰─> git status --short",
+    ];
+    for (classifier, items) in screen(&prompts, Some("feature/demo"), &[])
+        .iter()
+        .enumerate()
+    {
+        let context = format!("row classifier {}", classifier == 1);
+        for row in [1, 4] {
+            assert!(
+                on_row(items, row).is_empty(),
+                "{context}: a bare prompt row holds nothing: {:?}",
+                on_row(items, row)
+            );
+        }
+        assert!(
+            on_row(items, 0).contains(&"path /fixture/proj/src".to_owned()),
+            "{context}: the prompt's path stays: {:?}",
+            on_row(items, 0)
+        );
+        assert_eq!(
+            commands(items),
+            ["git status --short"],
+            "{context}: the command after a two-line prompt"
+        );
+    }
+
+    // Upgrade advice in a sentence is still a command.
+    let advice = ["To fix it, run brew upgrade example-tool and try again."];
+    for items in screen(&advice, None, &[]) {
+        assert_eq!(commands(&items), ["brew upgrade example-tool"]);
+    }
+}

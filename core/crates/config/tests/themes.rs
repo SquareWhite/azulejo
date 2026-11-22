@@ -214,6 +214,7 @@ text_muted = "#8a8f99"      # snake_case works too
 accent = "#ff00ff80"
 browser_chrome = "#202020"  # renamed: find_bar
 kind_preview = "#5c4078"    # a retired tile kind's: ignored
+hint_callout_border = "#c8a02a"  # ⌘S labels lost their outline: ignored
 
 [terminal]
 background = "#1d2026"

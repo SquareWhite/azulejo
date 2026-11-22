@@ -1,10 +1,13 @@
 //! Physical rows into logical lines, and where commands start on them.
 //!
-//! Terminal soft wraps join first (the terminal's wrap flag); then rows an
-//! application wrapped itself (newline plus repeated indent), shell
+//! Terminal soft wraps join first (the terminal's wrap flag), always. Then
+//! rows an application wrapped itself (newline plus repeated indent), shell
 //! continuations (`\`, `|`, an open quote, heredoc or bracket) and a coding
-//! agent's tool calls join into one line per command. Every line keeps
-//! where each of its slices sits on screen ([`Part`]).
+//! agent's tool calls join into one line per command. Rows with no command
+//! at their start join too when they read as one hard-wrapped paragraph
+//! ([`hard_wrap`]), so an item an agent wrapped over several rows (a
+//! command in a coloured run, a URL, a path) is found whole. Every line
+//! keeps where each of its slices sits on screen ([`Part`]).
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
@@ -18,7 +21,7 @@ use super::unicode::{
 };
 use super::words::{
     Context, DIFF_LINE, SHELL_FENCES, accepts, matches, matches_graphemes, path_executable,
-    prose_commands, re, tier, tokens,
+    prose_commands, re, reads_as_prose, tier, tokens,
 };
 
 /// Text wrappers (coding agents, `fmt`) may stop a little short of the
@@ -46,9 +49,10 @@ static KEY_HINT: LazyLock<Regex> =
 /// A run line (`• Ran …`).
 static RAN_CALL: LazyLock<Regex> =
     LazyLock::new(|| re(r"^[ \t]*[•●⏺][ \t]+(?:Ran|Running)[ \t]+(?=\S)"));
-/// An agent's shell escape, `!cmd`, also echoed as `> !cmd`.
+/// An agent's shell escape, `!cmd`, also echoed as `> !cmd`, or opening
+/// an agent's answer (`⏺ ! cmd`) when it hands one over to type.
 static AGENT_PROMPT: LazyLock<Regex> =
-    LazyLock::new(|| re(r"^[ \t]*(?:>[ \t]?)?![ \t]*([A-Za-z_./~][^\r\n]*?)\s*$"));
+    LazyLock::new(|| re(r"^[ \t]*(?:>[ \t]?|[●⏺][ \t]+)?![ \t]*([A-Za-z_./~][^\r\n]*?)\s*$"));
 /// npm's `> package@version script` banner above the script it runs.
 static NPM_BANNER: LazyLock<Regex> = LazyLock::new(|| re(r"^\s*> \S+@\S+ \S"));
 static SHELL_VERSION: LazyLock<Regex> = LazyLock::new(|| re(r"^[A-Za-z]+-\d+(?:\.\d+)*$"));
@@ -221,6 +225,7 @@ pub type RowColors = HashMap<usize, Vec<(Range<usize>, u32)>>;
 
 /// Joins soft lines into logical lines and finds each line's command.
 pub fn join_lines(soft: &[Line], columns: Option<usize>, colors: &RowColors) -> Vec<Line> {
+    let columns = wrap_width(soft, columns);
     let mut result: Vec<Line> = Vec::new();
     let mut index = 0;
     // Inside ``` fences: true for a shell language.
@@ -252,21 +257,41 @@ pub fn join_lines(soft: &[Line], columns: Option<usize>, colors: &RowColors) -> 
             index += 1;
             continue;
         }
-        let start = if header && !trimmed.is_empty() {
-            header = false;
-            source_start(&line.text, true)
-        } else {
+        let previous = (index > 0).then(|| soft[index - 1].text.as_str());
+        let begins = |line: &Line| {
             command_start(
                 &line.text,
                 line.parts.iter().any(|p| colors.contains_key(&p.row)),
-                keyword(&line, colors),
+                keyword(line, colors),
                 fence == Some(true),
-                (index > 0).then(|| soft[index - 1].text.as_str()),
+                previous,
                 agent,
             )
         };
+        let headed = header && !trimmed.is_empty();
+        let mut start = if headed {
+            header = false;
+            source_start(&line.text, true)
+        } else {
+            begins(&line)
+        };
         let mut last = soft[index].clone();
         let mut joined = 0;
+        if start.is_none()
+            && !headed
+            && let Some((cut, cut_last, rows)) = cut_rows(&line, &last, &soft[index + 1..], columns)
+            && let Some(found) = begins(&cut)
+        {
+            // A row ending in a word the wrapper broke (a long path
+            // longer than a row) can't be judged alone: `! /System/…/Launch`
+            // holds half a program name and nothing after it. Judge it
+            // with the rest of the word.
+            start = Some(found);
+            line = cut;
+            last = cut_last;
+            index += rows;
+            joined = rows;
+        }
         if let Some(start) = start {
             let base = if start.mode == Mode::Wrapper {
                 wrapper_indent(soft, index)
@@ -325,6 +350,8 @@ pub fn join_lines(soft: &[Line], columns: Option<usize>, colors: &RowColors) -> 
                 {
                     // A command named in a sentence that runs on past the row.
                     Join::Wrap
+                } else if hard_wrap(&line, &last, next, &geometry) {
+                    Join::Wrap
                 } else {
                     break;
                 };
@@ -338,6 +365,31 @@ pub fn join_lines(soft: &[Line], columns: Option<usize>, colors: &RowColors) -> 
         index += 1;
     }
     result
+}
+
+/// `line` with the rows that carry on a word the wrapper broke at its
+/// last cell ([`Geometry::cut`]), the last of them and how many there
+/// are; none when the next row doesn't.
+fn cut_rows(
+    line: &Line,
+    last: &Line,
+    after: &[Line],
+    columns: Option<usize>,
+) -> Option<(Line, Line, usize)> {
+    let (mut line, mut last) = (line.clone(), last.clone());
+    let mut rows = 0;
+    for next in after.iter().take(64) {
+        if is_blank(&next.text) || is_marker(&next.text) {
+            break;
+        }
+        if !wrap_geometry(&line, &last, next, columns).cut {
+            break;
+        }
+        append(next, &mut line, Join::Cut, leading_ws(&next.text));
+        last = next.clone();
+        rows += 1;
+    }
+    (rows > 0).then_some((line, last, rows))
 }
 
 /// Lines one per row (no joins), each with its command: the detector
@@ -458,6 +510,123 @@ struct Geometry {
     aligned: bool,
 }
 
+/// The width an application wraps its own output at, in cells. Coding
+/// agents and `fmt` wrap at the pane's last column or a little short of
+/// it ([`WRAP_TOLERANCE`]); some stop further in. Take the widest
+/// indented row followed by a row with its indent: when it ends well short
+/// of the pane and at least three such rows are word wraps at that width
+/// (the next row's first word wouldn't have fit after them), that width is
+/// the wrapper's edge. Otherwise it's the pane's width.
+pub fn wrap_width(soft: &[Line], columns: Option<usize>) -> Option<usize> {
+    let columns = columns?;
+    // Each candidate row's width and the next row's first word's.
+    let mut pairs = Vec::new();
+    for pair in soft.windows(2) {
+        let (row, next) = (&pair[0], &pair[1]);
+        if row.parts.len() != 1 || row.limit.is_some() || next.limit.is_some() {
+            continue;
+        }
+        let indent = indentation(&row.text);
+        if indent == 0 || is_blank(&next.text) || indentation(&next.text) != indent {
+            continue;
+        }
+        let first = words(&next.text).next().map_or(0, cells) as i64;
+        pairs.push((cells(trim_trailing_whitespace(&row.text)) as i64, first));
+    }
+    let Some(widest) = pairs.iter().map(|p| p.0).max() else {
+        return Some(columns);
+    };
+    if widest >= columns as i64 - WRAP_TOLERANCE || widest < 40 {
+        return Some(columns);
+    }
+    let wraps = pairs.iter().filter(|(w, f)| w + 1 + f > widest).count();
+    Some(if wraps >= 3 { widest as usize } else { columns })
+}
+
+/// Where a paragraph's later rows start: under its first row's text, past
+/// a bullet or number (`- `, `1. `, `⏺ `), or at its first row's indent.
+fn hanging_indent(text: &str) -> usize {
+    let from = leading_ws(text);
+    match LIST_PREFIX.find(&text[from..]).ok().flatten() {
+        Some(m) if m.end() > 0 => cells(&text[..from + m.end()]),
+        _ => from,
+    }
+}
+
+/// A box's top or bottom edge, or a rule: nothing wraps out of it.
+fn frame_row(text: &str) -> bool {
+    text.chars()
+        .find(|&c| c != ' ' && c != '\t')
+        .is_some_and(|c| "─━═╭╰┌└├┐┘┤╮╯╔╚".contains(c))
+}
+
+/// Three spaces inside a row's text: columns (a table, `ls`, aligned
+/// output), not a wrapped paragraph.
+fn column_gap(text: &str) -> bool {
+    trim_hspace(text).contains("   ")
+}
+
+/// Whether `next` carries on, as a hard wrap, the line ending in `last`:
+/// a paragraph an application (a coding agent, `fmt`) word-wrapped itself
+/// with a newline and a repeated indent. Conservative, since a wrong join
+/// glues two items together:
+///
+/// - `last` reaches the wrap edge: the next row's first word wouldn't have
+///   fit after it ([`Geometry::fits`] against the pane width or the
+///   wrapper's own edge from [`wrap_width`], within [`WRAP_TOLERANCE`], in
+///   cells, so wide characters count twice);
+/// - `next` sits at the paragraph's continuation indent, more than zero
+///   (rows at column zero come from a shell, which soft-wraps): the first
+///   row's indent or its hanging indent past a bullet, and from the third
+///   row on the indent of the row above;
+/// - `next` starts nothing new: no bullet or number, prompt, tool call,
+///   rule or box corner (the caller checks markers), and both rows sit in
+///   the same box or in none;
+/// - neither row holds columns (three spaces in a row);
+/// - `last` doesn't end a sentence that `next` follows with a capital.
+fn hard_wrap(line: &Line, last: &Line, next: &Line, geometry: &Geometry) -> bool {
+    if !geometry.fits
+        || line.limit != next.limit
+        || hard_stop(next, Mode::Block)
+        || frame_row(&last.text)
+    {
+        return false;
+    }
+    let indent = indentation(&next.text);
+    if indent == 0 {
+        return false;
+    }
+    // `last` is still the line's first row (with its soft wraps).
+    let first = last.parts.first().map(|p| p.row) == line.parts.first().map(|p| p.row);
+    let expected = if first {
+        indent == indentation(&line.text) || indent == hanging_indent(&line.text)
+    } else {
+        indent == indentation(&last.text)
+    };
+    if !expected {
+        return false;
+    }
+    if LIST_PREFIX
+        .find(&next.text)
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.end() > indent)
+    {
+        return false;
+    }
+    if column_gap(&last.text) || column_gap(&next.text) {
+        return false;
+    }
+    let ends_sentence = last_row(last)
+        .trim_end_matches(['"', '\'', ')', ']', '*', '`'])
+        .ends_with(['.', '!', '?', ':']);
+    let capital = next.text[indent..]
+        .chars()
+        .next()
+        .is_some_and(char::is_uppercase);
+    !(ends_sentence && capital)
+}
+
 /// The last physical row's text of `last`, trailing blanks trimmed.
 fn last_row(last: &Line) -> &str {
     let trimmed = trim_trailing_whitespace(&last.text);
@@ -479,17 +648,37 @@ fn wrap_geometry(line: &Line, last: &Line, next: &Line, columns: Option<usize>) 
     let first_token = words(&next.text).next().unwrap_or("");
     // Application wraps repeat a non-zero indent. Rows at column zero
     // come from a shell, where the terminal soft-wraps instead.
-    let indent = indentation(&line.text) as i64;
+    // Or past the first row's bullet: an agent's `⏺ ` opens its answer.
+    let first = indentation(&line.text) as i64;
+    let indent = indentation(&next.text) as i64;
     let width = cells(last_row) as i64;
-    let aligned = indent > 0 && indentation(&next.text) as i64 == indent;
+    let aligned = indent > 0 && (indent == first || indent == hanging_indent(&line.text) as i64);
     let edge = last.limit.unwrap_or(columns) as i64 - WRAP_TOLERANCE;
     // A token longer than the wrap width can only have been cut;
-    // a shorter one would have moved to the next row whole.
+    // a shorter one would have moved to the next row whole. Only a path or
+    // a link breaks like that (`…/Launch` + `Services…`, `http` +
+    // `s://…`), and not into a sentence.
     let first_cells = cells(first_token) as i64;
+    // The word so far, over the rows already cut: a link's tail row
+    // (`6?artboard-…`) may hold no slash of its own.
+    let word = words(trim_trailing_whitespace(&line.text))
+        .next_back()
+        .unwrap_or("");
+    let link = word.contains('/') || format!("{word}{first_token}").contains("://");
+    // A row holding nothing but the rest of a broken word ends at the
+    // column the row above broke at, or the word ended there.
+    let same_edge = words(last_row).nth(1).is_some()
+        || line.parts.len() < 2
+        || line.parts.get(line.parts.len() - 2).is_none_or(|p| {
+            let above = trim_trailing_whitespace(&line.text[p.start..p.start + p.length]);
+            width >= (p.row_start + cells(above)) as i64
+        });
     let cut = aligned
         && width >= edge
-        && last_token.contains('/')
-        && cells(last_token) as i64 + first_cells > edge - indent;
+        && link
+        && same_edge
+        && cells(last_token) as i64 + first_cells > edge - indent
+        && !sentence(next);
     Geometry {
         cut,
         fits: width + 1 + first_cells > edge,
@@ -565,7 +754,7 @@ fn continuation(
                     Join::Quote
                 });
             }
-            (geometry.aligned && geometry.fits).then_some(Join::Wrap)
+            (geometry.aligned && geometry.fits && !sentence(next)).then_some(Join::Wrap)
         }
         Mode::Wrapper => {
             // A row after a continuation backslash starts a new line; after
@@ -578,7 +767,12 @@ fn continuation(
         Mode::Shown => None,
         Mode::Block => {
             let description = start.header && describes(next, after);
-            if !state.backslash && geometry.aligned && geometry.fits && !description {
+            if !state.backslash
+                && geometry.aligned
+                && geometry.fits
+                && !description
+                && !sentence(next)
+            {
                 return Some(Join::Wrap);
             }
             if state.open() || state.continues {
@@ -594,6 +788,26 @@ fn continuation(
             None
         }
     }
+}
+
+/// A row that opens a sentence: a capital on a word that names no
+/// command, then two or more words that end the sentence or read as prose
+/// ([`reads_as_prose`]). A command or a link that fills its row to the
+/// edge can't run on into it: "That forces macOS to re-register the
+/// installed app." under `… && killall Dock`.
+fn sentence(next: &Line) -> bool {
+    let text = trim_hspace(&next.text);
+    let all = tokens(text, 0..text.len());
+    let Some(first) = all.first() else {
+        return false;
+    };
+    first.text.chars().next().is_some_and(char::is_uppercase)
+        && tier(first.text).is_none()
+        && all.len() >= 3
+        && (text
+            .trim_end_matches(['"', '\'', ')', ']', '*', '`'])
+            .ends_with(['.', '!', '?', ':'])
+            || reads_as_prose(&all[1..]))
 }
 
 /// A permission box's last row under a command describes it in prose.

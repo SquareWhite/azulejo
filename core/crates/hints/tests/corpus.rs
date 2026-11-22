@@ -38,7 +38,7 @@ fn corpus() {
     let total = report.total();
     assert_eq!(
         (total.found, total.missed, total.wrong),
-        (173, 1, 0),
+        (176, 1, 0),
         "recall 99.4%, precision 100%"
     );
 }

@@ -80,6 +80,20 @@ class Themes(unittest.TestCase):
                        "easing.snappy: y2 must be 1"]:
             self.assertIn(needle, problems)
 
+    def test_bad_materials_fail(self):
+        broken = copy.deepcopy(TOKENS)
+        broken["material"]["hintPanel"] = {"dark": "frosted", "light": "popover"}
+        broken["material"]["halfDone"] = {"dark": "hudWindow"}
+        problems = "\n".join(gen.validate(broken))
+        for needle in ["material.hintPanel.dark: 'frosted' isn't a known material",
+                       "material.halfDone: needs a material for dark and for light"]:
+            self.assertIn(needle, problems)
+
+    def test_generated_swift_carries_the_materials(self):
+        swift = gen.generate(TOKENS)
+        self.assertIn("static func hintPanel(_ appearance: ThemeAppearance) -> NSVisualEffectView.Material", swift)
+        self.assertIn("appearance == .dark ? .hudWindow : .popover", swift)
+
     def test_generated_swift_carries_the_curves(self):
         swift = gen.generate(TOKENS)
         self.assertIn("static let easeOut: (Float, Float, Float, Float) = (0.15, 0.85, 0.35, 1)", swift)

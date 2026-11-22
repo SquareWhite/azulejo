@@ -46,6 +46,11 @@ static LOCATION_SUFFIX: LazyLock<Regex> = LazyLock::new(|| re(r":\d+(?::\d+)?$")
 static PATH_START: LazyLock<Regex> = LazyLock::new(|| re(r"(?:^|[\(\[\{:=])(?=/|~/|\.\.?/)"));
 static CODE: LazyLock<Regex> = LazyLock::new(|| re(r"`([^`\r\n]+)`"));
 static FILENAME: LazyLock<Regex> = LazyLock::new(|| re(r"^[^/]*\.[A-Za-z0-9_-]{1,12}$"));
+/// A tool's own update notice in its status area ("Update available! Run:
+/// brew upgrade …"): advice about the tool, not a command on the screen.
+static UPDATE_NOTICE: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"(?i)^[ \t]*(?:[^\w\s]+[ \t]*)?(?:an? )?(?:new )?update (?:is )?available\b")
+});
 
 /// Deliberately small: TLDs that double as common file extensions
 /// (md, sh, py, rs, pl, in, so, cc, app, zip, ...) are left out so
@@ -168,6 +173,8 @@ pub fn scan(
         // Code and colour boundaries keep surrounding prose out of inline
         // commands; in plain prose a cue word introduces a command. On
         // styled rows, an unrecognised coloured path or noun stays put.
+        // An update notice names none.
+        let notice = matches(&UPDATE_NOTICE, text);
         let mut candidates: Vec<(Range<usize>, Context)> = CODE
             .captures_iter(text)
             .flatten()
@@ -175,7 +182,7 @@ pub fn scan(
             .collect();
         candidates.extend(colors[row].iter().map(|r| (r.clone(), Context::ColorRun)));
         for (candidate, context) in candidates {
-            if candidate.end > text.len() {
+            if notice || candidate.end > text.len() {
                 continue;
             }
             let Some(range) = inline_command(&candidate, context, text) else {
@@ -196,7 +203,7 @@ pub fn scan(
         // A tool call or shown command (cut short with `…`, so not
         // offered) is shell text, not prose: "gh run watch" has no cue.
         let shell = matches(&TOOL_CALL, text) || matches(&SHOWN_CALL, text);
-        if !shell {
+        if !shell && !notice {
             for (range, _) in prose_commands(text) {
                 if command_ranges.iter().any(|c| overlaps(c, &range)) || !runnable(&range) {
                     continue;

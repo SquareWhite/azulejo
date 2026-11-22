@@ -13,84 +13,153 @@ until terminal.phase attached 10000
 sh {herdr} --session {session} pane run {pane} "stty -echo; PS1=; printf '\033[2J\033[H'; cat screen.txt"
 wait 600
 
-log === Labels start with their kind's letter, filter as you type, then select and copy
+log === ⌘S shows the key panel and no labels; a category key shows its own, labelled a, s, d…
 anim enabled true
 anim reduce-motion false
 key cmd+s
 expect key.last action:select_visible_item
 expect hints.state choosing
+expect hints.category -
 expect hints.popup hidden
 expect hints.panes 1
 expect hints.count 6
-expect hints.labels u,pa,ba,bs,c,ps
+expect hints.types url,path,branch,branch,command,path
+expect hints.labels a,a,a,s,a,s
+expect hints.keys ua,pa,ba,bs,ca,ps
 expect hints.lines 6
-expect hints.visible 6
-expect hints.callout.clash 0
-expect hints.callout.hides 0
-expect hints.callout.flagged 0
-expect hints.callout.slant 0
-expect hints.callout.covers 0
-hints callout below https://example.invalid/first
-hints callout left ./src/example.swift:12:3
-hints callout inline feature/hints
-expect hints.legend url,path,command,line,branch,move,cancel
-expect hints.legend.keys u,p,c,l,b,↑↓←→,esc
-expect hints.legend.position header
-expect hints.legend.tile focused
-expect hints.legend.fits yes
+expect hints.visible 0
+expect hints.callouts 0
+expect hints.panel.title Select
+expect hints.panel URL,paths,command,lines,hashes & IDs,IP addresses,domains,branches,close
+expect hints.panel.keys u,p,c,l,h,i,d,b,esc
+expect hints.panel.dimmed h,i,d
+expect hints.panel.position bottom
+expect hints.panel.fits yes
 expect hints.callout.typed -
-shot hints-choosing
-key p
-expect hints.prefix p
-expect hints.visible 2
-expect hints.fade 80
-expect hints.legend path,move,back,cancel
-expect hints.callout.typed p:2
-expect hints.legend.moves 0
-shot hints-filtered
-key x
-expect hints.prefix p
+shot hints-categories
+log --- a key with nothing on screen does nothing; a category of one selects its item at once
+key h
+expect hints.category -
+expect hints.visible 0
+key u
+expect hints.state selected
+expect hints.category url
+expect hints.kind url
+expect hints.label a
+expect hints.selected https://example.invalid/first
+expect hints.actions copy,open
+expect hints.panel.title Selected URL
+expect hints.visible 0
+expect hints.callouts 0
+shot hints-urls
+log --- backspace from it goes back to the categories
 key backspace
+expect hints.state choosing
+expect hints.category -
+expect hints.visible 0
+log --- a category of several shows its labels
+key p
+expect hints.category path
+expect hints.shown.kinds path
+expect hints.shown.labels a,s
+expect hints.panel.title 2 paths
+hints callout below ./src/example.swift:12:3
+expect hints.panel.fits yes
+shot hints-paths
+key s
+expect hints.state selected
+expect hints.selected two words.txt
+key backspace
+expect hints.state choosing
+expect hints.category path
 expect hints.prefix -
-expect hints.visible 6
+expect hints.visible 2
+key backspace
+key b
+expect hints.shown.kinds branch
+expect hints.shown.labels a,s
+hints callout above feature/hints
+key x
+expect hints.prefix -
+key backspace
+expect hints.category -
+expect hints.fade 80
 anim enabled false
 key b
-expect hints.fade 0
 key backspace
+expect hints.fade 0
 anim enabled default
 anim reduce-motion default
 key u
 expect hints.state selected
 expect hints.kind url
-expect hints.label u
+expect hints.label a
 expect hints.selected https://example.invalid/first
 expect hints.actions copy,open
-expect hints.legend copy,open,move,hold to extend,grow,cancel
+expect hints.panel.title Selected URL
+expect hints.panel copy,open,move,hold to extend,grow,back,close
+expect hints.panel.fits yes
 expect hints.popup visible
 expect hints.popup.fits yes
-log --- the other labels hide once an item is selected; holding shift shows them
+expect hints.callouts 0
+expect hints.visible 0
+shot hints-selected
+key c
+expect hints.state closed
+expect hints.panel.position hidden
+expect clipboard https://example.invalid/first
+expect responder terminal
+
+log === Agent footers, editor mode lines and bare prompts hold no items; boxes sit on their text
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat footer.txt"
+wait 500
+key cmd+s
+expect hints.rows path:5,path:5,path:7,path:7
+expect hints.unlabelled 2
+expect hints.panel.dimmed u,c,h,i,d,b
+expect hints.boxes.rows yes
+key p
+expect hints.shown.labels a,s
+shot hints-footer-paths
+key escape
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
+log === Selected: the category's other labels hide; holding shift shows them, shift + label extends
+key cmd+s
+key b
+key a
+expect hints.selected feature/hints
 expect hints.callouts 0
 expect hints.reach hidden
-expect hints.visible 5
-shot hints-selected
+expect hints.visible 1
 mouse mods shift
 until hints.reach shown 2000
-expect hints.callouts 5
+expect hints.callouts 1
+expect hints.shown.labels s
 shot hints-selected-shift
 mouse mods none
 expect hints.reach hidden
 expect hints.callouts 0
+key shift+s
+expect hints.extend -
+expect hints.kind range
+expect hints.selected feature/hints↵  feature/other
+expect hints.panel.title Selected range
+shot hints-range
 key c
 expect hints.state closed
-expect clipboard https://example.invalid/first
-expect responder terminal
+clip has feature/hints
+clip has feature/other
 
-log === Selected: arrows move, shift extends, shift + label extends to that item
+log === Selected: arrows move across kinds, shift extends
 key cmd+s
 key u
+key a
 key down
 expect hints.kind path
 expect hints.selected ./src/example.swift:12:3
+expect hints.panel.title Selected path
 key right
 expect hints.selected feature/hints
 key left
@@ -100,25 +169,11 @@ key shift+down
 expect hints.kind range
 expect hints.selected https://example.invalid/first↵界👩‍💻é ./src/example.swift:12:3
 expect hints.actions copy
-expect hints.legend copy,move,hold to extend,grow/shrink,cancel
-key shift+b
-expect hints.extend b
-expect hints.visible 2
-expect hints.callouts 2
-expect hints.legend extend to B…,back,cancel
-expect hints.callout.typed b:2
-shot hints-extend-typed
-key backspace
-expect hints.extend -
-key shift+b
-key shift+s
-expect hints.extend -
-expect hints.selected https://example.invalid/first↵界👩‍💻é ./src/example.swift:12:3↵* feature/hints↵  feature/other
-shot hints-range
+expect hints.panel copy,move,hold to extend,grow/shrink,back,close
 key c
 expect hints.state closed
 clip has https://example.invalid/first
-clip has feature/other
+clip has ./src/example.swift:12:3
 
 log === Selected: alt+up grows to the line and block, alt+down shrinks back
 key cmd+s
@@ -127,10 +182,10 @@ expect hints.kind branch
 key alt+up
 expect hints.kind line
 expect hints.selected * feature/hints
-expect hints.legend copy,move,hold to extend,grow/shrink,cancel
+expect hints.panel copy,move,hold to extend,grow/shrink,back,close
 key alt+up
 expect hints.kind block
-expect hints.legend copy,move,hold to extend,shrink,cancel
+expect hints.panel copy,move,hold to extend,shrink,back,close
 shot hints-grown
 key alt+down
 expect hints.kind line
@@ -142,17 +197,19 @@ expect hints.kind branch
 expect hints.selected feature/other
 key backspace
 expect hints.state choosing
-expect hints.prefix b
+expect hints.category branch
+expect hints.prefix -
 expect hints.visible 2
 key escape
 expect hints.state closed
 
-log === A lone command takes the single letter c; c then copies it
+log === A lone command is c alone; c then copies it
 key cmd+s
 key c
+expect hints.state selected
 expect hints.kind command
 expect hints.selected printf hint-ran > ran.txt
-expect hints.legend copy,run,move,hold to extend,grow,cancel
+expect hints.panel copy,run,move,hold to extend,grow,back,close
 key c
 expect hints.state closed
 expect clipboard printf hint-ran > ran.txt
@@ -162,21 +219,25 @@ sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat focu
 wait 400
 key cmd+s
 expect hints.state choosing
-expect hints.labels ca,pa,cs,ps,cd
+expect hints.keys ca,pa,cs,ps,cd
+expect hints.labels a,a,s,s,d
 expect hints.cursor 5:0
 expect hints.focus -
-expect hints.legend path,command,line,move,cancel
+expect hints.panel.keys u,p,c,l,h,i,d,b,esc
+log --- on the category list, arrows and Return do nothing
 key enter
+key up
 expect hints.state choosing
 expect hints.focus -
 key c
-expect hints.prefix c
+expect hints.category command
+expect hints.prefix -
 expect hints.visible 3
 key up
 expect hints.focus printf focus-three > three.txt
 expect hints.focus.kind command
-expect hints.focus.label cd
-expect hints.legend command,move,select,back,cancel
+expect hints.focus.label d
+expect hints.panel pick,move,select,categories,close
 shot hints-focus
 key up
 expect hints.focus printf focus-two > two.txt
@@ -192,14 +253,15 @@ key up
 key enter
 expect hints.state selected
 expect hints.kind command
-expect hints.label cs
+expect hints.label s
 expect hints.selected printf focus-two > two.txt
 expect hints.focus -
-expect hints.legend copy,run,move,hold to extend,grow,cancel
+expect hints.panel copy,run,move,hold to extend,grow,back,close
 log --- Backspace goes back to choosing with the ring on the item; Return picks it again
 key backspace
 expect hints.state choosing
-expect hints.prefix c
+expect hints.category command
+expect hints.prefix -
 expect hints.focus printf focus-two > two.txt
 key enter
 expect hints.selected printf focus-two > two.txt
@@ -208,25 +270,27 @@ expect hints.state closed
 expect clipboard printf focus-two > two.txt
 expect responder terminal
 
-log === Filtering keeps the ring on a shown item, else moves it to the nearest one left
+log === The ring walks the category's items only; a label selects at once, whatever is focused
 key cmd+s
-key down
-expect hints.focus printf focus-three > three.txt
+key p
 key up
 expect hints.focus.kind path
 expect hints.focus src/setup.sh
-key c
-expect hints.focus printf focus-two > two.txt
-key backspace
-expect hints.focus printf focus-two > two.txt
-key p
-expect hints.focus.kind path
+key up
 expect hints.focus src/example.swift
-shot hints-focus-filtered
-log --- A complete label still selects at once, whatever is focused
-key s
+key down
+expect hints.focus src/setup.sh
+shot hints-focus-paths
+log --- Backspace to the categories drops the ring
+key backspace
+expect hints.category -
+expect hints.focus -
+key p
+key up
+expect hints.focus src/setup.sh
+key a
 expect hints.state selected
-expect hints.selected src/setup.sh
+expect hints.selected src/example.swift
 key escape
 expect hints.state closed
 
@@ -253,10 +317,12 @@ sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat focu
 wait 400
 key cmd+s
 expect hints.cursor 2:0
+key p
 key up
 expect hints.focus src/example.swift
 key escape
 key cmd+s
+key p
 key down
 expect hints.focus src/setup.sh
 key escape
@@ -330,10 +396,11 @@ hints select https://example.invalid/bottom
 expect hints.popup visible
 expect hints.popup.fits yes
 expect hints.popup.position above
-expect hints.legend.position header
-expect hints.legend.moves 0
+expect hints.panel.fits yes
 key escape
 key cmd+s
+key u
+expect hints.panel.fits yes
 hints callout above https://example.invalid/bottom
 shot hints-callout-bottom
 hints select https://example.invalid/bottom
@@ -446,6 +513,81 @@ shot hints-wrapped-popup
 key c
 expect clipboard @WRAPPED@
 
+log === A command an agent wrapped itself gets one label, a box per row, and copies as one line
+sh {herdr} --session {session} pane run {pane} "sh agent-wrap.sh"
+wait 600
+key cmd+s
+key c
+expect hints.state selected
+expect hints.selected.value @AGENT_LOOP@
+expect hints.kind command
+expect hints.spans.multi yes
+expect hints.boxes.rows yes
+shot hints-agent-wrapped
+key c
+expect clipboard @AGENT_LOOP@
+
+log === Narrow pane: an agent's `! cmd` lines broken mid-path are three whole commands, without the `!`
+window-size 560 640
+wait 600
+sh {herdr} --session {session} pane run {pane} "sh ink.sh bang-src.txt"
+wait 600
+key cmd+s
+key c
+expect hints.state choosing
+expect hints.category command
+expect hints.visible 3
+key escape
+key cmd+s
+hints select @BANG1@
+expect hints.kind command
+expect hints.selected.value @BANG1@
+expect hints.spans.multi yes
+expect hints.boxes.rows yes
+shot hints-bang-wrapped
+key c
+expect clipboard @BANG1@
+key cmd+s
+hints select @BANG2@
+expect hints.selected.value @BANG2@
+expect hints.spans.multi yes
+key escape
+key cmd+s
+hints select @BANG3@
+expect hints.selected.value @BANG3@
+key escape
+
+log === Narrow pane: a link an agent broke after its scheme, or the terminal soft-wrapped, is one URL
+sh {herdr} --session {session} pane run {pane} "sh ink.sh url-src.txt"
+wait 600
+key cmd+s
+key u
+expect hints.category url
+expect hints.visible 2
+key escape
+key cmd+s
+hints select @ARTBOARD@
+expect hints.kind url
+expect hints.selected.value @ARTBOARD@
+expect hints.spans.multi yes
+expect hints.boxes.rows yes
+shot hints-url-wrapped
+key o
+expect hints.opened @ARTBOARD@
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat url-soft.txt"
+wait 400
+key cmd+s
+hints select @ARTBOARD@
+expect hints.selected.value @ARTBOARD@
+expect hints.spans.multi yes
+expect hints.boxes.rows yes
+key c
+expect clipboard @ARTBOARD@
+window-size 1100 700
+wait 600
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
+
 log === Lines: hidden at first, l labels every non-blank line, arrows walk them
 sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat lines.txt"
 wait 400
@@ -454,16 +596,21 @@ expect hints.lines 5
 expect hints.lines.values alpha line with indent|beta https://example.invalid/beta|beta https://example.invalid/beta|@LONG_LINE@|gamma
 expect hints.count 2
 expect hints.unlabelled 1
-expect hints.visible 1
-expect hints.callouts 1
-expect hints.legend url,line,move,cancel
+expect hints.visible 0
+expect hints.callouts 0
+expect hints.panel URL,paths,commands,lines,hashes & IDs,IP addresses,domains,branches,close
+expect hints.panel.dimmed p,c,h,i,d,b
+expect hints.panel.title Select
 key l
-expect hints.prefix l
+expect hints.category line
+expect hints.prefix -
 expect hints.visible 5
 expect hints.callouts 5
-expect hints.lines.labels la,ls,ld,lf,lg
-expect hints.legend line,move,back,cancel
-expect hints.callout.typed l:5
+expect hints.shown.kinds line
+expect hints.lines.labels a,s,d,f,g
+expect hints.panel.title 5 lines
+expect hints.panel pick,move,categories,close
+expect hints.callout.typed -
 expect hints.callout.clash 0
 expect hints.callout.hides 0
 expect hints.callout.flagged 0
@@ -474,11 +621,11 @@ expect hints.focus gamma
 expect hints.focus.kind line
 key up
 expect hints.focus @LONG_LINE@
-expect hints.focus.label lf
+expect hints.focus.label f
 key up
-expect hints.focus.label ld
+expect hints.focus.label d
 key up
-expect hints.focus.label ls
+expect hints.focus.label s
 key up
 expect hints.focus alpha line with indent
 key down
@@ -491,7 +638,8 @@ expect hints.kind line
 expect hints.level line
 expect hints.selected @LONG_LINE@
 expect hints.actions copy
-expect hints.legend copy,move,hold to extend,grow,cancel
+expect hints.panel copy,move,hold to extend,grow,back,close
+expect hints.panel.title Selected line
 log --- a line is copy-only: o and r do nothing
 key o
 expect hints.state selected
@@ -520,10 +668,41 @@ expect clipboard alpha line with indent
 key cmd+s
 key l
 key backspace
-expect hints.prefix -
-expect hints.visible 1
+expect hints.category -
+expect hints.visible 0
 key escape
 expect hints.state closed
+
+log === Lines on a full screen: every non-blank row gets a label, the lowest single letters
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat full.txt"
+wait 600
+key cmd+s
+key l
+expect hints.lines.all yes
+expect hints.lines.blank 0
+expect hints.lines.short yes
+shot hints-lines-full
+key escape
+anim enabled true
+anim reduce-motion false
+anim duration 1000
+log --- the panel fades in, and out with the overlay; with Reduce Motion it just shows
+key cmd+s
+expect hints.panel.animating yes
+shot hints-panel-fading-in
+key escape
+expect hints.panel.position hidden
+anim enabled default
+anim reduce-motion true
+key cmd+s
+expect hints.panel.animating no
+expect hints.panel.alpha 1.00
+key escape
+anim duration default
+anim enabled default
+anim reduce-motion default
+sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat screen.txt"
+wait 400
 
 log === Agent-wrapped commands get one hint across rows; new item kinds
 sh {herdr} --session {session} pane run {pane} "sh sheet.sh"
@@ -536,10 +715,11 @@ expect hints.callout.flagged 0
 hints callout below 192.0.2.47
 hints callout centred 192.0.2.47
 hints callout above .
-expect hints.legend.keys u,p,c,l,i,d,h,↑↓←→,esc
-log --- paragraphs have no label of their own: a line grows to one
+expect hints.panel.dimmed b
+expect hints.panel.fits yes
+log --- paragraphs have no category of their own: a line grows to one
 key t
-expect hints.prefix -
+expect hints.category -
 hints select 192.0.2.47
 key alt+up
 expect hints.kind line
@@ -588,7 +768,7 @@ key escape
 key cmd+s
 hints select 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
 expect hints.kind hash
-hints label ha 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
+hints label a 3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864
 key escape
 key cmd+s
 hints select 7c3e9a1
@@ -615,11 +795,17 @@ expect hints.callout.hides 0
 expect hints.callout.flagged 0
 expect hints.callout.slant 0
 expect hints.callout.covers 0
-expect hints.legend.position header
+key c
+expect hints.state selected
+expect hints.kind command
+expect hints.panel.fits yes
 shot hints-dense-tool-call
+key backspace
+expect hints.category -
 key p
-expect hints.callout.typed p:2
-shot hints-dense-typed
+expect hints.shown.kinds path
+expect hints.panel.fits yes
+shot hints-dense-paths
 key escape
 sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat compiler.txt"
 wait 400
@@ -663,7 +849,7 @@ expect hints.label -
 key escape
 expect hints.state closed
 
-log === Light theme: labels, paragraphs, a range and the legend
+log === Light theme: the key panel, labels, paragraphs and a range
 theme set atom-one-light
 wait 600
 sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat tool-call.txt"
@@ -671,33 +857,35 @@ wait 400
 key cmd+s
 expect hints.callout.covers 0
 expect hints.callout.slant 0
-expect hints.legend.position header
-shot hints-light-tool-call
-key p
-shot hints-light-typed
+expect hints.panel.position bottom
+shot hints-light-categories
+key c
+shot hints-light-commands
 key escape
 sh {herdr} --session {session} pane run {pane} "sh sheet.sh"
 wait 600
 key cmd+s
-expect hints.legend.position header
 expect hints.callout.clash 0
 expect hints.callout.hides 0
 expect hints.callout.slant 0
-shot hints-light-choosing
+key u
+shot hints-light-urls
+key backspace
 key l
 expect hints.callout.clash 0
 expect hints.callout.flagged 0
+expect hints.lines.all yes
 shot hints-light-lines
 key up
 expect hints.focus.kind line
-expect hints.legend line,move,select,back,cancel
+expect hints.panel pick,move,select,categories,close
 shot hints-light-focus
 key enter
 expect hints.kind line
 key shift+up
 key shift+up
 expect hints.kind range
-expect hints.legend copy,move,hold to extend,grow/shrink,cancel
+expect hints.panel copy,move,hold to extend,grow/shrink,back,close
 shot hints-light-range
 key escape
 key cmd+s
@@ -746,6 +934,7 @@ sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat shel
 wait 400
 key cmd+s
 key c
+key a
 key r
 until tiles 2
 until terminal.phase attached 10000
@@ -758,6 +947,7 @@ sh {herdr} --session {session} pane run {pane} "printf '\033[2J\033[H'; cat tool
 wait 400
 key cmd+s
 key c
+key a
 expect hints.kind command
 expect hints.selected cat > heredoc-ran.txt <<'EOF'↵heredoc-ran↵EOF
 expect hints.actions copy,run
@@ -826,6 +1016,7 @@ sh {herdr} --session {session} pane run {pane:2} "clear"
 wait 400
 key cmd+s
 key c
+key a
 expect hints.kind command
 key r
 expect hints.run.target reuse:2
@@ -841,6 +1032,7 @@ sh {herdr} --session {session} pane run {pane:2} "clear"
 wait 400
 key cmd+s
 key c
+key a
 expect hints.selected cat > heredoc-ran.txt <<'EOF'↵heredoc-ran↵EOF
 key r
 expect hints.run.target reuse:2
@@ -959,13 +1151,17 @@ sh {herdr} --session {session} pane run {pane} "stty -echo; PS1=; printf '\033[2
 wait 500
 key cmd+s
 expect hints.panes 2
-expect hints.legend.position header
-expect hints.legend.tile focused
+expect hints.panel.position bottom
+expect tile.header.content title
+key u
+expect hints.shown.labels a,s
+expect hints.panel.title 2 URLs
+expect hints.panel.fits yes
+shot hints-two-panes
+key backspace
 hints select https://example.invalid/first
-expect hints.legend.position header
-expect hints.legend.tile focused
-expect hints.legend.moves 0
-shot hints-other-pane-legend
+expect hints.panel.fits yes
+shot hints-other-pane-panel
 key escape
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
 until tiles 3
@@ -974,10 +1170,10 @@ until tiles 4
 until terminal.phase attached 10000
 wait 600
 key cmd+s
-expect hints.legend.position header
-expect hints.legend.fits yes
-expect hints.legend.keys esc
-shot hints-narrow-legend
+expect hints.panel.position bottom
+expect hints.panel.fits yes
+expect tile.header.content title
+shot hints-narrow-panes
 key escape
 action close_tile
 until tiles 3
@@ -993,7 +1189,7 @@ expect hints.popup.fits yes
 shot hints-right-pane-popup
 key escape
 action zoom_tile
-log === Monocle with three tiles: the legend stands in for the tabs, Esc brings them back
+log === Monocle with three tiles: the tabs stay put, the key panel floats below
 core {"method":"layout.split","params":{"direction":"right","content":{"kind":"terminal","cwd":"@DIR@","command":["exec env -i HOME='@DIR@' PATH=/usr/bin:/bin /bin/sh"]}}}
 until tiles 3
 until terminal.phase attached 10000
@@ -1003,11 +1199,10 @@ expect tile.header.content tabs
 expect tile.tabs 3
 key cmd+s
 expect hints.panes 1
-expect tile.header.content override
-expect hints.legend.position header
-expect hints.legend.tile focused
-expect hints.legend.fits yes
-shot hints-monocle-legend
+expect tile.header.content tabs
+expect hints.panel.position bottom
+expect hints.panel.fits yes
+shot hints-monocle-panel
 key escape
 expect hints.state closed
 expect tile.header.content tabs

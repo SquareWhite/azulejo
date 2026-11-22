@@ -1,0 +1,351 @@
+# Command evaluation corpus for the on-device model spike (smart select's
+# `c` category): the rules (detect::detect) against Apple's on-device model
+# (apps/macos/tools/HintsModelBench). Same format as hints-corpus.txt; every
+# screen is fictional (example.invalid hosts, documentation IPs, made-up
+# names). Categories: agent (commands in an agent's prose), code (code
+# blocks), prompt (shells with typed commands), error, status, banner,
+# editor (vim, tmux, editor status rows), wrapped (agent hard wraps).
+# A command typed over continuation rows is expected on one line, as Copy
+# gives it; code in a file open in an editor isn't a command to run.
+#
+# Scored by `cargo test -p azulejo-hints --test model_eval -- --nocapture`
+# (rules) and `just hints-model-bench` (rules and model).
+
+@@ fixture agent-run-tests | agent | cols 100
+⏺ The parser change is in. To check it, run the focused tests:
+  cargo test -p demo-parser --lib tokens
+  If they pass, the full suite is next.
+@@ cmd cargo test -p demo-parser --lib tokens
+
+@@ fixture agent-two-steps | agent | cols 100
+⏺ Two things to do before the release:
+  1. Bump the version with npm version patch --no-git-tag-version
+  2. Then publish it: npm publish --access public
+@@ cmd npm version patch --no-git-tag-version
+@@ cmd npm publish --access public
+
+@@ fixture agent-prose-only | agent | cols 100
+⏺ The cache was the culprit: it kept stale entries after a restart, so
+  the second request always saw the old value. I changed the key to include
+  the build number, which makes every deploy start clean.
+
+@@ fixture agent-sentence-command-words | agent | cols 100
+⏺ Make sure you find the time to test this on a real device before you
+  ship it; the simulator hides the timing issue.
+
+@@ fixture agent-backticks | agent | cols 100
+⏺ Done. Run `make lint` before you push, and `git push -u origin feature/retry`
+  when it's clean.
+@@ cmd make lint
+@@ cmd git push -u origin feature/retry
+
+@@ fixture agent-env-command | agent | cols 100
+⏺ Set the region and retry the deploy:
+  DEMO_REGION=eu-west-1 ./scripts/deploy.sh --dry-run
+@@ cmd DEMO_REGION=eu-west-1 ./scripts/deploy.sh --dry-run
+
+@@ fixture agent-curl | agent | cols 100
+⏺ The endpoint answers now. You can see it yourself:
+  curl -s https://api.example.invalid/v1/health | jq .status
+@@ cmd curl -s https://api.example.invalid/v1/health | jq .status
+
+@@ fixture agent-docker | agent | cols 100
+⏺ Rebuild the image without the cache so the new lockfile is picked up:
+  docker build --no-cache -t demo/web:dev .
+  Then start it with docker compose up -d web.
+@@ cmd docker build --no-cache -t demo/web:dev .
+@@ cmd docker compose up -d web
+
+@@ fixture agent-file-names | agent | cols 100
+⏺ I edited three files: src/retry.ts, src/client.ts and README.md. The retry
+  helper now backs off exponentially, capped at 30 seconds.
+
+@@ fixture agent-tool-call | agent | cols 100
+⏺ Bash(rg -n "TODO" src/ | head -20)
+  ⎿  src/client.ts:12:  // TODO: drop the legacy header
+     src/retry.ts:40:  // TODO: jitter
+@@ cmd rg -n "TODO" src/ | head -20
+
+@@ fixture agent-tool-call-done | agent | cols 100
+⏺ Bash(git log --oneline -5)
+  ⎿  4c1e2a9 Retry uploads with backoff
+     9b0f7d3 Parse headers lazily
+⏺ Both commits are in. Want me to open a pull request?
+@@ cmd git log --oneline -5
+
+@@ fixture agent-permission | agent | cols 100
+╭────────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                           │
+│                                                                        │
+│   kubectl rollout restart deployment/demo-api -n staging               │
+│   Restart the API pods in staging                                      │
+│                                                                        │
+│ Do you want to proceed?                                                │
+│ ❯ 1. Yes                                                               │
+│   2. No, and tell Claude what to do differently (esc)                  │
+╰────────────────────────────────────────────────────────────────────────╯
+@@ cmd kubectl rollout restart deployment/demo-api -n staging
+
+@@ fixture agent-codex-ran | agent | cols 100
+• Ran pytest -q tests/test_retry.py
+  └ 4 passed in 0.31s
+• The retry tests pass. I also tidied the fixture names.
+@@ cmd pytest -q tests/test_retry.py
+
+@@ fixture agent-shown-command | agent | cols 100
+⏺ Bash(npm run build)
+  ⎿  $ npm run build
+     > demo-web@1.4.0 build
+     > vite build
+@@ cmd npm run build
+
+@@ fixture code-fence-bash | code | cols 100
+```bash
+brew install jq
+jq --version
+```
+@@ cmd brew install jq
+@@ cmd jq --version
+
+@@ fixture code-fence-python | code | cols 100
+```python
+import sys
+print(sys.argv[1:])
+```
+
+@@ fixture code-indented-steps | code | cols 100
+  To set it up:
+
+      git clone https://git.example.invalid/demo/app.git
+      cd app
+      make setup
+@@ cmd git clone https://git.example.invalid/demo/app.git
+@@ cmd cd app
+@@ cmd make setup
+
+@@ fixture code-json | code | cols 100
+  {
+    "name": "demo-web",
+    "scripts": { "build": "vite build", "test": "vitest run" }
+  }
+
+@@ fixture code-yaml | code | cols 100
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      steps:
+        - run: npm ci
+@@ cmd npm ci
+
+@@ fixture code-rust | code | cols 100
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    println!("{args:?}");
+}
+
+@@ fixture code-heredoc | code | cols 100
+```sh
+cat > demo.conf <<'EOF'
+port = 8080
+EOF
+```
+@@ cmd cat > demo.conf <<'EOF'
+@@ + port = 8080
+@@ + EOF
+
+@@ fixture prompt-bash | prompt | cols 100
+user@devbox:~/demo$ git status --short
+ M src/app.ts
+user@devbox:~/demo$ git add -p
+@@ cmd git status --short
+@@ cmd git add -p
+
+@@ fixture prompt-zsh | prompt | cols 100
+demo % ls -la
+total 8
+drwxr-xr-x  3 user  staff   96 Nov  3 10:12 .
+demo % make test
+@@ cmd ls -la
+@@ cmd make test
+
+@@ fixture prompt-starship | prompt | cols 100
+~/src/demo on  main [!] via 🦀 v1.83.0
+❯ cargo clippy --all-targets -- -D warnings
+    Checking demo v0.1.0 (/home/user/src/demo)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.10s
+@@ cmd cargo clippy --all-targets -- -D warnings
+
+@@ fixture prompt-fish | prompt | cols 100
+user@devbox ~/demo (main)> npm test -- --watch=false
+> demo-web@1.4.0 test
+> vitest run --watch=false
+@@ cmd npm test -- --watch=false
+
+@@ fixture prompt-continuation | prompt | cols 100
+$ docker run --rm \
+>   -v "$PWD":/work \
+>   demo/tool:latest lint
+@@ cmd docker run --rm -v "$PWD":/work demo/tool:latest lint
+
+@@ fixture prompt-repl | prompt | cols 100
+$ python3
+Python 3.12.4 (main, Jun  6 2024, 18:26:44)
+>>> import json
+>>> json.dumps({"a": 1})
+'{"a": 1}'
+@@ cmd python3
+
+@@ fixture prompt-sql | prompt | cols 100
+demo=# select count(*) from orders;
+ count
+-------
+   412
+
+@@ fixture prompt-bare | prompt | cols 100
+user@devbox:~/demo$
+
+@@ fixture prompt-pipeline | prompt | cols 100
+$ ps aux | grep -i node | awk '{print $2}' | xargs kill -9
+@@ cmd ps aux | grep -i node | awk '{print $2}' | xargs kill -9
+
+@@ fixture error-cargo | error | cols 100
+error[E0425]: cannot find value `retries` in this scope
+  --> src/client.rs:42:9
+   |
+42 |         retries += 1;
+   |         ^^^^^^^ not found in this scope
+help: run `cargo fix --lib -p demo` to apply 1 suggestion
+@@ cmd cargo fix --lib -p demo
+
+@@ fixture error-npm | error | cols 100
+npm ERR! code ERESOLVE
+npm ERR! ERESOLVE unable to resolve dependency tree
+npm ERR! Fix the upstream dependency conflict, or retry
+npm ERR! this command with --force or --legacy-peer-deps
+
+@@ fixture error-python | error | cols 100
+Traceback (most recent call last):
+  File "/home/user/demo/app.py", line 12, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+@@ fixture error-hint-command | error | cols 100
+fatal: The current branch feature/retry has no upstream branch.
+To push the current branch and set the remote as upstream, use
+
+    git push --set-upstream origin feature/retry
+
+@@ cmd git push --set-upstream origin feature/retry
+
+@@ fixture error-not-found | error | cols 100
+zsh: command not found: dmeo
+user@devbox demo %
+
+@@ fixture error-permission | error | cols 100
+mkdir: /usr/local/demo: Permission denied
+Try: sudo mkdir -p /usr/local/demo
+@@ cmd sudo mkdir -p /usr/local/demo
+
+@@ fixture status-claude-footer | status | cols 100
+✻ Worked for 2m 4s · 3 files changed
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle) · 1 shell running
+
+@@ fixture status-git-summary | status | cols 100
+On branch main
+Your branch is ahead of 'origin/main' by 2 commits.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+@@ cmd git push
+
+@@ fixture status-progress | status | cols 100
+Downloading demo-model.bin  42% |████████▍           | 1.2G/2.9G [00:31<00:44, 38MB/s]
+
+@@ fixture status-test-summary | status | cols 100
+ Test Files  12 passed (12)
+      Tests  148 passed (148)
+   Start at  10:41:07
+   Duration  3.21s
+
+@@ fixture status-kubectl | status | cols 100
+NAME                        READY   STATUS    RESTARTS   AGE
+demo-api-6c9d7b5f4-x2k8q    1/1     Running   0          3d
+demo-worker-5b8f9c7d-pq4z   1/1     Running   2          3d
+
+@@ fixture banner-update | banner | cols 100
+                                     Update available! Run: brew upgrade demo-cli
+❯
+
+@@ fixture banner-npm-notice | banner | cols 100
+npm notice New minor version of npm available! 10.8.1 -> 10.9.0
+npm notice To update run: npm install -g npm@10.9.0
+@@ cmd npm install -g npm@10.9.0
+
+@@ fixture banner-motd | banner | cols 100
+Welcome to Demo Linux 24.04 LTS (GNU/Linux 6.8.0 x86_64)
+ * Documentation:  https://help.example.invalid
+Last login: Tue Nov 17 09:12:44 2026 from 192.0.2.24
+
+@@ fixture banner-brew-hint | banner | cols 100
+==> Caveats
+To start demo-db now and restart at login:
+  brew services start demo-db
+@@ cmd brew services start demo-db
+
+@@ fixture editor-vim-status | editor | cols 100
+  1 #!/bin/sh
+  2 set -eu
+  3 exec ./bin/demo --port 8080
+~
+-- INSERT --                                                  3,9           All
+
+@@ fixture editor-vim-command | editor | cols 100
+  1 [server]
+  2 port = 8080
+~
+:w !sudo tee % > /dev/null
+
+@@ fixture editor-tmux-status | editor | cols 100
+user@devbox:~/demo$ make watch
+watching src/ for changes...
+[demo] 0:zsh* 1:vim  2:logs-                                  "devbox" 10:42 18-Nov-26
+@@ cmd make watch
+
+@@ fixture editor-nano | editor | cols 100
+  GNU nano 7.2                         notes.txt
+remember to rotate the demo keys on Friday
+^G Help      ^O Write Out ^W Where Is  ^K Cut       ^T Execute   ^C Location
+
+@@ fixture editor-less | editor | cols 100
+DEMO(1)                     General Commands Manual                    DEMO(1)
+NAME
+       demo - run the demo server
+SYNOPSIS
+       demo [--port N] [--verbose]
+:
+
+@@ fixture wrapped-loop | wrapped | cols 100
+⏺ If you would rather type it yourself, this checks both environments in one go:
+  for env in dev prod; do s=sub-demo-$env-001; echo "== $env $(az provider show -n Example.App
+  --subscription $s --query registrationState -o tsv)"; done
+  It prints one line per environment.
+@@ cmd for env in dev prod; do s=sub-demo-$env-001; echo "== $env $(az provider show -n Example.App --subscription $s --query registrationState -o tsv)"; done
+
+@@ fixture wrapped-find | wrapped | cols 100
+⏺ This lists the five biggest log files under the data folder, newest first among equals:
+  find /srv/demo/data -name "*.log" -type f -printf "%s %T@ %p\n" | sort -k1,1nr -k2,2nr | head -5
+  | awk '{print $3}' | xargs ls -lh
+@@ cmd find /srv/demo/data -name "*.log" -type f -printf "%s %T@ %p\n" | sort -k1,1nr -k2,2nr | head -5 | awk '{print $3}' | xargs ls -lh
+
+@@ fixture wrapped-paragraph | wrapped | cols 100
+⏺ The worker restarts because its health check times out while the cache warms up, which takes
+  about forty seconds on a cold start; raising the grace period to a minute fixes it without
+  hiding real failures, and the alert stays quiet.
+
+@@ fixture wrapped-ssh | wrapped | cols 100
+⏺ Open the tunnel first, then point the client at localhost:
+  ssh -N -L 8443:db.internal.example.invalid:5432 deploy@bastion.example.invalid -o
+  ServerAliveInterval=30 -o ExitOnForwardFailure=yes
+@@ cmd ssh -N -L 8443:db.internal.example.invalid:5432 deploy@bastion.example.invalid -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes

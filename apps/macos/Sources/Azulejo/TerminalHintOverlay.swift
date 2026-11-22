@@ -1,22 +1,25 @@
 import AppKit
+import CoreImage
 import IOSurface
 
 /// ⌘S smart select: one immutable, window-local selection session. Live
 /// output continues behind captured terminal frames; labels and action
 /// payloads never retarget.
 ///
-/// Two modes. Choosing: every item has a label whose first letter is its
-/// kind (the core's labels); typing filters the labels, Backspace takes a
-/// letter back, a complete label selects its item. Every non-blank line is
-/// an item too, but its label shows only once `l` is typed
-/// (`TerminalSelection.shown`). Arrow keys move
-/// a focus ring across the items still shown (starting at the terminal
-/// cursor), Return selects the focused one and ⇧ + arrow starts a range
-/// from it. Selected: c / o /
-/// r act on the selection, arrows move it (⇧ extends it from the anchor),
-/// ⇧ + another label extends it to that item, ⌥↑ / ⌥↓ grow it to the
-/// containing item, line, paragraph, block or screen and shrink it back.
-/// A legend in the focused tile's header strip shows the keys that apply.
+/// Two modes. Choosing starts with no labels at all: a key panel at the
+/// bottom of the window lists the categories (one per item kind: u URLs,
+/// p paths, c commands, l lines…). A category's key shows its items alone,
+/// each labelled with the shortest letters unique in that category (the
+/// core's labels: `a`, `s`, `d`…; `TerminalSelection.shown`); typing
+/// filters them, Backspace takes a letter back (or, with none typed, goes
+/// back to the categories), a complete label selects its item. Arrow keys
+/// move a focus ring across the items still shown (starting at the
+/// terminal cursor), Return selects the focused one and ⇧ + arrow starts a
+/// range from it. Selected: c / o / r act on the selection, arrows move it
+/// (⇧ extends it from the anchor), ⇧ + another label of the category
+/// extends it to that item, ⌥↑ / ⌥↓ grow it to the containing item, line,
+/// paragraph, block or screen and shrink it back. The key panel always
+/// shows the keys that apply; Esc leaves from anywhere.
 @MainActor
 final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     struct Entry {
@@ -57,6 +60,9 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         let text: [CGRect]
         /// The terminal cursor, where the first arrow key starts.
         let cursor: TerminalTextPos?
+        /// The frozen frame on show under the overlay (`frame`), which the
+        /// item highlights redraw with the selection colour under the text.
+        let picture: IOSurfaceRef
     }
     /// The chosen range: from the anchor to the focus, whichever comes
     /// first. Entry indices are the overlay's.
@@ -74,6 +80,8 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     private weak var app: AppController?
     private weak var previousResponder: NSResponder?
     private var captures: [Capture] = []
+    /// Each capture's frozen frame as an image, made on first use.
+    private var pictures: [Int: NSImage] = [:]
     private var entries: [Entry] = []
     private var interactionMonitor: Any?
     private let canvas = HintCanvas()
@@ -86,25 +94,34 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     private let reach = HintCanvas()
     private var reachShown = false
     private var reachWait: DispatchWorkItem?
-    private let legend = HintLegend()
-    /// The tile whose header strip shows the legend (the focused one), or
-    /// nil: the bar at the bottom of the pane.
-    private weak var legendHost: TileHeaderView?
-    /// Bumped each time the legend shows, so an earlier fade-out's
-    /// completion can't take down a newer legend.
-    private var legendGeneration = 0
-    /// Automation: how many times the legend moved after it first showed.
-    private var legendMoves = 0
+    /// The keys that apply right now, floating at the bottom of the window.
+    private let keys = HintKeyPanel()
+    /// Bumped each time the key panel shows, so an earlier fade-out's
+    /// completion can't take down a newer panel.
+    private var keysGeneration = 0
+    /// The action popup beside a selection (Copy, Open, Run).
     private let panel = NSView()
-    private let emptyLabel = NSTextField(labelWithString: "No selectable items · Esc to return")
+    /// The category whose labels show while choosing; nil: the category list.
+    private var category: TerminalHintItem.Kind?
     private let copyButton = HintActionButton("C")
     private let openButton = HintActionButton("O")
     private let runButton = HintActionButton("R")
-    private var selection: Selection?
+    private var selection: Selection? {
+        didSet {
+            // The category follows the anchor (arrows and ⌥↑↓ can reach
+            // another kind): ⇧ + label and Backspace work in its labels.
+            if let entry = selection?.anchor.entry, TerminalSelection.letter(entries[entry].item.kind) != nil {
+                category = entries[entry].item.kind
+            }
+        }
+    }
     /// While choosing, the entry the arrow keys have focused (Return
     /// selects it), or nil before the first arrow key.
     private var focused: Int?
     private var prefix = ""
+    /// The selection a category key made on its own, its category holding
+    /// one item: Backspace from it goes back to the category list.
+    private var autoSelected: Selection?
     /// Letters typed with ⇧ while selected: another item's label.
     private var extendPrefix = ""
     private var tabID: String?
@@ -129,8 +146,6 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         panel.layer?.shadowOpacity = Float(Design.Alpha.paletteShadow)
         panel.layer?.shadowRadius = 6
         panel.layer?.shadowOffset = CGSize(width: 0, height: -2)
-        emptyLabel.font = Design.Font.monoDetail
-        emptyLabel.drawsBackground = true
         for (button, symbol, label, tip) in [
             (copyButton, "doc.on.doc", "Copy", "Copy (C)"),
             (openButton, "arrow.up.forward.app", "Open", "Open in Default App (O)"),
@@ -181,6 +196,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             let read = (0..<grid.rows).map { surface.hintRow($0, through: grid.cols - 1) }
             let rows = read.map { $0?.text ?? "" }
             let cwd = tile.terminalCwd ?? workspace.cwd
+            // Soft wraps. herdr redraws the pane row by row, so Ghostty's
+            // own wrap flag is never set here: a row whose last cell holds
+            // text and whose next row starts with text counts as wrapped.
+            // The core joins rows an application wrapped itself.
             var joins: Set<Int> = []
             if grid.rows > 1 {
                 for row in 0..<(grid.rows - 1) where rows[row].last?.isWhitespace == false
@@ -252,10 +271,16 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
                 positioned.append(Entry(item: item, tileID: tile.id, cwd: cwd, rects: rects,
                                         cells: cells, cell: cell, columns: grid.cols))
             }
-            // A repaint during extraction must not produce labels for old
-            // text over a newer frame. The user can invoke the mode again.
-            guard (0..<grid.rows).allSatisfy({ surface.hintRow($0, through: grid.cols - 1)?.text == rows[$0] }),
-                  let image = surface.snapshot() else { continue }
+            // The frozen picture must show the rows the labels sit on, not
+            // a frame libghostty presented before the screen last changed
+            // (its text then sits off the boxes): draw a frame of what the
+            // terminal holds now, take it if it has the surface's size (a
+            // stretched one would drift too), then read the rows again.
+            // Output arriving meanwhile drops the pane; ⌘S again picks it up.
+            surface.drawNow()
+            guard surface.presentedAtSize, let image = surface.snapshot(),
+                  (0..<grid.rows).allSatisfy({ surface.hintRow($0, through: grid.cols - 1)?.text == rows[$0] })
+            else { continue }
             let frozen = NSView(frame: surfaceFrame)
             frozen.wantsLayer = true
             frozen.layer?.contents = image
@@ -265,7 +290,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             hints.keep(kept)
             captures.append(Capture(tile: tile, surface: surface, frame: surfaceFrame, rows: rows, hints: hints,
                                     firstEntry: found.count, rowCells: rowCells, offsetColumns: offsetColumns, cols: grid.cols,
-                                    margin: margin, text: text, cursor: surface.hintCursor()))
+                                    margin: margin, text: text, cursor: surface.hintCursor(), picture: image))
             found += positioned
         }
         // An item repeated in a pane (a prompt's cwd on every prompt line)
@@ -288,12 +313,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         reachShown = false
         ghostEntries = []
         lastFade = 0
-        showLegend()
+        category = nil
         addSubview(panel)
-        emptyLabel.sizeToFit()
-        emptyLabel.frame.origin = CGPoint(x: bounds.midX - emptyLabel.frame.width / 2, y: bounds.midY)
-        addSubview(emptyLabel)
         panel.isHidden = true
+        showKeys()
         applyTheme()
         refresh()
         app.core.resetKeys()
@@ -322,16 +345,19 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         interactionMonitor = nil
         let controller = controller
         let heldFocus = controller?.window.firstResponder === self
-        hideLegend()
+        hideKeys()
         cancelReachWait()
         reachShown = false
         removeFromSuperview()
         for view in subviews { view.removeFromSuperview() }
         captures.removeAll()
+        pictures.removeAll()
         entries.removeAll()
         ghostEntries.removeAll()
         selection = nil
+        autoSelected = nil
         focused = nil
+        category = nil
         prefix = ""
         extendPrefix = ""
         app?.core.resetKeys()
@@ -430,10 +456,37 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         }
     }
 
+    /// Kinds with at least one label: the categories a key can open.
+    private var categories: Set<TerminalHintItem.Kind> {
+        Set(entries.filter { !$0.label.isEmpty }.map(\.item.kind))
+    }
+
     private func choose(_ chord: String) {
+        guard let category else {
+            // The category list: a category's key shows its labels.
+            if let typed = Self.letter(chord), !typed.shift,
+               let kind = TerminalSelection.kind(forLetter: typed.letter), categories.contains(kind) {
+                self.category = kind
+                prefix = ""
+                focused = nil
+                // One item in the category: selected at once, no label.
+                let mine = entries.indices.filter { entries[$0].item.kind == kind && !entries[$0].label.isEmpty }
+                if mine.count == 1 {
+                    select(mine[0])
+                    autoSelected = selection
+                }
+            }
+            return
+        }
         switch chord {
         case "backspace", "delete":
-            if !prefix.isEmpty { prefix.removeLast() }
+            if !prefix.isEmpty {
+                prefix.removeLast()
+            } else {
+                // Back to the category list.
+                self.category = nil
+                focused = nil
+            }
             return
         case "left", "right", "up", "down":
             moveFocus(Self.direction(chord))
@@ -451,10 +504,11 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         }
         guard let typed = Self.letter(chord) else { return }
         let next = prefix + typed.letter
-        guard entries.contains(where: { $0.label.hasPrefix(next) }) else { return }
+        let mine = entries.indices.filter { entries[$0].item.kind == category }
+        guard mine.contains(where: { entries[$0].label.hasPrefix(next) }) else { return }
         prefix = next
         // A complete label wins over the focus ring.
-        if let index = entries.firstIndex(where: { $0.label == next }) { select(index); return }
+        if let index = mine.first(where: { entries[$0].label == next }) { select(index); return }
         refocus()
     }
 
@@ -534,10 +588,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         return TerminalSelection.Unit(range: TerminalSelection.extent(entries[index].item), level: level, entry: index)
     }
 
-    /// With a selection, the labels ⇧ reaches: lines from a line, the other
-    /// items from anything else.
+    /// With a selection, the labels ⇧ reaches: the category's (labels are
+    /// only unique within one).
     private func reachable(_ index: Int, from selection: Selection) -> Bool {
-        (entries[index].item.kind == .line) == (selection.anchor.level == .line)
+        entries[index].item.kind == category
     }
 
     private func act(_ chord: String) {
@@ -566,6 +620,15 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         case "alt+down": shrink()
         case "backspace", "delete":
             if !extendPrefix.isEmpty { extendPrefix.removeLast(); return }
+            // Selected by the category key alone: back to the category list.
+            if let auto = autoSelected, auto.anchor == current.anchor, auto.focus == current.focus {
+                autoSelected = nil
+                selection = nil
+                category = nil
+                prefix = ""
+                focused = nil
+                return
+            }
             // Back to choosing, one letter short of the anchor's label, the
             // focus ring on the anchor (Return picks it again).
             prefix = current.anchor.entry.map { String(entries[$0].label.dropLast()) } ?? ""
@@ -673,9 +736,9 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
 
     // MARK: Layout
 
-    /// Entries whose labels show while choosing (lines only once a letter
-    /// is typed), or, selected, the labels ⇧ can still reach: the pane's
-    /// items outside the selection (lines from a line, the rest otherwise).
+    /// Entries whose labels show while choosing (the category's; none on
+    /// the category list), or, selected, the labels ⇧ can still reach: the
+    /// pane's items of the category outside the selection.
     private var visibleEntries: Set<Int> {
         if let selection {
             let range = selection.range
@@ -685,7 +748,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             })
         }
         return Set(entries.indices.filter {
-            TerminalSelection.shown(entries[$0].item.kind, label: entries[$0].label, typed: prefix)
+            TerminalSelection.shown(entries[$0].item.kind, label: entries[$0].label, category: category, typed: prefix)
         })
     }
 
@@ -721,9 +784,8 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     /// (`TerminalSelection.placeCallouts`): a callout below, above or
     /// before each item's first cell, on blank space when there is any,
     /// with a short, nearly vertical tail; it may use the pane's padding.
-    /// Two passes per pane: the items labelled from the start, keeping off
-    /// paragraphs' text before other items'; then the lines on their own,
-    /// since they show only after `l`, when the rest have faded.
+    /// One pass per category in each pane, since a category shows on its
+    /// own; all but lines keep off paragraphs' text before other items'.
     private func placeCallouts() {
         for capture in captures {
             // Unlabelled repeats get no callout: their text is text to
@@ -731,8 +793,9 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             let pane = entries.indices.filter { entries[$0].tileID == capture.tile.id }
             let prose = pane.filter { entries[$0].item.kind == .text }.flatMap { entries[$0].rects }
             let labelled = pane.filter { !entries[$0].label.isEmpty }
-            for lines in [false, true] {
-                let indices = labelled.filter { (entries[$0].item.kind == .line) == lines }
+            for kind in TerminalSelection.kindOrder.map(\.kind) {
+                let lines = kind == .line
+                let indices = labelled.filter { entries[$0].item.kind == kind }
                 guard let cell = indices.first.map({ entries[$0].cell }) else { continue }
                 let metrics = Self.calloutMetrics(cell)
                 let items = indices.map { index in
@@ -742,7 +805,16 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
                         anchor: entries[index].anchor, rects: entries[index].rects, prose: false,
                         size: CGSize(width: max(metrics.height, ceil(width) + 2 * metrics.padding), height: metrics.height))
                 }
-                let placed = TerminalHints.placeCallouts(items, text: capture.text, prose: lines ? [] : prose,
+                if lines {
+                    // Every row is a line, so there's no blank space to
+                    // hang labels in: each sits at its line's start, in the
+                    // indent when it fits, else over the first letters.
+                    for (index, item) in zip(indices, items) {
+                        entries[index].callout = Self.lineCallout(item, margin: capture.margin, tail: metrics.tail)
+                    }
+                    continue
+                }
+                let placed = TerminalHints.placeCallouts(items, text: capture.text, prose: prose,
                                                          bounds: capture.margin, tail: metrics.tail, spacing: 2,
                                                          inset: metrics.radius + metrics.half, drift: cell.width / 2)
                 for (index, callout) in zip(indices, placed) { entries[index].callout = callout }
@@ -750,156 +822,187 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         }
     }
 
-    /// Two entries can show at once: both lines, or neither.
+    /// A line's label: before its first cell, tail pointing at it, when the
+    /// indent (and the pane's padding) has room; else over its first cells.
+    private static func lineCallout(_ item: TerminalSelection.CalloutItem, margin: CGRect,
+                                    tail: CGFloat) -> TerminalSelection.Callout {
+        let anchor = item.anchor, size = item.size
+        let y = (anchor.midY - size.height / 2).rounded()
+        let left = anchor.minX - tail - size.width
+        if left >= margin.minX {
+            return .init(frame: CGRect(x: left, y: y, width: size.width, height: size.height),
+                         tip: CGPoint(x: anchor.minX, y: anchor.midY),
+                         base: CGPoint(x: anchor.minX - tail, y: anchor.midY), side: .left)
+        }
+        let frame = CGRect(x: max(margin.minX, anchor.minX), y: y, width: size.width, height: size.height)
+        return .init(frame: frame, tip: CGPoint(x: anchor.midX, y: anchor.midY),
+                     base: CGPoint(x: frame.midX, y: frame.midY), side: .inline)
+    }
+
+    /// Two entries can show at once: they're in the same category.
     private func together(_ a: Int, _ b: Int) -> Bool {
-        (entries[a].item.kind == .line) == (entries[b].item.kind == .line)
+        entries[a].item.kind == entries[b].item.kind
     }
 
     private func refresh() {
-        emptyLabel.isHidden = !entries.isEmpty
         copyButton.isEnabled = selection != nil
         // Only the actions that apply: no greyed-out buttons.
         openButton.isHidden = !canOpen
         openButton.contentTintColor = Design.Color.textSecondary
         openButton.toolTip = "Open in Default App (O)"
         runButton.isHidden = !canRun
-        layoutLegend()
+        layoutKeys()
         layoutPanel()
         canvas.needsDisplay = true
         reach.needsDisplay = true
     }
 
-    /// The keys that apply right now: the key, what it does, and whether
-    /// it's a kind letter (drawn as a little callout, like the labels).
-    private var legendItems: [HintLegend.Item] {
+    /// What the key panel shows right now: a title, the main keys (the
+    /// categories, or a selection's actions) and the keys that move about.
+    private var keyContent: HintKeyPanel.Content {
+        typealias Key = HintKeyPanel.Key
         guard let selection else {
-            let visible = visibleEntries
-            // Lines aren't drawn until `l` is typed, but `l` is listed from
-            // the start.
-            let lines = prefix.isEmpty && entries.contains { $0.item.kind == .line && !$0.label.isEmpty }
-            var items: [HintLegend.Item] = TerminalSelection.kindOrder.compactMap { kind, name in
-                guard let letter = TerminalSelection.letter(kind),
-                      visible.contains(where: { entries[$0].item.kind == kind }) || (kind == .line && lines) else { return nil }
-                return .init(key: String(letter), text: name, kind: true)
+            guard let category else {
+                // The category list: every category, those with nothing on
+                // screen dimmed, so the list keeps its shape.
+                let present = categories
+                let counts = Dictionary(grouping: entries.filter { !$0.label.isEmpty }, by: \.item.kind)
+                    .mapValues(\.count)
+                let main: [Key] = TerminalSelection.kindOrder.compactMap { kind, one, many in
+                    guard let letter = TerminalSelection.letter(kind) else { return nil }
+                    let count = counts[kind] ?? 0
+                    return Key(key: String(letter), text: count == 1 ? one : many, kind: true,
+                               count: count, enabled: present.contains(kind))
+                }
+                return .init(title: entries.isEmpty ? "Nothing to select" : "Select", main: main,
+                             nav: [Key(key: "esc", text: "close")])
             }
-            // Arrows move a focus ring over what's shown; Return picks it.
-            if !visible.isEmpty { items.append(.init(key: "↑↓←→", text: "move")) }
-            if focused != nil { items.append(.init(key: "⏎", text: "select")) }
-            if !prefix.isEmpty { items.append(.init(key: "⌫", text: "back")) }
-            items.append(.init(key: "esc", text: "cancel"))
-            return items
+            let shown = visibleEntries
+            let total = entries.filter { $0.item.kind == category && !$0.label.isEmpty }.count
+            var nav: [Key] = []
+            if !shown.isEmpty { nav.append(Key(key: "a–z", text: "pick")) }
+            if !shown.isEmpty { nav.append(Key(key: "↑↓←→", text: "move")) }
+            if focused != nil { nav.append(Key(key: "⏎", text: "select")) }
+            nav.append(Key(key: "⌫", text: prefix.isEmpty ? "categories" : "back"))
+            nav.append(Key(key: "esc", text: "close"))
+            return .init(title: Self.categoryName(category, count: total), titleKey: TerminalSelection.letter(category)
+                .map(String.init), main: [], nav: nav)
         }
+        let titleKey = TerminalSelection.letter(category ?? .text).map(String.init)
+        let what = singleEntry.map { Self.categoryName($0.item.kind, count: 1) }
+            ?? (selection.anchor == selection.focus ? selection.focus.level.name : "range")
         if !extendPrefix.isEmpty {
-            return [.init(key: "⇧", text: "extend to \(extendPrefix.uppercased())…"), .init(key: "⌫", text: "back"),
-                    .init(key: "esc", text: "cancel")]
+            return .init(title: "Extend to \(extendPrefix.uppercased())…", titleKey: titleKey, main: [],
+                         nav: [Key(key: "⌫", text: "back"), Key(key: "esc", text: "close")])
         }
-        var items: [HintLegend.Item] = [.init(key: "c", text: "copy")]
-        if canOpen { items.append(.init(key: "o", text: "open")) }
-        if canRun { items.append(.init(key: "r", text: "run")) }
-        if captures[selection.pane].hints.hasTargets(selection.focus.level) { items.append(.init(key: "←→↑↓", text: "move")) }
+        var main: [Key] = [Key(key: "c", text: "copy")]
+        if canOpen { main.append(Key(key: "o", text: "open")) }
+        if canRun { main.append(Key(key: "r", text: "run")) }
+        var nav: [Key] = []
+        if captures[selection.pane].hints.hasTargets(selection.focus.level) { nav.append(Key(key: "←→↑↓", text: "move")) }
         // Holding ⇧ shows the labels it can extend to.
-        items.append(.init(key: "⇧", text: "hold to extend"))
+        nav.append(Key(key: "⇧", text: "hold to extend"))
         let grow = grownUnit(selection) != nil
         let shrink = !selection.history.isEmpty || shrunkUnit(selection) != nil
-        if grow && shrink { items.append(.init(key: "⌥↑↓", text: "grow/shrink")) }
-        else if grow { items.append(.init(key: "⌥↑", text: "grow")) }
-        else if shrink { items.append(.init(key: "⌥↓", text: "shrink")) }
-        items.append(.init(key: "esc", text: "cancel"))
-        return items
+        if grow && shrink { nav.append(Key(key: "⌥↑↓", text: "grow/shrink")) }
+        else if grow { nav.append(Key(key: "⌥↑", text: "grow")) }
+        else if shrink { nav.append(Key(key: "⌥↓", text: "shrink")) }
+        nav.append(Key(key: "⌫", text: "back"))
+        nav.append(Key(key: "esc", text: "close"))
+        return .init(title: "Selected \(what)", titleKey: titleKey, main: main, nav: nav)
     }
 
-    /// The pane the legend belongs to for the whole session: the focused
-    /// tile's, else the first one captured.
-    private var legendPane: Capture? {
-        captures.first { $0.tile.id == focusedID } ?? captures.first
+    /// A category's name for `count` items: "1 URL", "3 lines".
+    private static func categoryName(_ kind: TerminalHintItem.Kind, count: Int) -> String {
+        guard let names = TerminalSelection.kindOrder.first(where: { $0.kind == kind }) else { return kind.rawValue }
+        return count == 1 ? names.one : "\(count) \(names.many)"
     }
 
-    /// The legend stands in for the legend pane's title content (its title,
-    /// or its tabs in Monocle: `TileHeaderView.overrideContent`), clear of
-    /// the strip's badge and controls, so it never covers terminal text and
-    /// never moves during a session. It fades in (`motion.hintFilter`), and
-    /// on the way out fades over the title or tabs coming back. A tile
-    /// without a header strip gets a bar at the bottom of the pane instead.
-    private func showLegend() {
-        legendGeneration += 1
-        legendMoves = 0
-        legend.layer?.removeAllAnimations()
-        if let host = legendHost, host.overrideContent === legend { host.overrideContent = nil }
-        legend.removeFromSuperview()
-        legend.frame = .zero
-        legendHost = nil
-        guard let pane = legendPane, !entries.isEmpty else { return }
-        if let header = controller?.tiles.header(of: pane.tile.id), !header.isHiddenOrHasHiddenAncestor,
-           header.bounds.height >= HintLegend.minimumStrip {
-            legendHost = header
-            legend.inStrip = true
-            legend.alphaValue = 0
-            header.overrideContent = legend
-            header.layoutSubtreeIfNeeded()
-            let duration = Motion.active ? Design.Motion.hintFilter : 0
-            if duration > 0 {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = duration
-                    context.timingFunction = Motion.timing
-                    legend.animator().alphaValue = 1
-                }
-            } else { legend.alphaValue = 1 }
-        } else {
-            legend.inStrip = false
-            legend.alphaValue = 1
-            addSubview(legend)
+    /// The key panel fades and rises in (`Motion.paletteOpenDuration`),
+    /// centred above the window's bottom edge; motion off or Reduce Motion,
+    /// it just shows.
+    private func showKeys() {
+        keysGeneration += 1
+        keys.layer?.removeAllAnimations()
+        keys.removeFromSuperview()
+        keys.alphaValue = 1
+        addSubview(keys)
+        layoutKeys()
+        keys.applyTheme()
+        guard Motion.active, let layer = keys.layer else { return }
+        let duration = Motion.paletteOpenDuration
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let rise = CABasicAnimation(keyPath: "transform.translation.y")
+        rise.fromValue = -HintKeyPanel.rise
+        rise.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [fade, rise]
+        group.duration = duration
+        group.timingFunction = Motion.timing
+        layer.add(group, forKey: "show")
+    }
+
+    /// The panel fades out after the overlay goes (`paletteCloseDuration`),
+    /// over the window's content.
+    private func hideKeys() {
+        keys.layer?.removeAllAnimations()
+        guard Motion.active, let host = superview, keys.superview === self, !keys.isHidden else {
+            keys.removeFromSuperview()
+            return
         }
-        legend.applyTheme()
-    }
-
-    /// Gives the strip its title or tabs back, the legend fading out over
-    /// them; the bar goes with the overlay.
-    private func hideLegend() {
-        guard let host = legendHost, host.overrideContent === legend else { return }
-        legendHost = nil
-        let frame = legend.frame
-        host.overrideContent = nil
-        let generation = legendGeneration
-        let duration = Motion.active ? Design.Motion.hintFilter : 0
-        guard duration > 0, host.window != nil else { return }
-        // Opaque in the strip's colour: fading, it uncovers what came back.
-        legend.frame = frame
-        host.addSubview(legend)
+        let frame = convert(keys.frame, to: host)
+        keys.removeFromSuperview()
+        keys.frame = frame
+        host.addSubview(keys, positioned: .above, relativeTo: nil)
+        let generation = keysGeneration
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = duration
+            context.duration = Motion.paletteCloseDuration
             context.timingFunction = Motion.timing
-            legend.animator().alphaValue = 0
+            keys.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.legendGeneration == generation, self.legendHost == nil,
-                      self.legend.superview === host else { return }
-                self.legend.removeFromSuperview()
+                guard let self, self.keysGeneration == generation, self.keys.superview === host else { return }
+                self.keys.removeFromSuperview()
             }
         })
     }
 
-    /// The legend's frame in this view's coordinates (`.null` when hidden).
-    private var legendFrame: CGRect {
-        guard !legend.isHidden, let parent = legend.superview else { return .null }
-        return parent === self ? legend.frame : parent.convert(legend.frame, to: self)
+    /// Where the key panel may not go: what shows on screen (the
+    /// category's labelled items, or the selection).
+    private var keysAvoid: [CGRect] {
+        if selection != nil { return selectionRects }
+        guard let category else { return [] }
+        return entries.filter { $0.item.kind == category && !$0.label.isEmpty }
+            .flatMap { $0.rects + [$0.callout.frame] }
     }
 
-    private func layoutLegend() {
-        guard let pane = legendPane, !entries.isEmpty, legend.superview != nil else { legend.isHidden = true; return }
-        legend.isHidden = false
-        let before = legend.frame
-        if legendHost != nil {
-            // The strip lays it out in its content rect.
-            legend.set(legendItems, maxWidth: legend.bounds.width)
-        } else {
-            legend.set(legendItems, maxWidth: pane.frame.width - 2 * HintLegend.margin)
-            let size = legend.fittingSize
-            legend.frame = CGRect(x: (pane.frame.midX - size.width / 2).rounded(),
-                                  y: pane.frame.maxY - size.height - HintLegend.margin,
-                                  width: size.width, height: size.height)
-        }
-        if before != .zero, before != legend.frame { legendMoves += 1 }
-        legend.needsDisplay = true
+    /// The key panel: centred above the window's bottom edge, unless it
+    /// would hide what's on show there; then the first place that hides
+    /// nothing (the bottom right, where terminal text rarely reaches, the
+    /// top right, the bottom left, the top), else the one hiding least.
+    private func layoutKeys() {
+        guard keys.superview === self else { return }
+        keys.content = keyContent
+        let margin = HintKeyPanel.margin
+        let size = keys.fitting(maxWidth: min(bounds.width - 2 * margin, HintKeyPanel.maxWidth))
+        let bottom = bounds.maxY - size.height - margin, top = Design.Space.toolbarHeight + margin
+        let centre = (bounds.midX - size.width / 2).rounded()
+        let right = bounds.maxX - size.width - margin, left = bounds.minX + margin
+        let candidates = [(centre, bottom), (right, bottom), (right, top), (left, bottom), (centre, top)]
+            .map { CGRect(x: $0.0, y: $0.1, width: size.width, height: size.height) }
+        let avoid = keysAvoid
+        let hidden = { (frame: CGRect) in avoid.filter { $0.intersects(frame.insetBy(dx: -4, dy: -4)) }.count }
+        let counts = candidates.map(hidden)
+        let best = counts.firstIndex(of: 0) ?? counts.indices.min { counts[$0] < counts[$1] } ?? 0
+        keys.frame = candidates[best]
+        keys.needsDisplay = true
+    }
+
+    /// The key panel's frame (`.null` when it isn't on show).
+    private var keysFrame: CGRect {
+        keys.superview === self && !keys.isHidden ? keys.frame : .null
     }
 
     private func layoutPanel() {
@@ -925,10 +1028,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             CGPoint(x: aboveX, y: first.minY - size.height - gap),
         ]
         let candidates = positions.map { CGRect(origin: $0, size: size) }
-        let legendFrame = legendFrame
+        let keysFrame = keysFrame
         panel.frame = candidates.first { candidate in
             pane.contains(candidate) && !rects.contains(where: { $0.intersects(candidate) })
-                && !candidate.intersects(legendFrame)
+                && !candidate.intersects(keysFrame)
         } ?? CGRect(x: belowX, y: min(max(pane.minY, last.maxY + gap), pane.maxY - size.height), width: size.width, height: size.height)
         panel.isHidden = false
     }
@@ -996,12 +1099,10 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         panel.layer?.backgroundColor = Design.Color.sidebar.cgColor
         panel.layer?.borderColor = Design.Color.border.cgColor
         panel.layer?.shadowColor = Design.Color.border.cgColor
-        emptyLabel.textColor = Design.Color.textPrimary
-        emptyLabel.backgroundColor = Design.Color.overlay
         for button in [copyButton, openButton, runButton] {
             button.contentTintColor = Design.Color.textSecondary
         }
-        legend.applyTheme()
+        keys.applyTheme()
         canvas.needsDisplay = true
     }
 
@@ -1018,6 +1119,8 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         case .main: break
         }
         guard let selection else {
+            // A category's labels on show: the rest of the text recedes.
+            if category != nil { drawOthersFaded() }
             drawChoosing(visibleEntries, typed: prefix.count, focus: focused)
             return
         }
@@ -1030,9 +1133,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             path.stroke()
         }
         // An item's unlabelled repeats show while it's selected.
-        if let single = selection.single {
-            for index in repeatsOf(single) { drawBoxes(entries[index]) }
-        }
+        if let single = selection.single { drawMatches(repeatsOf(single)) }
         // Once a ⇧ letter picks among the other labels, the matching ones
         // show, its letters greyed like typed ones (before that, `reach`).
         guard !extendPrefix.isEmpty else { return }
@@ -1048,7 +1149,7 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         let focus = focus.flatMap { visible.contains($0) ? $0 : nil }
         let order = visible.sorted().filter { $0 != focus } + (focus.map { [$0] } ?? [])
         let shown = order.map { entries[$0] }
-        for entry in shown { drawBoxes(entry) }
+        drawMatches(order)
         if let focus { drawFocusRing(entries[focus]) }
         // Callouts last: they float over every highlight and the text.
         for (index, entry) in zip(order, shown) {
@@ -1068,17 +1169,80 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         }
     }
 
-    /// An item's highlight while choosing: a light fill and an outline.
-    private func drawBoxes(_ entry: Entry) {
-        for rect in entry.rects {
-            let path = NSBezierPath(rect: rect)
-            Design.Color.accent.withAlphaComponent(0.18).setFill()
-            path.fill()
-            Design.Color.accent.setStroke()
-            path.lineWidth = 1
-            path.stroke()
+    /// The terminal's background: what text fades towards.
+    private static var terminalBackground: NSColor {
+        Theme.terminal.map { Theme.rgba($0.background) } ?? Design.Color.tile
+    }
+
+    /// While a category's labels show, every pane's text but the items
+    /// fades to `alpha.hintOthers` (the terminal background over it at the
+    /// rest); `drawMatches` puts the items back on top at full strength.
+    private func drawOthersFaded() {
+        Self.terminalBackground.withAlphaComponent(1 - Design.Alpha.hintOthers).setFill()
+        for capture in captures { NSBezierPath(rect: capture.frame).fill() }
+    }
+
+    /// Items' highlights, as the terminal shows a selection: its own
+    /// selection colour under the text, no outline. The overlay can't draw
+    /// under the terminal's text, so it redraws the frozen frame inside the
+    /// items' cells and adds the step from the terminal background to the
+    /// selection colour (plus-lighter, or plus-darker where the selection is
+    /// darker): the background becomes the selection colour and each glyph
+    /// shifts by the same step. Without the terminal's colours (a Ghostty
+    /// config of the user's own), an accent wash.
+    private func drawMatches(_ indices: [Int]) {
+        guard !indices.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+        let lift = Theme.terminal.flatMap { term in
+            term.selectionBackground.map { Self.lift(from: Theme.rgba(term.background), to: Theme.rgba($0)) }
+        }
+        let panes = Dictionary(grouping: indices) { paneOf($0) ?? -1 }
+        for (pane, members) in panes {
+            let clip = NSBezierPath()
+            for index in members { for rect in entries[index].rects { clip.appendRect(rect) } }
+            NSGraphicsContext.saveGraphicsState()
+            if let lift, pane >= 0, let picture = picture(pane) {
+                clip.addClip()
+                let frame = captures[pane].frame
+                picture.draw(in: frame, from: .zero, operation: .copy, fraction: 1, respectFlipped: true,
+                             hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
+                context.setBlendMode(lift.lighter ? .plusLighter : .plusDarker)
+                lift.color.setFill()
+                NSBezierPath(rect: frame).fill()
+            } else {
+                Design.Color.accent.withAlphaComponent(0.18).setFill()
+                clip.fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
+
+    /// The colour that, added to the terminal background (plus-lighter) or
+    /// taken from it (plus-darker: the colour is one minus the step), gives
+    /// the selection colour.
+    private static func lift(from background: NSColor, to selection: NSColor) -> (color: NSColor, lighter: Bool) {
+        let b = Theme.resolved(background), s = Theme.resolved(selection)
+        let lighter = s.redComponent + s.greenComponent + s.blueComponent
+            >= b.redComponent + b.greenComponent + b.blueComponent
+        func step(_ to: CGFloat, _ from: CGFloat) -> CGFloat { lighter ? max(0, to - from) : 1 - max(0, from - to) }
+        return (NSColor(srgbRed: step(s.redComponent, b.redComponent), green: step(s.greenComponent, b.greenComponent),
+                        blue: step(s.blueComponent, b.blueComponent), alpha: 1), lighter)
+    }
+
+    /// A capture's frozen frame as an image, at its pixel size.
+    private func picture(_ pane: Int) -> NSImage? {
+        if let picture = pictures[pane] { return picture }
+        let surface = captures[pane].picture
+        let space = IOSurfaceCopyValue(surface, kIOSurfaceColorSpace).flatMap { CGColorSpace(propertyListPlist: $0) }
+            ?? CGColorSpace(name: CGColorSpace.sRGB)
+        let image = CIImage(ioSurface: surface)
+        guard let space, let cg = Self.pictureContext.createCGImage(image, from: image.extent, format: .BGRA8,
+                                                                     colorSpace: space) else { return nil }
+        let picture = NSImage(cgImage: cg, size: captures[pane].frame.size)
+        pictures[pane] = picture
+        return picture
+    }
+
+    private static let pictureContext = CIContext(options: [.cacheIntermediates: false])
 
     /// The unlabelled copies of a labelled item (same pane, kind and value).
     private func repeatsOf(_ index: Int) -> [Int] {
@@ -1092,8 +1256,9 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
 
     /// A rounded pill with a short tail pointing at the item's first cell
     /// (up from below, down from above, right from the margin before it;
-    /// none when it sits over the item itself), a thin outline and a soft
-    /// shadow; dark letters on yellow (`hintCallout*`). The first `typed`
+    /// none when it sits over the item itself) and a soft shadow: a neutral
+    /// ink chip (`hintCallout*`, near-white in dark themes, near-black in
+    /// light ones). The first `typed`
     /// letters, already typed, are greyed (`hintCalloutTyped`, lighter
     /// weight), the rest bold. Dimmed, the whole callout fades to `alpha`
     /// but the letters stay solid, picked to read on the faded fill
@@ -1125,28 +1290,21 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         context.saveGState()
         context.setAlpha(alpha)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
-        // Shadow under the whole shape, then the outline, then the fill
-        // again over the outline's inner half so pill and tail read as one.
+        // Pill and tail as one shape (a layer of their own), one shadow
+        // under both.
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
         shadow.shadowColor = Design.Color.hintCalloutShadow
         shadow.shadowBlurRadius = 3
         shadow.shadowOffset = CGSize(width: 0, height: -1)
         shadow.set()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
         let body = focused ? Design.Color.hintCalloutFocus : Design.Color.hintCallout
         body.setFill()
         pill.fill()
         if !tail.isEmpty { tail.fill() }
+        context.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
-        Design.Color.hintCalloutBorder.setStroke()
-        for path in [pill, tail] where !path.isEmpty {
-            path.lineWidth = 1.5
-            path.lineJoinStyle = .round
-            path.stroke()
-        }
-        body.setFill()
-        pill.fill()
-        if !tail.isEmpty { tail.fill() }
         if focused {
             let ring = NSBezierPath(roundedRect: frame.insetBy(dx: -2.5, dy: -2.5), xRadius: radius + 2.5,
                                     yRadius: radius + 2.5)
@@ -1193,10 +1351,11 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             else if panel.frame.minX >= last.maxX { popupPosition = "right" }
             else { popupPosition = "overlap" }
         }
-        let legendVisible = isOpen && !legend.isHidden && legend.superview != nil
-        let legendPosition = legendVisible ? (legendHost != nil ? "header" : "bottom") : "hidden"
-        // The legend's own room: the header strip, or the pane.
-        let legendRoom: CGRect? = legendHost.map { $0.convert($0.bounds, to: self) } ?? legendPane?.frame
+        let keysVisible = isOpen && !keysFrame.isNull
+        let keysPosition = !keysVisible ? "hidden"
+            : (keys.frame.midY > bounds.midY ? "bottom" : "top")
+            + (abs(keys.frame.midX - bounds.midX) < 1 ? "" : keys.frame.midX > bounds.midX ? "-right" : "-left")
+        let content = keysVisible ? keys.content : nil
         let calloutStats = calloutStatistics
         let actions = selection.map { _ in
             (["copy"] + (canOpen ? ["open"] : []) + (canRun ? ["run"] : [])).joined(separator: ",")
@@ -1204,16 +1363,39 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
         let kind = selection.map { s in
             entry?.item.kind.rawValue ?? (s.anchor == s.focus ? s.focus.level.name : "range")
         } ?? "-"
-        // The items labelled up front: not the paragraphs (never labelled)
-        // nor the lines (shown after `l`).
+        // The items, lines aside: not the paragraphs (never labelled) nor
+        // the lines (listed on their own).
         let items = entries.filter { $0.item.kind != .text && $0.item.kind != .line }
         let lines = entries.filter { $0.item.kind == .line }
+        // What picks an item from the category list: its category's key,
+        // then its label.
+        func listed(_ list: [String]) -> String { list.isEmpty ? "-" : list.joined(separator: ",") }
+        func keysOf(_ entry: Entry) -> String {
+            entry.label.isEmpty ? "-" : (TerminalSelection.letter(entry.item.kind).map(String.init) ?? "") + entry.label
+        }
         return [
             "hints.state": isOpen ? (selection == nil ? "choosing" : "selected") : "closed",
+            "hints.category": category.map(\.rawValue) ?? "-",
             "hints.count": String(items.count),
             "hints.visible": String(isOpen ? visibleEntries.count : 0),
             "hints.types": items.map { $0.item.kind.rawValue }.joined(separator: ","),
             "hints.labels": items.isEmpty ? "-" : items.map { $0.label.isEmpty ? "-" : $0.label }.joined(separator: ","),
+            "hints.keys": items.isEmpty ? "-" : items.map(keysOf).joined(separator: ","),
+            // Each item's kind and first row.
+            "hints.rows": listed(items.map { "\($0.item.kind.rawValue):\($0.item.spans[0].row)" }),
+            // Every box sits on its own row: a row's box starts where row 0's
+            // does, a whole number of cells further down.
+            "hints.boxes.rows": entries.allSatisfy { entry in
+                guard let capture = captures.first(where: { $0.tile.id == entry.tileID }),
+                      let top = capture.rowCells[0]?.minY else { return false }
+                return zip(entry.item.spans, entry.rects).allSatisfy { span, rect in
+                    abs(rect.minY - (top + CGFloat(span.row) * entry.cell.height)) < 0.5
+                        || rect.minY < capture.frame.minY + 0.5
+                }
+            } ? "yes" : "no",
+            // The kinds of the labels on screen now, once each.
+            "hints.shown.kinds": listed(Set(visibleEntries.map { entries[$0].item.kind.rawValue }).sorted()),
+            "hints.shown.labels": listed(visibleEntries.sorted().map { entries[$0].label }),
             // Repeats left without a label (all but the newest copy).
             "hints.unlabelled": String(items.filter(\.label.isEmpty).count),
             // Every non-blank line, labelled but drawn only after `l`.
@@ -1221,6 +1403,23 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             "hints.lines.labels": lines.isEmpty ? "-" : lines.map { $0.label.isEmpty ? "-" : $0.label }
                 .joined(separator: ","),
             "hints.lines.values": lines.isEmpty ? "-" : lines.map(\.item.value).joined(separator: "|"),
+            // In the lines category: every non-blank row of every pane is in
+            // a line whose label shows; no line sits on a blank row; the
+            // lowest line has a single letter.
+            "hints.lines.all": category == .line && selection == nil && captures.allSatisfy { capture in
+                capture.hints.extents.indices.allSatisfy { row in
+                    capture.hints.extents[row] == nil || visibleEntries.contains { index in
+                        entries[index].tileID == capture.tile.id && entries[index].item.kind == .line
+                            && entries[index].item.spans.contains { $0.row == row }
+                    }
+                }
+            } ? "yes" : "no",
+            "hints.lines.blank": String(lines.filter { line in
+                guard let capture = captures.first(where: { $0.tile.id == line.tileID }) else { return false }
+                return line.item.spans.contains { capture.hints.extents.indices.contains($0.row)
+                    && capture.hints.extents[$0.row] == nil }
+            }.count),
+            "hints.lines.short": lines.last.map { $0.label.count == 1 ? "yes" : "no" } ?? "-",
             // Callouts on screen: while choosing, the matching ones; selected,
             // none until ⇧ is held (or a ⇧ letter typed).
             "hints.callouts": String(!isOpen ? 0 : selection == nil || !extendPrefix.isEmpty || reachShown
@@ -1242,15 +1441,30 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
             "hints.run.target": lastRunTarget.isEmpty ? "-" : lastRunTarget,
             "hints.panes": String(captures.count),
             "hints.label": entry.map { $0.label.isEmpty ? "-" : $0.label } ?? "-",
+            // The selected item's boxes: one per row, on consecutive rows
+            // ("rows:N"), or a single row ("row").
+            "hints.spans": entry.map { e -> String in
+                let rows = e.item.spans.map(\.row)
+                guard rows.count > 1 else { return "row" }
+                return zip(rows, rows.dropFirst()).allSatisfy { $1 == $0 + 1 } ? "rows:\(rows.count)" : "scattered"
+            } ?? "-",
+            "hints.spans.multi": entry.map { $0.item.spans.count > 1 ? "yes" : "no" } ?? "-",
+            // The selected item's value: what Copy puts on the pasteboard.
+            "hints.selected.value": entry.map { $0.item.value.replacingOccurrences(of: "\n", with: "↵") } ?? "-",
             "hints.fade": String(Int((lastFade * 1000).rounded())),
-            "hints.legend": legendVisible ? legendItems.map(\.text).joined(separator: ",") : "-",
-            "hints.legend.position": legendPosition,
-            "hints.legend.fits": legendVisible
-                ? (legendRoom.map { $0.insetBy(dx: -0.5, dy: -0.5).contains(legendFrame) } == true
-                    && legend.fittingSize.width <= legend.bounds.width + 0.5 ? "yes" : "no") : "-",
-            "hints.legend.keys": legendVisible ? legend.shownKeys.joined(separator: ",") : "-",
-            "hints.legend.tile": legendVisible ? (legendPane?.tile.id == focusedID ? "focused" : "other") : "-",
-            "hints.legend.moves": String(legendMoves),
+            // The key panel: its title, what each key does (main keys, then
+            // the moving-about ones), the keys, the dimmed categories, where
+            // it sits, and that it fits the window and hides nothing on show.
+            "hints.panel.title": content?.title ?? "-",
+            "hints.panel": listed(content.map { ($0.main + $0.nav).map(\.text) } ?? []),
+            "hints.panel.keys": listed(content.map { ($0.main + $0.nav).map(\.key) } ?? []),
+            "hints.panel.dimmed": listed(content.map { $0.main.filter { !$0.enabled }.map(\.key) } ?? []),
+            "hints.panel.position": keysPosition,
+            "hints.panel.fits": !keysVisible ? "-"
+                : bounds.contains(keys.frame) && keys.fitting(maxWidth: keys.frame.width).width <= keys.frame.width + 0.5
+                    && !keysAvoid.contains(where: { $0.intersects(keys.frame) }) ? "yes" : "no",
+            "hints.panel.alpha": String(format: "%.2f", keys.alphaValue),
+            "hints.panel.animating": keys.layer?.animation(forKey: "show") != nil ? "yes" : "no",
             "hints.popup": popupVisible ? "visible" : "hidden",
             "hints.popup.fits": popupVisible ? (popupFits ? "yes" : "no") : "-",
             "hints.popup.position": popupPosition,
@@ -1319,9 +1533,12 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
 
     /// `hints select <value>`: types the label of the first item with that value.
     func automationSelect(_ value: String) -> String? {
-        guard isOpen, let entry = labelledEntry(value) else { return "no such visible hint" }
-        selection = nil; focused = nil; prefix = ""; extendPrefix = ""
-        for ch in entry.label { handle(String(ch)) }
+        guard isOpen, let entry = labelledEntry(value),
+              let letter = TerminalSelection.letter(entry.item.kind) else { return "no such visible hint" }
+        selection = nil; focused = nil; prefix = ""; extendPrefix = ""; category = nil
+        handle(String(letter))
+        // A category of one selects its item with its key alone.
+        if selection == nil { for key in entry.label.map(String.init) { handle(key) } }
         return nil
     }
 
@@ -1386,77 +1603,154 @@ final class TerminalHintOverlay: NSView, KeepsKeyboard, ThemeAware {
     }
 }
 
-/// ⌘S keycaps, for the legend and the action popup alike: a small rounded
-/// key (`hintBadge`, a hairline `hintBadgeBorder`, letters `hintBadgeText`)
-/// in the callouts' shape. A kind letter is a little label callout instead
-/// (`hintCallout*`): it's what the labels it picks start with.
+/// ⌘S keycaps, for the key panel and the action popup alike. Raised, like
+/// the shortcut glyphs in menus (`hintBadge`, a thin edge
+/// `hintBadgeBorder`, a lip `hintBadgeShadow` under it): the category and
+/// title keys (`large`) and the popup's shortcuts. Flat (`hintBadgeFlat`):
+/// the keys that move about. Letters `hintBadgeText`, as the labels show
+/// them (capitals).
 @MainActor
 private enum HintKeycap {
     static let height: CGFloat = 16
+    static let largeHeight: CGFloat = 18
 
     /// Letters as the callouts show them (capitals); other keys as named.
     static func display(_ key: String) -> String {
         key.count == 1 && key.first?.isLetter == true ? key.uppercased() : key
     }
 
-    private static func font(kind: Bool) -> NSFont {
-        kind ? NSFont.systemFont(ofSize: Design.Font.hintKey.pointSize, weight: .bold) : Design.Font.hintKey
+    private static func font(large: Bool) -> NSFont {
+        large ? Design.Font.hintCategoryKey : Design.Font.hintKey
     }
 
-    static func size(for key: String, kind: Bool = false) -> CGSize {
-        let width = ceil((display(key) as NSString).size(withAttributes: [.font: font(kind: kind)]).width)
+    static func size(for key: String, large: Bool = false) -> CGSize {
+        let width = ceil((display(key) as NSString).size(withAttributes: [.font: font(large: large)]).width)
+        let height = large ? largeHeight : height
         return CGSize(width: max(height, width + 8), height: height)
     }
 
-    /// `color` at `alpha` of its own opacity (the outline token is translucent).
+    /// `color` at `alpha` of its own opacity (the tokens are translucent).
     private static func faded(_ color: NSColor, _ alpha: CGFloat) -> NSColor {
         alpha >= 1 ? color : color.withAlphaComponent(color.alphaComponent * alpha)
     }
 
-    static func draw(_ key: String, in rect: CGRect, kind: Bool = false, enabled: Bool = true) {
+    static func draw(_ key: String, in rect: CGRect, raised: Bool = true, large: Bool = false, enabled: Bool = true) {
         let alpha: CGFloat = enabled ? 1 : 0.4
         let radius = Design.Radius.hintBadge
-        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
-        faded(kind ? Design.Color.hintCallout : Design.Color.hintBadge, alpha).setFill()
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        if raised {
+            // The lip: the key's shape a point lower, showing only below it
+            // (the key's fill is translucent in dark themes).
+            NSGraphicsContext.saveGraphicsState()
+            let outside = NSBezierPath(rect: rect.insetBy(dx: -2, dy: -2))
+            outside.append(path)
+            outside.windingRule = .evenOdd
+            outside.addClip()
+            faded(Design.Color.hintBadgeShadow, alpha).setFill()
+            NSBezierPath(roundedRect: rect.offsetBy(dx: 0, dy: 1), xRadius: radius, yRadius: radius).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        faded(raised ? Design.Color.hintBadge : Design.Color.hintBadgeFlat, alpha).setFill()
         path.fill()
-        faded(kind ? Design.Color.hintCalloutBorder : Design.Color.hintBadgeBorder, alpha).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-        let color = kind ? Design.Color.hintCalloutText : Design.Color.hintBadgeText
+        if raised {
+            let edge = NSBezierPath(roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), xRadius: radius - 0.25,
+                                    yRadius: radius - 0.25)
+            edge.lineWidth = Design.Border.hintPanel
+            faded(Design.Color.hintBadgeBorder, alpha).setStroke()
+            edge.stroke()
+        }
         let text = display(key) as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: font(kind: kind),
-                                                         .foregroundColor: faded(color, enabled ? 1 : 0.5)]
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font(large: large), .foregroundColor: faded(Design.Color.hintBadgeText, enabled ? 1 : 0.5),
+        ]
         let size = text.size(withAttributes: attributes)
         text.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
     }
 }
 
-/// The keys that apply right now, centred in the focused tile's header
-/// strip over its title (`inStrip`), or, for a tile without a strip, in a
-/// small bar at the bottom of the pane: a keycap (`HintKeycap`) and a quiet
-/// word for each (`textMuted`).
+/// ⌘S's key panel, which-key style: a HUD floating above the window's
+/// bottom edge. A translucent system material (`material.hintPanel`: a HUD
+/// in dark themes, a popover in light ones) under a tint (`hintPanel`, so it
+/// stays legible where the material can't blur, in-app captures say), a
+/// thin edge (`hintPanelBorder`), a highlight along the top
+/// (`hintPanelHighlight`), radius `hintPanel` and the palette's shadow. A
+/// title (with a category, its key) over the main keys in columns (the
+/// categories and how many items each has, or a selection's actions), then
+/// a row of the keys that move about. Keycaps are `HintKeycap`s: raised for
+/// the main keys, flat for the rest.
 @MainActor
-private final class HintLegend: NSView {
-    struct Item {
+private final class HintKeyPanel: NSView {
+    struct Key {
         let key: String
         let text: String
+        /// A category key: a large raised keycap.
         var kind = false
+        /// How many items the category has (none: not shown).
+        var count = 0
+        /// A category with nothing on screen is listed, dimmed.
+        var enabled = true
     }
 
-    /// Room kept between the bar and the pane's edge.
-    static let margin: CGFloat = 10
-    /// A strip lower than this can't hold the keycaps: the bar instead.
-    static let minimumStrip: CGFloat = 20
-    private static let gap: CGFloat = 4, spacing: CGFloat = 12, barPadding: CGFloat = 8, barHeight: CGFloat = 26
-    var inStrip = false { didSet { if inStrip != oldValue { applyTheme() } } }
-    private var items: [Item] = []
-    /// Automation: the keys shown after fitting.
-    var shownKeys: [String] { items.map(\.key) }
+    struct Content {
+        var title: String
+        var titleKey: String?
+        var main: [Key]
+        var nav: [Key]
+
+        init(title: String, titleKey: String? = nil, main: [Key], nav: [Key]) {
+            self.title = title
+            self.titleKey = titleKey
+            self.main = main
+            self.nav = nav
+        }
+    }
+
+    /// Room kept between the panel and the window's edges.
+    static let margin: CGFloat = 16
+    static let maxWidth: CGFloat = 600
+    /// How far it rises as it fades in.
+    static let rise: CGFloat = 8
+    private static let padding: CGFloat = 12, row: CGFloat = 22, columnGap: CGFloat = 20, gap: CGFloat = 6
+    private static let navSpacing: CGFloat = 14, title: CGFloat = 18, section: CGFloat = 8, maxColumns = 4
+
+    var content = Content(title: "", main: [], nav: []) { didSet { needsDisplay = true } }
+    /// The layout `fitting` settled on: columns of main keys, the nav keys
+    /// that fit (Esc always does).
+    private var columns = 1
+    private var nav: [Key] = []
+    /// The material, and the tint and keys drawn over it.
+    private let material = NSVisualEffectView()
+    private let face = Face()
     override var isFlipped: Bool { true }
+    override var needsDisplay: Bool {
+        didSet { if needsDisplay { face.needsDisplay = true } }
+    }
+
+    /// Draws the panel's tint, edge and keys over the material.
+    private final class Face: NSView {
+        weak var panel: HintKeyPanel?
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func draw(_ dirtyRect: NSRect) { panel?.drawFace() }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        layer?.shadowOpacity = Float(Design.Alpha.paletteShadow)
+        layer?.shadowRadius = 20
+        layer?.shadowOffset = CGSize(width: 0, height: -10)
+        material.blendingMode = .withinWindow
+        material.state = .active
+        material.wantsLayer = true
+        material.layer?.cornerRadius = Design.Radius.hintPanel
+        material.layer?.masksToBounds = true
+        face.panel = self
+        for view in [material, face] {
+            view.frame = bounds
+            view.autoresizingMask = [.width, .height]
+            addSubview(view)
+        }
     }
 
     @available(*, unavailable)
@@ -1464,60 +1758,143 @@ private final class HintLegend: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // The shadow from the card's outline, not the translucent content.
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Design.Radius.hintPanel,
+                                   cornerHeight: Design.Radius.hintPanel, transform: nil)
+    }
+
     func applyTheme() {
-        // The bar: a card in the header's colour. In the strip, `draw`
-        // fills it instead, short of the strip's hairline.
-        layer?.backgroundColor = inStrip ? NSColor.clear.cgColor : Design.Color.header.cgColor
-        layer?.cornerRadius = inStrip ? 0 : Design.Radius.sidebarSegment
-        layer?.borderWidth = inStrip ? 0 : Design.Border.hairline
-        layer?.borderColor = Design.Color.border.cgColor
+        material.material = Design.Material.hintPanel(Theme.current.appearance)
+        material.appearance = Theme.current.appearance.nsAppearance
+        layer?.shadowColor = Design.Color.shadow.cgColor
         needsDisplay = true
     }
 
-    private static func width(_ item: Item) -> CGFloat {
-        HintKeycap.size(for: item.key, kind: item.kind).width + gap
-            + ceil((item.text as NSString).size(withAttributes: [.font: Design.Font.hintLegend]).width)
+    private static let mainFont = Design.Font.row
+    private static let navFont = Design.Font.hintLegend
+    private static let titleFont = Design.Font.hintPanelTitle
+
+    private static func textWidth(_ text: String, _ font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    private static func contentWidth(_ list: [Item]) -> CGFloat {
-        list.map(width).reduce(0, +) + CGFloat(max(0, list.count - 1)) * spacing
+    private static func width(_ key: Key, font: NSFont) -> CGFloat {
+        var width = HintKeycap.size(for: key.key, large: key.kind).width + gap + textWidth(key.text, font)
+        if key.count > 0 { width += gap + textWidth(String(key.count), font) }
+        return width
     }
 
-    /// Keeps the items that fit in `maxWidth`, dropping from the end but
-    /// always keeping the last (Esc).
-    func set(_ all: [Item], maxWidth: CGFloat) {
-        var kept = all
-        let padding = inStrip ? 0 : 2 * Self.barPadding
-        while kept.count > 1, Self.contentWidth(kept) + padding > maxWidth { kept.remove(at: kept.count - 2) }
-        items = kept
-        needsDisplay = true
+    private static func rowWidth(_ keys: [Key]) -> CGFloat {
+        keys.map { width($0, font: navFont) }.reduce(0, +) + CGFloat(max(0, keys.count - 1)) * navSpacing
     }
 
-    override var fittingSize: NSSize {
-        let padding = inStrip ? 0 : 2 * Self.barPadding
-        return NSSize(width: ceil(Self.contentWidth(items) + padding), height: inStrip ? bounds.height : Self.barHeight)
+    private var titleWidth: CGFloat {
+        let key = content.titleKey.map { HintKeycap.size(for: $0, large: true).width + Self.gap } ?? 0
+        return key + Self.textWidth(content.title, Self.titleFont)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if inStrip {
-            // Opaque, so fading out it uncovers the title coming back.
-            Design.Color.header.setFill()
-            let hairline = 1 / max(window?.backingScaleFactor ?? 2, 1)
-            CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - hairline).fill()
-        }
-        var x = ((bounds.width - Self.contentWidth(items)) / 2).rounded()
-        let attributes: [NSAttributedString.Key: Any] = [.font: Design.Font.hintLegend,
-                                                         .foregroundColor: Design.Color.textMuted]
-        for item in items {
-            let size = HintKeycap.size(for: item.key, kind: item.kind)
-            HintKeycap.draw(item.key, in: CGRect(x: x, y: ((bounds.height - size.height) / 2).rounded(),
-                                                 width: size.width, height: size.height), kind: item.kind)
+    private var columnWidth: CGFloat { content.main.map { Self.width($0, font: Self.mainFont) }.max() ?? 0 }
+
+    /// The panel's size within `maxWidth`, settling its columns and which
+    /// nav keys fit (dropped from the end, Esc kept).
+    func fitting(maxWidth: CGFloat) -> CGSize {
+        let room = max(0, maxWidth - 2 * Self.padding)
+        let column = columnWidth
+        let fit = Int((room + Self.columnGap) / max(1, column + Self.columnGap))
+        columns = max(1, min(content.main.count, fit, Self.maxColumns))
+        nav = content.nav
+        while nav.count > 1, Self.rowWidth(nav) > room { nav.remove(at: nav.count - 2) }
+        let grid = content.main.isEmpty ? 0 : CGFloat(columns) * column + CGFloat(columns - 1) * Self.columnGap
+        let width = min(maxWidth, max(grid, Self.rowWidth(nav), titleWidth) + 2 * Self.padding)
+        let rows = (content.main.count + columns - 1) / columns
+        var height = Self.padding + Self.title
+        if rows > 0 { height += Self.section + CGFloat(rows) * Self.row }
+        height += Self.section + Self.row + Self.padding - 4
+        return CGSize(width: ceil(width), height: ceil(height))
+    }
+
+    fileprivate func drawFace() {
+        let radius = Design.Radius.hintPanel
+        let card = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+        Design.Color.hintPanel.setFill()
+        card.fill()
+        // The top highlight: the edge's upper band, a lighter line that
+        // follows the corners and fades out down the sides.
+        let line = Design.Border.hintPanel
+        let inner = NSBezierPath(roundedRect: bounds.insetBy(dx: line * 1.5, dy: line * 1.5),
+                                 xRadius: radius - line * 1.5, yRadius: radius - line * 1.5)
+        inner.lineWidth = line
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: CGRect(x: 0, y: 0, width: bounds.width, height: radius)).addClip()
+        Design.Color.hintPanelHighlight.setStroke()
+        inner.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+        let edge = NSBezierPath(roundedRect: bounds.insetBy(dx: line / 2, dy: line / 2),
+                                xRadius: radius - line / 2, yRadius: radius - line / 2)
+        edge.lineWidth = line
+        Design.Color.hintPanelBorder.setStroke()
+        edge.stroke()
+
+        var y = Self.padding
+        var x = Self.padding
+        if let key = content.titleKey {
+            let size = HintKeycap.size(for: key, large: true)
+            HintKeycap.draw(key, in: CGRect(x: x, y: y + (Self.title - size.height) / 2, width: size.width,
+                                            height: size.height), large: true)
             x += size.width + Self.gap
-            let text = item.text as NSString
-            let textSize = text.size(withAttributes: attributes)
-            text.draw(at: CGPoint(x: x, y: (bounds.height - textSize.height) / 2), withAttributes: attributes)
-            x += ceil(textSize.width) + Self.spacing
         }
+        draw(content.title, at: x, y: y, height: Self.title, font: Self.titleFont, color: Design.Color.hintPanelText)
+        y += Self.title
+        if !content.main.isEmpty {
+            y += Self.section
+            let column = columnWidth + Self.columnGap
+            for (index, key) in content.main.enumerated() {
+                let cell = CGPoint(x: Self.padding + CGFloat(index % columns) * column,
+                                   y: y + CGFloat(index / columns) * Self.row)
+                draw(key, at: cell, width: columnWidth, font: Self.mainFont, text: Design.Color.hintPanelText,
+                     raised: true)
+            }
+            y += CGFloat((content.main.count + columns - 1) / columns) * Self.row
+        }
+        // A hairline over the moving-about keys.
+        Design.Color.hintPanelBorder.setFill()
+        let hairline = 1 / max(window?.backingScaleFactor ?? 2, 1)
+        NSBezierPath(rect: CGRect(x: Self.padding, y: y + Self.section / 2, width: bounds.width - 2 * Self.padding,
+                                  height: hairline)).fill()
+        y += Self.section
+        x = Self.padding
+        for key in nav {
+            draw(key, at: CGPoint(x: x, y: y), width: nil, font: Self.navFont,
+                 text: Design.Color.hintPanelTextSecondary, raised: false)
+            x += Self.width(key, font: Self.navFont) + Self.navSpacing
+        }
+    }
+
+    /// A key and its words; with a `width` (a grid column), its count sits
+    /// at the column's right edge so the counts line up.
+    private func draw(_ key: Key, at origin: CGPoint, width: CGFloat?, font: NSFont, text: NSColor, raised: Bool) {
+        let size = HintKeycap.size(for: key.key, large: key.kind)
+        HintKeycap.draw(key.key, in: CGRect(x: origin.x, y: origin.y + ((Self.row - size.height) / 2).rounded(),
+                                            width: size.width, height: size.height),
+                        raised: raised || key.kind, large: key.kind, enabled: key.enabled)
+        var x = origin.x + size.width + Self.gap
+        let muted = Design.Color.hintPanelTextSecondary
+        let color = key.enabled ? text : muted.withAlphaComponent(muted.alphaComponent * Design.Alpha.dimmed)
+        draw(key.text, at: x, y: origin.y, height: Self.row, font: font, color: color)
+        if key.count > 0 {
+            let count = String(key.count)
+            x = width.map { origin.x + $0 - Self.textWidth(count, font) } ?? x + Self.textWidth(key.text, font) + Self.gap
+            draw(count, at: x, y: origin.y, height: Self.row, font: font,
+                 color: key.enabled ? muted : color)
+        }
+    }
+
+    private func draw(_ text: String, at x: CGFloat, y: CGFloat, height: CGFloat, font: NSFont, color: NSColor) {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let size = (text as NSString).size(withAttributes: attributes)
+        (text as NSString).draw(at: CGPoint(x: x, y: y + (height - size.height) / 2), withAttributes: attributes)
     }
 }
 

@@ -41,9 +41,8 @@ enum TerminalSelection {
     /// Raw values are the core's.
     enum Direction: UInt8 { case left, right, up, down }
 
-    /// The first letter of every label says what the item is (the core's
-    /// `Kind::letter`, which makes the labels). A paragraph has none: it
-    /// has no label.
+    /// The key that picks a kind's category in the ⌘S panel (the core's
+    /// `Kind::letter`). A paragraph has none: it has no label.
     static func letter(_ kind: TerminalHintItem.Kind) -> Character? {
         switch kind {
         case .url: "u"
@@ -58,17 +57,26 @@ enum TerminalSelection {
         }
     }
 
-    /// Legend order and words for the kind letters.
-    static let kindOrder: [(TerminalHintItem.Kind, String)] = [
-        (.url, "url"), (.path, "path"), (.command, "command"), (.line, "line"), (.ip, "ip"),
-        (.domain, "domain"), (.hash, "hash/id"), (.branch, "branch"),
+    /// The kind a category key picks.
+    static func kind(forLetter letter: String) -> TerminalHintItem.Kind? {
+        kindOrder.first { self.letter($0.kind).map(String.init) == letter }?.kind
+    }
+
+    /// The categories in panel order: each kind's name for one item and
+    /// for several.
+    static let kindOrder: [(kind: TerminalHintItem.Kind, one: String, many: String)] = [
+        (.url, "URL", "URLs"), (.path, "path", "paths"), (.command, "command", "commands"),
+        (.line, "line", "lines"), (.hash, "hash or ID", "hashes & IDs"), (.ip, "IP address", "IP addresses"),
+        (.domain, "domain", "domains"), (.branch, "branch", "branches"),
     ]
 
-    /// Whether an item's label shows while choosing with `typed` typed so
-    /// far (the core's `select::shown`): it has a label starting with
-    /// `typed`, and a line waits for a first letter (its own, `l`).
-    static func shown(_ kind: TerminalHintItem.Kind, label: String, typed: String) -> Bool {
-        !label.isEmpty && label.hasPrefix(typed) && (kind != .line || !typed.isEmpty)
+    /// Whether an item's label shows while choosing in `category` (none
+    /// yet: the panel lists the categories and no label shows) with
+    /// `typed` typed so far (the core's `select::shown`): it's of that kind
+    /// and its label starts with `typed`.
+    static func shown(_ kind: TerminalHintItem.Kind, label: String, category: TerminalHintItem.Kind?,
+                      typed: String) -> Bool {
+        category == kind && !label.isEmpty && label.hasPrefix(typed)
     }
 
     static func extent(_ item: TerminalHintItem) -> TerminalTextRange {

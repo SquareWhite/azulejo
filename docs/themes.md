@@ -138,7 +138,7 @@ theme = "dusk"
 - **Without `inherits`**, a theme starts from Atom One Dark, or Atom One Light with `appearance = "light"`.
 - **Colours** are `#rgb`, `#rrggbb` or `#rrggbbaa`. Tokens you don't set keep the inherited theme's values, system colours included (so a theme inheriting `macos-dark` still follows your accent where you didn't override it).
 - **Problems never stop the app.** An unknown key or token, a bad colour, a bad `appearance`: each is a warning in the config banner, pointing at the line, and that value keeps the inherited one. A file that isn't valid TOML is reported and the theme doesn't exist until it's fixed (a config naming it then keeps its previous theme on reload).
-- **Older theme files** still load: `syntax` and the colours of the browser and preview tiles that earlier builds had are ignored, and `browserChrome` / `browserField` set `findBar` / `findField`.
+- **Older theme files** still load: `syntax`, the colours of the browser and preview tiles that earlier builds had and `hintCalloutBorder` (⌘S labels no longer have an outline) are ignored, and `browserChrome` / `browserField` set `findBar` / `findField`.
 
 ## Colour tokens
 
@@ -160,16 +160,22 @@ Every theme sets every token below. In the macOS columns, a name is an `NSColor`
 | `textOnAccent` | text on HUDs, badges and coloured fills | `#ffffff` | `#ffffff` | alternateSelectedControlTextColor | alternateSelectedControlTextColor |
 | `accent` | progress bars, highlights, drop targets, drag slots | `#61afef` | `#4760ef` | controlAccentColor | controlAccentColor |
 | `accentText` | the accent as text: links, matched characters in ⌘K | `#61afef` | `#3a52dc` | linkColor | `#0058c4` |
-| `hintBadge` | ⌘S keycaps: the legend's keys (in the tile's header strip) and the action popup's shortcuts | `#2c313a` | `#fbfbfb` | `#323232` | `#ffffff` |
-| `hintBadgeText` | letters on ⌘S keycaps | `#c5cad3` | `#383a42` | `#d4d4d4` | `#3a3a3a` |
-| `hintBadgeBorder` | thin outline round a ⌘S keycap | `#ffffff1f` | `#00000024` | `#ffffff1f` | `#00000024` |
-| `hintCallout` | ⌘S label callouts (Homerow style): the pill hanging under an item's first cell | `#f9dc6b` | `#fde68a` | `#f9dc6b` | `#fde68a` |
-| `hintCalloutBorder` | thin outline round a label callout and its tail | `#c8a02a` | `#8f6b00` | `#c8a02a` | `#8f6b00` |
-| `hintCalloutText` | letters on a label callout | `#2a2200` | `#2a2200` | `#2a2200` | `#2a2200` |
-| `hintCalloutTyped` | letters already typed on a label callout (the rest of the label stays `hintCalloutText`) | `#7a6620` | `#7a6620` | `#7a6620` | `#7a6620` |
-| `hintCalloutFocus` | the focused item's label callout while choosing (arrow keys move the focus, Return selects it) | `#ffb85c` | `#ffb85c` | `#ffb85c` | `#ffb85c` |
+| `hintBadge` | ⌘S keycaps, raised like the shortcut glyphs in menus: the key panel's category and title keys and the action popup's shortcuts | `#ffffff1f` | `#ffffff` | `#ffffff1f` | `#ffffff` |
+| `hintBadgeText` | letters on ⌘S keycaps, raised and flat | `#f5f5f7` | `#1d1d1f` | `#f5f5f7` | `#1d1d1f` |
+| `hintBadgeBorder` | thin edge round a raised ⌘S keycap | `#ffffff2e` | `#00000029` | `#ffffff2e` | `#00000029` |
+| `hintBadgeShadow` | the lip under a raised ⌘S keycap (1 pt below it) | `#00000066` | `#0000001a` | `#00000066` | `#0000001a` |
+| `hintBadgeFlat` | flat ⌘S keycaps: the key panel's moving-about keys (esc, the arrows, ⌫) | `#ffffff1a` | `#0000000f` | `#ffffff1a` | `#0000000f` |
+| `hintPanel` | ⌘S key panel: the tint over its material (`material.hintPanel`), so it reads where the material can't blur | `#262628cc` | `#fafafad1` | `#262628cc` | `#fafafad1` |
+| `hintPanelBorder` | ⌘S key panel: its edge, and the hairline between its keys and the moving-about ones | `#ffffff24` | `#0000001f` | `#ffffff24` | `#0000001f` |
+| `hintPanelHighlight` | ⌘S key panel: the highlight along its top edge | `#ffffff1a` | `#ffffffcc` | `#ffffff1a` | `#ffffffcc` |
+| `hintPanelText` | ⌘S key panel: its title and the category names | `#f5f5f7` | `#1d1d1f` | `#f5f5f7` | `#1d1d1f` |
+| `hintPanelTextSecondary` | ⌘S key panel: category counts and the moving-about keys' words | `#ebebf59e` | `#3c3c43bf` | `#ebebf59e` | `#3c3c43bf` |
+| `hintCallout` | ⌘S label callouts (Homerow style): the neutral ink chip hanging under an item's first cell | `#f5f5f7` | `#1d1d1f` | `#f5f5f7` | `#1d1d1f` |
+| `hintCalloutText` | letters on a label callout | `#1d1d1f` | `#ffffff` | `#1d1d1f` | `#ffffff` |
+| `hintCalloutTyped` | letters already typed on a label callout (the rest of the label stays `hintCalloutText`) | `#636366` | `#b0b0b5` | `#636366` | `#b0b0b5` |
+| `hintCalloutFocus` | the focused item's label callout while choosing (arrow keys move the focus, Return selects it) | `#ffb85c` | `#8a3f00` | `#ffb85c` | `#8a3f00` |
 | `hintFocus` | the focus ring the arrow keys move while choosing: round the focused item and its callout | `#ff9f43` | `#b85400` | `#ff9f43` | `#b85400` |
-| `hintCalloutShadow` | soft shadow under a label callout | `#00000080` | `#00000040` | `#00000080` | `#00000040` |
+| `hintCalloutShadow` | soft shadow under a label callout | `#00000080` | `#00000038` | `#00000080` | `#00000038` |
 | `dimFill` | what unfocused tiles fade towards (alpha.unfocusedDim): the window colour, so they recede into the gutters. Ghostty's unfocused-split-fill overrides it | `#1b1d23` | `#e1e1e3` | `#000000` | `#ececec` |
 | `statusWorking` | working agents (azulejo.ring) | `#61afef` | `#2558cc` | linkColor | `#0058c4` |
 | `statusBlocked` | agents waiting for input | `#e5c07b` | `#935a00` | systemYellow | `#a64400` |
@@ -233,7 +239,7 @@ Besides the minimum, a pair must keep 70% of Atom One Dark's contrast for the sa
 
 ## Where it lives
 
-- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `sidebarMaterial`, `color` and `terminal`). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell reads the same file through `azulejo-config`.
+- `shared/design/tokens.json`: `colorTokens` (the list), `themes.<id>` (each theme's `appearance`, `sidebarMaterial`, `color` and `terminal`), `material` (vibrancy materials by appearance, such as ⌘S's key panel). `scripts/design-tokens` checks that every theme sets every token with a valid value and generates the macOS shell's `Design.swift` (the per-theme tables included); the Linux shell reads the same file through `azulejo-config`.
 - `azulejo-config` (`theme.rs`): built-ins, user themes, `[appearance]` (`tile_agent_badge` and `app_icon` too), the terminal colour precedence and the one-line config edit behind "Set theme…". The FFI serves it to the macOS shell (`azj_core_theme`, `azj_core_set_theme`).
 - macOS shell (`Theme.swift`): every `Design.Color` token is a dynamic `NSColor` that reads the current theme. Views that keep a colour as a `CGColor` or a baked image adopt `ThemeAware`: they set those in `applyTheme()` and register with `Theme.track(self)`; a theme change calls every `applyTheme()`, sets the app's and windows' appearance and redraws everything in one Core Animation transaction, then swaps the terminals' config. `scripts/check-theme-colours` (in `just lint`) fails on any `.cgColor` outside `applyTheme()`, `updateLayer()` or `draw(_:)` that doesn't say how it stays current.
 

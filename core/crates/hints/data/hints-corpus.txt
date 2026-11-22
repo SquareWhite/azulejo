@@ -1143,6 +1143,24 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
   ⎿  Ran 1 shell command
 @@ cmd git push origin main
 
+@@ fixture cc-bang-commands-wrapped | claude | cols 75
+⏺ ! /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServ
+  ices.framework/Support/lsregister -f /Applications/Azulejo.app && killall
+  Dock
+  That forces macOS to re-register the installed app.
+
+  ! /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServ
+  ices.framework/Support/lsregister -gc && killall Dock
+  That drops the registrations for builds that no longer exist on disk.
+
+  As a last resort, wipe the icon cache (it rebuilds itself) and restart
+  the Dock:
+  ! sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall
+  Dock
+@@ cmd /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Azulejo.app && killall Dock
+@@ cmd /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -gc && killall Dock
+@@ cmd sudo rm -rf /Library/Caches/com.apple.iconservices.store && killall Dock
+
 @@ fixture omz-folder-named-like-a-command | prompts | cols 80
 ➜  dash git:(main) npm run build
 > dash@0.9.0 build

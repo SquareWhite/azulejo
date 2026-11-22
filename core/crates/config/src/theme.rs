@@ -46,8 +46,9 @@ pub const AUTO: &str = "auto";
 const RENAMED_TOKENS: &[(&str, &str)] =
     &[("browserChrome", "findBar"), ("browserField", "findField")];
 
-/// Colour tokens of the browser and preview tiles older builds had. A user
-/// theme may still set them; they're read and ignored.
+/// Colour tokens older builds had: the browser and preview tiles', and the
+/// outline ⌘S labels lost (`hintCalloutBorder`). A user theme may still set
+/// them; they're read and ignored.
 const RETIRED_TOKENS: &[&str] = &[
     "previewToggleTrack",
     "previewToggleSelected",
@@ -57,6 +58,7 @@ const RETIRED_TOKENS: &[&str] = &[
     "noticeFill",
     "noticeBorder",
     "selectedStrong",
+    "hintCalloutBorder",
 ];
 
 /// Theme settings older builds read and this one ignores: `syntax` picked

@@ -430,10 +430,11 @@ pub unsafe extern "C" fn azj_hints_pane_free(pane: *mut AzjHintsPane) {
 }
 
 /// Labels for every kept item of these panes, in order (pane by pane):
-/// the kind's letter, plus home-row letters when a kind has more than one
-/// item; an item repeated in a pane (same kind and value) gets one label,
-/// on its last copy, the others "" (lines excepted: each line gets one);
-/// paragraphs get "". Returns `{"ok":true,"labels":["pa","",…]}`.
+/// the shortest labels unique within each kind (a category shows on its
+/// own: `select::short_labels`); an item repeated in a pane (same kind and
+/// value) gets one label, on its last copy, the others "" (lines excepted:
+/// each line gets one);
+/// paragraphs get "". Returns `{"ok":true,"labels":["a","",…]}`.
 /// Free with `azj_string_free`.
 ///
 /// # Safety
@@ -715,8 +716,8 @@ mod tests {
         let labels = take(unsafe { azj_hints_labels(panes.as_ptr(), 2) });
         assert_eq!(
             labels["labels"],
-            json!(["la", "ca", "p", "ls", "", "ld", "cs"]),
-            "one label per repeated value in a pane, but one per line"
+            json!(["a", "a", "a", "s", "", "d", "s"]),
+            "one label per repeated value in a pane, but one per line; labels count per kind"
         );
         unsafe {
             azj_hints_pane_free(pane);

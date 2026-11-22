@@ -323,6 +323,14 @@ final class TerminalSurfaceView: NSView {
         return (cf as! IOSurfaceRef)
     }
 
+    /// Draws and presents a frame now, on the main thread (libghostty's
+    /// renderers support that), so `snapshot()` shows what the terminal
+    /// holds rather than the last frame its renderer thread got to.
+    func drawNow() {
+        guard let surface else { return }
+        ghostty_surface_draw(surface)
+    }
+
     /// A copy of the last presented frame. A copy because libghostty keeps
     /// rendering into its swap chain; an IOSurface (not a CGImage) so Core
     /// Animation shows it with no conversion at commit (1–2 ms, spike 0.5).

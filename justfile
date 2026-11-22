@@ -35,6 +35,14 @@ icon:
 hints-model:
     core/crates/hints/tools/model.sh
 
+# Smart select's on-device model spike: rules vs Apple's on-device model on core/crates/hints/data/model-eval.txt (macOS 26, Apple Intelligence on)
+hints-model-bench:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="$(mktemp -d)"; trap 'rm -rf "$out"' EXIT
+    cargo run -q -p azulejo-hints --bin azj-hints-candidates core/crates/hints/data/model-eval.txt > "$out/candidates.json"
+    swift run -q -c release --package-path apps/macos/tools/HintsModelBench HintsModelBench "$out/candidates.json"
+
 # Regenerate the keybinding reference in docs/keybindings.md from shared/config/keymap.default.toml
 keys-doc:
     cargo run -q -p azulejo-config --bin azj-keys-doc -- docs/keybindings.md

@@ -9,8 +9,9 @@ skipped. Standard library only, deterministic output.
 
 Colours live per theme (themes.<id>.color); validate() checks that every
 theme sets every token in colorTokens, with a valid value, plus its
-appearance, sidebar material and terminal palette, and that the easing
-curves are well-formed.
+appearance, sidebar material and terminal palette, that the easing
+curves are well-formed and that each material names a known one per
+appearance.
 scripts/test_design_tokens.py tests this file.
 """
 
@@ -164,6 +165,25 @@ def validate(tokens: dict) -> list[str]:
                 isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in palette):
             errors.append(f"{where}.terminal.palette: needs 16 #rrggbb colours")
     errors += check_easing(tokens.get("easing", {}))
+    errors += check_materials(tokens.get("material", {}))
+    return errors
+
+
+def check_materials(section: dict) -> list[str]:
+    """Each material: {"dark": name, "light": name}, names from MATERIALS."""
+    errors: list[str] = []
+    for name, value in section.items():
+        if name.startswith("_"):
+            continue
+        where = f"material.{name}"
+        if not IDENT.match(name):
+            errors.append(f"{where}: token names are lowerCamelCase")
+        if not isinstance(value, dict) or set(value) != APPEARANCES:
+            errors.append(f"{where}: needs a material for dark and for light")
+            continue
+        for appearance, material in value.items():
+            if material not in MATERIALS:
+                errors.append(f"{where}.{appearance}: {material!r} isn't a known material")
     return errors
 
 
@@ -275,6 +295,16 @@ def generate(tokens: dict) -> str:
     cgfloat_enum("Space", "Spacing and fixed sizes, in points.", "space")
     cgfloat_enum("Symbol", "SF Symbol point sizes.", "symbol")
 
+    # Materials
+    add("    /// NSVisualEffectView materials, by the theme's appearance.")
+    add("    enum Material {")
+    for name, value in entries(tokens["material"]):
+        add(f"        static func {name}(_ appearance: ThemeAppearance) -> NSVisualEffectView.Material {{")
+        add(f"            appearance == .dark ? .{value['dark']} : .{value['light']}")
+        add("        }")
+    add("    }")
+    add("")
+
     # Fonts
     add("    /// UI fonts. Terminals use the user's Ghostty font, not these.")
     add("    enum Font {")
@@ -375,7 +405,7 @@ def main() -> None:
     except json.JSONDecodeError as e:
         fail(f"{TOKENS.relative_to(ROOT)}: {e}")
     for section in ("colorTokens", "themes", "radius", "border", "alpha", "space", "symbol",
-                    "font", "status", "icon", "motion", "easing"):
+                    "font", "material", "status", "icon", "motion", "easing"):
         if section not in tokens:
             fail(f"missing section {section!r}")
     problems = validate(tokens)

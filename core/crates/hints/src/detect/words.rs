@@ -378,6 +378,13 @@ fn prose(words: &[Token], shaped: bool) -> bool {
     stops >= 2 || (stops == 1 && !shaped && words.len() >= 3)
 }
 
+/// Words that read as a sentence's rest rather than a command's
+/// arguments: no shell shape, and function words or closing punctuation.
+pub fn reads_as_prose(words: &[Token]) -> bool {
+    let shaped = evidence(words);
+    !shaped && prose(words, shaped)
+}
+
 fn stop_count(words: &[Token]) -> usize {
     words
         .iter()

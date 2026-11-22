@@ -12,7 +12,7 @@ shell shows the same. A tile view adds controls by conforming to
 
 The strip's middle is a swappable slot (`TileHeaderView.contentKind`:
 `title`, `tabs` or `override`). Setting `overrideContent` puts any view there
-until it's set back to `nil`; smart select's legend uses it.
+until it's set back to `nil`.
 `TileContainerView.header(of:)` finds a tile's strip. Checked by
 `headers.sh`.
 

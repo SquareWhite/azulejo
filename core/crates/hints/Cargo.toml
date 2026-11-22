@@ -15,6 +15,10 @@ path = "src/bin/azj-hints-train.rs"
 name = "azj-hints-eval"
 path = "src/bin/azj-hints-eval.rs"
 
+[[bin]]
+name = "azj-hints-candidates"
+path = "src/bin/azj-hints-candidates.rs"
+
 [dependencies]
 fancy-regex = { version = "0.16", default-features = false, features = ["std", "unicode", "perf"] }
 serde.workspace = true

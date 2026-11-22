@@ -123,7 +123,7 @@ minimize        = "cmd+m"
 [keys.macos.terminal]
 toggle_agents_sidebar = "cmd+a"       # herdr binding; terminals and the files list only, so cmd+a stays select-all in fields
 send_herdr_prefix = "ctrl+b"          # typed twice so herdr's attach client never sees ctrl+b q (detach)
-select_visible_item = "cmd+s"         # smart select: kind-letter labels (u URL, p path, c command, h hash/ID, l line…); then c copy, o open, r run, arrows/⇧/⌥↑↓ (apps/macos/docs/smart-select.md)
+select_visible_item = "cmd+s"         # smart select: a key panel lists the categories (u URL, p path, c command, h hash/ID, l line…); a category key labels its items a, s, d…; then c copy, o open, r run, arrows/⇧/⌥↑↓ (apps/macos/docs/smart-select.md)
 # take_over: Take over / Take back on a read-only terminal; unbound (the button)
 # Text a chord types into the pane, like kitty's send_text. kitty's cmd+l
 # clears the last command's output locally; under herdr the screen is herdr's,

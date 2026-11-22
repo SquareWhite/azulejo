@@ -37,7 +37,7 @@ use crate::refine::{Command, Span, refine};
 use files::Files;
 use lines::{Line, RowColors, join_lines, runnable, single_lines, soft_lines};
 
-/// What an item is. Its letter starts its ⌘S label.
+/// What an item is: a ⌘S category, picked by its letter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -53,7 +53,7 @@ pub enum Kind {
     /// grows a line to. Never labelled.
     Text,
     /// A non-blank line, soft wraps joined ([`crate::select::line_items`]).
-    /// Labelled, but shown only once its letter is typed.
+    /// Labelled like the rest, so its category shows every line.
     Line,
 }
 
@@ -88,7 +88,7 @@ impl Kind {
         Kind::ALL.into_iter().find(|k| k.name() == name)
     }
 
-    /// The first letter of every label of this kind; none for a
+    /// The key that picks this kind's category in the ⌘S panel; none for a
     /// paragraph, which has no label.
     pub fn letter(self) -> Option<char> {
         Some(match self {
@@ -155,7 +155,7 @@ pub struct Input<'a> {
 /// A command stays selectable next to the items inside it; other items
 /// never overlap each other.
 pub fn detect(input: &Input, fs: &dyn Filesystem) -> Vec<Item> {
-    let colors = by_row(input.colors);
+    let colors = by_row(input.rows, input.colors);
     let mut joined = vec![false; input.rows.len()];
     for &row in input.joins {
         if row < joined.len() {
@@ -176,20 +176,78 @@ pub fn detect(input: &Input, fs: &dyn Filesystem) -> Vec<Item> {
 /// One row per line, without joining rows (soft wraps, application wraps,
 /// continuations): the boundary checks' view.
 pub fn detect_rows(input: &Input, fs: &dyn Filesystem) -> Vec<Item> {
-    let colors = by_row(input.colors);
+    let colors = by_row(input.rows, input.colors);
     let lines = single_lines(input.rows, &colors);
     let mut files = Files::new(fs, input.cwd, input.local);
     items(input.rows, &lines, input.branch, &colors, &mut files)
 }
 
-fn by_row(colors: &[ColorSpan]) -> RowColors {
+/// Colour runs by row. A row in one colour from its first character to
+/// its last keeps none: that colour is the application's text colour (a
+/// coding agent paints its prose and the commands in it alike), not a mark
+/// on part of the row, so the row reads as plain text. Unless it carries on
+/// a run that a neighbouring row of several colours ends or starts with:
+/// then it's the middle of a coloured item wrapped over rows.
+fn by_row(rows: &[&str], colors: &[ColorSpan]) -> RowColors {
     let mut map: RowColors = HashMap::new();
     for c in colors {
         map.entry(c.row)
             .or_default()
             .push((c.start..c.end, c.color));
     }
+    let painted: HashMap<usize, u32> = map
+        .iter()
+        .filter(|(row, runs)| rows.get(**row).is_some_and(|text| uniform(text, runs)))
+        .map(|(row, runs)| (*row, runs[0].1))
+        .collect();
+    let touches = |row: usize, color: u32, end: bool| -> bool {
+        let (Some(text), Some(runs)) = (rows.get(row), map.get(&row)) else {
+            return false;
+        };
+        if painted.contains_key(&row) {
+            return false;
+        }
+        if end {
+            let edge = text.trim_end().len();
+            runs.iter()
+                .any(|r| r.1 == color && r.0.end >= edge && r.0.start < edge)
+        } else {
+            let edge = text.len() - text.trim_start().len();
+            runs.iter().any(|r| r.1 == color && r.0.contains(&edge))
+        }
+    };
+    let dropped: Vec<usize> = painted
+        .iter()
+        .filter(|&(&row, &color)| {
+            !(row > 0 && touches(row - 1, color, true)) && !touches(row + 1, color, false)
+        })
+        .map(|(&row, _)| row)
+        .collect();
+    for row in dropped {
+        map.remove(&row);
+    }
     map
+}
+
+/// Whether one colour covers every non-blank character of `text`.
+fn uniform(text: &str, runs: &[(Range<usize>, u32)]) -> bool {
+    let Some(color) = runs.first().map(|r| r.1) else {
+        return false;
+    };
+    if runs.iter().any(|r| r.1 != color) {
+        return false;
+    }
+    let mut any = false;
+    for (offset, c) in text.char_indices() {
+        if c.is_whitespace() {
+            continue;
+        }
+        any = true;
+        if !runs.iter().any(|r| r.0.contains(&offset)) {
+            return false;
+        }
+    }
+    any
 }
 
 /// The reading order: row, start, then kind name.

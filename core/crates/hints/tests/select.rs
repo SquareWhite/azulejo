@@ -55,28 +55,72 @@ fn kind_labels() {
     ];
     assert_eq!(
         labels(&kinds),
-        ["ua", "pa", "ps", "c", "", "us", "i", "h", "b", "l", "d"],
-        "u for URLs, l for lines, no label for a paragraph"
+        ["a", "a", "s", "a", "", "s", "a", "a", "a", "a", "a"],
+        "each kind counts from a on its own (no kind letter); no label for a paragraph"
     );
-    let mut many_kinds = vec![Path; 30];
+    let mut many_kinds = vec![Line; 30];
     many_kinds.push(Url);
     let many = labels(&many_kinds);
-    assert!(
-        many[..30]
-            .iter()
-            .all(|l| l.len() == 3 && l.starts_with('p')),
-        "past 26 of a kind, labels grow a letter"
+    assert_eq!(many[30], "a", "another kind starts again from a");
+    let lines = &many[..30];
+    assert_eq!(
+        lines.iter().filter(|l| l.len() == 1).count(),
+        25,
+        "past 26, as many single letters as fit: {lines:?}"
     );
-    assert_eq!(many.iter().collect::<HashSet<_>>().len(), 31);
-    assert_eq!(many[30], "u");
-    for set in [labels(&kinds), many] {
+    assert!(
+        lines[..5]
+            .iter()
+            .all(|l| l.len() == 2 && l.starts_with('m')),
+        "the last letter starts the longer ones, which go to the first items: {lines:?}"
+    );
+    assert_eq!(
+        (lines[5].as_str(), lines[29].as_str()),
+        ("a", "n"),
+        "the lowest items keep single letters, in alphabet order"
+    );
+    assert_eq!(lines.iter().collect::<HashSet<_>>().len(), 30);
+    let prefix_free = |set: &[String]| {
+        !set.iter()
+            .filter(|a| !a.is_empty())
+            .any(|a| set.iter().any(|b| a != b && b.starts_with(a.as_str())))
+    };
+    assert!(prefix_free(lines), "no label is a prefix of another");
+}
+
+#[test]
+fn short_labels_are_shortest_and_prefix_free() {
+    use azulejo_hints::select::{ALPHABET, short_labels};
+    assert_eq!(short_labels(0), Vec::<String>::new());
+    assert_eq!(short_labels(3), ["a", "s", "d"], "home row first");
+    assert_eq!(short_labels(26).len(), 26);
+    assert!(short_labels(26).iter().all(|l| l.len() == 1));
+    for count in [27, 51, 52, 60, 200, 26 * 26, 26 * 26 + 1, 2000] {
+        let set = short_labels(count);
+        assert_eq!(set.len(), count, "{count} labels");
+        assert_eq!(
+            set.iter().collect::<HashSet<_>>().len(),
+            count,
+            "{count}: all different"
+        );
         assert!(
             !set.iter()
-                .filter(|a| !a.is_empty())
                 .any(|a| set.iter().any(|b| a != b && b.starts_with(a.as_str()))),
-            "no label is a prefix of another"
+            "{count}: no label is a prefix of another"
+        );
+        assert!(
+            set.iter().all(|l| l.bytes().all(|b| ALPHABET.contains(&b))),
+            "{count}: only alphabet letters"
         );
     }
+    // 51 = 25 singles + one group of 26; 52 needs two groups.
+    assert_eq!(short_labels(51).iter().filter(|l| l.len() == 1).count(), 25);
+    assert_eq!(short_labels(52).iter().filter(|l| l.len() == 1).count(), 24);
+    assert!(
+        short_labels(26 * 26).iter().all(|l| l.len() == 2),
+        "676 fills every two-letter label"
+    );
+    assert!(short_labels(26 * 26 + 1).iter().any(|l| l.len() == 3));
 }
 
 #[test]
@@ -755,8 +799,9 @@ fn callouts_on_dense_screens() {
             detected,
             Some(columns),
         );
-        // As the overlay places them: the labelled items before a letter is
-        // typed (no paragraphs, no lines), keeping off paragraphs' text.
+        // Every labelled item but the lines at once (no paragraphs), keeping
+        // off paragraphs' text: stricter than the overlay, which places and
+        // shows one category at a time.
         let found: Vec<&Item> = pane
             .items
             .iter()
@@ -1012,28 +1057,24 @@ fn kind_letters() {
     };
     assert_eq!(
         label_of("https://example.invalid/hints"),
-        (Kind::Url, "u".to_owned())
+        (Kind::Url, "a".to_owned())
     );
     assert_eq!(
         label_of("3f9c2a7e-8b41-4d6f-a0c3-5e17b9d2f864"),
-        (Kind::Hash, "ha".to_owned()),
+        (Kind::Hash, "a".to_owned()),
         "a UUID is a hash or ID"
     );
-    assert_eq!(label_of("7c3e9a1"), (Kind::Hash, "hs".to_owned()));
+    assert_eq!(label_of("7c3e9a1"), (Kind::Hash, "s".to_owned()));
     let paragraph = pane
         .items
         .iter()
         .position(|i| i.kind == Kind::Text)
         .unwrap();
     assert_eq!(labels[paragraph], "", "a paragraph gets no label");
-    assert!(
-        labels.iter().all(|l| !l.starts_with('t')),
-        "no label starts with t"
-    );
 }
 
 #[test]
-fn lines_show_once_l_is_typed() {
+fn categories_show_their_own_labels_only() {
     let rows = [
         "$ git status --short",
         " M src/main.rs",
@@ -1048,29 +1089,40 @@ fn lines_show_once_l_is_typed() {
         .map(|i| (0, i.kind, i.value.as_str()))
         .collect();
     let labels = select::pane_labels(&keys);
-    let showing = |typed: &str| -> Vec<usize> {
+    let showing = |category: Option<Kind>, typed: &str| -> Vec<usize> {
         (0..pane.items.len())
-            .filter(|&i| select::shown(pane.items[i].kind, &labels[i], typed))
+            .filter(|&i| select::shown(pane.items[i].kind, &labels[i], category, typed))
             .collect()
     };
     let lines: Vec<usize> = (0..pane.items.len())
         .filter(|&i| pane.items[i].kind == Kind::Line)
         .collect();
     assert_eq!(lines.len(), 4);
-    let initial = showing("");
     assert!(
-        !initial.is_empty() && initial.iter().all(|&i| pane.items[i].kind != Kind::Line),
-        "no line shows before a letter is typed"
-    );
-    assert_eq!(showing("l"), lines, "after l, every line and nothing else");
-    assert!(
-        lines
-            .iter()
-            .all(|&i| labels[i].len() == 2 && labels[i].starts_with('l')),
-        "line labels share a length: {labels:?}"
+        showing(None, "").is_empty(),
+        "before a category is picked, nothing shows"
     );
     assert_eq!(
-        showing(&labels[lines[2]]),
+        showing(Some(Kind::Line), ""),
+        lines,
+        "the lines category: every line and nothing else"
+    );
+    assert!(
+        showing(Some(Kind::Command), "")
+            .iter()
+            .all(|&i| pane.items[i].kind == Kind::Command),
+        "the commands category: commands only"
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .map(|&i| labels[i].as_str())
+            .collect::<Vec<_>>(),
+        ["a", "s", "d", "f"],
+        "line labels are single letters, no kind letter"
+    );
+    assert_eq!(
+        showing(Some(Kind::Line), &labels[lines[2]]),
         [lines[2]],
         "a line's full label picks it alone"
     );
@@ -1081,7 +1133,7 @@ fn lines_show_once_l_is_typed() {
         .filter(|&i| pane.items[i].kind == Kind::Command)
         .map(|i| &labels[i])
         .collect();
-    assert_eq!(commands, ["", "c"]);
+    assert_eq!(commands, ["", "a"]);
 
     // Arrows from a line walk the lines, the repeated one included.
     let unit = |i: usize| {

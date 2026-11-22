@@ -1,4 +1,4 @@
-//! ⌘S smart select, everything after recognition: type-prefixed labels,
+//! ⌘S smart select, everything after recognition: per-category labels,
 //! lines, text paragraphs, the containers ⌥↑ grows through, arrow-key
 //! neighbours, the text a range copies and the line Run types.
 //!
@@ -94,51 +94,72 @@ pub enum Direction {
 
 // MARK: Labels
 
-const ALPHABET: &[u8] = b"asdfghjklqwertyuiopzxcvbnm";
+/// The letters labels are made of, the easiest to reach first. Inside a
+/// category every letter is free for labels: the panel's own keys there
+/// are Esc, Backspace, Return and the arrows.
+pub const ALPHABET: &[u8] = b"asdfghjklqwertyuiopzxcvbnm";
 
-/// One label per item, in the given order: the kind's letter alone when
-/// it's the only item of that kind, else the letter and a home-row suffix
-/// (`pa`, `ps`, …), one letter longer past 26 of a kind. Labels of one kind
-/// share a length, so none is a prefix of another. A kind without a letter
+/// One label per item, in the given order. A category (an item kind)
+/// shows on its own, so labels need only be unique within a kind: each
+/// kind gets [`short_labels`] in reading order (`a`, `s`, `d`…). Past 26
+/// of a kind, the longer labels go to the first items, so the newest
+/// output, lowest on screen, keeps single letters. A kind without a letter
 /// (a paragraph) gets an empty label.
 pub fn labels(kinds: &[Kind]) -> Vec<String> {
     let mut counts: HashMap<Kind, usize> = HashMap::new();
     for &kind in kinds {
         *counts.entry(kind).or_default() += 1;
     }
+    let sets: HashMap<Kind, Vec<String>> = counts
+        .into_iter()
+        .filter(|(kind, _)| kind.letter().is_some())
+        .map(|(kind, count)| {
+            let mut set = short_labels(count);
+            set.sort_by_key(|label| Reverse(label.len()));
+            (kind, set)
+        })
+        .collect();
     let mut seen: HashMap<Kind, usize> = HashMap::new();
     kinds
         .iter()
-        .map(|&kind| {
-            let Some(letter) = kind.letter() else {
+        .map(|kind| {
+            let Some(set) = sets.get(kind) else {
                 return String::new();
             };
-            let count = counts[&kind];
-            let index = seen.entry(kind).or_default();
-            let mut label = letter.to_string();
-            if count > 1 {
-                label.push_str(&suffix(*index, count));
-            }
+            let index = seen.entry(*kind).or_default();
             *index += 1;
-            label
+            set[*index - 1].clone()
         })
         .collect()
 }
 
-fn suffix(index: usize, count: usize) -> String {
+/// `count` labels from [`ALPHABET`], none a prefix of another and as short
+/// as they can be: single letters while they last. Past 26, the alphabet's
+/// last `k` letters (the fewest that fit) each start a group of longer
+/// labels, shared out evenly, and the first `26 - k` stay single.
+pub fn short_labels(count: usize) -> Vec<String> {
     let base = ALPHABET.len();
-    let (mut length, mut capacity) = (1, base);
-    while capacity < count {
-        capacity *= base;
-        length += 1;
+    let letter = |i: usize| (ALPHABET[i] as char).to_string();
+    if count <= base {
+        return (0..count).map(letter).collect();
     }
-    let mut chars = vec![ALPHABET[0]; length];
-    let mut n = index;
-    for i in (0..length).rev() {
-        chars[i] = ALPHABET[n % base];
-        n /= base;
+    // With all 26 letters as prefixes, the groups grow longer labels too.
+    let prefixes = (1..=base)
+        .find(|&k| (base - k) + k * base >= count)
+        .unwrap_or(base);
+    let singles = base - prefixes;
+    let rest = count - singles;
+    let mut result: Vec<String> = (0..singles).map(letter).collect();
+    for group in 0..prefixes {
+        let size = rest / prefixes + usize::from(group < rest % prefixes);
+        let prefix = letter(singles + group);
+        result.extend(
+            short_labels(size)
+                .into_iter()
+                .map(|label| format!("{prefix}{label}")),
+        );
     }
-    String::from_utf8(chars).unwrap()
+    result
 }
 
 /// Items shown again and again (`keys` in reading order, equal for the
@@ -173,11 +194,11 @@ pub fn pane_labels(items: &[(usize, Kind, &str)]) -> Vec<String> {
     result
 }
 
-/// Whether an item's label shows while choosing, with `typed` typed so
-/// far: it has a label that starts with `typed`. Lines wait for a first
-/// letter (theirs, `l`): boxing every row up front would bury the rest.
-pub fn shown(kind: Kind, label: &str, typed: &str) -> bool {
-    !label.is_empty() && label.starts_with(typed) && (kind != Kind::Line || !typed.is_empty())
+/// Whether an item's label shows while choosing in `category` (none yet:
+/// ⌘S shows the category panel and no labels) with `typed` typed so far:
+/// the item is of that kind and its label starts with `typed`.
+pub fn shown(kind: Kind, label: &str, category: Option<Kind>, typed: &str) -> bool {
+    category == Some(kind) && !label.is_empty() && label.starts_with(typed)
 }
 
 // MARK: Paragraphs

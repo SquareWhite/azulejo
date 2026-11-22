@@ -495,8 +495,7 @@ final class TileHeaderView: NSView, ThemeAware {
     /// Temporarily replaces the title content (the title, or the tabs in
     /// Monocle) with `view`, laid out in `contentRect` at every layout; nil
     /// puts back what was there. The strip's status icon or badge stays as
-    /// it is. For ⌘S's key legend, which
-    /// stands in for the title while hints are open.
+    /// it is.
     var overrideContent: NSView? {
         didSet {
             guard oldValue !== overrideContent else { return }
