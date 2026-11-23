@@ -1,10 +1,6 @@
-<p><img src=".github/assets/icon.png" width="96" height="96" align="left" vspace="24" alt="Azulejo app icon"></p>
-
-<h1>Azulejo</h1>
+<h1><img src=".github/assets/icon.png" width="72" height="72" align="center" alt="Azulejo app icon">&nbsp;Azulejo</h1>
 
 <p>A keyboard-driven tiling terminal workspace for macOS.</p>
-
-<br clear="left">
 
 <p align="center">
   <img src=".github/assets/hero.png" alt="An Azulejo window: a coding agent, git and logs tiled side by side, with workspaces and agent status in the sidebar">
