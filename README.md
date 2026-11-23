@@ -1,4 +1,4 @@
-<h1><img src=".github/assets/icon.png" width="72" height="72" align="center" alt="Azulejo app icon">&nbsp;Azulejo</h1>
+<h1><img src=".github/assets/icon.png" width="72" height="72" align="absmiddle" alt="Azulejo app icon">&nbsp;Azulejo</h1>
 
 <p>A keyboard-driven tiling terminal workspace for macOS.</p>
 
